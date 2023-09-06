@@ -1,0 +1,162 @@
+<html>
+<head>
+<!-- Extracted from develop - 1990 -->
+<!-- on 2023-09-06 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>October 90 - Macintosh Q&A</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH Q &amp; A</h2>
+<h1>MACINTOSH DEVELOPER TECHNICAL SUPPORT</h1>
+<p>
+<b>Q</b><i>I am confused about the service routines and data areas passed in the _ADBOp call.</i><br>
+<i>What does it all mean?</i>
+</p>
+<p>
+<b>A </b>That 's a good question. The ADBOp call looks like this:
+</p>
+<pre>FUNCTION ADBOp (data:Ptr; compRout:ProcPtr; buffer:Ptr;
+    commandNum:INTEGER) : oserr;</pre>
+<p>
+<b>data </b>is a pointer to the "optional data area." This area is provided for the use of the<br>
+service routine (if needed).
+</p>
+<p>
+<b>compRout </b>is a pointer to the completion or service routine to be called when the<br>
+_ADBOp command has been completed. It has the same meaning as the service routine<br>
+passed to the _SetADBInfo call.
+</p>
+<p>
+<b>buffer </b>is a pointer to a Pascal string, which may contain 0 to 8 bytes of information.<br>
+These are the 2 to 8 bytes that a particular register of an ADB device is capable of<br>
+sending and receiving.
+</p>
+<p>
+<b>commandNum</b> is an integer that describes the command to be sent over the bus.
+</p>
+<p>
+There is some confusion over the way the completion routines are called from _ADBOp.<br>
+You can call these routines in one of three ways, depending on what you want to do:If<br>
+you do not wish to have a completion routine called, as in a Listen command, pass a NIL<br>
+pointer to _ADBOp.
+</p>
+<p>
+If you wish to call the routine already in use by the system for that address (as<br>
+installed by _SetADBInfo), call _GetADBInfo before calling _ADBOp, and pass the<br>
+routine pointer returned by _GetADBInfo to _ADBOp.
+</p>
+<p>
+If you wish to provide your own completion routine and data area for the _ADBOp call,<br>
+simply pass your own pointers to the _ADBOp call.
+</p>
+<p>
+Remember, there should rarely be a reason to call _ADBOp. Most cases are handled by<br>
+the system's polling and service request mechanism. In the cases where you must call<br>
+_ADBOp, don't do it in a polling fashion, but as a mechanism for telling the device<br>
+something (for example, telling the device to change modes or, in the case of the<br>
+extended keyboard, to turn an LED on or off).
+</p>
+<p>
+<b>Q</b><i>The AppleTalk spec claims a data rate of 230.4 kbaud, which should require a</i><br>
+<i>3.6864 MHz input to the SCC, but RTxCB on the Macintosh carries a 3.672 MHz clock.<br>
+How does the AppleTalk driver reconcile this discrepancy and what frequency should I<br>
+use?</i>
+</p>
+<p>
+<b>A </b>The SCC contains a phase-locked loop that can lock on and synchronize with<br>
+AppleTalk transmissions whose clock rates are not exactly to specifications, so<br>
+everything is fine as long as both ends of the communication are using approximately<br>
+the same clock frequency. If you are designing your own AppleTalk hardware from<br>
+scratch, it's easiest to use a 3.6864 MHz oscillator and a Z8530. This has been tested<br>
+and works just fine.
+</p>
+<p>
+<b>Q</b><i>When I fill in the fields of MPW's Name Binding Protocol (NBP) EntityName</i><br>
+<i>structure, AppleTalk doesn't recognize the entity, even though I know it's out there.<br>
+What's going on?</i>
+</p>
+<p>
+<b>A </b>The real definition of EntityName is three PACKED strings of any length (32 is just<br>
+an example). No offsets for Asm are specified since each string address must be<br>
+calculated by adding the length byte to the last string ptr. In Pascal, string(32) will<br>
+be 34 bytes long (fields never start on an odd byte unless they are only 1 byte long).<br>
+So correct-looking interfaces for Pascal and C will be generated, but they won't be the<br>
+same, which is OK since they aren't used.
+</p>
+<p>
+The point here is that you should never try to access the fields of the EntityName field<br>
+directly. The only reason the type is defined at all is so that you can allocate<br>
+EntityName variables that will hold the largest possible EntityName. To fill in an<br>
+EntityName record, you should call the NBPSetEntity routine.<b>Q</b><i>How do I determine</i><br>
+<i>which language is in use on the system?</i>
+</p>
+<p>
+<b>A </b>Every language has a corresponding KCHR resource.<i> Inside Macintosh,</i>&nbsp;&nbsp;volume I,<br>
+page 499, lists the currently defined country codes, which are the resource IDs of the<br>
+KCHR resources.
+</p>
+<p>
+To find out which KCHR is in use, call the Script Manager function GetScript with the<br>
+verb smScriptKeys. This call returns the ID of the KCHR resource in use (not the ID of<br>
+the KEYC resource, as stated in<i> Inside Macintosh,</i>&nbsp;&nbsp;volume V, page 312).
+</p>
+<p>
+Here's a bit of C code that determines which KCHR is being used:
+</p>
+<pre>#include &lt;script.h&gt;
+...
+kchrID = GetScript(smRoman, smScriptKeys);</pre>
+<p>
+kchrID will be 1 when booted in French, 2 when booted in British English, and so on.
+</p>
+<p>
+<b>Q</b><i>When I use DeleteRevision to remove old revisions from my Projector database, the</i><br>
+<i>actual size of the ProjectorDB file doesn't decrease much. How can I make the file<br>
+smaller?</i>
+</p>
+<p>
+<b>A </b>Projector does not currently compact files. What it does is mark the areas of the<br>
+database that are now free and put them into a free page list. This effectively puts holes<br>
+into your database, holes that are subsequently filled up when you add more revisions.
+</p>
+<p>
+Your database will get smaller only if the free pages are at the end of the file; then<br>
+Projector will shrink the file. However, there is very little you can do about<br>
+controlling this situation. If you absolutely must have a smaller database, then all you<br>
+can do is check everything out, orphan the files, and create a new database. The<br>
+disadvantage of this method is that you lose all your revisions and revision comments. 
+</p>
+<p>
+The Projector team is aware of the need to compact the database. The team is currently<br>
+studying the feasibility of adding such a function.
+</p>
+<p>
+<b>Q</b><i>How does MultiFinder decide the starting order when you set multiple applications to</i><br>
+<i>start up under MultiFinder with Set Startup? Is there any way to control the order?</i>
+</p>
+<p>
+<b>A </b>Here's the lowdown on MultiFinder application startup procedures.
+</p>
+<p>
+From the Finder, launch, in order, application A, application B, and then application C.<br>
+Switch to the Finder, choose Set Startup, and select Open Applications and DAs. The<br>
+launch order is now application C, then application B, then application A. Regardless of<br>
+the type of view from the Finder, the startup order is from top to bottom,<br>
+respectively.
+</p>
+<p>
+If you're<i>really</i> interested, the Finder Startup file in the System Folder contains the<br>
+applications and files to be launched and the order in which they should be launched.<br>
+This file contains a 'fndr' ID = 0 resource that stores the applications and their<br>
+pathnames. The applications are launched in the order in which they are listed. You can<br>
+use ResEdit to view the resource and see the filenames, the VRefNums, and the volume<br>
+names of the startup applications. You can also tell the number of startup applications<br>
+by the number at the beginning of the resource (that is, 0000 0001 means one item).
+</p>
+<p>
+Remember, however, that this informmation is valid only for pre-System 7.0<br>
+MultiFinder environments.
+</p>
+</body>
+</html>

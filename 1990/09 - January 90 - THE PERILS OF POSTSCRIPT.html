@@ -1,0 +1,263 @@
+<html>
+<head>
+<!-- Extracted from develop - 1990 -->
+<!-- on 2023-09-06 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>January 90 - THE PERILS OF POSTSCRIPT</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>THE PERILS OF POSTSCRIPT</h2>
+<h1>SCOTT "ZZ" ZIMMERMAN</h1>
+<p>
+<i>Letting your application rather than the LaserWriter driver&nbsp;&nbsp;convert QuickDraw<br>
+commands into PostScript is simple in most cases, yet when you use direct PostScript<br>
+to print documents, subtle interactions between the QuickDraw and PostScript imaging<br>
+models can cause problems.&nbsp;&nbsp;This article will help you in two important areas: using a<br>
+font from PostScript while selecting it using QuickDraw and preserving your<br>
+PostScript state while using QuickDraw to select fonts.</i>
+</p>
+<p>
+When selecting a PostScript font from QuickDraw, an application first calls GetFNum<br>
+(see Inside Macintosh, volume I, page 223 [IM I-223]) to get the Font Family ID for a<br>
+particular font.&nbsp;&nbsp;It then calls TextFont (IM I-171) to actually select it.&nbsp;&nbsp;The name<br>
+passed to GetFNum is the name of the font as seen in the Font menu (for example,<br>
+Helvetica). 
+</p>
+<p>
+In PostScript, fonts are selected by name using the findfont (see PostScript Language<br>
+Reference Manual, page 156 [PLRM 156]) and setfont (PLRM 215) operators.&nbsp;&nbsp;If the<br>
+application attempts to select a font named Helvetica&#174;, however, it will find that this<br>
+font doesn't exist.&nbsp;&nbsp;This is because the LaserWriter performs a special operation on the<br>
+font called encoding.&nbsp;&nbsp;Font encoding is the process of mapping missing characters into<br>
+another font. 
+</p>
+<p>
+For example, a character like &#248; may not exist in the standard Helvetica font.&nbsp;&nbsp;In order<br>
+to provide that character, the LaserWriter driver will modify the Helvetica font,<br>
+inserting a reference to the &#248; character in the Symbol font.&nbsp;&nbsp;Once this is done, the font<br>
+is no longer standard Helvetica, so it is renamed.&nbsp;&nbsp;The actual name is something like<br>
+|_____Helvetica, but this naming convention is not standard and could change in the<br>
+future.
+</p>
+<p>
+So if you don't know the font's name, how can you select it?&nbsp;&nbsp;Simple, let QuickDraw do<br>
+it.&nbsp;&nbsp;When you select a font via TextFont and then use it via one of the QuickDraw text<br>
+drawing routines (such as DrawChar or DrawString [IM I- 172]), the LaserWriter<br>
+driver handles the complex task of selecting an appropriate font on the PostScript<br>
+device.&nbsp;&nbsp;This includes downloading and encoding the font if necessary.&nbsp;&nbsp;Using QuickDraw<br>
+to select the font not only saves you a lot of work, but also improves compatibility. <br>
+The process of font downloading and character encoding could change in the future, and<br>
+if your application does it internally, it will have to be revised.&nbsp;&nbsp;If you use QuickDraw<br>
+to download the font, your application will be immune to changes in the font<br>
+downloading mechanism.
+</p>
+<h2>PICK A FONT, ANY FONT</h2>
+<p>
+Now let's look at the code to actually select a font.&nbsp;&nbsp;The following procedure will select<br>
+a font for any device, QuickDraw or PostScript:
+</p>
+<pre>PROCEDURE  SetFont;(fontName: Str255; fontSize: INTEGER;
+    fontStyle: Style);
+VAR
+    theFontID:  INTEGER;
+    thePenLoc:  Point;
+BEGIN
+    GetFNum(fontName, theFontID);   (* Get the font ID. *)
+    TextFont(theFontID);    (* Set it *)
+    TextSize(fontSize); (* Set the size *)
+    TextFace(fontStyle);    (* ...and the style. *)
+    GetPen(thePenLoc);  (* Save the current pen position. *)
+    DrawChar(' ');  (* Draw a space so the font gets downloaded.*)
+    MoveTo(thePenLoc.h, thePenLoc.v);   (* Restore original pen *)
+                (* position. *)
+END;</pre>
+<p>
+There are two important things to note in the SetFont procedure above.&nbsp;&nbsp;First, the<br>
+procedure uses the GetFNum trap to get the Font ID.&nbsp;&nbsp;This is essential to make sure that<br>
+you get the correct font.&nbsp;&nbsp;(See Technical Note #191, Font Names for more<br>
+information.) Second, the SetFont procedure calls DrawChar to draw a space.&nbsp;&nbsp;This is<br>
+required to force the font selection on PostScript devices, since the TextFont call only<br>
+changes the txFont field of the GrafPort. By actually using the font (via DrawChar) the<br>
+LaserWriter driver's StdText GrafProc is called, and selects the font on the printer. <br>
+Subsequent calls to the PostScript show (PLRM 222) operator will use this font. <br>
+Since DrawChar will change the pen position, it is saved (via GetPen [IM I-169]) and<br>
+restored (via MoveTo [IM I-170]).
+</p>
+<h2>ON WITH THE SHOW</h2>
+<p>
+Now that we have a font selected, we need to actually draw something with it. For now,<br>
+as an example, let's say that we want to draw some text with the show operator.&nbsp;&nbsp;We'll<br>
+send our PostScript using the following procedure.&nbsp;&nbsp;Although convenient for sending<br>
+PostScript in our example, this method is very inefficient and should not be used in an<br>
+application.&nbsp;&nbsp;Here's the code:
+</p>
+<pre>PROCEDURE SendPostScript(theComment: Str255);
+    VAR
+        PSCommand   : Str255;
+        CommandHdl  : Handle;
+        CRString    : Str255;
+        theError    : OSErr;
+    BEGIN
+        CRString := ' ';
+        CRString[1] := CHR(13);
+        PSCommand := theComment;
+        PSCommand := CONCAT(PSCommand, CRString);
+        theError := PtrToHand(POINTER(ORD(@PSCommand) + 1),
+            CommandHdl,LENGTH(PSCommand));
+        if theError &lt;&gt; noErr THEN BEGIN
+            (* Handle the error! *)
+        END;
+        PicComment(PostScriptHandle,
+            LENGTH(PSCommand), CommandHdl);
+        DisposHandle(CommandHdl);
+    END;</pre>
+<p>
+The procedure simply takes a string of text, adds a carriage return at the end of it, and<br>
+converts it into a handle.&nbsp;&nbsp;The handle is then passed to the PostScriptHandle picture<br>
+comment, which actually sends it to the printer.&nbsp;&nbsp;Since this procedure created the<br>
+handle, the procedure also disposes of it.&nbsp;&nbsp;Again, this is not how a normal application<br>
+would do it, but it keeps things nice and localized for this example.&nbsp;&nbsp;So now that we can<br>
+send PostScript, consider the following:
+</p>
+<pre>SetFont('Helvetica', 14, [bold]);
+PicComment(PostScriptBegin, 0, NIL);       
+        (********************************************)
+        (*** QuickDraw representation of graphic. ***)
+        (********************************************)
+    (* These calls are only executed by QuickDraw *)
+    (* (i.e. non-PostScript) devices.   *)
+        MoveTo(50, 50);
+        DrawString('This is some gray text.');
+        PenPat(ltGray);
+        MoveTo(100, 100);
+        LineTo(300, 300);
+        (*********************************************)
+        (*** PostScript representation of graphic. ***)
+        (*********************************************)
+    (* These calls will only be executed by PostScript devices.*)
+    SendPostScript('50 50 moveto (This is some gray text.) show');
+    SendPostScript('.10 setgray');
+    SendPostScript('100 100 moveto 300 300 lineto stroke');
+PicComment(PostScriptEnd, 0, NIL);</pre>
+<p>
+In this fragment, the call to SetFont sets the PostScript currentfont to be Helvetica. <br>
+The PostScriptBegin comment is used to suppress QuickDraw calls on PostScript<br>
+devices, and vice versa.&nbsp;&nbsp;When the LaserWriter sees PostScriptBegin, it ignores all<br>
+QuickDraw drawing calls, and just executes picture comments.&nbsp;&nbsp;When a PostScriptEnd<br>
+is received, the LaserWriter will once again interpret QuickDraw calls.&nbsp;&nbsp;The<br>
+LaserWriter driver will ignore the QuickDraw representation, and begin executing the<br>
+SendPostScript calls.&nbsp;&nbsp;The first one draws a string of text, the second one changes the<br>
+default gray level of the printer from 100% black to 10% black using the setgray<br>
+(PLRM 216) operator, and the third one draws a diagonal line using the new gray<br>
+level.&nbsp;&nbsp;Note that the QuickDraw representation for a gray level is handled by using<br>
+PenPat (IM I-170).
+</p>
+<h2>SAVE THE POSTSCRIPT STATE</h2>
+<p>
+The fragment we just looked at illustrates a good method for sending both QuickDraw<br>
+and PostScript.&nbsp;&nbsp;It also demonstrates a new problem.&nbsp;&nbsp;When the PostScriptBegin<br>
+comment is sent, the LaserWriter driver performs a PostScript gsave (PLRM 166)<br>
+operation.&nbsp;&nbsp;This saves the current graphics state required for QuickDraw printing. <br>
+The application can then do what it needs to the state without having to worry about<br>
+side effects on the QuickDraw environment. When the LaserWriter driver receives a<br>
+PostScriptEnd comment, it performs a grestore (PLRM 165) operation to restore the<br>
+QuickDraw state.&nbsp;&nbsp;Normally this is exactly what you would want.&nbsp;&nbsp;But there are cases<br>
+when an application may want to execute some QuickDraw commands without losing the<br>
+PostScript state is has setup.
+</p>
+<p>
+For example, the above code fragment set the gray level of the printer to 10%. At the<br>
+time we did the PostScriptEnd comment, the gray level was restored to 100%.&nbsp;&nbsp;If we<br>
+then want to change the font size, and redraw the text, we would have to resend the<br>
+setgray operator.&nbsp;&nbsp;It would look like this:
+</p>
+<pre>   (* Change the font size.*)
+    SetFont('Helvetica', 24, [bold]);
+    PicComment(PostScriptBegin, 0, NIL);       
+        (********************************************)
+        (*** QuickDraw representation of graphic. ***)
+        (********************************************)
+        (* These calls are only executed by QuickDraw *)
+        (* (i.e. non-PostScript) devices.*)
+        (* The QuickDraw state is unaffected, so there&#8217;s *)
+        (* no need to call PenPat again. *)
+        MoveTo(250, 50);
+        LineTo(750, 50);
+
+        (*********************************************)
+        (*** PostScript representation of graphic. ***)
+        (*********************************************)
+        (* These calls only executed by PostScript devices. *)
+        (* Since the PostScript state was cleared, we need *)
+        (* to resend the setgray operator. *)
+        SendPostScript('.10 setgray');
+        SendPostScript('250 50 moveto 750 50 lineto');
+    PicComment(PostScriptEnd, 0, NIL);</pre>
+<p>
+Although resending the setgray operator isn't difficult, an application may have set a<br>
+lot more attributes.&nbsp;&nbsp;To avoid the overhead of resending this state, a new comment may<br>
+be used.&nbsp;&nbsp;This comment is #196--PostScriptBeginNoSave.
+</p>
+<p>
+When PostScriptBeginNoSave is used with PostScriptEnd, the gsave and grestore<br>
+operations are not performed.&nbsp;&nbsp;This means that the application is completely<br>
+responsible for the graphics state of the printer.&nbsp;&nbsp;If you are doing all of your imaging<br>
+via PostScript this is not a problem.&nbsp;&nbsp;If you plan on mixing PostScript and QuickDraw,<br>
+you must be very careful.&nbsp;&nbsp;Changes to attributes like line width and the transformation<br>
+matrix will have a significant effect on QuickDraw drawing operations.&nbsp;&nbsp;If the comment<br>
+is used for the above example, the code will look like this:
+</p>
+<pre>   (* Now illustrate the use of the PostScriptBeginNoSave  *)
+    (* PicComment. *)
+    PicComment(PostScriptBeginNoSave, 0, NIL);
+        PenPat(ltGray);
+        SendPostScript('.10 setgray');
+    PicComment(PostScriptEnd, 0, NIL);
+   
+    (* At this point, the gray level of the device is 10% black *)
+    (* Now draw something using this state. *)
+    (* Draw a light gray line using QuickDraw. *)
+    MoveTo(50, 400);
+    Line(100, 100);
+   
+    (* At this point, the gray level is still 10%, so we must *)
+    (* reset it  to black. *)
+    PicComment(PostScriptBeginNoSave, 0, NIL);
+        PenPat(black);  (* Reset QuickDraw gray level.  *)
+        SendPostScript('1.0 setgray');  (* Reset PostScript gray*)
+                                (* level.   *)
+    PicComment(PostScriptEnd, 0, NIL);</pre>
+<p>
+Note that instead of sending PostScriptBegin as the first operation, we now send<br>
+PostScriptBeginNoSave.&nbsp;&nbsp;We then change the gray level to light gray in the QuickDraw<br>
+world, and 10% black for PostScript.&nbsp;&nbsp;Since we used PostScriptBeginNoSave, sending<br>
+PostScriptEnd does not effect the state of the printer (i.e. the gray level remains at<br>
+10%).&nbsp;&nbsp;Now we want to draw something with the new state.&nbsp;&nbsp;We first send the<br>
+PostScriptBegin comment, which saves the state we set up, as well as disabling the<br>
+QuickDraw calls on PostScript devices. 
+</p>
+<p>
+We then send a QuickDraw representation of the line, followed by PostScriptEnd.&nbsp;&nbsp;On<br>
+QuickDraw devices, the line will be drawn using the ltGray pen pattern.&nbsp;&nbsp;On PostScript<br>
+devices, the line will be drawn using 10% black. After the line has been drawn, we<br>
+need to reset the state of the device for subsequent drawing operations.&nbsp;&nbsp;This is done by<br>
+once again sending the PostScriptBeginNoSave comment, followed by the commands to<br>
+reset the gray level, as well as any other attributes of the printer.
+</p>
+<p>
+In summary, we have looked at two ways of avoiding the perils of PostScript. The first<br>
+was how to use a font from PostScript while choosing it using QuickDraw.&nbsp;&nbsp;The<br>
+supported method for this was demonstrated by the SetFont procedure.&nbsp;&nbsp;The second was<br>
+how to preserve your PostScript state while still using QuickDraw to select fonts. 
+</p>
+<p>
+<b>Scott "Zz" Zimmerman</b> is a DTS printing guru.&nbsp;&nbsp;(He's particularly impressed with<br>
+the strictly enforced dress code at Apple.) In his spare time he sails, scuba dives for<br>
+lobsters, and plays the piano, guitar, and saxophone.&nbsp;&nbsp;His doorway is adorned by a<br>
+melted gummy rat, a good luck charm from his Intel days. At home, atop his monitor is<br>
+perched a rare Asian black&nbsp;&nbsp;scorpion (behind glass, we hope).&nbsp;&nbsp;His other cuddly pets<br>
+include two geckos and an iguana. *
+</p>
+</body>
+</html>

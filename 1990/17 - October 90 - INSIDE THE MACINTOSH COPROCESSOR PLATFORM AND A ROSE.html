@@ -1,0 +1,865 @@
+<html>
+<head>
+<!-- Extracted from develop - 1990 -->
+<!-- on 2023-09-06 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>October 90 - INSIDE THE MACINTOSH COPROCESSOR PLATFORM AND A/ROSE</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>INSIDE THE MACINTOSH COPROCESSOR</h2>
+<h1>JOSEPH MAURER</h1>
+<p>
+<i>The Macintosh&#174; Coprocessor Platform</i>TM<i> provides a foundation for connectivity<br>
+products such as the Serial NB Card, the TokenTalk NB Card, and the Coax- Twinax<br>
+Card. Its operating system is A/ROSE, the Apple Real-time Operating System<br>
+Environment. This article introduces you to the Macintosh Coprocessor Platform and<br>
+A/ROSE, and gives you a taste of what is involved in developing a connectivity product<br>
+on this foundation.</i>
+</p>
+<p>
+The Macintosh Coprocessor Platform and A/ROSE together provide a hardware and<br>
+software foundation for developers who want to create NuBus TM add-on cards for the<br>
+Macintosh II family of computers. The developer's guide that comes with the kit is a<br>
+hefty 400-page tome. If you're curious about how NuBus cards are built but not<br>
+curious enough to tackle the developer's guide, read on. This article gives you an<br>
+overview of the origins of the Macintosh Coprocessor Platform, its architecture, and<br>
+details of its real-time, multitasking, message-based operating system, A/ROSE. It<br>
+shows you some A/ROSE code. And it shows you how to experiment with some A/ROSE<br>
+applications included on the <i> Developer Essentials</i>&nbsp;&nbsp;disc.
+</p>
+<h2>HOW IT ALL BEGAN</h2>
+<p>
+When development of various networking and communications products for the<br>
+Macintosh II started at Apple, around 1987, it became obvious that the Macintosh<br>
+Operating System didn't meet these products' needs for processing power and operating<br>
+system capability. After all, the Macintosh OS was designed for human interaction<br>
+rather than for connectivity to mainframe computers. It is not real-time (interrupts<br>
+can be disabled for longer than is acceptable for fast interrupt-driven input/output),<br>
+and it aims to provide a pleasant and efficient graphic user interface, rather than<br>
+processor-intensive I/O handling. The solution was to make an "intelligent"&nbsp;&nbsp;NuBus<br>
+card, with its own 68000 processor, its own working space in RAM, and its own basic<br>
+operating system services; and to design this card not only as a basis for Apple's own<br>
+products, but also as a tool for NuBus expansion card developers. The result was the<br>
+Macintosh Coprocessor Platform. Its operating system, A/ROSE, was designed to<br>
+respond to the needs of connectivity products, complement the capabilities of the Mac<br>
+OS, and yet be generic enough to become the foundation for a new breed of<br>
+message-based, distributed software architectures. The work on A/ROSE started in<br>
+August 1987, and the first version was operational by February 1988.
+</p>
+<p>
+Today, developers can build on this platform in designing products for communications<br>
+and networking, data acquisition, signal processing, or any other heavy-duty<br>
+processing. Time- consuming and/or time-critical tasks can be offloaded from the<br>
+main logic board to a dedicated processor on the NuBus card. This increases the overall<br>
+computational speed, of course, and allows for faster response times in the foreground<br>
+applications. Moreover, unlike the standard Mac OS, A/ROSE provides the real-time<br>
+and multitasking capabilities required for handling multiple communications<br>
+protocols.
+</p>
+<p>
+Nevertheless, A/ROSE on a Macintosh Coprocessor Platform still depends on the Mac<br>
+OS (and its limitations--see Technical Note #221) for transferring large amounts of<br>
+data across the NuBus through a driver to a Macintosh application. This means that<br>
+ample data buffering (and careful error handling) should be provided on the card if the<br>
+project requires high-performance data transfers. As you'll see in the next section,<br>
+the card provides plenty of room for large buffers.
+</p>
+<h2>THE MACINTOSH COPROCESSOR PLATFORM UP CLOSE</h2>
+<p>
+The most prominent feature of the&nbsp;&nbsp;Macintosh Coprocessor Platform card is all the<br>
+empty space on it, inviting hardware developers to heat up their soldering irons and to<br>
+put plenty of advanced hardware on it. A complete master-slave NuBus interface comes<br>
+for free, implemented by means of two chunky Texas Instruments ASICs<br>
+(application-specific integrated circuits), 2441 and 2425. This interface manages to<br>
+give the on-board MC68000 access to the whole 32-bit NuBus address space (by<br>
+means of an address extension register). Conversely, the 24-bit address space of the<br>
+local MC68000 can be accessed directly from across the NuBus. Custom hardware on<br>
+the card can be enabled to take over the 68000 bus and even go to the NuBus, but<br>
+A/ROSE tasks usually take care of servicing chips on the board, and communicate with<br>
+the higher levels of the software design.
+</p>
+<p>
+<img src="img/135.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1</b> The Macintosh Coprocessor Platform Card
+</p>
+<p>
+<img src="img/136.gif" width="344 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> Memory Map of the Macintosh Coprocessor Platform With A/ROSE Running
+</p>
+<p>
+The MC68000 on the Macintosh Coprocessor Platform card runs at 10 MHz (the<br>
+NuBus clock speed) without wait states. Standard 512K of dynamic RAM is expandable<br>
+up to 4M. Two 32K EPROMs contain the declaration ROM code needed to make the<br>
+SlotManager happy, plus some pieces of code to help the MC68000 out of a Reset and to<br>
+provide low-level diagnostic routines. The card also carries a programmable timer,<br>
+used by A/ROSE for scheduling time-sliced tasks.
+</p>
+<h2>A/ROSE UP CLOSE</h2>
+<p>
+A/ROSE is a minimal, multitasking, distributed, message-based operating system.<br>
+Here's what this means, in real terms:
+</p>
+<p>
+<b>It's minimal: </b>The module that provides basic A/ROSE functionality, the A/ROSE<br>
+kernel, fits into 6K; and a complete standard configuration of A/ROSE on a NuBus card<br>
+amounts to only 23K of code and takes up only about 48K of buffer space. This leaves<br>
+more than 400K for your code on a standard 512K RAM card. Still, as you will see,<br>
+A/ROSE is a strong software platform to build on.
+</p>
+<p>
+<b>It's multitasking: </b>A/ROSE does pre-emptive multitasking, with round-robin task<br>
+scheduling (taking 32 priority levels into account).
+</p>
+<p>
+<b>It's real-time:</b> A/ROSE offers 110 microseconds context switch time, with 20<br>
+microseconds of latency (guaranteed interrupt response time).
+</p>
+<p>
+<b>It's distributed and message-based:</b> The A/ROSE software can be present on<br>
+several cards, and it is completely autonomous and independent on each card. Tasks<br>
+defined by users and by A/ROSE communicate with each other, even across the NuBus<br>
+to other slots or the Mac &#174; OS, by means of messages. These messages can carry<br>
+pointers to data buffers along with them. Thousands of such messages can be passed per<br>
+second (fastest from task to task within a card, and slower, of course, between<br>
+different slots).
+</p>
+<p>
+The A/ROSE kernel is responsible for task scheduling, interprocess communication,<br>
+and memory management. The calls that correspond to these responsibilities are shown<br>
+in Table 1. The standard configuration also includes utilities for bookkeeping and timer<br>
+services. These utility functions are carried out by the A/ROSE managers: the Name<br>
+Manager, the InterCard Communication Manager, the Remote System Manager, the<br>
+Echo Manager, the Timer Library, the Trace Manager, and the Print Manager.
+</p>
+<p>
+<b>Table 1</b><br>
+The Ten A/ROSE Primitives
+</p>
+<p><table border="0"><tr><td><b>Name</b></td><td><b></b><b>Description</b></td></tr>
+<tr><td>AROSEFreeMem()</td><td>Frees a block of memory*</td></tr>
+<tr><td>FreeMsg()</td><td>Frees a message buffer*</td></tr>
+<tr><td>AROSEGetMem()</td><td>Allocates a block of memory*</td></tr>
+<tr><td>GetMsg()</td><td>Allocates a message buffer*</td></tr>
+<tr><td>Receive()</td><td>Receives a message+</td></tr>
+<tr><td>Reschedule()</td><td>Changes a task's scheduling mode</td></tr>
+<tr><td>Send()</td><td>Sends a message*</td></tr>
+<tr><td>SpI()</td><td>Sets the hardware priority level</td></tr>
+<tr><td>StartTask()</td><td>Initiates a task</td></tr>
+<tr><td>StopTask()</td><td>Stops a task</td></tr></table></p>
+<p>
+<b>Notes:</b><br>
+* Implemented in A/ROSE Prep with the same parameters.<br>
++ Implemented in A/ROSE Prep with a supplementary parameter.
+</p>
+<p>
+The A/ROSE architecture, shown in Figure 3, is completed by A/ROSE Prep, a version<br>
+of A/ROSE that runs on the main CPU under the Macintosh Operating System and that is<br>
+necessary to establish communication between the Mac OS and A/ROSE. The A/ROSE<br>
+Prep file has the file type INIT, and contains among its numerous resources a DRVR<br>
+named .IPC (for interprocess communication), and an INIT that executes at INIT31<br>
+time and basically installs and opens the .IPC driver. The .IPC driver takes care of the<br>
+communication of Mac OS processes with A/ROSE tasks. Nothing can be downloaded to<br>
+the Macintosh Coprocessor Platform if the A/ROSE Prep file is not in the System<br>
+Folder: it contains card-dependent information needed for the download routines to<br>
+succeed. The programming interface to the .IPC driver (described in the A/ROSE<br>
+header files arose.h, os.h, managers.h, iccmDefs.h, ipcGDefs.h, and provided through<br>
+the library IPCGlue.o) mimics that of A/ROSE itself as closely as possible, providing<br>
+the look and feel of A/ROSE even if there is no A/ROSE around. More practically<br>
+speaking, with the A/ROSE Prep file in your System Folder, you can do a lot of<br>
+interesting A/ROSE experiments even without a Macintosh Coprocessor Platform. For<br>
+your convenience, the A/ROSE Prep file is included in the A/ROSE folder on the<br>
+accompanying <i>Developer Essentials </i>&nbsp;&nbsp;disc.
+</p>
+<p>
+<img src="img/137.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 3</b> The Architecture of A/ROSE
+</p>
+<h2>WHAT'S THIS ABOUT MESSAGES AND TASKS?</h2>
+<p>
+Interprocess communication in A/ROSE takes place by means of messages passed back<br>
+and forth between tasks. A typical example consists of a client/server relationship<br>
+between A/ROSE program modules, as illustrated in Figure 4 on the next page. 
+</p>
+<p>
+&nbsp;The client task needs to know that the required server task exists; thus, the server<br>
+task is initialized before the client task. Next, the client task issues a<code> GetMsg() </code>call<br>
+to request a message buffer from a preallocated pool of message buffers that is<br>
+maintained by A/ROSE and the size of which is specified by the user. After the message<br>
+is filled with addressing information, command codes, and parameters, it is sent to the<br>
+server task. At this point, the sending task loses rights to the message buffer, and<br>
+should not use it again until it comes back through a<code> Receive() </code>call. On the other<br>
+side, the server task usually sits in an infinite loop, waiting for messages requesting a<br>
+service, handling these requests, and sending replies.
+</p>
+<p>
+<img src="img/138.gif" width="491 px"></img>
+</p>
+<p>
+<b>Figure 4</b> How Interprocess Communication Takes Place in A/ROSE
+</p>
+<p>
+&nbsp;After receiving the reply, the client task can reuse the message buffer for subsequent<br>
+requests, or release the buffer by means of a FreeMsg() call and go ahead with other<br>
+business.
+</p>
+<p>
+&nbsp;A message provides up to 24 bytes of user data, and is fixed length and asynchronous.<br>
+If the data to be sent does not fit into the message proper, then it can be put anywhere<br>
+in the sender's memory and the address and size of the data area can be passed in the<br>
+message.
+</p>
+<p>
+&nbsp;Each message is identified by a message ID and a message code. The message code is<br>
+defined by agreement between the sender and the receiver. A convention followed in<br>
+A/ROSE is for outgoing messages to use an even-numbered code and for replies to those<br>
+messages to set the code to the next odd number.
+</p>
+<p>
+&nbsp;The structure of an A/ROSE message is shown in Figure 5.
+</p>
+<p>
+<img src="img/139.gif" width="239 px"></img>
+</p>
+<p>
+<b>Figure 5</b> The Structure of an A/ROSE Message (54 Bytes) In C, the messsage<br>
+structure is declared as follows:
+</p>
+<pre>struct mMessage {
+    struct mMessage *mNext;    
+                             /* Used to chain messages internally. */
+    long            mId;       /* Unique identifier for a message. */
+    short           mCode;     /* User-defined message code. */
+    short           mStatus;   /* Message return status. */
+    unsigned short  mPriority; /* Range is 0 (low) to 31 (high). */
+    tid_type        mFrom;     /* Task ID of task sending message. */
+    tid_type        mTo;      
+                         /* Task ID of task to which msg. is sent. */
+    unsigned long   mSData[3];
+                         /* Used for sender's private information. */
+    unsigned long   mOData[3];
+                            /* Used by receiver to send data back. */
+    long            mDataSize;
+                         /* Size of data to which mDataPtr points. */
+    char            *mDataPtr; /* Pointer to variable length data. */
+};</pre>
+<p>
+&nbsp;Tasks in A/ROSE accept and reply to messages. A task is identified to A/ROSE by a task<br>
+ID, which is a 32-bit field of type tid_type. Each task also has an associated name and<br>
+type that is readable by humans. This is very close to the NameBinding protocol of<br>
+AppleTalk in spirit and implementation.
+</p>
+<p>
+&nbsp;Tasks are started with a call to the A/ROSE<code> StartTask()</code> primitive. Tasks have one of<br>
+32 priority levels, with level 31 as the&nbsp;&nbsp;highest priority and level 0 as the lowest.<br>
+Tasks run either in slice&nbsp;&nbsp;mode or in run-to-block mode. In slice mode, a task runs for<br>
+one&nbsp;&nbsp;major tick (about 50 milliseconds), and then relinquishes control of&nbsp;&nbsp;the CPU to a<br>
+task of higher or equal priority, if one is available. In&nbsp;&nbsp;run-to-block mode, a task<br>
+runs until it is blocked or until it&nbsp;&nbsp;completes. A task becomes blocked if it issues a<br>
+<code>Receive() </code>call for&nbsp;&nbsp;a message that is not available. New tasks are scheduled for<br>
+execution&nbsp;&nbsp;in the order of priority; a task is run only if no eligible tasks of higher <br>
+priority are waiting.
+</p>
+<h2>THE A/ROSE MANAGERS</h2>
+<p>
+A manager in A/ROSE is just another task, which does its job in accepting and replying<br>
+to messages with predefined message codes. As mentioned earlier, the A/ROSE<br>
+managers are the Name Manager, the InterCard Communication Manager, the Remote<br>
+System Manager, the Echo Manager, the Timer Library, the Trace Manager, and the<br>
+Print Manager. The first four are discussed in greater detail here. Use of the Name<br>
+Manager and the InterCard Communication Manager is demonstrated in the sample<br>
+program ShowTasks and in "Building a Download File," later in this article.
+</p>
+<p>
+<b>THE NAME MANAGER</b><br>
+The Name Manager maintains a cross-reference between task IDs and their associated<br>
+name and type. User tasks can register themselves with the Name Manager by<br>
+specifying an object name and an object type, and then other tasks that need to refer to<br>
+this task can look up the task by name and type by calling the A/ROSE<code> Lookup_Task()</code><br>
+utility. Conversely, for a given task ID, the Name Manager brings back the object name<br>
+and object type if you send it a message with <code> mCode = NM_LOOKUP_NAME.</code>
+</p>
+<p>
+The Name Manager also provides notification services. These services include signaling<br>
+when a NuBus card is shut down or started up, checking to see if a task is present or<br>
+not, and signaling when a task terminates.
+</p>
+<p>
+<b>THE INTERCARD COMMUNICATION MANAGER</b><br>
+The InterCard Communication Manager (ICCM) enables user tasks to communicate<br>
+with tasks on other NuBus cards or on the main logic board. There are only three<br>
+message codes a user task may send to the ICCM: <code>ICC_GETCARDS</code>, <code>ICC_DETACH</code>, and<br>
+<code>ICC_ATTACH</code>.
+</p>
+<p>
+<code>ICC_GETCARDS </code>returns a long integer for each of the sixteen possible NuBus slots. A<br>
+positive number represents the task ID of the Name Manager running under A/ROSE on<br>
+a Macintosh Coprocessor Platform card. For slot = 0, this is the task ID of the Name<br>
+Manager incorporated in A/ROSE Prep, under the Macintosh OS. The task ID of a Name<br>
+Manager is required to look up specific tasks on any card on the NuBus.
+</p>
+<p>
+The message codes<code> ICC_DETACH </code>and<code> ICC_ATTACH </code>are provided for NuBus cards that<br>
+get power from a source other than the NuBus, so that when the power to the Macintosh<br>
+main logic board is turned off, the NuBus card continues to function. With these<br>
+message codes, you can delink the NuBus card from the outside world, thus preventing<br>
+access over the NuBus.
+</p>
+<p>
+<b>THE REMOTE SYSTEM MANAGER</b><br>
+The Remote System Manager running on a NuBus card enables tasks running on any<br>
+other NuBus card or the main processor to execute certain A/ROSE primitives<br>
+remotely. The A/ROSE primitives<code>A/ROSEGetMem()</code>,<code> A/ROSEFreeMem()</code>,<br>
+<code>StartTask()</code>,&nbsp;&nbsp;and<code> StopTask()</code>are supported, enabling tasks to be downloaded,<br>
+started, and stopped dynamically. The Remote System Manager registers itself with the<br>
+Name Manager with the name RSM and the type RSM.
+</p>
+<p>
+<b>THE ECHO MANAGER</b><br>
+The Echo Manager echoes all messages sent to it. This can be very useful in the initial<br>
+stages of testing A/ROSE applications.
+</p>
+<h2>DOWNLOADING TO THE CARD</h2>
+<p>
+All code running on a NuBus card is downloaded to the card's memory from the main<br>
+logic board. Code can be downloaded statically or dynamically, to one or multiple cards.
+</p>
+<p>
+In static downloading, the user builds the entire memory image of the application to be<br>
+run on the card by linking the code with A/ROSE object files. The main program is<br>
+user code; it calls<code>osinit() </code>to initialize A/ROSE and<code> osstart() </code>to start the<br>
+operating system. Before starting the operating system, the main program must start<br>
+all the necessary managers and user tasks. The memory image is downloaded onto the<br>
+NuBus card using the static downloading facility, which halts the card, downloads the<br>
+code, and starts the card again.
+</p>
+<p>
+In dynamic downloading, the user downloads a generic version of A/ROSE onto a NuBus<br>
+card by invoking<code> StartAROSE()</code>.&nbsp;&nbsp;Once the A/ROSE kernel and requisite managers are<br>
+up and running, the user can download tasks using the dynamic downloading facility.
+</p>
+<p>
+A/ROSE provides a number of ways to download the code. The MPW tool Download takes<br>
+the pathname of a file as parameter, and tries to download it to every Macintosh<br>
+Coprocessor Platform card it finds (if used without the optional slot parameter ). This<br>
+is convenient during the development cycle under MPW. Another possibility is to use<br>
+the Macintosh application ndld. Finally, you can use the<code> NewDownload() </code>routine<br>
+directly from within your own application. (See the sidebar on the next page for a<br>
+description of Download and ndld.)
+</p>
+<h2>SOME SAMPLES OF A/ROSE PROGRAMMING</h2>
+<p>
+You'll find some samples of A/ROSE programming in the A/ROSE folder on the <br>
+<i>Developer Essentials</i> disc.&nbsp;&nbsp;You can run these applications under MultiFinder after<br>
+booting with A/ROSE Prep in the System Folder. With the exception of the downloading<br>
+operation, all these applications will run whether or not your machine has a<br>
+Macintosh Coprocessor Platform card installed.
+</p>
+<p>
+You can take a closer look at the complete source code on the <i> Developer Essentials </i><br>
+disc. I'll show and discuss some fragments of it here.
+</p>
+<p>
+<b>TASKSAMPLE AND CLIENTAPPLI</b><br>
+The TaskSample application opens a window and waits for A/ROSE messages. The<br>
+ClientAppli application looks for a server named myTaskName and sends a message on<br>
+each button-click. The server TaskSample simply returns each message it receives to<br>
+the sender, and ClientAppli displays the number of messages it has sent and received. 
+</p>
+<p>
+To experiment with producing alerts or error messages, launch both applications,<br>
+then quit TaskSample and continue sending messages to it; restart it again and<br>
+continue; or hit Command-Q immediately after the Send button, so that ClientAppli has<br>
+gone by the time TaskSample sends the reply.
+</p>
+<p>
+If you run the applications, you will notice a certain delay in messages being passed<br>
+back and forth. This has to do with the SleepTime value (selected in the SleepTime<br>
+menu), which is passed to the<code>WaitNextEvent() </code>call under MultiFinder. In the two<br>
+sample programs, the A/ROSE Prep<code>Send() </code>and<code> Receive() </code>services are called only<br>
+once at each tour through the event loop. Depending on the SleepTime value, the<br>
+background application more or less slows down, and this explains the delay observed<br>
+on the screen.
+</p>
+<p>
+<b>SHOWTASKS</b><br>
+ShowTasks is a tool that shows all the A/ROSE tasks that are "visible" in the machine<br>
+(there might be "invisible" A/ROSE tasks, too). It goes through all sixteen NuBus<br>
+slots, looks for all visible tasks, and displays them by task identifier, object name,<br>
+and object type. Sample output of this program might look like the following (which<br>
+reflects the situation where TaskSample and ClientAppli are running):
+</p>
+<pre>slot = $0 :
+00000003: name "echo manager", type "echo manager"
+00000004: name "myTaskName", type "myTaskType"
+00000005: name "ClientApp", type "ClientType"</pre>
+<p>
+This indicates that there are no A/ROSE tasks running on a NuBus card at this time;<br>
+slot $0 represents the good old main logic board where the A/ROSE Prep driver does<br>
+its best to make us believe that there is an instance of A/ROSE.
+</p>
+<p>
+Now let's look at some of the source code. For the sake of clarity in the following<br>
+fragments, error handling is completely suppressed. Needless to say, nobody should<br>
+ever try to compile this sort of code! The source code on the CD gives a more realistic<br>
+idea of A/ROSE programming.&nbsp;&nbsp;Here are the outlines of<code> main() </code>and the two basic<br>
+subroutines<code> AskICCM() </code>and<code> NameLookup()</code>, with explanatory text following the code:
+</p>
+<pre>static tid_type cards[16];  // Place for 4 bytes per slot.
+main()
+{
+    short   slot, index;
+    tid_type    tid;
+
+    (void) OpenQueue(nil);  // Set up a message queue for me.
+    AskICCM(); 
+         // Request Name Manager TID for each slot, store in cards[].
+    for (slot=0; slot&lt;16; slot++) {
+        if (cards[slot] &gt; 0) { // Name Manager TID is OK.
+            printf("\nSlot = $%X :\n",slot);
+            index = 0;
+            while (tid = Lookup_Task("=", "=",
+                   cards[slot], &amp;index))
+            // Ask Name Manager for info about registered tasks.
+            NameLookup(cards[slot], tid);
+        }
+    }
+    CloseQueue(); // Be nice with A/ROSE Prep.
+} // End main().
+
+void AskICCM()
+{
+    mMessage    *m;
+       
+    m = GetMsg();
+   
+    m-&gt;mTo       = GetICCTID();
+    m-&gt;mCode     = ICC_GETCARDS;
+    m-&gt;mDataPtr  = (char *) cards;
+    m-&gt;mDataSize = sizeof (tid_type) * 16;
+    Send(m);
+    m = Receive(OS_MATCH_ALL, OS_MATCH_ALL, ICC_GETCARDS+1,
+        OS_NO_TIMEOUT, 0);
+    // SlotInfo is now in cards[0..15] (if nothing failed!).
+    FreeMsg(m);
+} // End AskICCM().
+
+#define bufferSize 512
+void NameLookup(tid_type ntid, tid_type tid)
+// ntid = Name Manager TID.
+// tid = ID of the task for which we request the name.
+{
+    struct pb_lookup_name   *lnam_ptr; // (See text.)
+    char                    buffer[bufferSize];
+    mMessage                *m;
+   
+    m = GetMsg();
+    m-&gt;mTo       = ntid;
+    m-&gt;mCode     = NM_LOOKUP_NAME;
+    m-&gt;mDataPtr  = buffer;
+    m-&gt;mDataSize = bufferSize;
+    lnam_ptr        = (pb_lookup_name *) &amp;buffer;
+    lnam_ptr-&gt;lnm_index  = 0;
+    lnam_ptr-&gt;lnm_tid    = tid;
+    lnam_ptr-&gt;lnm_RAsize = bufferSize -
+                    (sizeof(pb_lookup_name) - sizeof(ra_lnm));
+    Send(m);
+    m = Receive (OS_MATCH_ALL, OS_MATCH_ALL, NM_LOOKUP_NAME+1,
+                                     OS_NO_TIMEOUT, nil);
+    DisplayTaskInfo(lnam_ptr); // Lots of silly string handling.
+    FreeMsg(m);
+} // End NameLookup().</pre>
+<p>
+The<code> OpenQueue() </code>call is needed to make use of the A/ROSE Prep services; it takes a<br>
+procedure pointer as parameter. If a procedure is specified, it gets called repeatedly<br>
+during a blocking<code>Receive() </code>request,&nbsp;&nbsp;which avoids blocking the machine during<br>
+waiting. In our case, we don't use blocking receives, and don't need this feature. By the<br>
+way,<code> OpenQueue() </code>returns a task identifier that will be ours for the rest of the<br>
+process.
+</p>
+<p>
+We have to deal with the InterCard Communication Manager, in<code>AskICCM()</code>,&nbsp;&nbsp;and the<br>
+Name Manager, indirectly in<code>Lookup_Task() </code>and directly in<code> NameLookup()</code>.&nbsp;&nbsp;First,<br>
+we want to ask the InterCard Communication Manager what it knows about the sixteen<br>
+NuBus slots. Naturally, we send a message.The local variable<code> m </code>is declared as a<br>
+pointer to the<code> struct mMessage </code>(note the spelling, in order to distinguish it from<br>
+the<code>message </code>field in an EventRecord). The<code> GetMsg() </code>call, one of the ten A/ROSE<br>
+primitives, is in this case an A/ROSE Prep service.<code>GetMsg() </code>returns a pointer to<br>
+this message structure, which has already been partially initialized:<code> mId </code>is a<br>
+statistically unique identification number for the particular message, and<code> mFrom </code>has<br>
+already been filled in with the sender's task ID (the number returned by<br>
+<code>OpenQueue()</code>, or by the utility<code> GetTID())</code>.
+</p>
+<p>
+We need to identify the addressee in the<code> mTo </code>field and we need to specify<code> mCode =</code><br>
+<code>ICC_GETCARDS </code>(this constant is defined in the include file managers.h) in order to<br>
+request information about Macintosh Coprocessor Platform cards in the machine. On<br>
+receiving a message with this<code> mCode</code>, the ICCM expects in<code> mDataPtr </code>a pointer to 64<br>
+bytes (according to<code> mDataSize)</code>, and fills the array cards[0..15] of tid_type for each<br>
+slot with a value
+</p>
+<ul>
+<li> &lt;0, if there is no Macintosh Coprocessor Platform card at all, or no ICCM</li>
+<li> =0, if there is an ICCM but no Namer Manager</li>
+<li> &gt;0, if there is an ICCM and a Name Manager; the value is the Name<br>
+Manager's TID</li>
+</ul>
+<p>
+The rest is easy: For each Name Manager TID, a repeated call to<code>Lookup_Task()</code><br>
+returns successively all identifiers of tasks that registered correctly with the Name<br>
+Manager. The variable<code> index</code>is initially set to zero and then passed by address; it is an<br>
+internal value that must be passed back to A/ROSE unchanged on subsequent calls to<br>
+<code>Lookup_Task()</code>. This call is an example of an A/ROSE utility call, which hides the<br>
+underlying mechanism of sending a message with a specific<code> mCode </code>and<code> mDataPtr </code>to a<br>
+manager, and getting the result back through a<code> Receive() </code>call.
+</p>
+<p>
+Sending a message now to the Name Manager in the current slot with<code> mCode =</code><br>
+<code>NM_LOOKUP_NAME </code>and with<code> mDataPtr</code>pointing to an appropriate buffer, brings back<br>
+the object name and type name of the task, which is finally displayed.
+</p>
+<p>
+<b>BUILDING A DOWNLOAD FILE</b><br>
+To download code to a NuBus card, you have to build a code resource. I will reproduce<br>
+and discuss the required code (file osmain.c) in a simplified form here.
+</p>
+<pre>main ()
+{
+    struct ST_PB stpb, *pb; // Start parameter block.
+
+    // Init OS with cMaxMsg messages and cStackOS stack.
+    osinit (cMaxMsg, cOSStack);
+   
+    pb = &amp;stpb;
+   
+    StartNameServer(pb);        // The Name Manager.
+    StartICCManager(pb);        // You guess it!
+    StartmyTask(pb);            // And our sample task.
+    // Start all other required managers and tasks.
+
+    // Start operating system.
+    osstart (TICK_MIN_MAJ, TICKS_PS);
+    // Should never get here!
+} // Main().
+
+void StartmyTask(struct ST_PB *pb)
+{
+    pb-&gt;CodeSegment = 0;
+    pb-&gt;DataSegment = 0;
+    pb-&gt;StartParmSegment = 0;
+    pb-&gt;InitRegs.A_Registers [5] = GetgCommon() -&gt; gInitA5;
+    pb-&gt;ParentTID = GetTID();
+    pb-&gt;stack = 4096;
+    pb-&gt;heap = 0;
+    pb-&gt;priority = 10;
+    pb-&gt;InitRegs.PC = myTask; // Entry point of myTask.
+    if (StartTask (pb) == 0)     // If the task does not get started,
+        illegal ();              // go debugging.
+}</pre>
+<p>
+The routines <code>StartNameServer(pb) </code>and<code>StartICCManager(pb) </code>are quite similar<br>
+(except for slight variations in some parameters and the priority level)<br>
+to<code>StartmyTask(pb)</code>.&nbsp;&nbsp;So this is the code that will be downloaded to the card. The calls<br>
+<code>osinit() </code>and<code> osstart() </code>are only meaningful in this context of an initial load of the<br>
+card. The first call takes two parameters whose default values are<code> cMaxMsg = 500</code><br>
+(maximum number of available message buffers) and<code> cOSStack = 4096 </code>(size of OS<br>
+stack). In many cases, the<code> cMaxMsg </code>value in particular can be safely diminished,<br>
+which allows optimization of memory usage on the card. The second call,<code> osstart</code><br>
+<code>(TICK_MIN_MAJ, TICKS_PS)</code> launches A/ROSE, with default values for the number of<br>
+time-slicing ticks per second, and for a subdivision of major ticks into minor ticks.
+</p>
+<p>
+&nbsp;In between these two calls, all other required tasks need to be initialized by means of<br>
+their start parameter block; the required minimum consists of the Name Manager task<br>
+(the linker finds its code under the name<b><code> name_server </code></b>in the library OS.o), and<br>
+the InterCard Communication Manager task (again, its code is in OS.o). In our<br>
+example, we added our own<code> myTask</code>, whose source code file is compiled separately<br>
+(compare this with the routine<code> TaskProcessing() </code>in the TaskSample program):
+</p>
+<pre>static  char    my_object_name [] = "myTaskName";
+static  char    my_type_name []  = "myTaskType";
+
+void myTask()
+// All it does at this point is to register with the Name Manager
+// (in order to be recognized by possible clients looking for it)
+// and then just send back the messages it receives.
+{
+    mMessage *m;
+   
+    if (!Register_Task (my_object_name, my_type_name,
+            Machine_Visible))
+        illegal (); // Go debugging: something mysterious happened.
+                   
+    while(1)    // Forever !
+    {
+    m = Receive(OS_MATCH_ALL, OS_MATCH_ALL, OS_MATCH_ALL,
+            OS_NO_TIMEOUT);
+    if (m) {
+        if (m-&gt;mStatus != 0) { 
+            // What happened? A real program would investigate but
+            // we'll just get rid of it here
+            FreeMsg(m);
+           }
+
+        else {
+            switch (m-&gt;mCode)    {
+            case DUMMYCODE:
+                // Is there something to do with this message?
+                break;
+       
+    // Handle here all the message codes you specified in your
+    // design.
+           
+            default:
+                m-&gt;mCode |= 0x8000;  // Unrecognized message code;
+                m-&gt;mStatus = OS_UNKNOWN_MESSAGE;
+                                // defined in "managers.h."
+                break;
+            } // Switch.
+
+            // Send message back.
+            SwapTID(m); // Swap mFrom and mTo fields.
+            m-&gt;mCode++;  // Response is one greater, by convention.
+            Send (m);
+            }   // Message status was OK.
+        }   // There was a message.
+    }   // While.
+}   // End myTask().</pre>
+<p>
+Finally, we need to put everything together. The following MPW shell commands do the<br>
+trick. Adopting the convention on the A/ROSE distribution disks, we'll use the filename<br>
+Start for what we will download. I recommend defining the MPW shell variables<br>
+<b><code>AROSE</code></b>, <b><code>AROSEBin</code></b>,&nbsp;&nbsp;and<b><code> AROSEIncl </code></b> in a UserStartup file, which holds the<br>
+corresponding folder pathnames.
+</p>
+<pre>C osmain.c -i "{AROSEIncl}"
+C myTask.c -i "{AROSEIncl}"
+Link -t 'DMRP' -c 'RWM ' &#8706;
+    -o start &#8706;
+    osmain.c.o &#8706;
+    myTask.c.o &#8706;
+    "{AROSEBin}"OS.o &#8706;
+    "{AROSEBin}"osglue.o</pre>
+<p>
+Finally, we need to download the file to the available Macintosh Coprocessor Platform<br>
+cards in your machine, by means of the Download tool:
+</p>
+<pre>"{AROSE}Downloader:Download" start</pre>
+<p>
+The tool should reply with
+</p>
+<pre>Segment of size 00000040 is downloaded
+Segment of size 00000054 is downloaded
+Segment of size 00004D44 is downloaded</pre>
+<p>
+Now it's time to come back to our tool ShowTasks:
+</p>
+<pre>showtasks
+
+slot = $0 :
+$00000003: name "echo manager", type "echo manager"
+
+slot = $D :
+$0D000001: name "name manager", type "name manager"
+$0D000003: name "myTaskName", type "myTaskType"</pre>
+<p>
+. . . and to go ahead and send messages to myTask on a Macintosh Coprocessor Platform<br>
+card. To try this, launch ClientAppli again, but this time without the TaskSample<br>
+application running. ClientAppli now finds the "server" named
+</p>
+<pre> myTaskName</pre>
+<p>
+in its slot, and messages sent to it are returned as expected.
+</p>
+<p>
+<b>A MANDELBROT SETS EXERCISE</b><br>
+The downloaded file in the Macintosh Coprocessor Platform card works, but it gets<br>
+boring fast: our server task is quite lazy, and doesn't do anything besides echoing our<br>
+messages. For a more interesting programming exercise, open the MCPMB folder. The<br>
+program you'll find there computes Mandelbrot (MB) sets in parallel processing,<br>
+involving as many Macintosh Coprocessor Platform cards as you can put into your<br>
+machine.
+</p>
+<p>
+For each line to be computed, a message is sent to an MBTask, carrying along the<br>
+required parameters and a pointer to where the line fits into the bitmap. The MBTask<br>
+allocates a local buffer each time (for pedagogical reasons, I didn't optimize the design<br>
+too much) and sends the computed data back over the NuBus by means of a NetCopy()<br>
+call. Have a look at the source code on the CD, play with it, and let me know what you<br>
+did to improve on the error handling and some other flaws in it.
+</p>
+<h2>THAT'S ALL, FOLKS . . . </h2>
+<p>
+This article has given you an idea of how to find your way around the Macintosh<br>
+Coprocessor Platform and A/ROSE. You now know something about the origins,<br>
+architecture, and implementation of this generic hardware and software foundation,<br>
+and have seen some samples of A/ROSE programming. If you want to go on from here,<br>
+the<i> APDAlog &#174;</i>&nbsp;&nbsp;contains everything you need to know to order the complete Macintosh<br>
+Coprocessor Platform Developer's Kit, or the A/ROSE Software Kit, or just the<br>
+<i>Macintosh Coprocessor Platform Developer's Guide.</i>
+</p>
+<h2>TOKENTALK AND A/ROSE</h2>
+<p>
+by Anumele Raja
+</p>
+<p>
+TokenTalk&#174; is a typical application that runs under A/ROSE on an intelligent NuBus<br>
+card. The following is a brief description of the TokenTalk hardware and how TokenTalk<br>
+uses A/ROSE.
+</p>
+<p>
+<b>THE HARDWARE AND SOFTWARE</b><br>
+The TokenTalk NB card is the intelligent NuBus card that implements the Token Ring<br>
+interface. The card consists of a 68000 processor and a Token Ring interface chip set<br>
+made by Texas Instruments. The card's foundation is the Macintosh Coprocessor<br>
+Platform. Besides TokenTalk, the card can also run MacAPPCTM, MacDFT&#174;, and<br>
+MacSMB file transfer programs.
+</p>
+<p>
+The Token Ring interface chip set is controlled by a program called Logical Link<br>
+Control (LLC) that also implements the Token Ring protocol. LLC runs as a task under<br>
+A/ROSE.
+</p>
+<p>
+TokenTalk itself is an A/ROSE task that serves as the interface between programs<br>
+running on the Macintosh and the LLC task. This task can be replaced by another task to<br>
+implement other protocols like SNA.
+</p>
+<p>
+<b>THE DOWNLOAD PROCESS</b><br>
+When the user selects the TokenTalk device on the Network control panel, a resource<br>
+file called TokenTalk Prep is loaded into the Macintosh and executed. TokenTalk Prep<br>
+first finds a TokenTalk card, downloads A/ROSE if it is not already running on the card,<br>
+and downloads the LLC task onto the card. The TokenTalk part of the AppleTalk device<br>
+driver downloads the card part of the TokenTalk task by using TokenTalk Prep<br>
+utilities, and starts the task.
+</p>
+<p>
+Sound complicated? Let's take the operation sequence at a slower pace.
+</p>
+<p>
+On the Macintosh side of TokenTalk, the operation sequence is as follows:
+</p>
+<ol>
+<li>The user selects TokenTalk on the Network  control panel.</li>
+<li>The TokenTalk Prep file is loaded and started.</li>
+<li>TokenTalk Prep makes sure that A/ROSE Prep is running on the<br>
+Macintosh, and searches for a TokenTalk card by calling the<code>NewFindcard()</code><br>
+routine. If a TokenTalk card is found, TokenTalk Prep checks to see if A/ROSE<br>
+is already running on that card by looking for a Name Manager. If A/ROSE is<br>
+not running, TokenTalk Prep downloads onto the card a version of A/ROSE that<br>
+includes the Name Manager, the InterCard Communication Manager, the<br>
+Remote System Manager, and the Echo Manager. It then does<br>
+a<code>Lookup_Task()</code>to find the LLC task. This task controls the Token Ring<br>
+interface chip set and handles interrupts. If the LLC task is not found, it<br>
+downloads the LLC task using the<code>DynamicDownload()</code> call.</li>
+<li>The Network CDev then talks to the TokenTalk driver to activate<br>
+TokenTalk. The TokenTalk driver, which resides on the Macintosh, is the<br>
+interface between AppleTalk and the TokenTalk card. It operates by sending<br>
+control commands and data to the TokenTalk task on the card and receiving<br>
+status information and data. </li>
+<li>The TokenTalk driver downloads the TokenTalk task to the NuBus card.</li>
+</ol>
+<p>
+On the TokenTalk card side of TokenTalk, the operation sequence is as follows:
+</p>
+<ol>
+<li>When the LLC task is started up, it registers itself with the object name<br>
+LLC and the type name TokenTalk NB by calling the<code> Register_Task()</code><br>
+routine. It then calls the<code> Receive() </code>primitive and waits for messages. In the<br>
+current implementation, the<code> Receive() </code>is issued with a timeout parameter.<br>
+The LLC task runs under run-to-block mode.</li>
+<li>When the TokenTalk task is started up, it registers itself with the object<br>
+name Token Talk 1 and the type name TokenTalk NB by calling the<br>
+<code>Register_Task() </code>routine. The TokenTalk task searches for the LLC task by<br>
+doing a<code> Lookup_Task()</code>. It then waits for messages from the Macintosh to<br>
+start an operation. When requests are received from the Macintosh, the<br>
+TokenTalk task sends commands to the LLC task to carry out the various<br>
+operations. The TokenTalk task does not control any hardware by itself.</li>
+<li>Data is transferred from the Token Ring interface to the memory and vice<br>
+versa by a direct memory access (DMA) mechanism built into the interface<br>
+chip set. An interrupt is generated by the DMA device at the completion of a<br>
+data transfer.</li>
+</ol>
+<p>
+Both the LLC task and the TokenTalk task run with a priority of 30 and allocate a stack<br>
+of 2048 bytes. No heap space is allocated by these tasks. TokenTalk Prep uses the start<br>
+parameter block to pass information to the LLC task. This information specifies the<br>
+TokenTalk address for the node.
+</p>
+<h2>UTILITIES THAT MAKE IT EASIER TO DEVELOP A/ROSE
+PROGRAMS ON THE MACINTOSH</h2>
+<p>
+by Anumele Raja
+</p>
+<p>
+The following Macintosh utilities, included on the A/ROSE distribution disks, facilitate<br>
+development of A/ROSE programs on the Macintosh:
+</p>
+<p>
+<b>Print Manager</b> (nprm) is a Macintosh application that enables users to display<br>
+information from a task running on a Macintosh Coprocessor Platform card. It<br>
+registers itself with A/ROSE by the object name Print Manager and the type name<br>
+Print Manager. Strings to be printed are sent to the Print Manager by the printf<br>
+routine supplied with the A/ROSE release. The first time printf is called, it looks for<br>
+the Print Manager and finds its Task ID. Subsequently, it sends all print strings as<br>
+messages to the Print Manager, which puts up a window and displays the strings it<br>
+receives. Users can display diagnostic messages using printf. Print Manager features<br>
+can also be implemented in a user's program.
+</p>
+<p>
+<b>Dumpcard</b> is an MPW tool that dumps the status of A/ROSE tasks running on any<br>
+NuBus card. Available options display the memory blocks, the messages waiting to be<br>
+received by a task, and the task control blocks of all tasks running under A/ROSE. If<br>
+the card stops for any reason, like a bus error, the user can get a trace of the stack to<br>
+find the calling sequence that caused the exception. In addition, the user can request<br>
+disassembly of instructions around the break point.
+</p>
+<p>
+<b>Download application</b> (ndld) is a Macintosh application&nbsp;&nbsp;used to download A/ROSE<br>
+and/or A/ROSE tasks onto a specified card or cards either statically or dynamically.<br>
+The file selection is done through a standard Get File dialog box.
+</p>
+<p>
+<b>Download</b> is an MPW tool that downloads A/ROSE and/or A/ROSE tasks onto a<br>
+specified card or cards either statically or dynamically. It is useful when the user<br>
+wishes to download code from a shell script.
+</p>
+<p>
+<b>NuBug </b>is a debugging application used to debug A/ROSE programs running on a card.<br>
+NuBug looks and works like MacsBug. All MacsBug commands that are not specific to<br>
+the Mac OS are supported by NuBug. In addition, NuBug provides commands specific to<br>
+A/ROSE, dealing with task status, task names, and such. NuBug is a multiwindow<br>
+application that brings up as many windows as there are NuBus cards capable of<br>
+running A/ROSE. Because NuBug is implemented in C++, it can be enhanced very<br>
+easily.
+</p>
+<p>
+Users can look forward to a new, we hope official, version of NuBug very soon. The<br>
+current release of NuBug has not been tested formally and is not supported by Apple.<br>
+Still, programmers find it so&nbsp;&nbsp;helpful that they don't seem to mind if they encounter&nbsp;&nbsp;a<br>
+few glitches.
+</p>
+<p>
+<b>JOSEPH MAURER,</b> an 18-month Apple veteran, studied mathematics and theoretical<br>
+physics at universities in Munich and Nice.&nbsp;&nbsp;Since then he's led a varied but somewhat<br>
+theoretical life, which has included being a ballet school piano player, bicycle racer<br>
+(champion of lower Bavaria!), math researcher, mountain climber, university<br>
+professor, and Apple European technical support and training guru (you can decide for<br>
+yourself if that one's theoretical or not).&nbsp;&nbsp;All in all, Joseph is basically a man of<br>
+numbers: he has one wife, two Macintosh computers, three bicycles, and four children.<br>
+He says he wants more Macs and more racing bikes (the ones he has are "slowing<br>
+down"), but refuses to comment on wanting more wives and/or children. *
+</p>
+<p>
+<b>Thanks to Our Technical Reviewers</b>Ned Buratovich, Dave Comstock, Chris<br>
+Deighan, Ken Siemers, Steve Wang.&nbsp;&nbsp;A special thanks to Anumele D. Raja.&nbsp;&nbsp;*
+</p>
+</body>
+</html>

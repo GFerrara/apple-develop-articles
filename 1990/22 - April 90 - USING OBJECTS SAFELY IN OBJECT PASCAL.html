@@ -1,0 +1,528 @@
+<html>
+<head>
+<!-- Extracted from develop - 1990 -->
+<!-- on 2023-09-06 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>April 90 - USING OBJECTS SAFELY IN OBJECT PASCAL</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>USING OBJECTS SAFELY IN OBJECT PASCAL</h2>
+<img src="img/145.gif" width="206 px"></img><br>
+<h1>CURT BIANCHI</h1>
+<p>
+<i>In Object Pascal, objects are just like handles in that they refer to relocatable blocks<br>
+of memory. To use objects safely, the programmer needs to recognize that the<br>
+Macintosh Memory Manager can move the block of memory referred to by an object or<br>
+handle, although only at well-defined times.&nbsp;&nbsp;This article gives guidelines for the safe<br>
+use of objects in ObjectPascal.</i>
+</p>
+<p>
+The simplicity and elegance of Object Pascal's syntax is a two-edged sword. On the one<br>
+hand, it makes Object Pascal feel like a natural extension to Pascal; on the other, it can<br>
+lull a programmer into a false sense of security. For although the syntax of Object<br>
+Pascal treats objects as though they were statically allocated, the fact is that in Object<br>
+Pascal, objects are<i>always</i> allocated as relocatable blocks (handles, in the vernacular)<br>
+in the application heap. Thus, when you write Object Pascal programs for the<br>
+Macintosh, you must be eternally aware that objects are handles, and program<br>
+accordingly. This article tells you how to do that with MPW Pascal and TML Pascal, two<br>
+compilers that can be used with MacApp in the MPW environment. In addition, it gives<br>
+some tips for using handles outside the context of objects. 
+</p>
+<h2>HOW OBJECT PASCAL IMPLEMENTS OBJECTS: A CAUTIONARY
+TALE</h2>
+<p>
+To get an idea of how Object Pascal implements objects, let's compare the code<br>
+fragments in Figure 1. Each column of code accomplishes the same thing: the definition<br>
+and use of a data structure representing a graphical shape. The only difference is that<br>
+the left column is implemented with objects, while the right column is implemented<br>
+with handles. The code in these two columns is very&nbsp;&nbsp;similar, and a comparison of the<br>
+two reveals what goes on behind the scenes.
+</p>
+<pre> 1 TYPE
+ 2 TShape = OBJECT (TObject)
+ 3     fBounds: Rect;
+ 4     fColor: RGBColor;
+ 5     END;
+ 6
+ 7
+ 8
+ 9 VAR
+10     aShape: TShape;
+11     sameShape, copiedShape: TShape;
+12
+13 BEGIN
+14 NEW(aShape);
+15 FailNIL(aShape);
+16
+17 aShape.fBounds := gZeroRect;
+18 aShape.fColor := gRGBBlack;
+19
+20 sameShape := aShape;
+21
+22 copiedShape := TShape(aShape.Clone);
+23
+24 FailNIL(copiedShape);
+25
+26 END;
+
+ 1 TYPE
+ 2 TShapeHdl = ^TShapePtr;
+ 3 TShapePtr = ^TShape;
+ 4 TShape = RECORD
+ 5     fBounds: Rect;
+ 6     fColor: RGBColor;
+ 7 END;
+ 8
+ 9 VAR
+10     aShape: TShapeHdl;
+11     sameShape, copiedShape: TShapeHdl;
+12
+13 BEGIN
+14 aShape := TShapeHdl(NewHandle(SIZEOF(TShape)));
+15 FailNIL(aShape);
+16
+17 aShape^^.fBounds := gZeroRect;
+18 aShape^^.fColor := gRGBBlack;
+19
+20 sameShape := aShape;
+21
+22 copiedShape := aShape;
+23 FailOSErr(HandToHand(Handle(copiedShape)));
+24 FailNIL(copiedShape);
+25
+26 END;</pre>
+<p>
+<b>Figure 1.<br>
+A Comparison of Code Implemented with Objects vs. Handles</b>
+</p>
+<p>
+The first thing to observe is that any variable of an object type is actually a<i>reference</i><br>
+to an object. That is, the variable is a handle that refers to a block of memory<br>
+containing the object's data. Thus, in the left column the value of the variable<code>aShape</code> is<br>
+a handle. It contains the address of a master pointer that in turn points to the object's<br>
+data. The size of the variable<code>aShape</code> is four bytes--the size of an address and not the<br>
+size of the object itself. This is very much the same as the right column, in which the<br>
+variable<code>aShape</code> is explicitly declared to be a handle. In fact, the only difference<br>
+between the two is that the object version of<code>TShape</code> has an implicit field containing the<br>
+object's class ID, located just before the first declared field. The class ID is an integer<br>
+value that allows the object's type to be identified at run time. 
+</p>
+<p>
+Line 14 of each column shows how a <code>TShape</code> data structure is created. Since&nbsp;&nbsp;handles<br>
+must be dynamically allocated in the heap, it follows that objects must be dynamically<br>
+allocated as well. This is the purpose of the call to <code> NEW</code> in the left column. Note that<br>
+<code>NEW</code> works completely differently for objects and for other kinds of memory allocation.<br>
+For objects, <code> NEW</code>generates a call to the internal library procedure <code> %_OBNEW</code>, which,<br>
+aside from some debugging details, simply calls <code>NewHandle</code>, just like the handle-based<br>
+code on the right does.
+</p>
+<p>
+The call to <code>FailNIL</code> in line 15 detects the case where allocation of the object or handle<br>
+fails. <code> FailNIL</code>is part of MacApp's failure-handling library and will be discussed in<br>
+greater detail later.
+</p>
+<p>
+Lines 17 and 18 reference fields of <code>aShape</code>. In the object code, the syntax leads you to<br>
+believe that no handle dereferencing takes place, but of course we know better. What<br>
+the Pascal compiler does is to implicitly dereference the handle for you. In other<br>
+words, it does the very same thing as the code in the right column does explicitly.
+</p>
+<p>
+Line 20 assigns one object <i> reference</i>&nbsp;&nbsp;to another, causing both <code>aShape</code>and <code>sameShape</code><br>
+to refer to the<i>same</i>&nbsp;&nbsp;object. Line 22 (plus 23 in the right column) produces <i> another</i> <br>
+shape whose contents are exactly the same as <code>aShape</code>. In the object case, the <code> Clone</code><br>
+method is used to produce a copy of the object referenced by <code>aShape</code>; <code>copiedShape</code> is<br>
+assigned a reference to the newly created object. <code>Clone</code> is implemented by calling the<br>
+Toolbox routine <code>HandToHand</code>, as is used in the right column. (<code>FailOSErr</code>is a MacApp<br>
+routine that checks the result of <code>HandToHand</code>.) Since copying an object (or a handle)<br>
+requires a memory allocation for the new object, <code>FailNIL</code> is used to ensure that the<br>
+copy succeeded. The moral of this story is that you have to be very careful about how<br>
+you use objects. For example, you must remember that every time you refer to a field<br>
+of an object, you're really dereferencing a handle. If you're not careful, you're likely<br>
+to wind up with a corrupt heap.
+</p>
+<h2>A PRIMER ON HANDLES AND THEIR PITFALLS</h2>
+<p>
+Handles have some interesting properties. If you've done any serious programming on<br>
+the Macintosh (and I don't mean HyperTalk), then you know what I mean. If not, then<br>
+(1) you've been spared the sorrows of a corrupt heap, and (2) you ought to get <i> How to</i><br>
+<i>Write Macintosh Software</i> , 2nd ed., by Scott Knaster (Hayden Books, 1988). Chapters<br>
+2 and 3 tell you all you need to know about handles. In the meantime, I'll give you a<br>
+thumbnail description. In the heap, relocatable blocks of memory are referenced by<br>
+double indirection, as shown in Figure 2. The first pointer (called the handle) points<br>
+to a nonrelocatable pointer (called the master pointer), which in turn points to a<br>
+block of memory. The Memory Manager can move the block of memory, and when this<br>
+happens the address in the master pointer is changed to the block's new address.
+</p>
+<p>
+<img src="img/146.gif" width="431 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>A Handle to a Relocatable Block
+</p>
+<p>
+This doesn't create a problem as long as you access the block via the handle. However,<br>
+at times it's necessary or desirable for the sake of efficiency to dereference the<br>
+handle--that is, make a copy of the block's master pointer, and then use that pointer<br>
+to access the block by single indirection. And even this isn't a problem--as long as the<br>
+block of memory doesn't move.
+</p>
+<p>
+Well, we have bad news: it's bound to move at some point, when the Memory Manager<br>
+needs to compact the heap. When this happens, the master pointer itself is correctly<br>
+updated, but your copy of it is left dangling. Now for the good news: relocatable blocks<br>
+of memory only move at certain well-defined times. Thus, the key to dereferencing<br>
+handles is knowing when the blocks of memory they point to may move. 
+</p>
+<p>
+Oh, and one more bit of bad news: the Memory Manager has no garbage collection. This<br>
+means you're responsible for disposing of handles when you've finished with them, and<br>
+making sure you don't leave any dangling pointers. 
+</p>
+<h2>PRACTICING SAFE OBJECT USAGE</h2>
+<p>
+Because the Memory Manager moves blocks of memory only at certain well-defined<br>
+times, it's possible to come up with reliable guidelines for safe object usage. Keep<br>
+these guidelines firmly in mind anytime you program in Object Pascal:1. <i> Don't</i> pass<br>
+fields of objects as parameters to any routine unless you know it's safe. 
+</p>
+<p>
+&nbsp;In Pascal, when a routine is called, each parameter is passed by value or by address.<br>
+Passing a parameter by value pushes a copy of the parameter's value onto the stack.<br>
+Passing a parameter by address pushes the parameter's address onto the stack. (This<br>
+should immediately trigger a handle alert in your head.) Passing the<i>value</i> of an object<br>
+field is no problem. But passing the<i>address</i> of an object field on the stack is a<br>
+potentially unsafe situation. That's because the address points to a memory location<br>
+within an object--in other words, the object is dereferenced. If the object should<br>
+happen to get relocated, the address won't point into the object anymore. 
+</p>
+<p>
+&nbsp;Because there's no way to predict what the address points to after memory relocation,<br>
+and hence no way to predict the effect of using the address, all manner of strange things<br>
+can occur. Making this type of bug extra difficult to track down is the fact that passing<br>
+parameters unsafely works most of the time--it only fails when the heap is so full<br>
+that the Memory Manager must relocate memory to satisfy a request. You do not want<br>
+these kinds of bugs in your program. 
+</p>
+<p>
+&nbsp;Fortunately, Object Pascal programmers have a big advantage over their conventional<br>
+colleagues: the compiler actually tells you when a field of an object is used in a<br>
+potentially unsafe way. This occurs for <code>VAR</code> parameters, which by definition are<br>
+passed by address, and for non-<code> VAR</code> parameters whose size is greater than four bytes.<br>
+The latter case is because the compiler actually passes such parameters by address,<br>
+expecting the called routine to use the address to make a local copy of the data.
+</p>
+<p>
+&nbsp;If you stop to think about it, this error message is a really nice feature. Especially<br>
+when compared to what the compiler does when any other handle is unsafely<br>
+dereferenced, which is nothing. Nada.&nbsp;&nbsp;&nbsp;Zip. Even the most experienced and<br>
+handle-cognizant of programmers occasionally writes code that unsafely dereferences<br>
+a handle. 
+</p>
+<p>
+&nbsp;Let's look at an example. Consider the following definitions:
+</p>
+<pre>TYPE
+    TShape = OBJECT (TObject)
+    fBounds: Rect;
+    fColor: RGBColor;
+    END;
+
+VAR aShape: TShape;</pre>
+<p>
+Attempting to compile the line
+</p>
+<pre>OffsetRect(aShape.fBounds, 10, 20);</pre>
+<p>
+results in the following error:
+</p>
+<pre># OffsetRect(aShape.fBounds, 10, 20);
+# ?
+### pascal - Error 815 Unsafe use of an object field
+as a var or &gt; 4 byte parameter</pre>
+<p>
+In other words, this line of code has dereferenced the object's handle at a time when the<br>
+object may move while it is dereferenced. In this case, the address of the field <br>
+<code>fBounds</code> is computed and passed to <code>OffsetRect</code>. If <code>aShape</code> were to move before<br>
+<code>OffsetRect</code> used it, then the computed address wouldn't point at <code>fBounds</code> anymore.<br>
+Bombs away! Maybe the message ought to read "Error 815 You are about to commit<br>
+yourself to spending an indeterminant number of days working with Macsbug. Please<br>
+reconsider."
+</p>
+<p>
+A simple way of avoiding the error is to avoid using the field as a parameter. Instead,<br>
+use a temporary variable:
+</p>
+<pre>VAR
+    r: Rect;
+
+r := aShape.fBounds;
+OffsetRect(r, 10, 20);
+aShape.fBounds := r;</pre>
+<p>
+While this construct is guaranteed to be safe, it could be rather onerous if you had to<br>
+do this every time you wanted to use an object field as a parameter. Actually, it turns<br>
+out that many cases can easily be identified as safe because the routine being called<br>
+doesn't trigger memory relocation. But how do you <i> know</i>&nbsp;&nbsp;when it's safe? Mostly, you<br>
+need to know what causes objects to move.
+</p>
+<p>
+Memory relocation can be triggered if (a) the called routine is in a different segment<br>
+from the caller, since loading a segment may trigger memory relocation; (b) the<br>
+called routine calls a ROM routine that triggers relocation; or (c) the called routine<br>
+calls another routine that fits the criteria of (a) or (b). In the case of <code> OffsetRect</code>,<br>
+it's in ROM so it won't require a segment load, and it is a ROM routine that doesn't<br>
+move memory. (I know that because it isn't listed in Appendix A of the<i>Inside Macintosh</i><br>
+<i>XRef</i> .)
+</p>
+<p>
+When you do know it's safe (as with <code> OffsetRect</code>), you can turn off the compiler's<br>
+parameter checking, effectively telling the compiler to keep quiet because you know<br>
+what you're doing. Do this by using the <code>$H</code> compiler directive:
+</p>
+<pre> {$Push}{$H-}
+OffsetRect(aShape.fBounds, 10, 20);
+ {$Pop}</pre>
+<p>
+&nbsp;The first line turns off parameter checking. <code>$Push</code> saves the state of the compiler<br>
+directives; <code>$H-</code> tells the compiler not to check parameters for unsafe usage. In the<br>
+second line the object field is used as a parameter. Because <code>$H-</code> was issued, no<br>
+compiler error is generated.&nbsp;&nbsp;The third line uses<code> $Pop</code> to restore the state of the<br>
+directives at the time the last <code> $Push</code> was issued.
+</p>
+<p>
+&nbsp;The trick, of course, is in knowing when to use <code> $H</code> and when to use a copy of the<br>
+object field instead. Based on the three causes of memory relocation, it's possible to<br>
+identify the conditions in which you should avoid passing the field of an object as a<br>
+parameter.
+</p>
+<ol>
+<li><i> Don't</i>  pass a field of an object as a <code> VAR</code> parameter, or a field greater<br>
+than four bytes in size, in these circumstances:</li><ol type="a">
+<li> When the called routine is listed in Appendix A of the <i> Inside</i><br>
+<i>Macintosh XRef</i> .
+
+<p>
+&nbsp;Appendix A lists routines defined in <i>Inside Macintosh</i> , volumes I-V,<br>
+that may trigger memory relocation. These include all system-defined<br>
+routines, such as those in ROM and in packages. Any routine defined in<br>
+<i>Inside Macintosh</i> , volumes I-V, that does not appear in Appendix A<br>
+will not trigger memory relocation. (A similar appendix appears in<br>
+each <i> Inside Macintosh</i>&nbsp;&nbsp;book, but only applies to that book. So use the<br>
+appendix in the <i> XRef</i>&nbsp;&nbsp;because it applies to all five volumes.)
+</p></li>
+
+<li> When the called routine is in a different, nonresident segment<br>
+from the code generating the call.
+
+<p>
+&nbsp;Calling a routine in another segment may require loading it into<br>
+memory, potentially triggering memory relocation. If the called<br>
+routine is in the same segment as the caller, then the segment must<br>
+already be in memory and you're safe. If the called routine is in a<br>
+different segment from the caller, you're still safe if the called<br>
+routine's segment is a resident.
+</p>
+<p>
+&nbsp;Resident segments are defined by MacApp &#174; to be segments that are<br>
+loaded into memory when the program starts up, and that stay in<br>
+memory throughout the life of the program. Thus calling a routine in a<br>
+resident segment never requires loading it into memory. If you know a<br>
+routine is in a resident segment, you can call it without worrying<br>
+about a segment load relocating memory. If you're not sure a routine<br>
+is in a resident segment, play it safe.
+</p></li>
+<li><p>
+ When the called routine is in the same segment as the caller, but<br>
+the called routine indirectly causes segment loads by calling routines<br>
+in other, nonresident segments. If you don't know whether a routine<br>
+does this, then play it safe.<li><p>
+ When the called routine calls ROM routines that may trigger<br>
+memory relocation. Again, if you're not sure, play it safe.</p></li></ol>
+<li>Don't pass a field of an object or handle as the parameter to <code> NEW</code>.
+
+<p>
+&nbsp;The parameter to<code>NEW</code> is a<code>VAR</code> parameter, and since<code>NEW</code> calls<code>NewHandle</code>, it<br>
+most definitely may trigger memory relocation. Unfortunately, MPW Pascal<br>
+compilers before version 3.1 didn't generate an error for<code>NEW</code> when you passed<br>
+an object field as the parameter, and TML Pascal version 3.0 still doesn't. So<br>
+be careful. 
+</p>
+<p>
+Note that MacApp contains <i>functions</i>&nbsp;&nbsp;that allocate objects as well. The <code> Clone</code><br>
+method copies an object, returning a reference to the copy as its result. <br>
+<code>NewObjectByClassName</code> and<code> NewObjectByClassId</code>create new objects.<br>
+Because of the way the compiler generates code for functions, it <i>is</i>&nbsp;&nbsp;safe to<br>
+assign a function result to the field of an object.
+</p></li>
+
+<li>Call <code>FailNIL</code> after <i>every</i>  attempt to create an object, copy an object, or<br>
+create a handle or pointer.
+
+<p>
+<code>&nbsp;FailNIL</code>, defined in MacApp's <code>UFailure</code> unit, has a single parameter--a<br>
+reference to an object, handle, or pointer. If that reference is <code>NIL</code> then<br>
+<code>FailNIL</code> signals failure, essentially causing the application to back out of<br>
+what it was doing and resume processing events. Calling <code> FailNIL</code> is how you<br>
+verify that a memory allocation request actually succeeded. It works because<br>
+the Memory Manager returns <code>NIL</code> if there isn't enough memory to satisfy a<br>
+memory allocation. Since heaps have a finite amount of space, the potential<br>
+exists that <i> any</i>&nbsp;&nbsp;allocation request can fail. So check <i>each and every</i>&nbsp;&nbsp;request<br>
+just to make sure. Failure to heed this advice leads to bus errors and address<br>
+errors when your program tries to dereference <code>NIL</code> handles.
+</p>
+<p>
+&nbsp;Be aware that this description of <code>FailNIL</code> just scratches the surface of<br>
+MacApp's failure-handling facilities. The MacApp technical manuals go into<br>
+greater detail than space permits in this article.
+</p></li>
+
+<li>Remember to free objects when you've finished with them, <i> but only when</i><br>
+<i>you've finished with them!</i>
+
+<p>
+&nbsp;The Macintosh doesn't have automatic garbage collection, so you're<br>
+responsible for freeing (disposing of) any objects you create. Failing to free<br>
+objects when you've finished with them leads to a heap that slowly fills up<br>
+with garbage, eventually suffocating the application.
+</p>
+<p>
+Keep in mind that when you free an object, any references to it are no longer<br>
+valid and should be set to <code>NIL</code>. Nasty things happen if you use references to<br>
+objects that no longer exist. If you're lucky, the MacApp debugger will stop<br>
+your program the first time you refer to a nonexistent object. But sometimes<br>
+even the MacApp debugger gets fooled. This happens if the memory occupied by<br>
+the freed object hasn't yet been written over, or even worse, if another object<br>
+or handle was allocated using the same master pointer as the object that was<br>
+freed. (Try debugging that sometime!)
+</p></li>
+
+<li>If necessary, ensure that an object doesn't move by locking it.
+
+<p>
+&nbsp;Sometimes it really makes life easier to ensure that an object won't be moved<br>
+no matter what happens. Objects, like handles, can be locked. In fact, MacApp<br>
+provides a method for this purpose.&nbsp;&nbsp;&nbsp;It's called<code>Lock</code> and it's defined<br>
+in<code>TObject</code>so it can be used on any object. <code>Lock</code> takes a<code>Boolean</code> value as its<br>
+only parameter,&nbsp;&nbsp;which when true "locks" the object's location in memory,<br>
+and when false makes the object relocatable again. <code>Lock</code> returns a<code>Boolean</code><br>
+result that indicates whether the object was locked when<code>Lock</code> was called. This<br>
+is handy because you can lock an object, do what you need to do, then<i>restore</i><br>
+<i>the object's lock state to what it was before</i> :
+</p>
+<pre>      VAR
+          wasLocked: BOOLEAN;
+      
+      BEGIN
+          wasLocked := anObject.Lock(TRUE);
+          {do what you need to do}
+          wasLocked := anObject.Lock(wasLocked);
+      END;</pre>
+<p>
+&nbsp;If you're not using MacApp, you can lock an object by casting it to be a handle<br>
+and using <code> HLock</code> and <code>HUnlock</code>, the Memory Manager routines for locking and<br>
+unlocking handles:
+</p>
+<pre>      HLock(Handle(anObject));
+      { Do what you need to do. }
+      HUnlock(Handle(anObject));</pre>
+<p>
+Keep in mind that it's unwise to lock objects (or handles) for long periods of<br>
+time. Nonrelocatable objects cause heap fragmentation, which reduces the<br>
+effectiveness of the heap. (For further details, see Richard Clark's article<br>
+"The Secret Life of the Memory Manager" in this issue.)
+</p></li></ol>
+<h2>PRACTICING SAFE HANDLE USAGE</h2>
+<p>
+Even in an object-based program, it's occasionally necessary to use handles instead of<br>
+objects. While handle usage is subject to the same guidelines just described for<br>
+objects, there are some additional wrinkles:
+</p>
+<ol>
+<li>Don't count on the compiler to tell you when a handle's field is used<br>
+unsafely.
+
+<p>
+&nbsp;Unlike for fields of objects, the compiler doesn't produce an error when<br>
+passing a field of a handle by address. All of the same problems with using<br>
+fields of objects apply to fields of handles, but since the compiler offers no<br>
+help in detecting unsafe uses, it's completely up to you to ensure that you use<br>
+fields of handles safely. Chalk one up for objects.
+</p></li>
+
+<li>Beware of <code>WITH</code> statements that dereference handles. For example:
+
+<pre>      TYPE
+          TShapeHdl = ^TShapePtr;
+          TShapePtr = ^TShape;
+          TShape = RECORD
+              fBounds: Rect;
+              fColor: RGBColor;
+          END;
+      
+      VAR
+          aShape: TShapeHdl;
+      
+      BEGIN
+          aShape := NewHandle(SIZEOF(TShape));
+          FailNIL(aShape);
+      
+          WITH aShape^^ DO
+              BEGIN
+              fBounds := gZeroRect;
+              fColor := gRGBBlack;
+              END;
+      END;</pre>
+<p>
+&nbsp;Not only does the <code>WITH</code> statement simplify the Pascal text, it also lets the<br>
+compiler perform code optimizations. Specifically, it stores the address<br>
+from<code>aShape^^</code> in a register so that it can be reused throughout the scope of<br>
+the <code>WITH</code> without being recomputed. As you might imagine, any operation that<br>
+triggers memory relocation within the scope of the <code>WITH</code> will invalidate the<br>
+address contained in the register. Bad news. 
+</p>
+<p>
+&nbsp;By the way, using <code>WITH</code> statements on objects is okay! The compiler<br>
+recognizes that the <code> WITH</code> is dereferencing an object and makes sure safe code<br>
+is generated. Objects 2, handles 0.
+</p></li>
+
+<li>Don't assign a function result to a field of a handle unless you know the<br>
+calling function won't trigger memory relocation.
+
+<p>
+&nbsp;For example, using the shape definitions given above, this is a potentially<br>
+unsafe use of a handle field:
+</p>
+<pre>      aShape^^.fBounds := FunctionThatReturnsARect;</pre>
+<p>
+The problem is that the Pascal compiler dereferences the handle <code> aShape</code><br>
+<i>before</i>&nbsp;&nbsp;calling the function. Thus, a function that triggers memory relocation<br>
+or is in another segment will invalidate the address obtained by dereferencing<br>
+the handle.
+</p>
+<p>
+&nbsp;Once again, this type of usage is okay for objects. As for <code> WITH</code> statements, the<br>
+compiler recognizes when a function result is assigned to an object field and<br>
+ensures that safe code is generated.
+</p></li></ol>
+<h2>IN CONCLUSION</h2>
+<p>
+In conclusion, you <i>can</i>&nbsp;&nbsp;avoid the pitfalls in writing Object Pascal programs, by<br>
+understanding how objects work and by using the guidelines described in this article.<br>
+Then instead of having to spend undue time debugging, you can relax and enjoy the<br>
+advantages of object-based programming.
+</p>
+<p>
+<b>CURT BIANCHI</b>, displaced Lakers fan, has never met a taco he didn't like. He's been at<br>
+Apple more than three years, where he first worked on MacApp and now concentrates<br>
+on future system software. This southern California native (he asks you not to hold<br>
+that against him) earned a BSICS in 1981 from the University of California-Irvine,<br>
+followed by stints at Link Systems and Monogram Software, and self-employment doing<br>
+software odd jobs, including working on computer dating software. His hobbies include<br>
+music, photographing trains, avoiding serious injury on the basketball court, and<br>
+rooting for the Lakers from afar .*
+</p>
+</body>
+</html>

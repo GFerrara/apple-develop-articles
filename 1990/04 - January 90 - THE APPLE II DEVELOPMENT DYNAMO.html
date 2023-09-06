@@ -1,0 +1,356 @@
+<html>
+<head>
+<!-- Extracted from develop - 1990 -->
+<!-- on 2023-09-06 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>January 90 - THE APPLE II DEVELOPMENT DYNAMO</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>THE APPLE II DEVELOPMENT DYNAMO</h2>
+<h1>ERIC SOLDAN</h1>
+<p>
+<i>The new Dynamo 8-bit Development Package from DTS makes developing software for<br>
+the Apple II family easier and faster.&nbsp;&nbsp;This article highlights the capabilities of the<br>
+package and describes how it meets developers' needs. Dynamo includes a run-time<br>
+module with a macro interface and an Apple II application loader.&nbsp;&nbsp;It offers routines for<br>
+handling strings, variables, arrays, and integer math.</i>
+</p>
+<p>
+Because of the speed and memory limitations of 8-bit Apple IIs, Apple's opinion that<br>
+assembly language is the best choice for development has not changed over the years. <br>
+Assembly language, however, places a heavy burden on the developer.
+</p>
+<p>
+The more popular high-level languages depend on a processor being able to handle a<br>
+large stack as part of its instruction set.&nbsp;&nbsp;Because the 6502 doesn't support a large<br>
+stack, high-level languages on the Apple II generally implement their stacks in<br>
+software and pay a considerable penalty in speed and memory.
+</p>
+<p>
+Given the disadvantage of a processor not specifically designed with high-level<br>
+languages in mind, the authors of the available Apple II languages have done an<br>
+admirable job.&nbsp;&nbsp;These languages are very useful for many applications. Programs that<br>
+require lots of speed and memory, however, can't afford the overhead of a high-level<br>
+language.
+</p>
+<h2>WHAT DO YOU REALLY NEED?</h2>
+<p>
+As a developer, you don't need a specific high-level language or a particular tool set. <br>
+You do need what successful languages and tool sets were designed for: to provide help<br>
+in meeting fundamental development objectives.&nbsp;&nbsp;Developers need to produce code:
+</p>
+<ul>
+<li>that is fast</li>
+<li>that takes the least amount of development time</li>
+<li> that consumes the least memory</li>
+<li> that is easy to read</li>
+<li> that is reliable</li>
+</ul>
+<p>
+How well does assembly language meet these needs?&nbsp;&nbsp;Assembly produces the fastest<br>
+code possible.&nbsp;&nbsp;This is especially important on the Apple II, where your code may be<br>
+running at one megahertz, and every cycle counts.
+</p>
+<p>
+It is difficult to write good assembly language code quickly.&nbsp;&nbsp;All the housekeeping<br>
+demands painstaking attention to detail and carefully constructed code.
+</p>
+<p>
+For code compactness, assembly language is excellent.&nbsp;&nbsp;It is actually difficult to<br>
+develop assembly code that consumes as much memory as a good compiler.
+</p>
+<p>
+Assembly language is hard to read.&nbsp;&nbsp;If you need to understand the code a year from now,<br>
+you had better provide very good comments and plenty of them. Also, you may not be<br>
+the only one who will need to understand your code.
+</p>
+<p>
+Assembly is not well known for bug-free code production.&nbsp;&nbsp;You build the ifs, loops and<br>
+data constructs yourself from assembly language statements.&nbsp;&nbsp;There is no compiler to<br>
+check your syntax.
+</p>
+<p>
+After pondering developers' needs, DTS implemented a new environment for Apple II<br>
+assembly language to help make 8-bit development easier and faster, called Dynamo. <br>
+The core of Dynamo is a small library of run-time routines. Dynamo has macro<br>
+definitions that generate very short code fragments that use the library routines. <br>
+Given that the library is all assembly language, and the macros generate the minimum<br>
+code necessary to interface to the library, the code stays small and fast.&nbsp;&nbsp;Dynamo<br>
+handles things that are usually cumbersome in assembly language--namely variable,<br>
+string, and array management, as well as integer math.&nbsp;&nbsp;The macros add a high-level<br>
+flavor to the environment, and you get speedy development of readable and dependable<br>
+code.&nbsp;&nbsp;Let's take a closer look at how the different aspects of Dynamo work. 
+</p>
+<h2>MANAGING VARIABLES</h2>
+<p>
+In developing Dynamo, it was important to look at typical operations within a program.<br>
+We studied how long it took to code these in assembly, how big the code was, and how<br>
+long the code took to execute.&nbsp;&nbsp;One such operation is assigning a value to a variable. <br>
+Some examples (in Pascal) look like this:
+</p>
+<pre>   aardvark := buffalo;
+    cat := 1000;
+    dog := elephant * fish / goat + 12345;</pre>
+<p>
+If you had a collection of run-time routines to do the real work, the main line of code<br>
+would just do things like determine what happens to which variables.&nbsp;&nbsp;We looked at<br>
+several ideas and started coming up with assembly code that looked like the following:
+</p>
+<pre>   ldx     #aardvark   ;load pointer to aardvark
+    ldy     #buffalo    ;load pointer to buffalo
+    jsr     varcpy      ;move buffalo to aardvark (16 bits)</pre>
+<p>
+The x-register is loaded with a constant (from 0 to 254) that represents the variable<br>
+aardvark.&nbsp;&nbsp;The y-register is loaded with a constant that represents the variable<br>
+buffalo.&nbsp;&nbsp;These constants are like pointers they are offsets into a variable table.&nbsp;&nbsp;Then<br>
+we call a routine to copy the value of the 16-bit variable buffalo to the 16-bit<br>
+variable aardvark.&nbsp;&nbsp;The routine looks like this:
+</p>
+<pre>varcpy lda varspace,y      ;move low 8 bits
+        sta varspace,x
+        lda varspace+1,y        ;move high 8 bits
+        sta varspace+1,x
+        rts</pre>
+<p>
+Varspace is some location in memory where the integer variables reside.&nbsp;&nbsp;Since we are<br>
+indexing into it with a 1-byte index, the maximum size of this space is 256 bytes, and<br>
+since integers take 2 bytes, the maximum number of variables is 128. This 128<br>
+variable limit may seem small, but a typical program just doesn't&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;have that many<br>
+simple variables.&nbsp;&nbsp;&nbsp;&nbsp;
+</p>
+<p>
+Now, by using a macro to become part of the interface, this can become:
+</p>
+<pre>   _varcpy     aardvark,buffalo</pre>
+<p>
+This means "copy the value of the variable buffalo to the variable aardvark." It&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;isn't<br>
+Pascal, but it isn't trying to be.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+</p>
+<p>
+Remember that the variable names represent 8-bit numbers.&nbsp;&nbsp;They are declared&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;by<br>
+equating them to values from 0 to 254.&nbsp;&nbsp;Don't mistake the variable names for&nbsp;&nbsp;&nbsp;&nbsp;<br>
+addresses.&nbsp;&nbsp;Saying:
+</p>
+<pre>       temp    equ     30
+        lda     #27
+        sta     temp
+        lda     #00
+        sta     temp+1</pre>
+<p>
+will store the number 27 in zero page location 30, something you don't want to&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;do. <br>
+The _varcpy routine takes the argument temp as an index into the variable&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;table<br>
+that starts at varspace.&nbsp;&nbsp;To explicitly store 27 in variable temp without&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;using the<br>
+Dynamo routines, you would say:
+</p>
+<pre>       temp    equ     30
+        lda     #27
+        sta     varspace+temp       ;set low byte to 27
+        lda     #00
+        sta     varspace+temp+1     ;and high byte to zero</pre>
+<p>
+As long as you use the Dynamo interface to deal with variables, you can treat&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;them as<br>
+if the name refers to the value.
+</p>
+<p>
+Now, does this code meet our five objectives?
+</p>
+<p>
+It isn't as fast as it could be.&nbsp;&nbsp;The fastest code would be:
+</p>
+<pre>       lda     buffalo
+        sta     aardvark
+        lda     buffalo+1
+        sta     aardvark+1</pre>
+<p>
+&nbsp;This code, although faster, takes more memory.&nbsp;&nbsp;If we were copying an integer&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;from<br>
+one place in zero-page to another, the fast code would be 8 bytes.&nbsp;&nbsp;If we&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;were<br>
+copying an integer not in zero-page, it would be 12 bytes.&nbsp;&nbsp;The slower way&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;would be<br>
+only 7 bytes.&nbsp;&nbsp;The _varcpy routine takes up some space, but it is in&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memory only<br>
+once so it doesn't really count.
+</p>
+<p>
+&nbsp;Although we lost some speed, the code got smaller.&nbsp;&nbsp;It also became easier to&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;read and<br>
+faster to write and to debug.&nbsp;&nbsp;A good compromise, given that it is more&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;readable, and<br>
+is inherently more reliable.
+</p>
+<p>
+&nbsp;Using these routines and macros, some sample code that assigns some&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;variables,<br>
+adds, multiplies, and divides looks like this:
+</p>
+<pre>       aardvark    equ     0           ;declare 16-bit variables
+        buffalo     equ     2
+        cat         equ     4
+        dog         equ     6
+        elephant    equ     8
+        fish        equ     10
+        goat        equ     12
+            _varcpy aardvark,buffalo    ;aardvark := buffalo
+            _set    cat,#1000           ;cat := 1000
+            _varcpy dog,elephant        ;dog := elephant
+            _mulvar .fish               ;dog := dog*fish
+            _divvar goat                ;goat := goat/dog
+            _add    #12345              ;goat := goat+12345</pre>
+<p>
+&nbsp;Notice that dog doesn't have to be mentioned on the _mulvar line.&nbsp;&nbsp;All the&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Dynamo<br>
+library routines preserve the x-register, so the x-register still has the&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;constant<br>
+for dog in it.&nbsp;&nbsp;If there is no destination variable, _mulvar generates&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;code that leaves<br>
+the x-register alone. 
+</p>
+<h2>MANAGING ARRAYS</h2>
+<p>
+We typically store large blocks of data in arrays, which is why the 128 simple<br>
+variable limit is not so bad.&nbsp;&nbsp;Arrays are a little trickier than variables, and a<br>
+pointer-based system works best.&nbsp;&nbsp;When you calculate a base pointer to a row, the row<br>
+elements will be in linear order from there on in memory.&nbsp;&nbsp;So, for a two- dimensional<br>
+array, tell Dynamo what row to work with, and treat that row as if it were a<br>
+one-dimensional array.&nbsp;&nbsp;The array routines are good for up to four dimensions. <br>
+Increasing this is rather easy, but the overhead goes up slightly for each dimension<br>
+you add.
+</p>
+<p>
+Here's code for a four-dimensional array:
+</p>
+<pre>       _array      #$4000,w,#3,#4,#5,#6    ;activate array at $4000
+        _index      #1,#3,#4
+        _getw       value1,#3               ;value1 := array[1,3,4,3]
+        _putw       value2,#5               ;array[1,3,4,5] := value2</pre>
+<p>
+The _array macro defines the size of the array elements, the number of elements in<br>
+each dimension, and the location of the array.&nbsp;&nbsp;This example has a four-dimensional<br>
+array whose dimensions are 3 x 4 x 5 x 6.&nbsp;&nbsp;The array starts at address $4000, and the<br>
+element size is a word.&nbsp;&nbsp;_array is an assembly-time macro and does its calculating at<br>
+assembly-time.&nbsp;&nbsp;This means the arguments must be constants like literals or equates. <br>
+If the first argument had an * instead of a #, it would be used as the address of a<br>
+pointer to the base address.&nbsp;&nbsp;_index is a run-time macro and can use literals or<br>
+variables.
+</p>
+<p>
+The _index macro indexes into the array, up to but not including the final subscript or<br>
+index.&nbsp;&nbsp;The _index macro is used to calculate a pointer to a row of data.&nbsp;&nbsp;Once this is<br>
+done, access to the row is as if the array were linear, and you can make multiple<br>
+accesses to the array.&nbsp;&nbsp;Since the address of the row does not have to be recalculated, the<br>
+last subscript is simply used as an index into the row of data.
+</p>
+<p>
+This example uses the _getw macro to get a word element of the row and place the value<br>
+into a variable.&nbsp;&nbsp;Element #3 (from zero) of the row is moved to the variable value1. <br>
+Finally, the value of the variable value2 is placed in element #5 of the row.
+</p>
+<p>
+_getb and _putb work with byte elements, and _vgetb, _vgetw, _vputb, and _vputw<br>
+use a variable as an index instead of a constant:
+</p>
+<p>
+You can also use a variable value when calculating an index to a row of the array--for<br>
+example, to get an element from the array stuff[] and save it in thing. For you C dudes,<br>
+this looks like:
+</p>
+<pre>   thing = stuff[color][size][3][weight];</pre>
+<p>
+Using Dynamo and the macro interface, this is:
+</p>
+<pre>       _array      #stuff,w,#5,#6,#7,#8    ;activate array "stuff"
+        _vindex     color,size
+        _index      ,,#3
+        _vgetw      thing,weight</pre>
+<p>
+You can mix variable and constant subscripts, as long as you remember the commas as<br>
+place holders on the second line.&nbsp;&nbsp;Also, if the first index hasn't changed, you don't need<br>
+to mention it. 
+</p>
+<p>
+There can be only one active array at a time, and _array sets the active array. Instead<br>
+of putting code in-line to activate an array, you can define simple routines to set<br>
+active arrays.
+</p>
+<pre>       jsr     mat1            ;set mat1 active
+        _vindex row             ;set pointer to rowth row
+        _vgetw  thing,column    ;thing := mat1[row,col]
+        jsr     mat2            ;set mat2 active
+        _vindex row             ;set pointer to rowth row
+        _vputw  thing,column    ;mat2[row,col] := thing
+        rts
+mat1loc equ     $1000           ;storage for mat1
+mat2loc equ     $1080           ;storage for mat2
+mat1    _array  #mat1loc,w,#8,#8
+        rts
+mat2    _array  #mat2loc,w,#8,#8
+        rts</pre>
+<p>
+The # in #mat1loc and #mat2loc means use the value of mat1loc and mat2loc as base<br>
+addresses for the arrays.&nbsp;&nbsp;If the #s are replaced with *s, you get another level of<br>
+indirection, and the contents of mat1loc and mat2loc would be used as the array<br>
+location instead.&nbsp;&nbsp;&nbsp;All of these tricks add up to very efficient and flexible array access<br>
+in assembly language.
+</p>
+<h2>MANAGING STRINGS</h2>
+<p>
+String management works much like variable management.&nbsp;&nbsp;The x-register holds the<br>
+constant representing the destination string.&nbsp;&nbsp;You can perform operations on a<br>
+destination string, like copying another string into it, reading string data into it,<br>
+appending another string, appending some portion of a string, printing the string, and<br>
+so forth.&nbsp;&nbsp;Just like the variable management routines, the x-register is always<br>
+preserved.&nbsp;&nbsp;Of course, all of these functions are done with macros for readability.
+</p>
+<h2>PUTTING IT ALL TOGETHER</h2>
+<p>
+These simple things make programming in assembly language immensely easier.&nbsp;&nbsp;The<br>
+only cost is some loss of speed.&nbsp;&nbsp;If a particular routine needs to be as fast as possible,<br>
+you can still write it in straight assembly code.&nbsp;&nbsp;After all, you are using an assembler.
+</p>
+<p>
+The Dynamo runtime library is very small.&nbsp;&nbsp;A breakdown of the various routine types<br>
+is as follows:
+</p>
+<p><table border="0"><tr><td>initialization &amp; char output routines:</td><td>154</td></tr>
+<tr><td>integer variables &amp; intmath routines:</td><td>787</td></tr>
+<tr><td>random generator routines:</td><td>139</td></tr>
+<tr><td>string handling/output routines:</td><td>505</td></tr>
+<tr><td>read data (ints &amp; strings) routines:</td><td>77</td></tr>
+<tr><td>multi-dimension array handling:</td><td>358</td></tr>
+<tr><td>TOTAL</td><td>2020</td></tr></table></p>
+<p>
+These values apply only if you use all the routines in a particular area.&nbsp;&nbsp;The linker<br>
+only includes what you use.
+</p>
+<p>
+The new MPW IIgs Cross-Development System is another step toward a better<br>
+development environment.&nbsp;&nbsp;It is the most powerful development environment available<br>
+for the Apple II and IIgs.&nbsp;&nbsp;Having the most powerful system is important.&nbsp;&nbsp;Developers<br>
+are the ultimate power users.&nbsp;&nbsp;Developers spend an incredible amount of time using<br>
+computers.&nbsp;&nbsp;The less time they spend editing code and waiting for assemblies, the more<br>
+time they have for real development work.&nbsp;&nbsp;MPW lets you keep several windows of<br>
+source code open at the same time.&nbsp;&nbsp;And since the Mac is not used to test the software,<br>
+you don't have to boot out of your development environment every time you test your<br>
+program.&nbsp;&nbsp;You can look at main code and subroutines or data structures while your<br>
+program is running on your Apple II.&nbsp;&nbsp;Also, the speed of the system reduces<br>
+development time.&nbsp;&nbsp;There is nothing wrong with developing Apple II software on an<br>
+Apple II. It just takes longer.&nbsp;&nbsp;If you can afford a Mac and the MPW IIgs Cross-<br>
+Development System, you should really consider developing with it.&nbsp;&nbsp;It should pay for<br>
+itself very quickly in terms of development time dollars.
+</p>
+<p>
+One last statement: Dynamo was not difficult to develop, so if it isn't perfect for your<br>
+development needs, develop your own macro interface.&nbsp;&nbsp;Just remember, you can keep<br>
+memory use down and speed up by working in assembly language.
+</p>
+<p>
+The source code and user's manual for Dynamo are included on develop, the CD and the<br>
+Apple II source code disks from APDA. *
+</p>
+<p>
+<b>Eric Soldan</b>, Apple II DTS engineer, specializes in Toolboxes, printing, and making<br>
+trouble.&nbsp;&nbsp;He's been with Apple since 8/8/88, a day he claims the Chinese think is an<br>
+extremely good day ("eight"pronounced in Chinese means "prosperity").&nbsp;&nbsp;At the<br>
+University of Missouri-Rolla, he studied math and computer science, with a minor in<br>
+beer.&nbsp;&nbsp;When he's not making trouble, he's tending his own enterprise, Educational<br>
+Software Systems, a business he shares with his wife.&nbsp;&nbsp;Other interests include racquet<br>
+sports, chess, and piano. *
+</p>
+<p>
+For this development environment, variables are two-byte integers.&nbsp;&nbsp;There is no<br>
+support for floating point.&nbsp;&nbsp;For that, you could use SANE or various other solutions. *
+</p>
+</body>
+</html>

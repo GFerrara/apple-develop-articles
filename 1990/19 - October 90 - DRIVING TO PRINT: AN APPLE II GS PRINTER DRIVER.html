@@ -1,0 +1,1113 @@
+<html>
+<head>
+<!-- Extracted from develop - 1990 -->
+<!-- on 2023-09-06 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>October 90 - DRIVING TO PRINT: AN APPLE II GS PRINTER DRIVER</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>DRIVING TO PRINT: AN APPLE II GS PRINTER DRIVER</h2>
+<h1>MATT DEATHERAGE</h1>
+<p>
+<i>Do you have a printer that would print awesome text and graphics if only someone<br>
+would write a driver for it? Have you looked at the driver specifications and become<br>
+hopelessly confused? If you want to give your Apple II GS some expanded printing<br>
+capabilities, don't put this issue down until you've read this article!</i>
+</p>
+<p>
+In theory, printer drivers seem like a great solution. All you have to do is drop a<br>
+printer driver file in your Drivers folder, and all of a sudden you'll be able to create<br>
+dazzling text and graphics from whatever desktop application and on whatever kind of<br>
+printer you happen to use with your Apple IIGS. No more writing to printer<br>
+manufacturers or waiting for application upgrades to support your printer.
+</p>
+<p>
+Unfortunately, the reality isn't quite as nifty as the theory. Even though Apple released<br>
+printer driver specifications in early 1988 (just before System Disk 3.2), only a<br>
+few third-party printer drivers have surfaced. The specifications are complex and<br>
+sometimes confusing, and they have not always been accurate. Most of all, printer<br>
+drivers are intrinsically complicated and difficult to develop. The driver has to do all<br>
+of the work in getting images printed, with no imaging help from the Print Manager. 
+</p>
+<p>
+This article explains the mysteries of the printer driver: what it does, how it does it,<br>
+and how to write one. To illustrate the concepts, we've provided a sample printer<br>
+driver called Picter. Picter takes the image to be printed and saves it to your boot disk<br>
+as a QuickDraw II picture file. Picter allows you to literally print a graphic document<br>
+to disk. Much of Picter's structure and code is directly applicable to any printer<br>
+driver. What's more, the dialog routines in Picter, which are very similar to those in<br>
+the new ImageWriter and ImageWriter LQ drivers released with System Software<br>
+5.0.3, will enable you to be consistent and stylish in your user interface. You will find<br>
+Picter in the IIgs Printer Driver folder on the <i> Developer Essentials </i> disc.
+</p>
+<h2>HOW PRINTING WORKS</h2>
+<p>
+Printing from a desktop application appears to be a black box. You make some Print<br>
+Manager calls and <i>voila!--</i> there's a piece of paper with a printed image of what you<br>
+drew. The Print Manager uses some serious magic to turn your image into ink on<br>
+paper, but that's all hidden from the application.
+</p>
+<p>
+So now that we know what we're getting into, let's briefly review how applications<br>
+print through the Print Manager.
+</p>
+<p>
+<b>WHAT THE APPLICATION SEES</b><br>
+In the Apple IIGS desktop environment, documents are kept in windows, which are<br>
+extended versions of the QuickDraw II drawing environment--the<code> Grafport</code>. The<br>
+features defined by the<code>Grafport </code>include where drawing will and will not occur, what<br>
+size pen will be used to draw lines and other objects, what method will be used to draw<br>
+them, what colors and patterns will be used with the objects drawn, what style, size,<br>
+font, and colors will be used for text drawing, and where the image resides in memory.
+</p>
+<p>
+The model for printing is quite similar to drawing in a window. Instead of drawing into<br>
+a window<code>Grafport</code>, your application draws into a<i>printing</i><code> Grafport</code>, which defines<br>
+the drawing environment for a single page. The clipping and visible regions<br>
+(the<code>clipRgn</code> and<code> visRgn</code>) are set to the rectangular area of the page, for example. 
+</p>
+<p>
+An application prints by drawing into a printing<code>Grafport</code>, which it obtains by opening<br>
+a printing document with the Print Manager call<code>PrOpenDoc</code>. The Print Manager<br>
+responds by returning a printing<code>Grafport </code>in which the material to be printed should<br>
+be drawn. The printing<code>Grafport</code>is initialized at the beginning of each new page<br>
+(signified by<code>PrOpenPage</code>). The application then draws the page, closes it<br>
+(with<code>PrClosePage</code>), and repeats this sequence until all pages have been printed. The<br>
+application then closes the document (with<code>PrCloseDoc</code>) and prints any images the<br>
+driver may have spooled with<code>PrPicFile</code>. The sequence of calls starting<br>
+with<code>PrOpenDoc</code> and ending with<code>PrPicFile</code> is referred to as the<i>print loop</i> , since the<br>
+middle calls (<code>PrOpenPage</code> and<code>PrClosePage</code>) are repeated once for each page to be<br>
+printed. Note that<code>PrPicFile</code> should<i> always</i> end the print loop. 
+</p>
+<p>
+<b>HOW IT REALLY WORKS</b><br>
+If the Print Manager does all this for the application, as the<i> Apple IIGS Toolbox</i><br>
+<i>Reference </i> says it does, where does a printer driver fit in?
+</p>
+<p>
+To understand how printer drivers work, you first need to realize that the preceding<br>
+description of how applications print is exaggerated. Everything listed above as done<br>
+by the Print Manager is really done by the currently selected printer driver. Although<br>
+the calls are Print Manager calls, the only action the Print Manager takes on these<br>
+calls is to make sure the printer driver is available and to dispatch the calls to the<br>
+driver. The application model says this work is done by the Print Manager to prevent<br>
+application dependency on any particular driver. From the application's point of view,<br>
+the Print Manager's role in printing allows the application to be independent of any<br>
+particular driver. But in reality, your printer driver will handle all the work<br>
+associated with several of these "Print Manager" calls.
+</p>
+<p>
+While at first it might seem like a cop-out by Apple to require the printer driver to<br>
+handle all the work in the print loop, this strategy actually makes a lot of sense. The<br>
+printer driver must ultimately transform images into ink on paper, so for maximum<br>
+flexibility Apple has given the printer driver control over the entire imaging process,<br>
+from the opening of a document to the printing of spooled images. Since no one but the<br>
+printer driver author knows what user-selectable features the driver will support,<br>
+the printer driver should be responsible for the style and job dialog boxes through<br>
+which these features will be chosen. And because the printer driver knows how to best<br>
+handle internal errors, it's a good idea to make it responsible for returning and<br>
+accepting error codes from the application.
+</p>
+<p>
+Although the printer driver has to handle all the imaging, the Print Manager does<br>
+provide a lot of support for other parts of the printing process. One of the tasks the<br>
+Print Manager supports is communication--once an image has been converted into<br>
+printer codes, the codes have to be sent to the printer. The Print Manager keeps track<br>
+of a different kind of driver--the <i> port driver</i> --that handles this communication<br>
+with the printer through the internal ports of the Apple II GS (or through the<br>
+slot-based peripherals). The port driver essentially relieves the printer driver of the<br>
+work of communicating with the printer. All the printer driver has to do is ask the<br>
+port driver to read or write data to the printer, and the port driver handles all the<br>
+details. The Print Manager also keeps track of which printer and port drivers the user<br>
+has chosen with the Control Panel desk accessory.
+</p>
+<p>
+Figure 1 shows the relationship of the printer driver and the port driver to the Print<br>
+Manager. The Print Manager handles some duties alone while passing others directly<br>
+through to the printer or port driver.
+</p>
+<p>
+<b>&nbsp;THE PRINT RECORD</b><br>
+&nbsp;Since the printer driver does all the interesting imaging work, it has to have some<br>
+way to exchange vital information with the application. Applications need to know the<br>
+size of the pages to be printed so that they can paginate properly.&nbsp;&nbsp;They may need to<br>
+know the vertical sizing factors so that better resolution graphics can be printed when<br>
+higher resolutions are available. Or they may need to know the resolution of the<br>
+printer for precise printing chores. This information is communicated through a data<br>
+structure known as the<i> print record</i> . The print record is associated with every<br>
+document to be printed, and it is the only way the printer driver can keep these<br>
+parameters associated with a document.
+</p>
+<p>
+<img src="img/141.gif" width="497 px"></img>
+</p>
+<p>
+<b>Figure 1 </b>Print Manager Calls
+</p>
+<p>
+&nbsp;Figure 2, on the next page, shows the print record in fully documented detail. Notice<br>
+that some fields are marked simply as reserved--that means reserved for Apple.<br>
+Using these fields is a really good way to make your application not print with other<br>
+drivers or to make your driver not work with future system software.
+</p>
+<p>
+&nbsp;The print record contains all the parameters associated with a printing job. It<br>
+includes not only the page and paper sizes and the resolution of the printer and other<br>
+hardware parameters, but also the values selected by the user in the Page Setup and<br>
+Print dialog boxes, which are presented by the printer driver. The print record<br>
+contains all the information necessary to print a document the same way as many times<br>
+as necessary.
+</p>
+<p>
+<img src="img/142.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 2</b> The Expanded Print Record
+</p>
+<p>
+<b>PRINTING MODES</b><br>
+In addition to being concerned about what to print, you must be concerned about the<br>
+way in which it's printed. There are two modes for printing. The differences between<br>
+these modes amount to two different models for printing.
+</p>
+<p>
+<b>Immediate mode. </b>When you print in<i> immediate mode,</i>&nbsp;&nbsp;every page is printed as it's<br>
+defined. The driver does not store an image of the page before it sends it to the printer.<br>
+This strategy can limit the driver's options when printing a page. To see how, you first<br>
+have to understand how immediate mode works.
+</p>
+<p>
+When QuickDraw performs a graphic operation, it calls a standard set of low-level<br>
+routines to do it--the QuickDraw bottleneck procedures. A pointer to them exists in<br>
+every<code> GrafPort</code>'s<code>grafProcs </code>field, where a value of 0 means that QuickDraw should<br>
+use the standard procedures. This is briefly mentioned in Technical Note #35, but it is<br>
+covered in great detail in the note just preceding it: Apple IIGS Technical Note #34,<br>
+Low-Level QuickDraw II Routines.
+</p>
+<p>
+To print in immediate mode, you install your own set of bottleneck procedures into the<br>
+printing<code>GrafPort. </code>When the application draws any object into the printing<br>
+<code>GrafPort</code>, QuickDraw calls your bottleneck routines to actually image that object.
+</p>
+<p>
+Because immediate mode printing responds to object-drawing commands sent by<br>
+QuickDraw, immediate mode printing works best for target devices that handle similar<br>
+objects. For example, the LaserWriter has built-in PostScript code that can image<br>
+objects in much the same way QuickDraw does. The LaserWriter driver installs<br>
+bottleneck procedures that convert QuickDraw objects into PostScript objects and<br>
+sends them immediately to the LaserWriter, printing the page when the page is closed<br>
+with<code> PrClosePage</code>.
+</p>
+<p>
+Unfortunately, most printers do not handle graphic objects. The graphics capabilities<br>
+of most printers are of the "print a dot of this color at this location" variety. To print<br>
+images to these devices, a driver has to convert the images into printer codes that<br>
+place the dots where they need to go. Doing this properly requires waiting until all<br>
+objects are drawn on the page before sending any codes to the printer. If you try to<br>
+image and print each QuickDraw object as it's drawn, you'll get the wrong results<br>
+when the application draws white pixels on top of previously colored pixels. (You will<br>
+also have to move the paper backward and forward enough to inspire demonic<br>
+possession stories.)
+</p>
+<p>
+Because of this limitation, many dot-matrix printers ignore graphic objects when<br>
+printing in immediate mode, transforming only text drawing into simple ASCII text<br>
+printing using the printer's built-in font. Since this is not what you see on the screen,<br>
+immediate mode printing is often referred to as<i> draft mode</i> , even though immediate<br>
+mode printing can be of excellent quality on the right target device.
+</p>
+<p>
+<b>&nbsp;Deferred printing.</b> Since immediate mode printing is not suitable for graphics on<br>
+many printers, most printing jobs will be deferred. In<i> deferred </i> or<i> spool mode</i> ,<br>
+everything that is drawn is captured to be printed later. Text is imaged together with<br>
+graphics to return as accurate a reproduction of the document as possible.
+</p>
+<p>
+&nbsp;How the printer driver captures the image is entirely discretionary. If you like, you<br>
+can attach a pixel map large enough for the entire page to the printing<code> GrafPort </code>and<br>
+let the application draw the page into the pixel map. This method would give you a<br>
+premade pixel map, waiting for you to transform it into printer codes and send it out.<br>
+At screen resolution, however, a full U.S. letter-sized page would take just
+</p>
+<p>
+over 56K of contiguous memory. That's per page--a 20-page document would require<br>
+20 such blocks. For this reason, most printer drivers (including Picter and Apple's<br>
+drivers) use QuickDraw pictures to capture the images. Pictures are an encoded<br>
+history of the QuickDraw calls used to create an image. When you play back a picture<br>
+using the QuickDraw auxiliary call<code> DrawPicture</code>, QuickDraw does all the drawing<br>
+necessary to recreate the image. Instead of taking 32K to store a screen-sized<br>
+rectangle filled with a given pattern, a picture stores the same information in the&nbsp;&nbsp;few<br>
+bytes that encode the pattern, the rectangle size, and the "paint" command.
+</p>
+<p>
+&nbsp;Because pictures contain recorded QuickDraw II objects, they can be redrawn at<br>
+different resolutions or in different proportions with excellent results. If you call<br>
+<code>DrawPicture </code>with a destination rectangle of a different size than the one the picture<br>
+was recorded with, QuickDraw's picture algorithms are capable of changing the sizes<br>
+and proportions of every object in a picture to match the changed destination rectangle.
+</p>
+<p>
+&nbsp;This intelligent scaling behavior makes pictures perfect for the needs of most printer<br>
+drivers. Since most printers are capable of screen resolution that is better than that<br>
+of the Apple IIGS (80 pixels per inch horizontally by 36 pixels per inch in 640<br>
+mode), some kind of scaling will be necessary to create screen resolution images at the<br>
+proper size regardless of resolution changes. For example, to achieve an image of the<br>
+proper size when your target device supports 160 dpi horizontally by 72 dpi<br>
+vertically, you'll need two printer pixels in each direction to represent one screen<br>
+pixel. 
+</p>
+<p>
+&nbsp;Simply magnifying each screen pixel to be the appropriate number of printer pixels<br>
+gives the image the right size, but the resolution is still the same as the screen's. To<br>
+get <i> better </i> resolution, QuickDraw's picture algorithms are a good choice. For our<br>
+sample target device that supports 160 dpi horizontally by 72 dpi vertically, your<br>
+driver could call<code> DrawPicture </code>to image the stored page-picture in a rectangle twice<br>
+as large as was used to record the picture. QuickDraw will then draw all the objects in<br>
+the picture at twice their original resolution. Your driver can translate the resulting<br>
+pixel map into printer codes at one screen pixel per printer pixel. The end result is a<br>
+printed image with the same physical size as the original screen image but with a<br>
+resolution twice as great.
+</p>
+<p>
+&nbsp;Take a look at Figure 3. In Figure 3a, we show a circle and the letter A drawn at<br>
+screen resolution. In Figure 3b, the same image is magnified, pixel by pixel, to about<br>
+twice its normal size. It doesn't look any better, just bigger. However, if we have these<br>
+objects in a picture, we can use<code> DrawPicture </code>to draw them at twice their normal<br>
+size. The picture algorithm redraws the objects with increased resolution instead of<br>
+simply magnifying existing pixels. The increased resolution allows QuickDraw to draw<br>
+a much smoother circle (since the screen has the same resolution, but the circle has<br>
+twice the radius) and a smoother-looking A since we use a 16 point font instead of an 8<br>
+point font. (Rather than drawing the font recorded in the picture and scaling the image,<br>
+QuickDraw calls the Font Manager to get the best available font for the destination.<br>
+Requesting a larger font size often returns a custom-designed font strike from disk,<br>
+making a marked improvement in the appearance of text at higher resolutions.) The<br>
+results of the picture scaling are shown in Figure 3c. Figure 3d shows Figure 3c<br>
+scaled down to actual size.
+</p>
+<p>
+<img src="img/143.gif" width="533 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 3</b> A Demonstration of Picture Scaling vs. MagnificationOf course, if you want<br>
+to draw objects at three times their normal size, you probably won't be able to draw<br>
+an entire page at once. You can, however, draw them into a printing<code> GrafPort </code>with<br>
+the clipping region set to a small rectangle of the picture. If you divide the page into<br>
+ten such "bands," you only need one-tenth the memory the entire page would need. You<br>
+just have to call<code>DrawPicture </code>ten times to complete printing for the page.
+</p>
+<p>
+This technique is referred to as<i>banding</i> and is done by most printer drivers in deferred<br>
+mode to work even in low-memory conditions. To image a full 8 1/2 by 11-inch page<br>
+at three times resolution would require 506K per page (56K at normal resolution<br>
+magnified by three horizontally and by three vertically), but dividing it into 20 bands<br>
+requires only 25K per band--and the band buffer is reusable. Dividing it into 51<br>
+bands requires under 10K per band. Since applications are instructed not to<br>
+call<code>PrPicFile</code> if a 10K buffer isn't available (see Volume 1 of the<i>Apple IIGS Toolbox</i><br>
+<i>Reference</i> , pages 15-30), you can always use a 10K buffer and you may be able to use<br>
+a much larger one if memory is available. You'll have to divide it into 102 bands if<br>
+vertical condensed mode is selected, since that doubles the vertical resolution. 
+</p>
+<p>
+The drawback to this method is that it's slow. QuickDraw can't know before<br>
+interpreting the stored picture operations which ones will be clipped out and which<br>
+will actually be drawn, so it spends a lot of time drawing the 50/51sts of the page that<br>
+don't show up each time. If there are a lot of fonts on the page, the Font Manager spends<br>
+time installing versions of them three times larger than the original, which in turn<br>
+takes a lot of memory and makes things even slower. Generally, the more memory you<br>
+can use for the band buffer, the faster printing will go. The fastest method would be to<br>
+get the entire page imaged at once, but that's not always feasible. 
+</p>
+<h2>WHAT YOU'LL NEED</h2>
+<p>
+The printer driver author has to create a set of routines that can accurately reproduce<br>
+a graphic image on the printer or other reproduction device--FAX modem, graphic<br>
+language device, and so on. Besides this article, you'll need information from a range of<br>
+sources to write a good driver.
+</p>
+<ul>
+<li><b> Apple IIGS Technical Notes #35 and #36.</b> Technical Note #35 is<br>
+the<i> only</i>&nbsp;&nbsp;document that completely and authoritatively defines what each<br>
+printer driver routine must do, as well as the structure for printer drivers.<br>
+There have been mistakes in this note in the past. Since few developers have<br>
+written printer drivers, we haven't gotten much feedback. This article was<br>
+written using the September 1990 revision of the note, as well as corrections<br>
+to the March 1990 version.&nbsp;&nbsp;Technical Note #36, Port Driver Specifications,<br>
+is the complete specification for port drivers, listing the parameters for each<br>
+call. The calls are made through the Tool Locator.</li>
+<li><b><i> Apple II GS Toolbox Reference </i></b><b> series</b>, published by<br>
+Addison-Wesley.&nbsp;&nbsp;The Print Manager and its data structures are defined in<br>
+Volume 1; necessary QuickDraw routines are in Volume 2; and corrections and<br>
+new calls to all the tools are in Volume 3. The beta drafts of any of these books<br>
+are not good enough.</li>
+<li><b> Knowledge of your target printing device.</b> If you can write a<br>
+routine (in a desk accessory, perhaps) that can print a pixel map (like the<br>
+entire screen), you have a good start for some of the imaging routines you'll<br>
+need in your driver.</li>
+<li><b> Familiarity with QuickDraw. </b>Since printing occurs when the<br>
+application draws into a printing <code>GrafPort</code>, you have to be able to manipulate<br>
+<code>GrafPort</code>s and their clipping components. To print in deferred mode, you have<br>
+to be able to store images and reproduce parts of them for translation to<br>
+printer codes.</li>
+<li><b> Knowledge of the Print Manager architecture.</b> In addition to the<br>
+17 calls your driver will handle, you should be familiar with the other Print<br>
+Manager and port driver calls so that you can use them to your advantage.</li>
+</ul>
+<h2>THE PHYSICAL STRUCTURE</h2>
+<p>
+There is a standard physical structure for printer drivers to follow so that the Print<br>
+Manager can perform its dispatching properly.
+</p>
+<p>
+&nbsp;A printer driver begins with two zero bytes and a count of the number of routines the<br>
+driver supports. The Print Manager will transform the call number into a<br>
+precomputed index for a four-byte per entry jump table, and put this index in the<code>X</code><br>
+register. Thus an indirect indexed jump,<code> jmp(driverTable,X)</code>, will call the routine.
+</p>
+<p>
+&nbsp;Note that each jump table entry is four bytes long, but a<code> jmp(driverTable,X)</code><br>
+instruction will only use the low word of&nbsp;&nbsp;each entry. This requires all your entry<br>
+points to be in the same&nbsp;&nbsp;segment. To get around this, you can have a short entry<br>
+segment that<code> JSL</code>s to routines in other segments. If you like, you can rewrite the <br>
+entry code to use all four bytes of the address instead of the low two.&nbsp;&nbsp;Just remember to<br>
+preserve the<code> X </code>register, as it's your only indication&nbsp;&nbsp;of which routine to call.
+</p>
+<p>
+&nbsp;The entry point for the driver is at the fifth byte (just after the function count). Note<br>
+that before September 1990, Technical Note #35 always had the table entries for<br>
+<code>PrPixelMap </code>and<code> PrDriverVer </code>backward, and that<code> PrGetPgOrientation </code>was<br>
+misspelled in the note.&nbsp;&nbsp;Also, the count of routines should be 17. A correct driver<br>
+header looks like this:
+</p>
+<pre>DriverStart    START
+
+                dc  i2'0'                         ; identifying word
+                dc  i2'(ListEnd-PrDriverList)/4'   ; count
+EntryPoint  jmp (PrDriverList,x)
+
+PrDriverList    dc  a4'PrDefault'
+                dc  a4'PrValidate'
+                dc  a4'PrStlDialog'
+                dc  a4'PrJobDialog'
+                dc  a4'PrDriverVer'
+                dc  a4'PrOpenDoc'
+                dc  a4'PrCloseDoc'
+                dc  a4'PrOpenPage'
+                dc  a4'PrClosePage'
+                dc  a4'PrPicFile'
+                dc  a4'InvalidRoutine'
+                dc  a4'PrError'
+                dc  a4'PrSetError'
+                dc  a4'GetDeviceName'
+                dc  a4'PrPixelMap'
+                dc  a4'PrGetPrinterSpecs'
+                dc  a4'PrGetPgOrientation'
+ListEnd         anop</pre>
+<p>
+On entry to each routine, the stack looks just as it would for a Toolbox call. There are<br>
+two<code> RTL </code>addresses, then any parameters, and finally any result spaces. The Print<br>
+Manager dispatches to printer driver routines without adding any information to the<br>
+stack, so you can imagine that the Tool Locator dispatches directly to your driver<br>
+routine when a printer driver call is made.
+</p>
+<p>
+Your entry code must be reentrant. Because the Print Manager will call some of your<br>
+routines when you make port driver calls (like<code>GetDeviceName </code>when a port driver is<br>
+first loaded), be sure you have no reentrancy problems.
+</p>
+<p>
+The physical structure of printer drivers is the only constant thing about them. You<br>
+can implement the rest of the driver in any way you choose, using resources, dynamic<br>
+segments, and even multiple files. When you consider using other components like<br>
+these, however, keep in mind that loading any of them may require users to insert the<br>
+boot disk. Even if you make your resources have the<code> preload</code>attribute, most<br>
+resources used by the system, like window and control templates, are released when<br>
+the Toolbox is done with them. Marking them<code> preload </code>means the user won't have to<br>
+insert the disk to use those resources the first time, but once they're released they're<br>
+very likely to go away. You can get around this by loading the resources yourself and<br>
+passing them to the Toolbox as handles instead of as resources--in which case<br>
+<code>preload </code>resources work very well indeed.
+</p>
+<h2>THE LOGICAL STRUCTURE</h2>
+<p>
+In addition to the physical structure, there is a standard logical structure that printer<br>
+drivers should follow so that printing actions are consistent from printer to printer.<br>
+The driver consists of three functional parts: calls that do the printing loop, routines<br>
+to maintain and access the print record, and other stuff--the few routines that don't<br>
+fit either of the other categories.
+</p>
+<p>
+<b>PRINT LOOP ROUTINES</b><br>
+The printing routines will be called by the application to make printing happen. The<br>
+application just opens a document, opens some pages, draws, closes the pages and the<br>
+document, and when<code>PrPicFile </code>is called, printing just kind of happens. The printer<br>
+driver is what makes it happen.
+</p>
+<p>
+Although the printing routines are described fairly well in Technical Note #35, the<br>
+following summary highlights the most important points about using these routines.
+</p>
+<p>
+<b>PrOpenDoc.&nbsp;&nbsp;</b><code>PrOpenDoc</code> is the beginning of the regular print loop.&nbsp;&nbsp;&nbsp;This is where<br>
+you create (if necessary) and initialize the printing<code>GrafPort</code> for the application to<br>
+draw pages into. You should also make sure to validate the print record, since it<br>
+contains the settings you must use to image this document. If you want a "Preparing<br>
+data" dialog box, this is the place to display it. Before you exit<code>PrOpenDoc</code>, you should<br>
+have allocated most of the resources you'll need to print (memory, disk space, and so<br>
+on).
+</p>
+<p>
+<b>PrOpenPage</b>.<code> PrOpenPage </code>is the application's way of telling you "I'm going to draw<br>
+into this<code>Grafport</code> to image the next page." You get to initialize the <code>Grafport</code> to be<br>
+ready for printing, including setting the clipping regions to the size of the page<br>
+rectangle (or the rectangle passed to<code>PrOpenDoc</code>, if there is one), and to make the<br>
+printing <code>Grafport</code> the current one, saving the old port. If you're printing in<br>
+immediate mode, you should install your bottleneck procedures in the<code>Grafport</code> here<br>
+with the QuickDraw II call<code> SetGrafProcs</code>.
+</p>
+<p>
+<b>PrClosePage.&nbsp;&nbsp;</b><code>PrClosePage</code> undoes whatever it was that<code>PrOpenPage</code> did. Close the<br>
+picture for this page here (or eject the page if you are printing in immediate mode).<br>
+Be sure to restore the old<code>Grafport</code>(from<code> PrOpenPage</code>) before returning. 
+</p>
+<p>
+<b>PrCloseDoc.</b><code> PrCloseDoc </code>similarly undoes what<code> PrOpenDoc </code>did. If<code> PrOpenDoc</code><br>
+allocated a new printing <code>Grafport</code>,<code> PrCloseDoc </code>must dispose of it (after making<br>
+sure it's closed so you don't orphan any region handles). You should close the printing<br>
+<code>Grafport</code> with the QuickDraw II call<code> ClosePort</code>.&nbsp;&nbsp;(It's not a port driver call, no<br>
+matter what Note #35 says). You should also erase the dialog box you drew in<br>
+<code>PrOpenDoc</code>, presuming you drew one.
+</p>
+<p>
+<b>PrPicFile.</b><code> PrPicFile </code>does nothing if you're in immediate mode, but it does nearly<br>
+everything if you're in deferred mode. Given the model of recording pages in pictures,<br>
+the instructions described in Note #35 are pretty good--they lead you through the<br>
+process one step at a time.
+</p>
+<p>
+There's one very important part of most printer drivers that's not covered by the<br>
+note--imaging. The process of turning pixel images into printer codes is so dependent<br>
+on the target device that neither this article nor the note can tell you&nbsp;&nbsp;how to do it.<br>
+However, there are a few strategies that apply to all printer drivers:
+</p>
+<ul>
+<li> Doing fewer<code> DrawPicture </code>calls makes printing faster. The best way to<br>
+do this is to use as large a band buffer as you can. Remember that<code> MaxBlock</code><br>
+doesn't reveal how much memory could be available after purging and<br>
+out-of-memory routines, so just ask the Memory Manager for what you want,<br>
+and ask for something smaller if you don't get it. Also remember to leave at<br>
+least 16K available for the Toolbox and GS/OS : don't use all the available<br>
+memory. See the Apple II Technical Notes for more memory management<br>
+strategies.</li>
+<li> The conversion of pixels to printer codes will occupy most of your<br>
+driver's executing time, so make it as efficient as possible. You should handle<br>
+large areas of white space quickly by optimizing your conversion routines to<br>
+scan for similarly colored areas as fast as possible.</li>
+<li> If your target device supports any kind of compaction or data<br>
+compression, use it. Examples of compression include printer commands to<br>
+"print this pattern 400 times" instead of sending "print this pattern" 400<br>
+times. Tests during Apple's development of IIGS printer drivers have shown<br>
+that even on a full page of text, the compression rate is always more than 50<br>
+percent.</li>
+<li> If you have any control over the port drivers, try to make them as fast as<br>
+possible. Send data through the port driver in large chunks to let the port<br>
+driver work as fast as possible. For a 300 dpi target device, there may be as<br>
+much as one megabyte of data necessary to print all the pixels on an 8 1/2 by<br>
+11-inch page. Compaction will help here as well.</li>
+</ul>
+<p>
+The status record is a method the application has of communicating with your printer<br>
+driver, since printing can take such a long time. The job subrecord contains a pointer<br>
+to a procedure to be called during idle time--that is, the time between pages, bands, or<br>
+copies. If you're passed<code>nil</code> for the<code>StatusRecPtr</code>, it's probably easier for you to<br>
+allocate a status record yourself and update it as if it were provided by the application.
+</p>
+<p>
+Be sure to dispose of everything you've allocated during printing before leaving<br>
+<code>PrPicFile</code>. Although the application should make all the print loop calls in order, if<br>
+an error occurs inside one of the calls (or if the application calls<code> PrSetError</code>), the<br>
+rest of the print loop must handle it gracefully and still deallocate all allocated<br>
+resources at the end of<code> PrPicFile</code>.
+</p>
+<p>
+<b>PrPixelMap.</b><code> PrPixelMap </code>takes an arbitrary pixel map and prints it. You're passed<br>
+a QuickDraw<code>locInfo </code>structure (the pixel map defining portion of a <code>Grafport</code>), a<br>
+rectangle enclosing the portion of the <code>Grafport</code> to print, and a flag indicating whether<br>
+to use color.<code> PrPixelMap </code>is a quick and dirty way to print graphics without going<br>
+through the print loop.
+</p>
+<p>
+Your imaging code should have a routine to print an arbitrary pixel map anyway, and<br>
+<code>PrPixelMap</code>can just call it. Alternatively, as suggested by Technical Note #35, you<br>
+can allocate a new print record, make a picture that contains just the pixel map, and<br>
+call your normal deferred printing routines.
+</p>
+<p>
+<b>PRINT RECORD METRICS ROUTINES</b><br>
+The print record metrics routines set and get values in the print record. The print<br>
+record is the only way your driver can communicate with the application about<br>
+printing parameters, making it vitally important that the print record be correct.<br>
+Only you know if the values in the print record make sense, so you get to check it for<br>
+consistency. You also get to present the most logical option choices to the user, since no<br>
+one else knows what they are. In addition, there's a new call for System Software 5.0<br>
+and later that lets you return the page orientation so that applications don't have to go<br>
+reading the print record.
+</p>
+<p>
+<b>PrDefault.</b> This routine copies the default print record into the supplied handle. The<br>
+default print record's contents will vary depending on the current screen resolution.<br>
+Be sure not to set the handle size on this handle. Some applications keep extra stuff<br>
+beyond the end of the record. This isn't kosher, but leaving the print record handle size<br>
+unchanged is an easy work-around to a potential problem.
+</p>
+<p>
+<b>PrValidate.</b><code> PrValidate </code>checks a supplied print record for consistency. If any of<br>
+the values are inconsistent or invalid, you should correct them. If the supplied print<br>
+record isn't a print record from your driver, you should fill it with the default values.
+</p>
+<p>
+<b>PrStlDialog.</b><code> PrStlDialog </code>is responsible for the dialog box the user sees after<br>
+choosing the Page Setup command in the File menu. You should initialize the controls in<br>
+the dialog box based on the print record and save all the changes from the dialog box in<br>
+the print record (if the OK button was pressed, of course).
+</p>
+<p>
+<b>PrJobDialog.</b><code> PrJobDialog </code>is responsible for the Print dialog box. As with the<br>
+Page Setup dialog box, no one but your driver knows the best options and their default<br>
+choices for your printer.<code>PrJobDialog </code>should initialize the<code> iCopies </code>field in the job<br>
+subrecord to 1,<code> iFstPage </code>(thefirst page to be printed) to 1, and<code> iLstPage </code>(the last<br>
+page to be printed) to the largest value your driver allows. By setting these values,<br>
+you ensure that one copy of each page is printed if the user does not change these items.<br>
+That's how the human interface should work.
+</p>
+<p>
+<b>PrGetPgOrientation.</b><code> PrGetPgOrientation </code>returns a 0 for portrait (small side<br>
+on top) mode and a 1 for landscape (sideways) mode. No one cares where you store this<br>
+in your print record, just return it here. For print records with<code> iDev </code>values $8001<br>
+and $8003, you must store this information in the<code> wDev </code>field.
+</p>
+<p>
+<b>MISCELLANEOUS DRIVER SUPPORT</b><br>
+There are a few routines involving port driver communication, printer identification,<br>
+and internal functions that you get to provide as well.
+</p>
+<p>
+<b>PrError.</b> You maintain an internal error code for your printer driver. This is so<br>
+that if<code> PrOpenDoc</code>returns an error, you can look at the error code and do nothing for<br>
+the rest of the print loop.<code>PrError </code>simply returns your internal error status.
+</p>
+<p>
+<b>PrSetError.</b><code> PrSetError </code>sets your internal error status to the supplied value.<br>
+This call allows an<b>GetDeviceName.</b><code> GetDeviceName </code>is also known as<br>
+<code>PrChanged</code>--it's called by the Print Manager when your driver is first loaded. This<br>
+routine takes the AppleTalk Name Binding Protocol or NBP- format name of your<br>
+target device and passes it to the port driver routine<code> PrDevPrChanged</code>. This allows<br>
+the network port driver to communicate with your target device over the network. If<br>
+you don't have a network-compatible target device, pass<code> nil </code>to<code> PrDevPrChanged</code>. An<br>
+example of an NBP-type name can be found in Picter.
+</p>
+<p>
+<b>PrDriverVer.</b><code> PrDriverVer </code>returns your driver's version number, so that<br>
+applications can scope out your driver for features. If you document features that are<br>
+available in a given version of your driver, this is how other code can find out if that<br>
+version is here or not.
+</p>
+<p>
+<b>PrGetPrinterSpecs.</b><code> PrGetPrinterSpecs </code>tells the caller things about your<br>
+driver without forcing any monkeying around with the print record. Your driver gets<br>
+to return its<code> iDev </code>value identifying the kind of printer or style subrecord and the<br>
+characteristics of the target device. Currently, the only defined characteristic is<br>
+whether or not you're color capable. This stuff is defined for all existing<b><code>iDev</code></b><br>
+drivers, but it's good to keep people out of the print record anyway.
+</p>
+<h2>OUR SAMPLE DRIVER, PICTER</h2>
+<p>
+Picter is a very simple driver. It creates QuickDraw pictures of all the pages and<br>
+saves them as picture files in the *:System:Drivers directory. (Picture files have the<br>
+file type $C1, auxiliary type $0001.) The first file is named screen.a, and the last<br>
+letter is incremented for each additional file until a pathname syntax error occurs.
+</p>
+<p>
+Picter does not support many print record options. It prints only in color, portrait<br>
+mode, full size. Picter has an<code> iDev </code>of $8001, so it interprets the style subrecord as<br>
+the ImageWriter driver does. If someone sets a bit in the print record to an invalid<br>
+value, Picter's<code> PrValidate </code>routine corrects it.
+</p>
+<p>
+Picter is intended to be a working sample that shows the structure and content of a<br>
+printer driver. It is a learning tool, not a release-quality utility. No printer driver<br>
+with this many interface holes should see the light of day as a finished software<br>
+product. 
+</p>
+<p>
+Picter is written in APW/ORCA assembly and uses the Make utility by 360<br>
+Microsystems for source code file management. If you don't have the Make utility, you<br>
+can look in the make file to see the commands to build each of the components and the<br>
+link order.
+</p>
+<p>
+<b>THE WORLD ROUTINES</b><br>
+To ensure that our driver has a consistent environment, Picter includes a few<br>
+environmental routines around every call and some at the main entry point.
+</p>
+<p>
+&nbsp;Our entry point is the short, indirect jump, as we saw when we looked at the driver's<br>
+physical structure earlier. This is acceptable because all of our entry points are in the<br>
+same segment. Before making the jump, we call the environmental routine<br>
+<code>MakeOurWorld</code>.
+</p>
+<p>
+Because there are no printer driver startup and shutdown calls, some people have<br>
+wondered how printer drivers can obtain direct-page space and release it.<br>
+<code>MakeOurWorld </code>is a way to do this. It relies on the fact that when printer drivers are<br>
+unloaded, they are not marked as restartable. Every time the driver is reloaded, we get<br>
+a fresh copy of the driver from disk. So we link in a storage word of zeros, allocate our<br>
+direct-page space, and store the address of this space in the zero word. Then on every<br>
+entry, we just check that word. If it's zero, we were just loaded from disk, so we go get<br>
+the direct-page space again. If the word isn't zero, it's our direct-page space:<br>
+transferring it to the direct- page register after saving the current value sets our<br>
+direct page.
+</p>
+<p>
+We give the direct-page memory the same user ID as the driver. Thus when our driver<br>
+is unloaded, the direct-page memory is likewise released. If you don't need static<br>
+direct-page space, by all means don't allocate any. If you use the application's existing<br>
+stack frame instead of allocating the new direct-page space, you can conserve bank<br>
+zero space.&nbsp;&nbsp;However, since allocating direct-page space is a little trickier, a solution<br>
+is included in<code>MakeOurWorld</code>.
+</p>
+<p>
+<code>MakeOurWorld </code>returns with the accumulator zero and the carry clear if everything<br>
+was right. If the accumulator is zero and the carry is set, we were just loaded and our<br>
+direct page is not initialized. If the accumulator is nonzero and the carry is set, there<br>
+was a real error.
+</p>
+<p>
+Immediately in every subroutine, Picter puts the number of bytes of input parameters<br>
+in the<code> Y</code>register and calls<code> CheckTheWorld</code>. If there was a real error,<br>
+<code>CheckTheWorld </code>calls<code>EndOurWorld </code>to get out of the printer driver with the error<br>
+code. If there was no error,<code>CheckTheWorld </code>quickly returns to the caller.
+</p>
+<p>
+<code>EndOurWorld </code>removes the saved values of the direct-page and data bank registers we<br>
+pushed on the stack in<code> MakeOurWorld</code>. On entry,<code> X </code>contains an error code or the<br>
+value $FFFF to indicate the internal error code should not be changed. The<code> Y </code>register<br>
+contains the number of bytes of input parameters to pull. The routine that removes the<br>
+input parameters is quite generic and is very similar to those used in the Toolbox's<br>
+common exit routines.
+</p>
+<p>
+<b>PICTER'S METRICS ROUTINES</b><br>
+Because Picter is limited in its scope and abilities, its actual printer driver calls<br>
+function slightly differently than they would in a full-blown printer driver. Here's a<br>
+description of how Picter implements the standard print record metrics routines.
+</p>
+<p>
+<b>PrDefault.</b><code> PrDefault </code>does nothing more than copy a linked-in default print record<br>
+to the handle passed as input. It then fixes the<code> rPage </code>and<code> rPaper </code>rectangles to match<br>
+the current screen resolution.
+</p>
+<p>
+<b>PrValidate.</b><code> PrValidate </code>examines the print record values Picter knows about to<br>
+make sure they match the values we support. If they don't, they are modified to be<br>
+supportable and consistent.
+</p>
+<p>
+<b>PrStlDialog.</b><code> PrStlDialog </code>calls the<code> ConductStyleDialog </code>routine to do the actual<br>
+Page Setup dialog box. The dialog routines call several very small subroutines in<br>
+Picter to read the print record values.<code> ConductStyleDialog </code>never accesses the<br>
+print record itself. This is an example of a method of print record management that I<br>
+prefer.
+</p>
+<p>
+<b>PrJobDialog.</b><code> PrJobDialog </code>is very much like<code> PrStlDialog </code>in that it calls one of<br>
+the dialog routines to conduct the dialog, and those routines call us for information on<br>
+the print record.
+</p>
+<p>
+<b>PrGetPgOrientation.</b><code> PrGetPgOrientation </code>returns the value for page orientation<br>
+out of the supplied print record. It reads the values directly, although it could call a<br>
+metrics subroutine just as easily.
+</p>
+<p>
+<b>PICTER'S PRINT LOOP ROUTINES</b><br>
+These routines are Picter's implementation of the routines that do the actual printing.
+</p>
+<p>
+<b>PrOpenDoc.</b> The actual print loop itself is also slightly unorthodox, due to the nature<br>
+of the target device (QuickDraw picture files).
+</p>
+<p>
+<code>PrOpenDoc </code>sets up a printing <code>Grafport</code>, validates the print record, and displays a<br>
+small status message dialog box. It also initializes other printing parameters, like the<br>
+internal error and page number variables.
+</p>
+<p>
+<code>PrOpenDoc </code>stores variables on direct page, making it very bad if the driver were to<br>
+become unloaded before<code> PrPicFile</code>. Since<code> MakeOurWorld </code>lets us check for this<br>
+easily, we return a new error if it happens. The error is defined as $13FF and the<br>
+equate is<code> PrBozo</code>. Any meaning this equate has is the interpretation of the reader.
+</p>
+<p>
+<b>PrOpenPage.</b><code> PrOpenPage </code>checks to make sure our direct page is still around and<br>
+returns<code>PrBozo </code>if not. If all is well, we increment the page number and check the job<br>
+subrecord to make sure this page is one we're supposed to be printing. If it is, we<br>
+initialize the printing <code> Grafport</code> to contain rectangular clipping and visible regions<br>
+the size of the<code> rPage </code>rectangle (or of the supplied frame rectangle, if any). We<br>
+update the status dialog box and call our subroutine<code> OpenPICTFile</code>, which creates the<br>
+new picture file, opens it, and opens a QuickDraw picture for recording the page<br>
+images.
+</p>
+<p>
+<b>PrClosePage.</b><code> PrClosePage </code>calls<code> ClosePICTFile</code>, which closes the picture,<br>
+writes it to disk, and kills the picture. We then close the printing <code>Grafport</code>, update<br>
+the status dialog box, and return. (None of this happens if the driver was just loaded.<br>
+The caller gets<code> PrBozo </code>instead.)
+</p>
+<p>
+<b>PrCloseDoc.</b><code> PrCloseDoc </code>disposes of the memory for the printing <code>Grafport</code> if it<br>
+was allocated by<code>PrOpenDoc</code>. We restore the old <code>Grafport</code>, close the status dialog box,<br>
+and exit.
+</p>
+<p>
+<b>PrPicFile.</b><code> PrPicFile </code>doesn't really do anything in Picter. We do all our actual<br>
+"printing" in the page routines, but our job record indicates that we are in deferred<br>
+mode for compatibility with applications that don't think they print in immediate<br>
+mode. Nevertheless, Picter shows how to do several of the more common<code> PrPicFile</code><br>
+actions, like setting up a status record, allocating and initializing a new<code> Grafport</code> for<br>
+imaging the pages, calling the idle procedure in the job subrecord, and displaying the<br>
+status dialog box.
+</p>
+<p>
+<b>PICTER'S MISCELLANEOUS ROUTINES</b><br>
+These routines are Picter's implementation of the routines that make your driver<br>
+complete. They allow your driver to respond to requests for error, network, and<br>
+version information.
+</p>
+<p>
+<b>PrReserved.</b><code> PrReserved </code>is the name we picked for what Note #35 calls<br>
+<code>InvalidRoutine</code>.&nbsp;&nbsp;It is, in fact, the remnants of an old Print Manager architecture<br>
+call named<code> PrControl</code>. This had varying parameters and was generally not Your<br>
+Friend. To be safe here, we return error $0002, which as a Tool Locator error<br>
+indicates to the caller that he should pull his parameters back off the stack.
+</p>
+<p>
+<b>PrError and PrSetError.</b><code> PrError </code>returns the value in our internal direct-page<br>
+error location.<code>PrSetError </code>takes the value and puts it in our error location on direct<br>
+page.
+</p>
+<p>
+<b>GetDeviceName (PrChanged).</b><code> GetDeviceName </code>really has no meaning for us,<br>
+since our target device doesn't (and can't) exist on an AppleTalk network, but an<br>
+NBP-type string is included anyway to demonstrate the technique. This will cause the<br>
+network port driver to report that no devices of our type are available.
+</p>
+<p>
+<b>PrDriverVer.</b><code> PrDriverVer </code>returns the version word for our driver. You might<br>
+want to stop in the middle of writing your<code> PrPicFile </code>call to write<code> PrError</code>,<br>
+<code>PrSetError</code><b>,</b> and<code>PrDriverVer </code>just to remind yourself that it's not always that hard.
+</p>
+<p>
+<b>PrGetPrinterSpecs.</b><code> PrGetPrinterSpecs </code>returns our<code> iDev </code>word and the color<br>
+capabilities of this printer (picture files are always in color). If you need to check<br>
+your target device's capabilities (for example, an ImageWriter doesn't always have a<br>
+color ribbon in it), this is the place to do it.
+</p>
+<p>
+<b>WHAT YOU CAN ADD</b><br>
+Picter is intended as a workbook, a shell from which you can learn printer driver<br>
+technique. There are many more things you can do with it before starting your own<br>
+printer driver. By examining these areas now--before you actually try to implement<br>
+them in a driver--you will avoid future frustration.
+</p>
+<p>
+<b>More picture types.</b> Picter writes only QuickDraw picture files as supplied. You<br>
+could add a pop-up "Picture type" menu to the job dialog box and allow the user to pick<br>
+any of the popular graphics formats. Apple Preferred is a good choice because its<br>
+line-oriented structure makes it a good candidate for banding. Banding will be<br>
+necessary unless you have a pixel map large enough to hold the entire image at once.<br>
+Other easy additions are packed QuickDraw pictures and 32K screen dumps (if you can<br>
+get a 32K block for the pixel map). Remember that screen files aren't 32K of<br>
+pixels--they're 32,000 bytes of pixels and 768 bytes of scan-line control bytes and<br>
+color tables.
+</p>
+<p>
+<b>More page types.</b> As supplied, Picter only supports two types of page<br>
+metrics--screen size and U.S. letter size. Try adding more sizes (legal, label,<br>
+envelope). The code to handle different page metrics is directly applicable to any other<br>
+printer driver. In fact, you could add line edit controls to let theuser type the size of<br>
+the page rectangle in inches or centimeters and thus have no limit to the number of<br>
+paper sizes you support.
+</p>
+<p>
+<b>Communicating with the port driver.</b> Picter doesn't communicate with the port<br>
+driver (except in<code>GetDeviceName</code>). Try writing the name of each call to the port<br>
+driver as it executes. If you have an ASCII printer connected to the hardware controlled<br>
+by the port driver, you should get a hard copy of each call name as it executes. You<br>
+could also write debugging information this way, such as parameters or print record<br>
+addresses.
+</p>
+<p>
+<b>More options. </b>You can also add more standard print record options--such as<br>
+condensed and landscape modes--to Picter. Supporting landscape mode involves<br>
+swapping the horizontal and vertical coordinates of the<code> rPage </code>and<code> rPaper </code>rectangles<br>
+as well as the horizontal and vertical printer resolutions--just be sure your<br>
+validation routines know how to deal with it! You can make vertical condensed mode<br>
+happen by passing a rectangle that is half the correct height of the framing rectangle<br>
+for<code> OpenPicture</code>. Other reduction values, both horizontal and vertical, come by<br>
+changing the framing rectangle for<code> DrawPicture </code>as well.
+</p>
+<h2>GO FORTH AND IMAGE</h2>
+<p>
+Printing doesn't have to be a big mystery. The task is divided into components so that<br>
+no one part of it becomes insurmountable. Turning imaging into printer codes is the<br>
+responsibility of the printer driver, talking to the hardware is the responsibility of<br>
+the port driver, and the Print Manager holds it all together. While supporting<br>
+different printers and interfaces would normally be beyond the scope of most<br>
+applications, the Apple&nbsp;&nbsp;IIGS printing architecture makes it easy for applications. All<br>
+you need is a printer driver--and now you know how to create those as well.
+</p>
+<h2>SOME THINGS TO KNOW ABOUT PRINT RECORD FIELDS</h2>
+<p>
+Volume 1 of the <i>Apple IIGS Toolbox Reference </i> does a good job explaining most of the<br>
+fields in the print record, but it contains some incomplete information. One such<br>
+omission occurs in the<i> Reference's </i> description of the<code> iDev </code>field. The<code> iDev </code>field<br>
+identifies the kind of printer. The<i> Reference</i>&nbsp;&nbsp;lists two values for this field--<br>
+ImageWriter and LaserWriter--which leads to problem code in applications such as<br>
+the following:
+</p>
+<pre>if PrintRecord.iDev = 1 then
+    {It's an ImageWriter}
+else
+    {It's a LaserWriter}
+endif</pre>
+<p>
+In reality, there are at least six defined values for<code> iDev:</code><br>
+$0001 ImageWriter<br>
+$0002 ImageWriter LQ<br>
+$0003 LaserWriter<br>
+$0004 Epson<br>
+$8001 Generic dot matrix printer<br>
+$8003 Generic laser printer
+</p>
+<p>
+The $8001 and $8003<code> iDev </code>values are provided for generic compatibility. If a<br>
+driver has an <code>iDev</code> of $8001, it interprets the style subrecord of the printer record<br>
+as is documented for the ImageWriter driver. If the<code> iDev </code>is $8003, it interprets the<br>
+style subrecord as it would for the LaserWriter driver.
+</p>
+<p>
+Unfortunately, because this is the only device identification field present in the print<br>
+record, there is no way to uniquely identify printers assigned to these values. For<br>
+instance, suppose you have two printers with printer drivers in your system--the<br>
+GlopJet and the ImageStamper. Both drivers use an<code> iDev </code>of $8001. Applications are<br>
+encouraged to save print records with documents so that the user's print settings are<br>
+maintained across sessions. If you open a document with a print record created by the<br>
+GlopJet driver but your currently selected printer is the ImageStamper, the<br>
+ImageStamper driver will be passed the print record and asked to validate it. The<br>
+ImageStamper driver looks at<code>iDev</code> and sees $8001, and it has no other way to know<br>
+that this print record is not an ImageStamper record.
+</p>
+<p>
+Drivers with unique<code>iDev</code> values don't have this problem. For example, the<br>
+LaserWriter driver knows that if the<code> iDev</code> value isn't $0003, it's not a LaserWriter<br>
+print record and should be filled with default values. 
+</p>
+<p>
+Apple's Developer Technical Support group will assign new<code> iDev </code>values to printer<br>
+driver authors if neither the $8001 or $8003 interpretation of the style subrecord<br>
+is suitable, but you must be aware that some applications will not work with other<br>
+formats of style subrecords. It's better for compatibility purposes to support one of<br>
+the existing style subrecord formats if possible.
+</p>
+<p>
+For instance, some applications don't like to let the user choose items that don't work<br>
+very well. If an application doesn't print very well without color, it might do<br>
+something unfortunate like set the "color" bit in the<code> wDev </code>field before starting the<br>
+printing loop. If the driver doesn't support color printing, it will catch this error in<br>
+the<code> PrValidate </code>routine and may reinitialize the print record with default values. If<br>
+the driver author is lucky, the application will first check the<code> iDev </code>field to make<br>
+sure that the "color" bit is supported in the style subrecord. If you're really lucky,<br>
+the application will call<code> PrGetPrinterSpecs </code>and keep out of the print record<br>
+altogether. Many applications just blast the bit.
+</p>
+<p>
+<b>WHAT DRIVERS AND APPLICATIONS SHOULD DO</b><br>
+To keep your handling of the print record kosher, there are a few things you should<br>
+keep in mind.
+</p>
+<p>
+First of all, since print records are associated with printing jobs, it would be nice to<br>
+keep all parameters that go with a printing job in the print record. But since a field is<br>
+either defined or reserved, it's not clear where you can put a new parameter. If your<br>
+printer has 14 different internal fonts and you want the user to choose one of them,<br>
+where can you put that information?
+</p>
+<p>
+Apple has set aside the 38 bytes in the print record labeled<code> printX </code>for printer<br>
+driver use. Nonstandard parameters and values can go there. This area is left&nbsp;&nbsp;to the<br>
+discretion of the printer driver. It will always remain a miscellaneous storage area,<br>
+no matter what Apple does with it in drivers it develops, and its interpretation will<br>
+not depend on the<code> iDev </code>field. In other words, if the LaserWriter driver stores a<br>
+parameter there, drivers with $8003<code> iDev </code>values are not expected to do the same.
+</p>
+<p>
+Applications absolutely must not tamper with the<code> printX </code>subrecord nor try to<br>
+interpret any items in there. Applications have most of memory for parameters, while<br>
+printer drivers only get these 38 bytes in the print record. Applications, keep out.
+</p>
+<p>
+It's also important that neither drivers nor applications alter the print record fields<br>
+marked reserved for Apple--in particular the<code> prInfoPT </code>and<code> prXInfo </code>subrecords.<br>
+Older versions of Apple's drivers stored a private copy of the<code> prInfo </code>subrecord in<br>
+<code>prInfoPT </code>(PT stands for "private"). Discovering this fact, some applications used<br>
+this copy instead of the original. Since this feature was never documented, however,<br>
+relying on it is likely to make your application not work with other drivers. As for the<br>
+<code>prXInfo </code>subrecord, it may be defined in the future for the storage of parameters<br>
+between spooling and printing (between<code>PrCloseDoc </code>and<code> PrPicFile</code>).
+</p>
+<h2>COMPATIBILITY WITH APPLE'S DRIVERS</h2>
+<p>
+Apple's printer drivers have dominated the print driver development environment.<br>
+This dominance has discouraged the creation of third-party drivers, which has in turn<br>
+made a bad situation worse. Since there are few drivers other than Apple's to test with,<br>
+applications tend to do unsavory things with drivers because they're expedient. Since<br>
+applications do unsavory things, developers who want their drivers to be backward-<br>
+compatible with applications tend to disassemble the Apple drivers to figure out what<br>
+to do. Since everyone does unsavory things, the system winds up in an unusable and<br>
+unmaintainable state because no one wants to rock the boat.
+</p>
+<p>
+<b>THE IMAGEWRITER DRIVER</b><br>
+Of all Apple's drivers, the old (pre-5.0.3) ImageWriter driver has caused the most<br>
+headaches. The main problem with this driver is that it's a hybrid. Long ago, the<br>
+structure of the Print Manager was quite different from what it is today. The Print<br>
+Manager had "high-level drivers" and "low-level drivers." High-level drivers would<br>
+communicate with the application, and low-level drivers would do the actual imaging<br>
+or communication tasks. You will still see evidence of these things in some printing<br>
+discussions. The giveaway is usually the abbreviations HLD for high-level driver and<br>
+LLD for low-level driver.
+</p>
+<p>
+When the Print Manager architecture was changed to its current design, the<br>
+ImageWriter driver was converted-- not rewritten as it should have been. The<br>
+conversion created a lot of source files and put nearly every routine in a place where<br>
+you wouldn't expect to find it. As new features were added, the entire thing became<br>
+more and more unwieldy, until at last Ben Koning broke from the beast by creating a<br>
+new, vastly improved ImageWriter driver for System Software 5.0.3 (with some<br>
+imaging routines by Apple II GS graphics wizard Jason Harper).
+</p>
+<p>
+The Print Manager has a few features in it for the questionable use of the old<br>
+ImageWriter driver. These have never been documented and now that the old<br>
+ImageWriter driver is going away, these features may go away as well. If you have<br>
+ever disassembled the driver (not kosher according to the license agreement anyway),<br>
+you may have discovered some of these less-than-desirable programming practices:
+</p>
+<ul>
+<li> The ImageWriter driver used the value in the accumulator at entry time<br>
+as a direct-page register.</li>
+<li> The ImageWriter driver tended to print correctly when print record<br>
+fields were set to totally invalid parameters.</li>
+<li> Sometimes the ImageWriter driver played loose with the parameters. It<br>
+was known to work acceptably when<code> printGrafPortPtrs </code>were passed where<br>
+print record handles were expected.</li>
+</ul>
+<p>
+<b>WALKING A THIN LINE</b><br>
+All of this leads to the question of how you will write your driver: will you create your<br>
+driver strictly by the book, or will you program defensively in an attempt to work<br>
+with those who broke the rules? If you use only the defined print record fields and stay<br>
+clear of undocumented structures, your driver will work fine with future versions of<br>
+the Print Manager and most applications. On the other hand, if you don't support the<br>
+unorthodox use of the print record, your driver is less likely to work with some of the<br>
+bigger and more widely used Apple IIGS applications.
+</p>
+<p>
+The scariest thing about continuing to support these structures is that it gives<br>
+application authors no reason to stop using them. For practical reasons, it may be<br>
+impossible to avoid using some of these undocumented structures. Keep in mind,<br>
+however, that the less of this you can get away with, the better off everyone will be in<br>
+the long run.
+</p>
+<h2>ABOUT BEN'S DIALOG BOX ROUTINES</h2>
+<p>
+Included with our sample printer driver are some dialog box routines from Ben<br>
+Koning, the guy behind the new ImageWriter and ImageWriter LQ drivers. Ben has<br>
+spent a lot of time creating drivers that are more powerful, faster, and easier to<br>
+maintain so we can add more features in the future. Our thanks to Ben for sharing his<br>
+routines, which have been slightly modified for use in this driver. If you ever see Ben<br>
+around, buy him something really expensive--like a house, or a few cars, or a hot dog<br>
+at the average trade show.
+</p>
+<p>
+By using these routines, you can easily make your style, job, and status dialog boxes<br>
+appear like those in Apple's printer drivers. Users will be less confused, everything<br>
+will seem to fit together better, and the world will be a happier place.
+</p>
+<p>
+There are two types of dialog boxes in these routines--status dialog boxes and<br>
+interactive dialog boxes. The status routines make it very easy to keep the user<br>
+informed during the printing process. There are three status dialog routines--one to<br>
+display the empty dialog box, one to show a message in this box, and one to close the<br>
+box:
+</p>
+<ul>
+<li><code> StartStatusMessage </code>draws a small, blank dialog box centered on the<br>
+screen, regardless of the mode (320 or 640).</li>
+<li><code> StatusMessage </code>takes a pointer to a Pascal string in a direct-page<br>
+location and displays that string centered in the status dialog box.</li>
+<li><code> FinishStatusMessage </code>closes the dialog box and removes it from the<br>
+screen. Call<code> StartStatusMessage </code>at the beginning of<code> PrPicFile</code>, and every<br>
+time you do something different, call<code> StatusMessage </code>with a descriptive<br>
+string. Several descriptive strings are included as examples of what the new<br>
+ImageWriter driver does. Call<code> FinishStatusMessage </code>before returning to <br>
+the caller.</li>
+</ul>
+<p>
+There are also two other specific dialog routines that our sample driver does not use. <br>
+<code>StatusMesgFeedPrompt</code>fills the status dialog box with the string "Insert sheet for<br>
+page: XXXXX", where you pass the page number necessary as an integer on direct page. <br>
+<code>NotCorrectDevDialog</code> displays a small box with a Cancel button that indicates that<br>
+this is not your target device. 
+</p>
+<p>
+<code>StatusMesgFeedPrompt </code>must be called&nbsp;&nbsp;between<code> StartStatusMessage </code>and<br>
+<code>FinishStatusMessage</code>, but<code> NotCorrectDevDialog </code>can be called at&nbsp;&nbsp;any time.
+</p>
+<p>
+The style and job dialog boxes are largely defined by the controls in them. <br>
+<code>ConductStyleDialog</code> and<code>ConductJobDialog</code> each have predefined templates linked in<br>
+as data. This way, you can avoid the disk-insertion problems that resources and<br>
+dynamic segments entail. The item IDs are equated to match values in the print record.<br>
+Picter shows how you can write the standard metrics routines to use Ben's dialog box<br>
+routines.
+</p>
+<p>
+<b>MATT DEATHERAGE</b> used to think he was a cynic, but two and a half years in<br>
+Developer Technical Support for the Apple II has made him doubt even that.&nbsp;&nbsp;His<br>
+perpetual quest for sleep has been interrupted by his new responsibility for the<br>
+ProDOS partition on the Developer CD and <i> Developer Essentials</i>&nbsp;&nbsp;disc, as well as by his<br>
+resuming the role of DTS technical lead for Apple IIGS system software.&nbsp;&nbsp;It would be<br>
+enough to make his head spin, he says, "if my head were jointed that way." His musical<br>
+pursuits continue with work on an album,<i> The Fruited Computer Follies of 1990,</i> <br>
+which will never be released as all of the songs on it are entirely unsuitable for polite<br>
+company.&nbsp;&nbsp;He's currently conspiring with Robert Thurman to withhold the definition of<br>
+"PPG."&nbsp;&nbsp;*
+</p>
+<p>
+<b>For More Information</b><br>
+<i>Apple IIGS Toolbox Reference</i>&nbsp;&nbsp;, Volumes 1-3<br>
+Apple IIGS Technical Note #34, Low-Level QuickDraw II Routines<br>
+Apple IIGS Technical Note #35, Printer Driver Specifications<br>
+Apple IIGS Technical Note #36, Port Driver Specifications<br>
+Apple IIGS Technical Note #51, How to Avoid Running Out of Memory<br>
+Apple IIGS Technical Note #72, QuickDraw II Quirks<br>
+Apple IIGS Technical Note #93, Compatible Printing&nbsp;&nbsp;*
+</p>
+<p>
+<b>Thanks to Our Technical Reviewers</b> Pete "Luke" Alexander, Ben Koning, Suki<br>
+Lee,&nbsp;&nbsp;Jim Luther, and Dave Lyons&nbsp;&nbsp;*
+</p>
+</body>
+</html>
