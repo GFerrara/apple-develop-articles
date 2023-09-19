@@ -1,0 +1,579 @@
+<html>
+<head>
+<!-- Extracted from develop - 1990 -->
+<!-- on 2023-09-19 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>January 90 - BRAVING OFFSCREEN WORLDS</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>BRAVING OFFSCREEN WORLDS</h2>
+<h1>GUILLERMO ORTIZ</h1>
+<p>
+<i>No one disputes the benefits of using offscreen environments to prepare and keep the</i><br>
+<i>contents of windows.&nbsp;&nbsp;The only problem is that creating such environments--from a</i><br>
+<i>simple pixMap to a more complicated GDevice--can be rather difficult. 32-Bit</i><br>
+<i>QuickDraw includes a set of calls that allows an application to create offscreen worlds</i><br>
+<i>easily and effectively. This article describes those calls and provides details on how to</i><br>
+<i>use them.</i>
+</p>
+<p>
+Until now, creating and maintaining offscreen devices or ports has been complicated<br>
+and confusing at best.&nbsp;&nbsp;As part of 32-Bit QuickDraw, Apple's engineering team has<br>
+included a set of calls that makes creating and maintaining offscreen devices and ports<br>
+a real breeze.&nbsp;&nbsp;Using the offscreen graphics environment, QuickDraw can maintain the<br>
+data alignment necessary to improve the performance of CopyBits when you use it to<br>
+display onscreen the contents of the offscreen buffer.
+</p>
+<p>
+Also, applications using the offscreen world support from QuickDraw are more likely<br>
+to benefit from future enhancements to QuickDraw than programs doing their own<br>
+offscreen management.&nbsp;&nbsp;This can save you a lot of time down the road.
+</p>
+<p>
+The offscreen world offers a few more benefits:
+</p>
+<ul>
+<li>The system takes care of all the messy details involved in creating the<br>
+offscreen GDevice. You don't need to bother asking "What flags should I set?"<br>
+or "What is the refNum for an offscreen device?"</li>
+<li>You can tailor the offscreen port according to your specifications rather<br>
+than being restricted to screenBits.bounds. Because the visRgn comes set to the<br>
+right dimensions, you won't need to change anything.</li>
+<li>The pixMap associated with the offscreen world comes back from the call<br>
+complete and ready to use.&nbsp;&nbsp;You won't have to lose sleep wondering if you set<br>
+the correct value for rowBytes or if your baseAddress pointer has less<br>
+memory than it should because the compiler didn't do the multiplication using<br>
+Longs.</li>
+</ul>
+<p>
+Think of the GWorld structure as an extension to the CGrafPort structure, containing<br>
+the port information along with the device data and some extra state information.&nbsp;&nbsp;In<br>
+most cases, a GWorldPtr can be used interchangeably with a CGrafPtr, which makes<br>
+converting applications quite easy.&nbsp;&nbsp;At this point, however, Apple is keeping the<br>
+structure of an offscreen graphics world private to allow for further expansion.
+</p>
+<p>
+For instance, in the following section of Developer Technical Support's sample<br>
+program FracApp, the new calls were implemented without changing the document's<br>
+data structure at all.&nbsp;&nbsp;This example illustrates the difference the new set of calls can<br>
+make when creating offscreen environments.
+</p>
+<h2>A LOOK AT THE NEW CALLS</h2>
+<p>
+Let's use a section of the sample program FracApp to illustrate the difference this new<br>
+set of calls can make when creating offscreen environments.&nbsp;&nbsp;The procedure<br>
+<code>TFracAppDocument.BuildOffWorld</code> creates a new device and its accompanying<br>
+structures for each document.&nbsp;&nbsp;Here is the original code, with comments shortened,<br>
+followed by the equivalent code using the new calls:
+</p>
+<pre>PROCEDURE  TFracAppDocument.BuildOffWorld (sizeOfDoc: Rect);
+VAR oldPerm:    Boolean;
+        dummy:  Boolean;
+        docW, docH: LongInt;
+        fi:     FailInfo;
+        currDevice: GDHandle;
+        currPort:   GrafPtr;
+        Erry:   OSErr;
+   
+    PROCEDURE DeathBuildOff (error: OSErr; message: LONGINT);
+    {Error handler}
+
+    BEGIN
+        oldPerm := PermAllocation (oldPerm);   
+        { Set memory back to previous. }
+       
+        SetGDevice (currDevice);   
+        { Set device back to main, just in case. }
+        SetPort (currPort);
+    END;
+
+BEGIN
+    currDevice := GetGDevice;   { save current for error handling. }
+    GetPort(currPort);
+   
+    oldPerm := PermAllocation (TRUE);
+
+    CatchFailures(fi, DeathBuildOff);   { any failures, must be }
+                                        { cleaned up. }
+
+    { Let's set up the size of the rectangle we are using for the }
+    { document. }
+    docW := sizeOfDoc.right - sizeOfDoc.left;
+    docH := sizeOfDoc.bottom - sizeOfDoc.top;
+
+
+    { Now try to set up the offscreen bitMap (color). }
+    fBigBuff := NewPtr (docW * docH);
+    FailMemError;       { couldn't get it we die. }
+
+
+    { OK, now we get wacko.  We need to create our own gDevice, }
+           
+    fDrawingDevice := NewGDevice (0, -1);  { -1 means unphysical }
+                                           { device.  }
+    FailNIL (fDrawingDevice);       { If we failed, error out. }
+   
+    { Now init all the fields in the gDevice Record, since it comes }
+    { uninitialized. }
+    HLock ( Handle(fDrawingDevice) );
+    WITH  fDrawingDevice^^  DO  BEGIN
+        gdId := 0;  { no ID for search &amp; complement procs }
+        gdType := clutType;     { color table type fer sure. }
+       
+        DisposCTable (gdPMap^^.pmTable);  { kill the stub that is }
+                                          { there. }
+        gdPMap^^.pmTable := gOurColors;   { make a copy of our }
+                                          { global color table. }
+        Erry := HandToHand (Handle(gdPMap^^.pmTable));
+        FailOSErr (Erry);   { if not possible, blow out. }
+       
+        { build a new iTable for this device }
+        MakeITable (gdPMap^^.pmTable, gdITable, 3);
+        FailOSErr (QDError);{ no memory, we can leave here. }
+       
+        gdResPref := 3;{ preferred resolution in table. }
+        gdSearchProc := NIL; { no search proc. }
+        gdCompProc := NIL;  { no complement proc. }
+        { Set the gdFlags }
+        gdFlags := 2**0 + 2**10 + 2**14 + 2**15;  { set each bit we }
+                                                  { need. }
+       
+        { Now set up the fields in the offscreen PixMap }
+        gdPMap^^.baseAddr := fBigBuff;  { The base address is our }
+                                        { buffer. }
+        gdPMap^^.bounds := sizeOfDoc;   { bounding rectangle to our }
+                                        { device. }
+
+        gdPMap^^.rowBytes := docW + $8000;
+        gdPMap^^.pixelSize := 8;
+        gdPMap^^.cmpCount := 1;
+        gdPMap^^.cmpSize := 8;
+       
+        gdRect := sizeOfDoc;  { the bounding rectangle for gDevice, }
+                              { too. }
+    END;        { With fDrawingDevice }
+       
+    HUnLock ( Handle(fDrawingDevice) );
+
+    { Yow, that was rough.}
+    SetGDevice (fDrawingDevice);
+   
+
+    fDrawingPort := CGrafPtr( NewPtr (SizeOf (CGrafPort)) );
+                                               { addr CPort record. }
+    FailNil (fDrawingPort); { didn&#8217;t get it, means we die. }
+   
+    { Now the world is created }
+    dummy := PermAllocation (FALSE);
+
+    OpenCPort (fDrawingPort);   { make a new port offscreen. }
+    FailNoReserve;      { Make reserve, die if we can&#8217;t }
+       
+    { QuickDraw is most obnoxious about making a port that is bigger
+    than the screen, so we need to modify the visRgn to make it as
+    big as our full page document }
+    RectRgn(fDrawingPort^.visRgn, sizeOfDoc);
+
+    fDrawingPort^.portRect := sizeOfDoc;
+
+    { OK, we have a nice new color port that is offscreen. }
+    Success (fi);
+
+    oldPerm := PermAllocation (oldPerm);
+
+    { Now we have the offscreen PixMap, we need to initialize it to
+    white. }
+    SetPort (GrafPtr(fDrawingPort));
+    EraseRect (sizeOfDoc);      { clear the bits. }
+
+    SetGDevice (currDevice);
+    SetPort (currPort);
+END;    { BuildOffWorld }</pre>
+<p>
+Now let's see what the equivalent code looks like when we use the calls provided by<br>
+32-Bit QuickDraw and its offscreen support:
+</p>
+<pre>PROCEDURE TFracAppDocument.BuildOffWorld(sizeOfDoc:RECT);
+VAR oldPerm :Boolean;
+        fi  :FailInfo;
+        currDev :GDHandle;
+        currPort    :CGrafPtr;
+        erry    :QDErr;
+       
+    PROCEDURE DeathBuildOff (error: OSErr; message:LONGINT);
+   
+    BEGIN
+        oldPerm := PermAllocation(oldPerm);
+        SetGWorld (currPort,  currDev);
+    END;
+   
+BEGIN  (*myBuildOffWorld*)
+    GetGWorld(currPort,  currDev);
+    CatchFailures(fi, DeathDocument);
+    Erry := NewGWorld(fDrawingPort, 8, sizeOfDoc, gOurColors, NIL,
+        GWorldFlags(0));
+    FailOSErr(Erry);
+   
+    SetGWorld (fDrawingPort,  NIL);
+   
+    IF ( NOT LockPixels(fDrawingPort^.portPixMap) ) THEN
+    FailOSErr(QDError);
+   
+        EraseRect(FDrawingPort^.portRect);
+   
+    UnlockPixels (fDrawingPort^.portPixMap);
+   
+    SetGWorld (currPort,  currDev);
+END {myBuildOffWorld};</pre>
+<h2>CALLS YOU CAN'T DO WITHOUT</h2>
+<p>
+The new routines simplify the code and help prevent the typical errors you make<br>
+having to initialize all those special fields.&nbsp;&nbsp;It only makes sense to make your work<br>
+easier if you can.&nbsp;&nbsp;Here are the calls in the order they appear in the sample code:
+</p>
+<pre>PROCEDURE GetGWorld(VAR port:CGrafPtr; VAR gdh:GDHandle)</pre>
+<p>
+This call takes the place of two standard calls, GetPort and GetGDevice.&nbsp;&nbsp;It saves the<br>
+current settings for later restoration and works for offscreen worlds as well as<br>
+old-style ports.
+</p>
+<ul>
+<li>port is set to the current port, which can be a GrafPtr, a CGrafPtr, or a<br>
+GWorldPtr.</li>
+<li>gdh returns the current device.</li>
+</ul>
+<pre>FUNCTION NewGWorld(VAR offscreenWorld: GWorldPtr; pixelDepth:
+        INTEGER; boundsRect: Rect; cTable:CTabHandle;
+        aGDevice: GDHandle; flags: GWorldFlags): QDErr;</pre>
+<p>
+This is the call that does the work.&nbsp;&nbsp;If the function returns noErr, then offscreenWorld<br>
+contains a pointer to the newly created offscreen environment.&nbsp;&nbsp;If the function does not<br>
+return noErr, then something didn't work. Most likely the Memory Manager couldn't<br>
+allocate enough memory for all the structures.&nbsp;&nbsp;In that case, your program has to<br>
+decide what to do next, such as draw to the window's port, sacrificing speed, features,<br>
+or both.
+</p>
+<p>
+Possible error returns other than noErr are cDepthErr (no such depth is possible),<br>
+paramErr (illegal parameter), plus any Memory Manager or QuickDraw errors.
+</p>
+<ul>
+<li>pixelDepth must be 1, 2, 4, 8, 16, or 32 bits per pixel.  With one<br>
+exception, other values will make the call return cDepthErr.&nbsp;&nbsp;pixelDepth can<br>
+be 0, as described later in this article.</li>
+<li>boundsRect is used to calculate the offscreen pixMap's size and coordinate<br>
+system.&nbsp;&nbsp;It is also used to set portRect, pixMap bounds, gdRect, and the port's<br>
+visRgn.</li>
+<li>When it is provided, cTable is copied and the copy is used for the offscreen<br>
+pixMap.&nbsp;&nbsp;If cTable is nil, then the system uses the default table for the desired<br>
+depth.</li>
+<li>When aGDevice is not nil and the noNewDevice flag is set, no new<br>
+offscreen device is created.&nbsp;&nbsp;This is the case when you want to create an<br>
+offscreen port but do not need the offscreen device.&nbsp;&nbsp;In our example, aGDevice<br>
+is always nil because we want to keep a separate environment for each<br>
+document being drawn, which requires a unique color table and inverse table,<br>
+implying the need for individual devices.
+
+<p>
+This is useful when, for example, an application has several offscreen worlds<br>
+with similar characteristics, such as depth or color table.&nbsp;&nbsp;It is possible to<br>
+allocate only one GWorld with an offscreen device and to use that offscreen<br>
+device as a GDevice for all the other GWorlds.&nbsp;&nbsp;Be sure to avoid using one of the<br>
+screen devices as a GDevice.&nbsp;&nbsp;If the user changes the characteristics of a screen<br>
+device via the Control Panel, your offscreen world will become invalid.
+</p>
+<p>
+Note that aGDevice is used to create the offscreen graphics world only when<br>
+noNewDevice is set and its pixelDepth is not 0.&nbsp;&nbsp;In any other instance,<br>
+aGDevice should be set to nil.
+</p>
+<p>
+If pixelDepth is 0, boundsRect is used to find the deepest device that intersects<br>
+the rectangle.&nbsp;&nbsp;Taken in global screen coordinates, the depth, color table, and<br>
+inverse table of this device are used to set up the offscreen environment.
+</p></li>
+
+<li>The flags parameter gives some control to the application for the creation<br>
+of the new offscreen graphics environment.&nbsp;&nbsp;Currently the possible values are<br>
+a combination of pixPurge and noNewDevice.
+
+<p>
+If pixPurge is set, the offscreen buffer is created as a purgeable block. The<br>
+effects of noNewDevice are the same, as discussed earlier.
+</p></li></ul>
+<pre>FUNCTION GetGWorldDevice(offscreenWorld: GWorldPtr):GDHandle;</pre>
+<p>
+This call returns the GDevice associated with offscreenWorld, normally the offscreen<br>
+device created with NewGWorld.&nbsp;&nbsp;If noNewDevice was used, however, the device<br>
+returned will be the device passed to NewGWorld or UpdateGWorld.
+</p>
+<pre>PROCEDURE SetGWorld (port: CGrafPtr; gdh: GDHandle);</pre>
+<p>
+This call replaces SetPort and SetGDevice.&nbsp;&nbsp;If port is a GrafPtr or a CGrafPtr, then the<br>
+current port is set to port and the current device is set to gdh. If port is a GWorldPtr,<br>
+then the current port is set to port and the current device is set to the device attached<br>
+to the offscreen graphics world.
+</p>
+<p>
+As a rule of thumb, when you use the offscreen support provided with 32-Bit<br>
+QuickDraw, you should use GetGWorld instead of GetPort and GetGDevice, and<br>
+SetGWorld instead of SetPort and SetGDevice. Both calls are safe to use within the<br>
+old-style environment and ensure proper behavior in the new.
+</p>
+<p>
+If pixelDepth is 1,2,4,8,16, or 32 optimize for offscreen data depth boundsRect is a<br>
+rectangle in local coordinates if cTable is nil NewGWorld uses default color table for<br>
+given pixelDepth else NewGWorld attaches a copy of your cTable to your new GWorld if<br>
+NoNewDevice flag is passed (see flags) aGDevice is used to create your new GWorld<br>
+(aGDevice should not be a screen device) else aGDevice is ignored&nbsp;&nbsp;J.Z.
+</p>
+<h2>WHERE IS THE CATCH?</h2>
+<p>
+When using the offscreen world environment, you have to make sure that the pixMap<br>
+is actually available and locked when you draw to or from an offscreen graphics world.<br>
+This is why you must bracket any drawing action with LockPixels and UnlockPixels.
+</p>
+<p>
+In our example, to anchor the offscreen pixMap, we need to call LockPixels just before<br>
+calling EraseRect.&nbsp;&nbsp;When we are done, a call to UnlockPixels releases the buffer.&nbsp;&nbsp;These<br>
+two calls are the only extra work offscreen support in 32-Bit QuickDraw demands.
+</p>
+<pre>FUNCTION LockPixels (pm: PixMapHandle):Boolean;</pre>
+<p>
+Call this function prior to any drawing operation to or from the offscreen<br>
+environment.&nbsp;&nbsp;A false value returned means the offscreen pixMap has been purged.&nbsp;&nbsp;A<br>
+LockPixels result of false tells the application to either recreate the offscreen pixMap,<br>
+using UpdateGWorld in the process, or draw directly to the target window.
+</p>
+<pre>PROCEDURE UnlockPixels (pm: PixMapHandle);</pre>
+<p>
+When you finish drawing, you should call UnlockPixels.&nbsp;&nbsp;Just remember that all that<br>
+is locked should be unlocked.&nbsp;&nbsp;Otherwise, strange things may happen. one more call<br>
+you'll need
+</p>
+<pre>FUNCTION UpdateGWorld (VAR offscreenGWorld: GWorldPtr; pixelDepth:
+    INTEGER; boundsRect: Rect; cTable: CTabHandle;
+    aGDevice: GDHandle; flags: GWorldFlags): GWorldFlags;</pre>
+<p>
+This call reconstructs the offscreen environment according to the new boundsRect,<br>
+cTable, and pixelDepth.&nbsp;&nbsp;These parameters work in large part the same way they do in<br>
+NewGWorld. 
+</p>
+<p>
+When pixelDepth is 0, the device list is parsed again to find the deepest device<br>
+intersecting boundsRect taken in global coordinates.&nbsp;&nbsp;If aGDevice is not nil, then<br>
+pixelDepth and cTable are ignored and the fields from aGDevice are used offscreen.&nbsp;&nbsp;If<br>
+the offscreen buffer has been purged, UpdateGWorld allocates a new one.
+</p>
+<p>
+When necessary, the application can simply call UpdateGWorld to change the offscreen<br>
+environment without having to recreate the offscreen image from scratch.&nbsp;&nbsp;This is the<br>
+case, for example, when the user selects a different depth or the color table is modified<br>
+somehow.
+</p>
+<p>
+Keeping the offscreen world parallel to the conditions used to display the images to the<br>
+user guarantees that when CopyBits is called to update a window, the operation will be<br>
+performed at the highest speed. The controlling parameter flags can take the following<br>
+values:
+</p>
+<ul>
+<li>[] I know what I am doing--don't update the pixels for me.</li>
+<li>[clipPix] If boundsRect is smaller than the current boundsRect, the<br>
+bottom and right edges pixels are clipped out.&nbsp;&nbsp;If boundsRect is larger, the<br>
+bottom and right edges are filled with the background color.</li>
+<li> [stretchPix] If boundsRect is smaller, the image is reduced to the new<br>
+size.&nbsp;&nbsp;If the rectangle is larger, the offscreen image is enlarged to fit the new<br>
+area.</li>
+<li> [clipPix, ditherPix] and [stretchPix, ditherPix] These provide error<br>
+diffusion when necessary in addition to clipping or stretching.</li>
+</ul>
+<p>
+Now if boundsRect is new but the same size, UpdateGWorld realigns the pixMap for<br>
+best performance.&nbsp;&nbsp;With a new pixelDepth, the pixels are scaled to the new depth.&nbsp;&nbsp;If<br>
+cTable is new as well, the pixels are mapped to the new colors.
+</p>
+<p>
+Even for our engineers, some miracles are just too difficult.&nbsp;&nbsp;If the pixMap has been<br>
+purged, it is reallocated, but the old contents are lost.
+</p>
+<p>
+When UpdateGWorld returns, check its result, which will be of the GWorldflags<br>
+variety.&nbsp;&nbsp;If gwFlagErr is set, that means the call was unsuccessful. The offscreen world<br>
+has not changed, and some correcting action is required.&nbsp;&nbsp;The errors might be<br>
+cDepthErr (no such depth is possible), paramErr (illegal parameters), and any<br>
+Memory Manager or QuickDraw errors.
+</p>
+<p>
+If the call was successful, the rest of the flags can be interpreted as follows:
+</p>
+<p><table border="0"><tr><td>mapPix</td><td>Color mapping was necessary.</td></tr>
+<tr><td>newDepth</td><td>Depth is new.</td></tr>
+<tr><td>alignPix</td><td>Pixels were realigned for best</td></tr>
+<tr><td></td><td>results.</td></tr>
+<tr><td>newRowBytes</td><td>RowBytes changed.</td></tr>
+<tr><td>reallocPix</td><td>pixMap was reallocated.</td></tr>
+<tr><td>clipPix</td><td>Clipping was used.</td></tr>
+<tr><td>stretchPix</td><td>Stretching was used.</td></tr>
+<tr><td>ditherPix</td><td>Dithering was used.</td></tr></table></p>
+<h2>SOME BONUS CALLS</h2>
+<pre>PROCEDURE DisposeGWorld (offscreenGWorld: GWorldPtr);</pre>
+<p>
+Make this call only when you are one hundred percent sure you don't need<br>
+offscreenGWorld any more, and you want to release the memory it uses.
+</p>
+<pre>PROCEDURE AllowPurgePixels (pm: PixMapHandle);</pre>
+<p>
+This call makes the given pixMap purgeable.
+</p>
+<pre>PROCEDURE NoPurgePixels (pm: PixMapHandle);</pre>
+<p>
+This one makes the pixMap nonpurgeable.
+</p>
+<pre>FUNCTION GetPixelsState (pm: PixMapHandle): GWorldflags;</pre>
+<p>
+Make this call to find out the condition of the flags pixelsPurgeable and pixelsLocked. <br>
+When you want to make temporary changes, you can use this call in conjunction with<br>
+SetPixelsState to save and later restore the state of the flags.
+</p>
+<pre>PROCEDURE SetPixelsState (pm: PixMapHandle; state: GWorldFlags);</pre>
+<p>
+This call sets the state of the pixelsPurgeable and pixelsLocked flags.
+</p>
+<pre>FUNCTION GetPixBaseAddr (pm: PixMapHandle): Ptr;</pre>
+<p>
+Since the offscreen world is yours, you will probably feel the urge to mess with it<br>
+directly.&nbsp;&nbsp;GetPixBaseAddr is the call you need. It returns the 32-bit address of the<br>
+start of the offscreen buffer associated with the given pixMap.&nbsp;&nbsp;The address is valid<br>
+until any call that moves memory around is made.&nbsp;&nbsp;If you make such a call, you must<br>
+call GetPixBaseAddr again.&nbsp;&nbsp;If the offscreen pixMap has been purged, the call returns<br>
+nil. 
+</p>
+<pre>FUNCTION NewScreenBuffer (globalRect: Rect; purgeable: BOOLEAN;
+        VAR gdh: GDHandle; VAR offscreenPixMap: PixMapHandle): QDErr;</pre>
+<p>
+This call creates a pixMap using the color table and depth of the deepest device<br>
+intersected by globalRect.&nbsp;&nbsp;It is useful when the offscreen buffer is used to keep a copy<br>
+of a portion of a window.&nbsp;&nbsp;Normally, applications don't need to make this call.
+</p>
+<p>
+If the call is successful, gdh is a handle to the deepest device and offscreen pixMap<br>
+points to the new pixMap.&nbsp;&nbsp;Note that if the screen device returned in gdh is changed by<br>
+the user in monitors, the offscreen pixMap becomes invalid.
+</p>
+<p>
+Errors are noErr (everything is okay), cNoMemErr (couldn't get all the memory<br>
+needed), paramErr (illegal parameters), and any Memory Manager or QD errors.
+</p>
+<pre>PROCEDURE DisposeScreenBuffer (offscreenPixMap: PixMapHandle);</pre>
+<p>
+You made it, so call this procedure to dispose of it.
+</p>
+<h2>CALLS TO AVOID DISASTER</h2>
+<p>
+Even though all the books, Technical Notes, and documents that describe how to<br>
+program the Macintosh talk about the things you shouldn't do and the data fields you are<br>
+not supposed to mess with, not everyone can resist temptation. That's why 32-Bit<br>
+QuickDraw includes a set of calls that allows you to tell the system you have modified<br>
+some forbidden structure, and it should try to accommodate to your designs.&nbsp;&nbsp;The calls<br>
+are:
+</p>
+<pre>PROCEDURE CTabChanged (ctab: CTabHandle);</pre>
+<p>
+This call says "Yes, I know I shouldn't mess with a color table directly, but I did it and<br>
+I want to come clean." Use SetEntries, or even better let the Palette Manager maintain<br>
+the color table for you.
+</p>
+<pre>PROCEDURE PixPatChanged (ppat: PixPatHandle);</pre>
+<p>
+Use this call to say "I admit I modified the fields of a PixPat directly.&nbsp;&nbsp;Please fix the<br>
+resulting mess for me." When the modifications include changing the contents of the<br>
+color table pointed to by PixPat.patMap^^.pmTable, you should also call CTabChanged.<br>
+PenPixPat and BackPixPat are a better way to install new patterns.
+</p>
+<pre>PROCEDURE PortChanged (port: GrafPtr);</pre>
+<p>
+You should not modify any of the port structures directly.&nbsp;&nbsp;But if you cannot control<br>
+yourself, use this call to let QuickDraw know what you've done.&nbsp;&nbsp;If you modify either<br>
+the pixPat or the color table associated with the port, you need to call PixPatChanged<br>
+and CTabChanged.
+</p>
+<pre>PROCEDURE GDeviceChanged (gdh: GDHandle);</pre>
+<p>
+The best practice is to stay away from the fields of any GDevice.&nbsp;&nbsp;But if you do change<br>
+something, make this call so the system can rectify any problems.&nbsp;&nbsp;If you change the<br>
+data of the color table in the device's pixMap, you must also call CTabChanged.
+</p>
+<h2>NEWGWORLD</h2>
+<p style="font-size:small;">NewGWorld(offscreenGWorld, pixelDepth, boundsRect, cTable, aGDevice, flags);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p>
+<p><table border="0"><tr><td><p style="font-size:small;">On entry offscreenGWorld should point to nothing</p></td><td></td></tr>
+<tr><td><p style="font-size:small;">On exit offscreenGWorld is your new GWorld</p></td><td><p style="font-size:small;">the pointer may not be the same</p></td></tr></table></p>
+<p><table border="0"><tr><td><p style="font-size:small;">Flags can be one of ...</p></td><td></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;0</p></td><td><p style="font-size:small;">pixels not purgeable, create a new</p></td></tr>
+<tr><td></td><td><p style="font-size:small;">device</p></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;pixPurge</p></td><td><p style="font-size:small;">pixels are purgeable, check LockPixel's</p></td></tr>
+<tr><td></td><td><p style="font-size:small;">return value</p></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;NoNewDevice</p></td><td><p style="font-size:small;">pixelDepth and cTable are from aGDevice</p></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;pixPurge and NoNewDevice</p></td><td></td></tr>
+<tr><td><p style="font-size:small;">if pixelDepth is 0</p></td><td><p style="font-size:small;">optimize for CopyBits Speed</p></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;boundsRect holds a global rectangle</p></td><td><p style="font-size:small;">corresponding to a window</p></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;cTable is ignored</p></td><td><p style="font-size:small;">uses cTable from boundsRect's deepest</p></td></tr>
+<tr><td></td><td><p style="font-size:small;">screen</p></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;aGDevice is ignored</p></td><td></td></tr>
+<tr><td><p style="font-size:small;">If pixelDepth is 1,2,4,8,16, or 32</p></td><td><p style="font-size:small;">optimize for offscreen data depth</p></td></tr></table></p>
+<p style="font-size:small;">&nbsp;&nbsp;&nbsp;boundsRect is a rectangle in local coordinates<br>
+&nbsp;&nbsp;&nbsp;if cTable is nil<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NewGWorld uses default color table for given pixelDepth<br>
+&nbsp;&nbsp;&nbsp;else<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NewGWorld&nbsp;&nbsp;attaches a copy of your cTable to your new GWorld<br>
+&nbsp;&nbsp;&nbsp;if&nbsp;&nbsp;NoNewDevice flag is passed (see flags)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;aGDevice is used to create your new GWorld (aGDevice should not be a screen device)<br>
+&nbsp;&nbsp;&nbsp;else<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;aGDevice is ignored&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;J.Z.</p>
+<h2>UPDATEGWORLD</h2>
+<p style="font-size:small;">UpdateGWorld(offscreenGWorld, pixelDepth, boundsRect,cTable, aGDevice, flags);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p>
+<p><table border="0"><tr><td><p style="font-size:small;">On entry offscreenGWorld is your old GWorld</p></td><td></td></tr>
+<tr><td><p style="font-size:small;">On exit offscreenGWorld is your new GWorld</p></td><td><p style="font-size:small;">the pointer may or may not be the same</p></td></tr></table></p>
+<p><table border="0"><tr><td><p style="font-size:small;">Flags can be one of ...</p></td><td></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;0</p></td><td><p style="font-size:small;">pixels not updated</p></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;clipPix</p></td><td><p style="font-size:small;">preserves pixels it can, puts background</p></td></tr>
+<tr><td></td><td><p style="font-size:small;">in new areas</p></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;stretchPix</p></td><td><p style="font-size:small;">stretches pixels to fit from old to new</p></td></tr>
+<tr><td></td><td><p style="font-size:small;">pixmap</p></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;clipPix and ditherPix</p></td><td><p style="font-size:small;">plus the pixels are dithered if necessary</p></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;stretchPix and ditherPix</p></td><td></td></tr></table></p>
+<p style="font-size:small;">&nbsp;If aGDevice is not nil then the pixelDepth and cTable you supply are overridden by the<br>
+pixelDepth and cTable of aGDevice.</p>
+<p><table border="0"><tr><td><p style="font-size:small;">If pixelDepth is 0</p></td><td></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;boundsRect is a global rectangle</p></td><td><p style="font-size:small;">typically corresponds to the associated</p></td></tr>
+<tr><td></td><td><p style="font-size:small;">window</p></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;cTable is ignored</p></td><td><p style="font-size:small;">uses cTable from boundsRect's deepest</p></td></tr>
+<tr><td></td><td><p style="font-size:small;">screen device</p></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;aGDevice is nil</p></td><td><p style="font-size:small;">watch out for side effects if not nil!</p></td></tr></table></p>
+<p><table border="0"><tr><td><p style="font-size:small;">If pixelDepth is 1,2,4,8,16, or 32</p></td><td></td></tr>
+<tr><td><p style="font-size:small;">&nbsp;&nbsp;&nbsp;boundsRect is a rectangle in local coordinates</p></td><td><p style="font-size:small;">if different from old boundsRect then</p></td></tr>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<tr><td></td><td><p style="font-size:small;">pixmap, etc are updated appropriately</p></td></tr></table></p>
+<p style="font-size:small;">&nbsp;&nbsp;&nbsp;if cTable is nil<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uses default color table for given pixelDepth and updates pixmap if different<br>
+&nbsp;&nbsp;&nbsp;else<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;new color table used to update your pixmap<br>
+&nbsp;&nbsp;&nbsp;aGDevice is nil or the device to determine your cTable and pixel depth&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;J.Z.</p>
+<p>
+<b>Guillermo Ortiz</b> graduated from college with a BSEE, but this event took place so<br>
+long ago and so far away that he gave up trying to remember when and where.&nbsp;&nbsp;He is<br>
+truly the Apple veteran among the bunch of authors in this issue, having successfully<br>
+emerged as a pretty nice guy from six years at Apple--four as an Apple II Pascal<br>
+"expert" and two working on Color QuickDraw, the Palette Manager, and the like.&nbsp;&nbsp;He<br>
+attributes surviving the 32-bit QuickDraw project to being in good shape from<br>
+running and playing tennis with good friends. His curriculum vitae is entitled, "My<br>
+Life As An Elvis Impersonator." Although he profusely denies ever having written that<br>
+line, there's a trail of sequins leading to his office.&nbsp;&nbsp;'Fess up, Guillermo. *
+</p>
+<p>
+<b>All Apple developers</b> (Associates and Partners) received FracApp with their<br>
+monthly mailings.&nbsp;&nbsp;It is also available on develop, the CD, and through APDA on the DTS<br>
+sample code disks.*
+</p>
+</body>
+</html>

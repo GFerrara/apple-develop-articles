@@ -1,0 +1,296 @@
+<html>
+<head>
+<!-- Extracted from develop - 1990 -->
+<!-- on 2023-09-19 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>January 90 - ALL ABOUT THE PALETTE MANAGER</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>ALL ABOUT THE PALETTE MANAGER</h2>
+<h1>DAVID VAN BRINK</h1>
+<p>
+One of the goals of QuickDraw is to isolate the application from the specific graphic<br>
+display devices it is running on. The Palette Manager lets multiple applications share<br>
+screen space and color allocation in a fair and orderly fashion.
+</p>
+<p>
+The Palette Manager has been enhanced in 32-Bit QuickDraw to support new color<br>
+usages.&nbsp;&nbsp;When applications use the Palette Manager to establish and maintain a specific<br>
+color environment, the Palette Manager juggles numerous factors in honoring a<br>
+request.&nbsp;&nbsp;It must consider, for example, the limits of the available display hardware<br>
+and the presence of other applications requesting color environments.&nbsp;&nbsp;On a<br>
+multiple-screen system, the Palette Manager will keep track of the colors for each<br>
+screen.&nbsp;&nbsp;Also, the Palette Manager provides an extra level of indirection in drawing<br>
+colors, which serves as a color naming or numbering system.
+</p>
+<h2>UNDERSTANDING THE PALETTE MANAGER</h2>
+<p>
+A palette is a data structure attached to a window using the SetPalette system call or<br>
+other means.&nbsp;&nbsp;The palette, which contains a list of colors, each with a usage value and a<br>
+tolerance value, lets the system know what colors that window needs. When colors are<br>
+changed, the Palette Manager makes sure that windows, the menu bar, and the desktop<br>
+are redrawn as needed with the new colors.
+</p>
+<p>
+The Palette Manager calls should be used any time you might be tempted to call the<br>
+Color Manager routines SetEntries or RestoreEntries.&nbsp;&nbsp;These calls modify the color<br>
+environment directly, without letting the system decide which colors would be best to<br>
+change.&nbsp;&nbsp;Also, they operate on a single screen. SetEntries or RestoreEntries should only<br>
+be called by programs that have no intention of sharing the screen--programs like<br>
+lava-lamp screen-savers and programs that will never, ever run under MultiFinder. <br>
+Most commercial software does not fall in this category and absolutely should not call<br>
+SetEntries and RestoreEntries. Use the Palette Manager to modify the color<br>
+environment to get a better application with less work.
+</p>
+<p>
+Suppose we are writing a program to display PICTs on a four or more bit-depth<br>
+screen.&nbsp;&nbsp;The built-in color table for four bits ('clut' ;ID 4, in ROM resources)<br>
+contains a smattering of different colors. If the PICT we wish to display contains only<br>
+shades of red, we'd want to have as many shades of red as possible (14 on a four-bit<br>
+screen) in the screen's 'clut'.&nbsp;&nbsp;There are actually 16 different colors available, but 2<br>
+of them, black and white, are never changed. This guarantees that menus, windows, and<br>
+other such things that are always black on the Macintosh will be visible in their<br>
+intended colors.
+</p>
+<p>
+To get some shades of red on the screen, we create a palette with 14 entries, each with<br>
+a different shade of red in it.&nbsp;&nbsp;We set the usage of each entry to pmTolerant. When the<br>
+palette's window is activated, the Palette Manager will look for shades of red that are<br>
+within a certain range, or within tolerance, of each palette entry.&nbsp;&nbsp;If an index in the<br>
+screen's 'clut' is already within range of one of the entries, then the Palette Manager<br>
+will use that index. If not, the Palette Manager will steal an index in the order<br>
+specified by its color arbitration rules and change it to the requested color.
+</p>
+<p>
+Here is how we generate the sample palette:
+</p>
+<pre>   FUNCTION Make14RedPalette: PaletteHandle;
+    VAR
+        i:  LONGINT;
+        ph: PaletteHandle;
+        c:  RGBColor;
+               
+    BEGIN
+        ph := NewPalette(14,NIL,pmTolerant,4000);
+(* should check for NIL result *)
+        c.green := 0;
+        c.blue := 0;
+        FOR i:=0 TO 13
+        DO
+        BEGIN
+(* range red component from 1/14 to 14/14 *)
+(* i is a longint, and so can safely be multiplied by 65535 *)
+            c.red := (i+1)*65535 DIV 14;
+            SetEntryColor(ph,i,c);
+        END;
+        Make14RedPalette := ph;
+    END;</pre>
+<p>
+Next, we might attach it to our window:
+</p>
+<pre>myPalette := Make14RedPalette;
+SetPalette(myWindow,myPalette);</pre>
+<p>
+Whenever this window is brought to the front, the Palette Manager will attempt to<br>
+provide 14 shades of red, ranging from RGB(4681,0,0) to RGB(65535,0,0). We<br>
+might consider RGB(0,0,0), black, which is always available, to be a 15th shade of<br>
+red.&nbsp;&nbsp;To draw in these colors, we just make the normal Color QuickDraw calls (like<br>
+RGBForeColor), and we'll automatically get the closest shade of red available.&nbsp;&nbsp;If, after<br>
+setting up this palette, we try to draw in nonred colors, the results will not be pretty.<br>
+With black, white, and 14 shades of red, the available options for a good match to<br>
+green, for example, are severely limited.
+</p>
+<p>
+In the preceding example, we assumed the PICT uses shades of red.&nbsp;&nbsp;This is generally<br>
+hard to determine, unless we generate the PICT in the first place. Since the PICT is in<br>
+reds, we might want to load the palette from a resource with GetNewPalette rather<br>
+than compute it in code.&nbsp;&nbsp;Or, we might happen to have a color table with the colors we<br>
+need.&nbsp;&nbsp;In that case, we could have passed it to NewPalette, instead of nil in the example,<br>
+or to CTab2Palette, if we already had a palette allocated.
+</p>
+<p>
+We've just described how a program can ensure that a set of colors is available for a<br>
+specific graphic display.&nbsp;&nbsp;The well-mannered programmer may be thinking, "Gee,<br>
+that's swell, but how do I give those colors back when I'm done?" The answer is, don't<br>
+even try.&nbsp;&nbsp;Any other window that needs colors to look good will have its own palette<br>
+attached, and therefore get the colors it needs.&nbsp;&nbsp;Also, each time a program quits, the<br>
+Palette Manager restores the color environment to a well-balanced state in terms of<br>
+color distribution.
+</p>
+<h2>SELECTING THE RIGHT COLOR SET</h2>
+<p>
+Different types of screens often require different color sets to best display the same<br>
+image.&nbsp;&nbsp;Grayscale screens default to having a range of gray tones from black to white,<br>
+which is an excellent range for drawing most images.&nbsp;&nbsp;A grayscale screen should<br>
+usually be left with its default color table. Here is the sample routine modified to<br>
+provide 14 shades of red on a four-bit color screen, 254 shades on an eight-bit color<br>
+screen, and no color requests at all on two-bit or grayscale screens:
+</p>
+<pre>FUNCTION MakeRedPalette: PaletteHandle;
+    VAR
+        i:  LONGINT;
+        ph: PaletteHandle;
+        c:  RGBColor;
+               
+    BEGIN
+        ph := NewPalette(14+254,NIL,0,0);
+(* should check for NIL result *)
+        c.green := 0;
+        c.blue := 0;
+(*  Make fourteen reds that are inhibited on all *)
+(*  screens except four-bit color *)
+        FOR i:=0 TO 13
+        DO
+        BEGIN
+(* range red component from 1/14 to 14/14 *)
+(* i is a longint, and so can safely be multiplied by 65535 *)
+            c.red := (i+1)*65535 DIV 14;
+            SetEntryColor(ph,i,c);
+            SetEntryUsage(ph,i,pmTolerant+pmInhibitC2+
+                    pmInhibitG2+pmInhibitG4+
+                    pmInhibitC8+pmInhibitG8,4000);
+        END;
+(*  Make 254 reds that are inhibited on all *)
+(*  screens except eight-bit color *)
+        FOR i:=0 TO 253
+        DO
+        BEGIN
+(* range red component from 1/254 to 254/254 *)
+(* i is a longint, and so can safely be multiplied by 65535 *)
+            c.red := (i+1)*65535 DIV 254;
+            SetEntryColor(ph,14+i,c);
+            SetEntryUsage(ph,14+i,pmTolerant+pmInhibitC2+
+                    pmInhibitG2+pmInhibitG4+
+                    pmInhibitC4+pmInhibitG8,0);
+        END;
+        MakeRedPalette := ph;
+    END;</pre>
+<h2>MORE WAYS OF REQUESTING COLOR</h2>
+<p>
+So far, we've seen how to request a set of colors from the Palette Manager. The<br>
+examples use colors with usage combinations of pmTolerant, and various inhibit bits. <br>
+Other ways to request colors are explained in Inside Macintosh, volume V, page 154. <br>
+In addition, combinations of pmExplicit and pmTolerant or pmAnimated are now<br>
+supported.&nbsp;&nbsp;Here are some examples of different usages.
+</p>
+<pre>SetEntryUsage(ph,1,pmCourteous,0);</pre>
+<p>
+The color is courteous, activating the palette will never cause a change in a screen's<br>
+color table. This is useful only for "naming" the color, in this case to 1.<br>
+PmForeColor(1) and PmBackColor(1) are two ways to use this color.
+</p>
+<pre>SetEntryUsage(ph,2,pmTolerant,10000);</pre>
+<p>
+The color is tolerant, activating the palette will ensure that some index in the screen's<br>
+color table is within 10000 in each RGB component from palette entry 2.
+</p>
+<pre>SetEntryUsage(ph,3,pmAnimated,0);</pre>
+<p>
+The color is animated, activating the palette will reserve an index from the screen's<br>
+color table to be owned by this palette (if the screen is indexed).&nbsp;&nbsp;If the color is<br>
+changed with AnimateEntry then any previous drawing done with that entry will<br>
+change.
+</p>
+<pre>SetEntryUsage(ph,4,pmExplicit,0);</pre>
+<p>
+The color is explicit, any drawing done with this entry will draw in device index 4,<br>
+because this entry is the 4th color in the palette.&nbsp;&nbsp;This is mostly useful for monitoring<br>
+the color environment.
+</p>
+<pre>SetEntryUsage(ph,5,pmExplicit+pmTolerant,0);</pre>
+<p>
+The color is both explicit and tolerant.&nbsp;&nbsp;Activating the palette will ensure that device<br>
+index 5 exactly matches the palette's color 5 (because the tolerance here is 0).
+</p>
+<pre>SetEntryUsage(ph,6,pmExplicit+pmAnimated,0);</pre>
+<p>
+The color is both explicit and animated.&nbsp;&nbsp;Activating the palette will reserve screen<br>
+index 6 for this palette's use.&nbsp;&nbsp;The color may be modified with AnimateEntry and<br>
+AnimatePalette.
+</p>
+<pre>SetEntryUsage(ph,7,pmAnimated+pmInhibitC8+pmInhibitG8,0);</pre>
+<p>
+The color is animated on any screen other than an 8-bit color or an 8-bit gray- scale<br>
+device. On those devices, the color behaves as a courteous color.
+</p>
+<h2>DRAWING WITH PALETTE COLORS</h2>
+<p>
+After the palette has been set up, there are several ways to draw with the colors in the<br>
+palette.&nbsp;&nbsp;In addition to PmForeColor and PmBackColor, a pixMap or pixPat color table<br>
+may be specified to point to palette entries. To do this, set bit 14 in the ctFlags field of<br>
+the color table (ctFlags is called transindex in older equate files).&nbsp;&nbsp;Then set the desired<br>
+palette entry numbers in the value field of each colorSpec.&nbsp;&nbsp;The color table is then<br>
+assumed to be sequential, as device tables are (colorSpec 0 refers to pixel value 0 in<br>
+the pixMap or pixPat; color value 1 refers to pixel value 1, and so on).
+</p>
+<p>
+This code retrieves a copy of the desktop pattern (system resource 'ppat' 16) and<br>
+modifies its fields to refer to sequential palette entries.
+</p>
+<pre>myPP:  PixPatHandle;
+myCT:   CTabHandle;
+myPP := GetPixPat(16); 
+(* Gets the system color desktop pattern    *)
+myCT := myPP^^.patMap^^.pmTable
+    FOR j := 0 TO myCT^^.ctSize
+    (* Set .value field equal to position for each element *)
+    DO
+        myCT^^.ctTable[j].value := j;
+    myCT^^.ctFlags := BitOr(myCT^^.ctFlags,$4000); 
+    (* .ctFlags aka .transindex *)</pre>
+<p>
+Drawing the unmodified ppat 16 would produce it exactly as it appears on the desktop.<br>
+After the modification, drawing with myPP would produce the same pattern with the<br>
+colors replaced by palette colors.
+</p>
+<p>
+One use for this might be to draw a pixMap with all animated colors, and then let the<br>
+user adjust color, brightness, and contrast with slider controls. The color changes<br>
+would be performed with AnimatePalette calls. 
+</p>
+<h2>ACCESSING NEW COLOR LOOK-UP TABLES</h2>
+<p>
+Several new 'clut's have been defined for 32-Bit QuickDraw and may be accessed with<br>
+the GetCTable routine. As before, 'clut' IDs 1, 2, 4, and 8 are the standard color tables<br>
+for those depths. A gray ramp for each depth can be requested using the depth plus 32. <br>
+'Clut' IDs for gray ramps with depths 1,2,4, and 8 are 33, 34, 36, and 40<br>
+respectively.
+</p>
+<p>
+'clut's 2 and 4 are modified to include the highlight color and may be accessed as the<br>
+depth plus 64.
+</p>
+<p>
+'clut's may not exist as actual resources; the GetCTable routine may synthesize them<br>
+when they are requested. If there is a 'clut' resource with the specified ID, however,<br>
+GetCTable will load that resource and return a detached handle to it. So to dispose of the<br>
+handle, you should call DisposCTable rather than release resource. *
+</p>
+<p>
+<b>David Van Brink,</b> graphics software engineer, graduated from the University of<br>
+California-Irvine in 1986 with a BSICS (you figure it out!) degree. After working in<br>
+southern California for MegaGraphics, he moved north to work for Apple. Despite the<br>
+fact that sleeping on the job is his professed favorite part of working here, he does<br>
+seem to find time to write some awesome software.&nbsp;&nbsp;When he's not sleeping his days<br>
+away at Apple, he dabbles in computer-aided music and writes his own music<br>
+sequencing software.&nbsp;&nbsp;Other activities he enjoys: recreating Philip K. Dick scenarios<br>
+with friends; watching Star Trek while eating Kraft&#174; Macaroni And Cheese; and<br>
+encouraging his parrot named "12" to teach his rat "X" to talk. And always<br>
+remember....*
+</p>
+<p>
+<b>&nbsp;Color Arbitration</b>; Color look-up table ('clut') displays, like the Macintosh II<br>
+Video Card, have a certain number of colors available at each bit-depth. Different<br>
+applications, and different documents within an application, use the colors in different<br>
+ways. For example, a full-color digitized photograph isn't usually meant to be<br>
+displayed in various tones of brown. If there aren't enough colors to go around, the<br>
+Palette Manager arbitrates.&nbsp;&nbsp;When a window with a palette comes to the front, the<br>
+Palette Manager inspects the window's palette and tries to modify the screen's color<br>
+table to best satisfy the palette.&nbsp;&nbsp;(If a window without a palette comes to the front, no<br>
+change occurs.) When another window is activated and comes to the front, the Palette <br>
+Manager inspects its palette and modifies the colors, taking colors used by previous<br>
+windows last. *
+</p>
+</body>
+</html>
