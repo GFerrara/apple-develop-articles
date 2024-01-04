@@ -1,0 +1,718 @@
+<html>
+<head>
+<!-- Article ID: 30 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Summer 91 - THREADED COMMUNICATIONS WITH FUTURES</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>THREADED COMMUNICATIONS WITH FUTURES</h2>
+<h1>MICHAEL GOUGH</h1>
+<p>
+<img src="img/173.gif" width="216 px"></img>
+</p>
+<p>
+<i>Interprocess communication (IPC) promises to provide a solution to problems that</i><br>
+<i>can't ordinarily be solved in a single-tasking, single-machine environment. But</i><br>
+<i>attempts at implementing IPC with traditional programming techniques lead to</i><br>
+<i>cumbersome code that doesn't come close to realizing IPC's potential. This article</i><br>
+<i>shows an example of using threads and futures to do IPC in a way that allows you to</i><br>
+<i>achieve concurrency with clean, robust code.</i>
+</p>
+<p>
+In the article "Threads on the Macintosh" in Issue 6 of <i>develop</i> , I identified a potential<br>
+problem with interprocess communications when you're using the client-server<br>
+model. Simply put, if you don't use threads when you're using the client- server model<br>
+to implement IPC, the result could be deadlock.&nbsp;&nbsp;&nbsp;The deadlock occurs because each<br>
+application is capable of only a single train of thought. The client expects an answer to<br>
+a question posed to the server but never receives that answer because the server must<br>
+receive an answer to its question before it can respond. The result is that each party is<br>
+waiting for answers to its own questions before it can proceed.
+</p>
+<p>
+Although "Threads on the Macintosh" sounded the alarm about the communications<br>
+deadlock problem, it didn't go into detail about how threads can be applied to solve the<br>
+problem. That's the purpose of this article. Specifically, this article shows how you<br>
+can avoid client-server deadlocks by using threads and a new facility called <i>futures</i> .<br>
+The Futures Package has been integrated seamlessly with Apple events. In this article,<br>
+we'll use Apple events as the generic facility for implementing IPC.&nbsp;&nbsp;&nbsp;The sample code<br>
+presented here appears on the <i>Developer Essentials</i> disc for this issue.
+</p>
+<p>
+Before discussing futures in detail, let's review some of the basics about threads.<br>
+Threads provide multiple trains of thought for your application. If your application is<br>
+doing more than one thing at a time, threads allow you to simplify your code. Instead of<br>
+juggling between multiple tasks, you start a separate thread to handle each individual<br>
+task. You then have multiple program counters, one for each thread. Of course, the<br>
+threads don't actually run simultaneously on a single CPU. They share the CPU,<br>
+cooperatively trading control by calling a special function that says, "Let the other<br>
+threads in this application have some CPU time."
+</p>
+<h2>HOW THREADS AND FUTURES FACILITATE IPC</h2>
+<p>
+Ideally, when you're writing code for IPC, you'd like things to work such that<br>
+whenever the client poses a question, it gets an immediate answer. This situation would<br>
+translate into nice linear code, such as the following:
+</p>
+<pre>    *
+    *<i>code that prepares the question</i>
+    *
+    answer := Ask(question);
+    *
+    *<i>Code that uses the answer</i>
+    *</pre>
+<p>
+The semantics would be very simple: A question is prepared, and then it's "asked." The<br>
+Ask function waits synchronously for the answer to be returned. When it's returned,<br>
+execution continues and the answer is used. 
+</p>
+<p>
+Unfortunately, this code suffers from a fatal flaw: the synchronous nature of the Ask<br>
+function will cause a deadly embrace in some situations. What if, as we saw above, the<br>
+client never receives an answer because the server needs to ask something of the client<br>
+before it can reply? This is an all too common situation.
+</p>
+<p>
+Threads allow you to circumvent the deadlock problem by making each application have<br>
+a client and server portion so that both sides can ask and answer questions of each<br>
+other. In other words, the client and server portions of each application are assigned to<br>
+separately executing threads. IPC then works as follows: Application 1's client asks a<br>
+question of application 2's server, and application 2's server must ask a question<br>
+before it can answer. However, application 1 is able to field this question because even<br>
+though its client portion is waiting for an answer, its server portion is available to<br>
+answer application 2's question. Because the answering and the questioning portions of<br>
+each program are able to function independently, a hangup in the client or the server<br>
+doesn't bring the application to a halt.
+</p>
+<p>
+In the "plain threads" situation just described, notice that execution of the client<br>
+thread is still held up while the client is waiting for an answer. What futures do is to<br>
+postpone or even eliminate this delay in processing, giving the thread a chance to do<br>
+related work before blocking. In this way, futures extend the capacity of threads to<br>
+maximize the efficient use of the CPU.
+</p>
+<p>
+In the futures implementation, when a question is posed, the application never has to<br>
+wait for an answer; it can continue execution immediately. This may seem impossible:<br>
+in the above example, how can the Ask function return immediately when it must<br>
+supply an answer to the question? Mustn't it wait until the answer is received? No,<br>
+because the answer that's returned by Ask is a future. The future doesn't contain the<br>
+information that the real answer contains. Instead, it contains information that says<br>
+"this answer isn't 'real' yet." Your code keeps executing, thinking that it has the<br>
+answer, but it really doesn't. At some point later, when the real answer is received by<br>
+the Apple Event Manager, the future is automatically transformed into the real<br>
+answer, with all the information that was requested.
+</p>
+<p>
+Note that when it comes time to get the contents out of an answer, and the answer could<br>
+be a future, you must be executing in a thread other than the main event loop thread,<br>
+or the result will be deadlock. This is because a thread that attempts to access the<br>
+contents of a future is blocked until the real answer is received. And since the real<br>
+answer to a future is received by the main event loop, you can't risk blocking the main<br>
+loop by using it to access the future. The solution is to fork a thread to access the<br>
+future. This way, your main event loop keeps running, receiving Apple events and<br>
+passing them to the Apple Event Manager. 
+</p>
+<p>
+In some situations you'll need to find out whether an Apple event is a future or not, and<br>
+you'll need to do this without blocking. This is done through a call to the IsFuture<br>
+function. It returns a Boolean value of TRUE if the Apple event you passed in is a<br>
+future. Of course, unlike the Apple event accessor functions, it never blocks when you<br>
+call it.
+</p>
+<h2>A CLOSER LOOK AT HOW FUTURES WORK</h2>
+<p>
+So how do you work with futures in a program?&nbsp;&nbsp;That is, how do you receive a "future"<br>
+answer to a question and then replace that future with the real answer when it becomes<br>
+available?&nbsp;&nbsp;&nbsp;&nbsp;You first prepare your question event just as you would any other Apple<br>
+event. However, instead of sending out the question with the AESend function, you call<br>
+the Ask function in the Futures Package. Note that it's never necessary to install a<br>
+handler for the answer, as is sometimes the case with AESend. The code that handles the<br>
+answer is neatly placed after the call to Ask. 
+</p>
+<p>
+&nbsp;Ask returns a fake answer--the future--as a placeholder for the real answer that is<br>
+to come. Since Ask returns immediately, the client can continue processing. In the<br>
+meantime, the server has time to receive the question and prepare an answer. The<br>
+main event loop of the server application receives a high-level event, which it passes<br>
+to the Apple Event Manager via a call to AEProcessAppleEvent.&nbsp;&nbsp;&nbsp;The Apple Event<br>
+Manager calls the appropriate event handler routine to receive the question and<br>
+generate an answer. The client is sent this answer from the server as a normal Apple<br>
+event reply.&nbsp;&nbsp;&nbsp;Replies that are answers to a future have a special code signifying that<br>
+they correspond to a particular future. AEProcessAppleEvent recognizes this code and<br>
+automatically transfers the contents of the real answer into the future. It also calls a<br>
+hidden routine in the Futures Package that wakes up the threads that are blocked on the<br>
+future. At this point, the future is no longer a future.
+</p>
+<p>
+&nbsp;Figure 1 illustrates the sequence of events that are set in motion when a question is<br>
+asked. 
+</p>
+<h2>EXAMPLE PROGRAM</h2>
+<p>
+The example shown here is a modified version of the TESample program that ships<br>
+with the Macintosh Programmer's Workshop. When you start the program, it brings<br>
+up a window for user interaction as usual. You'll notice that there's a new Test menu,<br>
+with two items that you can choose, Ping and Ping2. First we'll discuss Ping.
+</p>
+<p>
+<img src="img/174.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1</b> The Transformation of a Future Into a Real Answer
+</p>
+<p>
+Choose the Ping item to start a conversation with another copy of the program running<br>
+somewhere on your network. The PPC Browser dialog box appears and prompts you to<br>
+select another running copy of the program on your machine or elsewhere on the<br>
+network. The copy you select will be the server; the application that posed the dialog<br>
+will be the client. At this point you'll hear some beeps.&nbsp;&nbsp;&nbsp;What this means is that the<br>
+client is asking the server questions. The server beeps when it receives a question, and<br>
+then it returns an answer. You can start as many simultaneous conversations as you<br>
+like between any two copies of the program. In this way, you establish a number of<br>
+simultaneous client- server relationships between the various copies of this<br>
+application. You can even have an application be a client of itself. When this started<br>
+working for the first time, we had great fun pinging messages around our network (all<br>
+in the name of testing, of course). 
+</p>
+<p>
+When you select the name of the server from the PPC Browser dialog box, your client<br>
+program extracts the server's address so that it knows where to direct questions. The<br>
+client then starts a thread that sends messages to the server. If the answer the client<br>
+receives is a future, the thread is blocked.&nbsp;&nbsp;&nbsp;When the real answer arrives, the thread<br>
+is unblocked and is able to access the contents of the answer. After finishing with the<br>
+answer, the thread properly disposes of both the question and the answer events with<br>
+the AEDisposeDesc function. The thread then terminates.
+</p>
+<p>
+Note that the application continues to service the text editing window as usual while<br>
+servicing incoming requests and driving the conversations it's responsible for. This<br>
+illustrates that the main event loop is happy and healthy even though many threads<br>
+may be blocked. Since a thread is not swapped in when it's blocked, a blocked thread<br>
+has no impact on performance. Practical experience shows that these<br>
+communications-oriented threads end up spending most of their time blocked. 
+</p>
+<p>
+The second menu item, Ping2, allows you to select two processes. Questions are sent to<br>
+these processes at just about the same time. This example takes advantage of the<br>
+asynchrony provided by futures. The first Ask call returns a future. The second Ask is<br>
+called before the real answer is available for the first call. Then both answers are<br>
+accessed. This strategy can be used to drive two server CPUs in parallel. 
+</p>
+<p>
+The following code initializes the Threads and Futures Packages and installs an Apple<br>
+event handler to process ping events. It goes in the main program, right before the<br>
+main event loop routine is called. 
+</p>
+<pre>#pragma segment Main
+main()
+{
+    &#8226;
+    &#8226;   <i>initialization stuff  from TESample</i>
+    &#8226;      
+
+// Initialize the Threads Package.
+
+    InitThreads(false);     // Note the API change.
+
+// Initialize the Futures Package.
+
+    InitFutures();
+
+// Install a handler for the ping messages in the Apple events
+// dispatch table, so that when we receive these events, this
+// routine will be called.
+
+    AEInstallEventHandler(kSillyEventClass, kPingEvent,
+        (EventHandlerProcPtr) &amp;HandlePing, 0, false);
+
+    EventLoop();                    /* Call the main event loop. */
+}</pre>
+<p>
+The following is the handler that processes the ping Apple event. Note that it's in a<br>
+separate code segment so that procedure pointers to it are jump-table relative. 
+</p>
+<pre>#pragma segment handlers
+pascal OSErr HandlePing(AppleEvent question, AppleEvent answer,
+                              long handlerRefcon)
+{
+    char*           stringPtr;
+    char            stringBuffer[100];
+    long            actualSize;
+    DescType        actualType;
+    OSErr           theErr;
+
+// Beep to indicate that the question was received.
+
+    SysBeep(120);
+// Extract a string from the question.
+
+    theErr = AEGetParamPtr(&amp;question, 'qstr', 'TEXT', &amp;actualType,
+                (Ptr) stringBuffer, sizeof(stringBuffer)-1,
+                 &amp;actualSize);
+
+// Load a string into the answer.
+
+    stringPtr = "I'm just fine.";
+    theErr = AEPutParamPtr(&amp;answer, 'rstr', 'TEXT', stringPtr,
+                strlen(stringPtr));
+    return(noErr);
+}</pre>
+<p>
+Below is the main event loop. Well, sort of. I cut out some stuff for the sake of brevity.<br>
+The important thing here is the call to Yield, which gives CPU time to other threads.<br>
+It's interesting to note that the standard call to WaitNextEvent (not shown) is like<br>
+Yield in the sense that it gives CPU time to other MultiFinderTM processes. One<br>
+significant difference is that WaitNextEvent requires that you supply a sleep time of at<br>
+least one tick when yielding control to other applications. The semantics of the Yield<br>
+function allow you to regain control as soon as possible, with no obligatory sleep<br>
+period. The sleep period, as well as the Process Manager's scheduling algorithm, affect<br>
+the speed with which applications can exchange control and therefore affect the<br>
+round-trip speed of an IPC transaction. 
+</p>
+<pre>#pragma segment Main
+void EventLoop()
+{
+    &#8226;
+    &#8226;   <i>declaration and initialization stuff from TESample</i>
+    &#8226;      
+    do {
+        &#8226;
+        &#8226;   <i>Get an event from the event queue and pass it</i>
+        &#8226;   <i>to DoEvent.</i>
+        &#8226;
+
+// Yield control to other threads.
+
+        Yield();
+
+    } while ( true );   /* Loop forever. We quit via ExitToShell. */
+} /*EventLoop*/</pre>
+<p>
+DoEvent decides what to do with events picked up by the main event loop. Here I've<br>
+inserted an entry in the case statement that passes high-level events to the Apple<br>
+Event Manager routine, AEProcessAppleEvent. Its job is to forward the Apple event to<br>
+the appropriate handler, in this case HandlePing.
+</p>
+<pre>#pragma segment Main
+void DoEvent(event)
+    EventRecord *event;
+{
+    &#8226;
+    &#8226;   <i>declaration stuff from TESample</i>
+    &#8226;
+
+    switch ( event-&gt;what ) {
+
+// If this is a high-level event, pass it to the Apple Event Manager.
+
+        case kHighLevelEvent:
+            AEProcessAppleEvent(event);
+            break;
+        &#8226;
+        &#8226;   <i>Process other kinds of events.</i>
+        &#8226;
+    }
+} /*DoEvent*/</pre>
+<p>
+At this point, we've touched on all of the boilerplate. Now let's take a look at the Ask<br>
+function at work. Note that a real program would check for errors.
+</p>
+<pre>#pragma segment Main
+void DoMenuCommand(menuResult)
+{
+    &#8226;
+    &#8226;   <i>declaration and initialization stuff</i>
+    &#8226;
+    switch ( menuID ) {
+        &#8226;
+        &#8226;   <i>Process other kinds of menus.</i>
+        &#8226;
+        case mTest:
+            switch ( menuItem ) {
+                case iPing:
+                    {
+                    OSErr           theErr;
+                    TargetID        theTargetID;
+                    PortInfoRec     thePortInfo;
+                    AEAddressDesc   theAddressDesc;
+                    ThreadHandle    theThread;
+                    AppleEvent      question;
+                    AppleEvent      answer;
+                    char*           stringPtr;
+                    char            stringBuffer[100];
+                    long            actualSize;
+                    DescType        actualType;
+
+// Get the target address of the other process.
+       
+                    theErr = PPCBrowser("\p", "\p", false,
+                                &amp;theTargetID.location, &amp;thePortInfo,
+                                nil, "\p");
+                    if (theErr) break;
+                    theTargetID.name = thePortInfo.name;
+                    theErr = AECreateDesc(typeTargetID,
+                                (Ptr) &amp;theTargetID,
+                                sizeof(TargetID), &amp;theAddressDesc);
+       
+// Start the thread that pings.
+       
+                    if (InNewThread(&amp;theThread, kDefaultStackSize))
+                        {
+                        long i;
+                        for (i=0; i&lt;30; i++)
+                            {
+                            Yield();
+       
+// Build an Apple event question that is addressed to the user-
+// selected target.
+                   
+                            theErr = AECreateAppleEvent
+                                        (kSillyEventClass,
+                                        kPingEvent, &amp;theAddressDesc,
+                                        kAutoGenerateReturnID,
+                                        kAnyTransactionID,
+                                        &amp;question);
+                           
+// Load a string into the question.
+
+                            stringPtr =
+                                "Hello server, how are you doing?";
+                            theErr = AEPutParamPtr(&amp;question,
+                                        'qstr', 'TEXT',
+                                        stringPtr, strlen(stringPtr));
+
+// Ask the question.
+       
+                            theErr = Ask(question, &amp;answer);
+
+// If the answer is not a future so soon after Ask, something is
+// probably wrong.
+
+                            if (!IsFuture(answer)) Debugger();
+
+// Extract a string from the answer. This will cause the thread to
+// block until the answer is received.
+
+                            theErr = AEGetParamPtr(&amp;answer,
+                                        'rstr', 'TEXT',
+                                        &amp;actualType,
+                                        (Ptr) &amp;stringBuffer,
+                                        sizeof(stringBuffer)-1,
+                                        &amp;actualSize);
+
+// If the answer is still a future after you retrieve a string from
+// the answer, something is definitely wrong.
+
+                            if (IsFuture(answer)) Debugger();
+
+// Dispose of the answer and the question.
+                           
+                            theErr = AEDisposeDesc(&amp;answer);
+                            theErr = AEDisposeDesc(&amp;question);
+                            }
+       
+// Dispose of the address descriptor now that the thread no longer
+// needs it.
+       
+                        theErr = AEDisposeDesc(&amp;theAddressDesc);
+                        EndThread(theThread);
+                        }
+                    }
+                    break;
+
+                case iPing2:
+                    {
+                    OSErr           theErr;
+                    TargetID        theTargetID;
+                    PortInfoRec     thePortInfo;
+                    AEAddressDesc   theAddressDesc;
+                    AEAddressDesc   theAddressDesc2;
+                    ThreadHandle    theThread;
+                    AppleEvent      question;
+                    AppleEvent      question2;
+                    AppleEvent      answer;
+                    AppleEvent      answer2;
+   
+// Get the target addresses of the two processes.
+       
+                    theErr = PPCBrowser("\p", "\p", false,
+                                &amp;theTargetID.location, &amp;thePortInfo,
+                                nil,  "\p");
+                    if (theErr) break;
+                    theTargetID.name = thePortInfo.name;
+                    theErr = AECreateDesc(typeTargetID,
+                                (Ptr) &amp;theTargetID,
+                                sizeof(TargetID), &amp;theAddressDesc);
+                    theErr = PPCBrowser("\p", "\p", false,
+                                &amp;theTargetID.location, &amp;thePortInfo,
+                                nil, "\p");
+                    if (theErr) break;
+                    theTargetID.name = thePortInfo.name;
+                    theErr = AECreateDesc(typeTargetID,
+                                (Ptr) &amp;theTargetID,
+                                sizeof(TargetID), &amp;theAddressDesc2);
+       
+// Start the thread that pings.
+       
+                    if (InNewThread(&amp;theThread,
+                            kDefaultStackSize))
+                        {
+                        long i;
+                        for (i=0; i&lt;30; i++)
+                            {
+                            Yield();
+       
+// Build the questions.
+                   
+                            theErr = AECreateAppleEvent
+                                        (kSillyEventClass
+                                        kPingEvent, &amp;theAddressDesc,
+                                        kAutoGenerateReturnID,
+                                        kAnyTransactionID,
+                                        &amp;question);
+                            theErr = AECreateAppleEvent
+                                        (kSillyEventClass,
+                                        kPingEvent, &amp;theAddressDesc2,
+                                        kAutoGenerateReturnID,
+                                        kAnyTransactionID,
+                                        &amp;question2);
+                           
+// Ask the questions.
+       
+                            theErr = Ask(question, &amp;answer);
+                            theErr = Ask(question2, &amp;answer2);
+
+// Block until the answers become real.
+
+                            theErr = BlockUntilReal(answer);
+                            theErr = BlockUntilReal(answer2);
+
+// Dispose of the answers and the questions.
+
+                            theErr = AEDisposeDesc(&amp;answer);
+                            theErr = AEDisposeDesc(&amp;answer2);
+                            theErr = AEDisposeDesc(&amp;question);
+                            theErr = AEDisposeDesc(&amp;question2);
+                            }
+       
+// Dispose of the address descriptors now that the thread no longer
+// needs them.
+       
+                        theErr = AEDisposeDesc(&amp;theAddressDesc);
+                        theErr = AEDisposeDesc(&amp;theAddressDesc2);
+                        EndThread(theThread);
+                        }
+                    }
+                    break;</pre>
+<h2>THE FUTURES API</h2>
+<p>
+Here's a description of the routines provided by the Futures Package. Remember that<br>
+in addition to what you see here, you'll use Apple Event Manager routines to access the<br>
+contents of a future in the same way that you'd access the contents of any Apple event. 
+</p>
+<pre>pascal void InitFutures ();</pre>
+<p>
+InitFutures initializes the Futures Package. It lets the Apple Event Manager know that<br>
+you're using futures. You call it after you initialize the Threads Package. 
+</p>
+<pre>pascal OSErr Ask (AppleEvent question, AppleEvent* answer);</pre>
+<p>
+You pass in an Apple event question to the Ask function, and it immediately returns a<br>
+future in the answer parameter. 
+</p>
+<pre>pascal Boolean IsFuture (AppleEvent theMessage);</pre>
+<p>
+This handy function tells you whether or not a given Apple event is a future, without<br>
+blocking. 
+</p>
+<pre>pascal OSErr BlockUntilReal (AppleEvent theMessage);</pre>
+<p>
+This function blocks the execution of the current thread until the specified Apple event<br>
+is converted from a future to a real answer. If the Apple event is already real, this<br>
+function returns immediately without blocking. If you ever find yourself accessing a<br>
+parameter in a future just to cause your thread to block, use this function instead.
+</p>
+<h2>THE FUTURE OF FUTURES</h2>
+<p>
+Threads and futures make it possible to divide a problem into independent parts that<br>
+can be executed concurrently. Whenever you can divide a problem into several parts in<br>
+this way and direct these parts to different CPUs, you can take advantage of parallel<br>
+processing. One of the most exciting things about threads and futures is, in fact, that<br>
+they make it very easy to build distributed systems that use multiple CPUs executing<br>
+in parallel.
+</p>
+<p>
+Work along these lines is in progress on the Macintosh. The goal is to foster a new era<br>
+of computing in which users purchase smaller chunks of functionality from a variety<br>
+of vendors, and then wire them together in new and interesting configurations. Rather<br>
+than have a single multifunction program, why not have multiple single-function<br>
+programs that can be spread across several CPUs and seamlessly brought together? In<br>
+addition to a customized application environment, you also get the advantage of using<br>
+all the computing power on a network.&nbsp;&nbsp;Stay tuned for more information about a<br>
+specific project that makes distributed processing a reality for the Macintosh user.
+</p>
+<p>
+<b>ACKNOWLEDGMENTS</b><br>
+Thanks to Kurt Piersol for designing the final version of Apple events and for<br>
+addressing all my concerns before I even posed them. Thanks to Ed Lai, who<br>
+incorporated support for futures seamlessly into the shipping version of Apple events<br>
+for me.
+</p>
+<p>
+Thanks to Larry Tesler for supporting the original version of my "Transporter"<br>
+research project, which introduced futures to the Macintosh. Larry played a major<br>
+role in the early brainstorming for Transporter in the Advanced Technology Group,<br>
+and was the first to relate it to Peter Halstad's work on futures at DEC. Thanks also to<br>
+researchers Jed Harris and Joshua Susser, who helped reel in and refine the idea. 
+</p>
+<p>
+Thanks to Laile Di Silvestro, the first person to implement a robust communications<br>
+timeout mechanism using dreaming threads and futures; to James Redfern, Don Olson,<br>
+and Eric House for assisting me with past, present, and future versions of Apple<br>
+events; and to Paul Snively for championing futures in Developer Technical Support. 
+</p>
+<p>
+God bless Geta Carlson, Caroline Rose, Dave Johnson, Monica Meffert, and Louella<br>
+Pizzuti. You'd be amused to see what these articles start out like, and amazed at how<br>
+much editing work goes into them. Special thanks to Don Donoughe, our illustrator.<br>
+Futures aren't easy to depict, and Don really hung in there as we carved out the figure<br>
+in this article. 
+</p>
+<p>
+Mondo thanks to Greg Anderson for putting threads and futures into an INIT and for<br>
+"saving the day" on a daily basis. Thanks to John Wendt for his dedicated work<br>
+integrating futures with his current secret project. Greg, John, and I are cooking up<br>
+something really big, so you'd better renew your subscription to <i>develop</i> . 
+</p>
+<h2>THE POWER OF FUTURES</h2>
+<p>
+Futures are almost always useful when you're implementing the client-server model.<br>
+Any time you have to ask a question of another process, but your program must keep<br>
+handling incoming messages from other processes, threads and futures are a good<br>
+approach.
+</p>
+<p>
+For instance, suppose you've got a pipeline of interconnected processes, where<br>
+messages are sent from one end to the other. If you're able to run these processes on<br>
+separate CPUs, you can use threads and futures to make all the processes communicate<br>
+simultaneously. Every time a process receives an incoming question, have it fork a<br>
+thread whose job in life is to handle the question. The thread sends the question to the<br>
+next thread in the chain and waits for the answer. Meanwhile, the process will very<br>
+happily service other questions.&nbsp;&nbsp;&nbsp;Questions and answers will flow throughout all parts<br>
+of the pipeline simultaneously. Because the original client can fork many threads, each<br>
+of which is responsible for a single transaction, there's never any unnecessary delay<br>
+while a transaction waits for another independent transaction to complete.
+</p>
+<p>
+Futures are also great in cases where your program must ask questions of two or more<br>
+processes and then combine the answers in some calculation. Since the order of the<br>
+transactions isn't critical, you ask all the questions and then use all the answers. When<br>
+the last answer is in, your program will complete its task. The rule of thumb is that<br>
+you always ask questions as early as you can and access answers as late as you can.&nbsp;&nbsp;<br>
+This way, you don't block until all the questions have been asked and all the associated<br>
+processing has commenced. 
+</p>
+<h2>A FEW NOTES ABOUT APPLE EVENTS</h2>
+<p>
+To use futures, there are a few things that you need to know about Apple events.&nbsp;&nbsp;The<br>
+most important thing tobe aware of is the<br>
+AESuspendTheCurrentEvent-AEResumeTheCurrentEvent feature that the Apple Event<br>
+Manager provides. You need this feature to avoid deadlock when your event handlers<br>
+ask their own questions. AESuspendTheCurrentEvent allows your event handler to say,<br>
+"I'm going to return from this handler, but I'm not done processing the event you just<br>
+gave me. I'll continue processing this event, and I'll call AEResumeTheCurrentEvent<br>
+when I'm really done."
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+To use this mechanism in your handler, you suspend the event and fork a thread that<br>
+asks the question. The original thread that entered the handler returns to the Apple<br>
+Event Manager with the understanding that the event has not been handled yet. The new<br>
+thread then constructs an answer to the original question based on the contents of the<br>
+answer that it received. This may involve copying information from one answer to<br>
+another. Then the thread calls AEResumeTheCurrentEvent to let the Apple Event<br>
+Manager know that the event has finally been handled. After calling<br>
+AEResumeTheCurrentEvent, the thread dies via a call to EndThread.
+</p>
+<p>
+Without this Apple event mechanism for suspending and resuming events, it would be<br>
+very difficult to avoid deadlock. Handlers would have to avoid returning because<br>
+returning implies, "I'm done with this event. It's OK to send the answer back now."<br>
+Since the handler wouldn't be able to return, the main event loop would be stalled, and<br>
+deadlock would result. See <i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI for more information on the<br>
+AESuspendTheCurrentEvent-AEResumeTheCurrentEvent feature.
+</p>
+<p>
+One final note about Apple events: Even though you call Apple event functions in your<br>
+code to handle certain incoming events, your code isn't truly "Apple-event aware." For<br>
+your code to achieve this awareness and full System 7.0 compatibility, Apple requires<br>
+that you implement handlers for standard Apple events like Open Documents and Print<br>
+Documents. See <i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI for details on Apple-event awareness.
+</p>
+<h2>WHAT'S HAPPENING WITH THREADS?</h2>
+<p>
+The big news is that the Threads and Futures Packages are now shipping together as an<br>
+INIT. This will allow us to release improved implementations of threads and futures<br>
+that you can integrate with your code without relinking your application. There is a<br>
+"glue" object library that replaces the old threads library. Now when you call a<br>
+routine in the Threads Package, it calls the INIT.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+While implementing the "glue" code, we encountered a problem that forced us to change<br>
+the threads API. First, the InitThreads call now has only one parameter:
+</p>
+<pre>pascal void InitThreads(Boolean usesFPU);</pre>
+<p>
+So where did the second parameter go? It's been moved to a new procedure:
+</p>
+<pre>pascal void SetMainThread(ThreadHandle
+mainThread);</pre>
+<p>
+This tells the Threads Package that you have a new "customized" thread that you want<br>
+to use as the main thread. The former main thread dies and is reborn as this new<br>
+customized thread. The reason for this API change is that the InitThreads glue code now<br>
+does some initialization that must be done before any thread is created. The old API<br>
+would have you creating threads before this initialization, which would be bogus.
+</p>
+<p>
+An interesting new feature of the Threads Package is that threads now "dream" when<br>
+they're sleeping. Each thread has the option of installing a procedure in its fDream<br>
+field. This routine is pulsed periodically via a call to LetThreadsDream in your event<br>
+loop. A sleeping thread's dream proc can decide that it has waited too long and call Wake<br>
+to wake itself from a "nightmare."
+</p>
+<p>
+Dreaming is extremely useful in implementing robust timeout mechanisms in IPC<br>
+systems. Instead of using a simplistic timer mechanism, you can place arbitrarily<br>
+complex logic in the dream proc to decide whether or not your thread should timeout.<br>
+The dream proc can be designed to be sensitive to periodic messages from aserver that <br>
+say, "I'm still working on your request, so don't timeout." In this way, the dreaming<br>
+thread knows that it's still in contact with the server, even if it's taking a long time to<br>
+respond. This approach is far superior to mechanisms that timeout after some fixed<br>
+period of time.
+</p>
+<p>
+<b>MICHAEL GOUGH</b> has been ranting about threads, futures, and other stuff for about<br>
+three years at Apple. (Maybe he'll pipe down if we let him publish one more article.)<br>
+Here are a few things you might not know about Michael: While he was at NASA, he<br>
+developed solid model generation and ray tracing software. He also introduced virtual<br>
+memory and remote procedure call support for NASA's Massively Parallel Processor.<br>
+Michael developed a package called "Virtual Data Table" which makes complex<br>
+multidimensional data easy to deal with. His pride and joy is a package called<br>
+"Spherical Database" which turns geographic data sets into a continuous function over<br>
+a sphere. Michael is often seen levitating things around the office and doing other magic<br>
+tricks. He insists he learned the levitation trick while traveling in India, but we think<br>
+that's balderdash. When Michael's not at work, he's hiking and eating ice cream with<br>
+his two sons. On occasion, he visits Nevada to take the casinos for all they're worth.<br>
+When he's done with his current project, he's going on a really long trip to Antarctica.<br>
+*
+</p>
+<p>
+<b>Thanks to Our Technical Reviewers </b>Kurt Piersol, Paul Snively, Dave Williams<br>
+*
+</p>
+</body>
+</html>

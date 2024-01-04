@@ -1,0 +1,166 @@
+<html>
+<head>
+<!-- Article ID: 25 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Summer 91 - PRINT HINTS FROM LUKE & ZZ</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>PRINT HINTS FROM LUKE &amp; ZZ</h2>
+<h2>HELP FOR YOUR DIALOG APPENDAGES</h2>
+<h1>PETE "LUKE" ALEXANDER and Zz</h1>
+<p>
+<img src="img/169.gif" width="162 px"></img>
+</p>
+<p>
+<b>Zz speaks</b>
+</p>
+<p>
+&nbsp;OK, so you're cruising your source like a madman trying to get all those little System<br>
+7.0 changes in before that target ship date (whatever it is this week), and you notice<br>
+that the items you've added to the Page Setup/Print dialogs don't have any Balloon<br>
+HelpTM--you know, those items like Reverse Pages, Print Hidden Text, or even Use<br>
+Fractional Font Widths. (Coming up with meaningful names for these items, in four<br>
+words or less, was a little tricky.) But now there's help, literally, in System 7.0.&nbsp;&nbsp;<br>
+Great! Then you remember that there wasn't a simple Printing Manager call to add<br>
+those items to the dialogs. You had to resort to the technique described in Technical<br>
+Note #95, How to Add Items to the Print Dialogs. As you remember, it used a set of<br>
+procedures that modified the Printing Manager's (that is, the selected print driver's)<br>
+dialog item list (DITL) resource.
+</p>
+<p>
+&nbsp;Remembering the actual code in Tech Note #95, you consider that the Standard File<br>
+package shipped with 7.0 has a new call that allows you to append things to its dialog,<br>
+including Help Manager resources. Feeling relieved, you think, "Ah, there must be a<br>
+similar call in the new Pri . . ." But no, the new printing architecture has been<br>
+delayed. A quick scan shows that there isn't even a Printing Manager chapter in<i>Inside</i><br>
+<i>Macintosh</i> Volume VI! Help!!!&nbsp;&nbsp;&nbsp;It's not as bad as you might expect. If you consult Tech<br>
+Note #95, you'll see the rather husky AppendDITL procedure. This procedure is called<br>
+to append the items that you want to add to the dialog item list being used by the<br>
+particular dialog (Page Setup or Print). 
+</p>
+<p>
+&nbsp;The sample code from Tech Note #95 calls some Printing Manager routines that let<br>
+you get in after the DITL resource has been loaded, but before the dialog has been<br>
+displayed. You add your items to the resource in memory<i>without</i>&nbsp;&nbsp;calling either<br>
+ChangedResource or WriteResource. The driver then uses this DITL and displays your<br>
+items. Once the dialog is dismissed, the resource is purged, and the driver doesn't even<br>
+know you were there. Life is good. 
+</p>
+<p>
+&nbsp;As you've probably guessed by now, you're going to have to append to the Help Manager<br>
+dialog item help ('hdlg') resource in the same way that you appended to the DITL<br>
+resource. You simply scan the list to the end, and then append the appropriate items.<br>
+The 'hdlg' resource is purged in the same way as the DITL resource, so once again you<br>
+make no permanent changes. 
+</p>
+<p>
+&nbsp;On the next page is the definition of the Append2hdlg procedure. We start by getting<br>
+both 'hdlg' resources into memory. It's safe to assume the source 'hdlg' resource hasn't<br>
+been loaded yet, but we use the SetResLoad trick on the destination in case it has<br>
+already been loaded. (The SetResLoad trick is a method for determining whether a<br>
+resource has already been loaded. This trick is important, since in cases where the<br>
+resource has already been loaded by the system, you don't want to unload it or<br>
+permanently change any of its resource attributes.) The trick works like this: You<br>
+SetResLoad to false so that the Resource Manager doesn't load the resource data;<br>
+instead, it just creates an empty resource handle that can be passed to routines like<br>
+GetResInfo. You then call GetResource on the resource you're looking for. If the handle<br>
+returned is empty (that is, points to nil), you know the resource isn't already in<br>
+memory. If the handle returned is not empty, something else (like the system) has<br>
+already loaded it before you called GetResource. In this example, since we use<br>
+HGetState and HSetState to preserve the resource attributes, and we want the resource<br>
+to be left in memory when we're done, we don't really need to know if it was already<br>
+loaded. The SetResLoad code is included for anyone who is planning on modifying this<br>
+code to do more.
+</p>
+<p>
+Next we initialize our locals. We want to point srcPtr to the place in the source<br>
+resource that we want to start copying from. To do this, we need to point past the<br>
+"missing item." The size of the item is stored in the resource just after the resource<br>
+header. We first use srcPtr to get the size (in bytes) of the missing item. Using that<br>
+size, we can calculate the starting location for the copy. We don't actually initialize<br>
+srcPtr yet, since resizing the destination handle could move memory. Next we<br>
+initialize dstPtr and dstLength. In the process, we resize dstHdl to make room for the<br>
+items we're going to append. Once SetHandleSize has been called, we also initialize<br>
+srcPtr. Now that srcPtr and dstPtr are set up, we use BlockMove to copy the new items<br>
+into the destination resource. After unlocking the resource handles, we update the<br>
+numItems field of the destination resource so that the Help Manager will know how<br>
+many items we added. Finally, we release the source resource. We don't want to release<br>
+the destination, since our changes would then be lost.
+</p>
+<pre>void Append2hdlg(srcResID, dstResID)
+short   srcResID, dstResID;
+{
+    Handle              srcHdl, dstHdl;
+    Ptr                 srcPtr, dstPtr;
+    short               srcLength, dstLength;
+    short               missingItmSz;
+    SignedByte      dstHState;
+   
+    srcHdl = GetResource('hdlg', srcResID);
+    if (srcHdl != nil) {
+        SetResLoad(false);  /* System resource, make sure it's not */
+        dstHdl = GetResource('hdlg', dstResID); /* already loaded. */
+        SetResLoad(true);
+        if (*dstHdl == 0)
+            dstHdl = GetResource('hdlg', dstResID);
+        dstHState = HGetState(dstHdl);
+       
+        if (dstHdl != nil) {
+            srcPtr = (Ptr)*srcHdl + sizeof(hdlgHeader);
+            missingItmSz = *((IntPtr)srcPtr);
+            srcLength = GetHandleSize(srcHdl) - (sizeof(hdlgHeader)
+                - missingItmSz);
+
+            dstLength = GetHandleSize(dstHdl);
+            SetHandleSize(dstHdl, dstLength + srcLength);
+            if (MemError() != noErr) {
+                DebugStr("\pMemError");
+                            /* Use this error handler, go to jail. */
+                ExitToShell();              /* It's the law! */
+            }
+            dstPtr = (Ptr)*dstHdl + dstLength;
+            srcPtr = (Ptr)*srcHdl + sizeof(hdlgHeader) +
+                missingItmSz;
+
+            HLock(srcHdl);
+            HLock(dstHdl);
+
+            BlockMove(srcPtr, dstPtr, srcLength);
+
+            HUnlock(srcHdl);
+            HSetState(dstHdl, dstHState);
+
+            ((hdlgHeaderPtr)*dstHdl)-&gt;hdlgNumItems +=
+                ((hdlgHeaderPtr)*srcHdl)-&gt;hdlgNumItems;
+        }
+    }
+    ReleaseResource(srcHdl);
+}</pre>
+<p>
+So that's about it. Append2hdlg is a lot smaller than AppendDITL because we don't<br>
+actually need to parse the contents of the 'hdlg' resource. Although it's another piece of<br>
+code to be added to your application, this should be quite painless, unlike other<br>
+Printing Manager exercises. Don't forget to read the Help Manager chapter of <i> Inside</i><br>
+<i>Macintosh</i>&nbsp;&nbsp;Volume VI for guidelines on the contents of your Help Manager balloons. See<br>
+ya next time . . .
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>SCOTT "ZZ" ZIMMERMAN</b> loves Disneyland--we think it's because he's really a<br>
+cartoon character at heart. When asked, he admitted to wanting to be Captain Hook<br>
+when he grew up. His favorite ride is Peter Pan because it's romantic, cool, dark, and<br>
+the main character is a kid who never grew up. Except for the romantic, cool, and dark<br>
+parts, it reminds him a lot of life at Apple. When he's at Apple he makes sure he drinks<br>
+at least 15 gallons of Mountain Dew a day--he says it powers the mechanism for his<br>
+retractable Barbie Doll hair. In closing, we'll leave you with his favorite question,<br>
+"How can I miss you if you won't leave?"*
+</p>
+<p>
+<b>For more information </b>on the format and use of the "missing item" in an 'hdlg'<br>
+resource, and much more about Balloon Help, see the Help Manager chapter in <i>Inside</i><br>
+<i>Macintosh</i>&nbsp;&nbsp;Volume VI.&nbsp;&nbsp;*
+</p>
+</body>
+</html>

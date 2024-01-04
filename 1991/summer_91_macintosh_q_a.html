@@ -1,0 +1,414 @@
+<html>
+<head>
+<!-- Article ID: 27 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Summer 91 - MACINTOSH Q & A</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH Q &amp; A</h2>
+<h1>MACINTOSH DEVLOPER TECHNICAL SUPPORT</h1>
+<p>
+<b>Q</b><i> Why would using OpenResFile(fileName) cause a crash when I try to open a</i><br>
+<i>Macintosh font file that's already open?</i>
+</p>
+<p>
+<b>A</b> The problem stems from the fact that OpenResFile doesn't deal effectively with cases<br>
+where the resource file is already open. Luckily, there are some relatively new<br>
+Resource Manager calls that you can and should use instead. They're all documented in<br>
+the Resource Manager chapter of<i> Inside Macintosh </i> Volume VI and in Macintosh<br>
+Technical Note #214, New Resource Manager Calls.
+</p>
+<p>
+&nbsp;The call of interest in your case is HOpenResFile. To use it, break down the vRefNum<br>
+(actually WDRefNum) returned by Standard File into a real vRefNum and dirID by<br>
+calling PBGetWDInfo, and pass those to HOpenResFile along with the file name. The<br>
+important part, however, is the permissions byte. If you expect to modify the file,<br>
+pass fsRdWrPerm in that field. If there's an error of any kind, expect HOpenResFile to<br>
+return -1, which should serve as a signal that you need to call ResError to find out<br>
+what went wrong.
+</p>
+<p>
+<b>Q</b><i> My application, which has several units and objects, compiles under MPW 3.1 but</i><br>
+<i>not under MPW 3.2. Do forward references to objects work differently with MPW</i><br>
+<i>3.2?</i>
+</p>
+<p>
+<b>A</b> MPW 3.2 has a new syntax for forward references to objects. Objects must be<br>
+declared as externals, as follows:
+</p>
+<pre>TYPE
+    TObjB = OBJECT; external; { MPW 3.2 requires this }
+    TObjA = OBJECT(TObject)
+        fFwdRef: TObjB;
+
+        {methods}
+END;</pre>
+<p>
+&nbsp;Note that by default the Pascal compiler includes information such as USES in its<br>
+symbol table resources, so simply using the correct USES and external declarations<br>
+may not be sufficient; you may find it necessary to invoke the Pascal compiler with the<br>
+-rebuild option to force it to reconstruct its symbol table resources from scratch.
+</p>
+<p>
+<b>Q</b><i> With the System 7.0 version of the LaserWriter driver, when the user selects</i><br>
+<i>Envelope from the Page Setup dialog, the page size returned by the driver is still a</i><br>
+<i>standard page: 8.5 x 11. How do you recommend that applications display the page size</i><br>
+<i>when the user has chosen a nonstandard page size?</i>
+</p>
+<p>
+<b>A</b> We recommend that you have the page preview show a full page instead of an<br>
+envelope-sized page. The LaserWriter&#174; driver supports a large number of PostScript<br>
+&#174; devices, and it can't be sure whether the envelope will be fed on the right, left, or<br>
+center of the paper tray. If you show the full page, a user can print on any device by<br>
+putting the text in the correct location for that device.
+</p>
+<p>
+&nbsp;Manufacturers of PostScript printers can add custom page sizes to the LaserWriter<br>
+driver. If they do, the representation on the screen will be whatever they decide to<br>
+define. Applications should not try to interpret custom page sizes. If your application<br>
+ignores the results returned by the driver, you risk incompatibility down the road.<b>Q</b><br>
+<i>Why is my Macintosh driver receiving a&nbsp;&nbsp;positive drive number under System 7.0</i><br>
+<i>upon notification of an _Eject call?</i>
+</p>
+<p>
+<b>A</b> When the "driver wants a call on eject" bit is set in the flag bytes preceding a drive<br>
+queue element, _Eject will issue a _Control call with a csCode of 7 to the driver. This<br>
+_Control call is supposed to inform the driver which disk the OS is attempting to eject,<br>
+by passing the drive number in the ioVRefNum field of the parameter block.
+</p>
+<p>
+&nbsp;However, there's a bug in the ROM that only manifests itself when _Eject is given a<br>
+volume reference number for a disk that has both the "nonejectable" and "driver wants<br>
+a call on eject" bits set in the drive flag bytes. This bug causes the driver to receive<br>
+the negative of the drive number, rather than the positive drive number.
+</p>
+<p>
+&nbsp;The System 7.0 Finder has reversed the order of its calls to _UnmountVol and _Eject,<br>
+causing it to pass the drive number to _Eject, which then passes it on to the driver<br>
+correctly. Unfortunately, under previous systems, the Finder passed the volume<br>
+reference number to _Eject, forcing developers to work around the bug by accepting<br>
+negative drive numbers; however, a problem could occur now under System 7.0 if<br>
+positive drive numbers weren't accepted as well.
+</p>
+<p>
+&nbsp;A number of driver writers have notified us of this problem, but few (so far) have<br>
+been adversely affected. As it has always been possible for utilities or applications to<br>
+make _Eject calls with either a volume reference number or a drive number, the<br>
+proper workaround is to handle both positive and negative drive numbers.
+</p>
+<p>
+<b>Q</b><i> How many active ranges can a Macintosh application have on a shared file? If the</i><br>
+<i>answer is more than one, is the limit per application or per machine? If two ranges</i><br>
+<i>overlap, are they joined into one range? Can an application nest ranges? For example,</i><br>
+<i>if an application's user performs an action that forces a record to be locked and later</i><br>
+<i>the application locks the full range of the file, does the initial record lock disappear?</i>
+</p>
+<p>
+<b>A</b> The only way to determine the limit is to hit the limit and get a NoMoreLocks error.<br>
+The number of range locks supported is a limit of the server platform, and that limit<br>
+is shared by all users of the server (at least it is with Apple's AppleShare &#174; server<br>
+software). With Apple's server- based version of AppleShare, approximately 40 locks<br>
+per user are allowed (for example, if the server allows 25 users, there are 1000<br>
+locked ranges total; if the server allows 50 users, there are 2000 locked ranges total;<br>
+and with File Sharing running under System 7.0, approximately 20 locks are allowed<br>
+per user). Other vendors may allow more or fewer locked ranges on their<br>
+implementations of an AppleTalk &#174; Filing Protocol (AFP) server. Notice that the<br>
+numbers given are per user, not per application. It's assumed that a user probably<br>
+won't need more than a few locks at a time on a single file.
+</p>
+<p>
+&nbsp;You cannot have range locks that overlap. You'll get a RangeOverlap error from AFP.<br>
+All the rules for range locking can be found in the AFP chapter of <i> Inside AppleTalk</i> <br>
+(page 13-56). Additional information on AppleShare limits is available in the Dev<br>
+Tech Answers library on AppleLink and on the <i>Developer Essentials</i>&nbsp;&nbsp;disc.
+</p>
+<p>
+&nbsp;The February 1991 revision of Macintosh Technical Note #186 covers several<br>
+important details about PBLockRange and PBUnlockRange that are not in <i> Inside</i><br>
+<i>Macintosh</i> .
+</p>
+<p>
+<b>Q</b><i> Where can we get our hands on a fix to the ROM bug in the Macintosh IIci and</i><br>
+<i>Macintosh IIfx Memory Manager? Word has it that Apple wrote an INIT (MMInit) to</i><br>
+<i>fix this problem. Because we're using our application on both the Macintosh IIci and</i><br>
+<i>the IIfx, and the application uses many handles, this fix would be appreciated.</i>
+</p>
+<p>
+<b>A</b> Under System 6.0.x, Apple had identified a minor problem with the Memory<br>
+Manager in the Macintosh IIfx, IIci, IIsi, and LC. This problem resulted in a<br>
+performance degradation&nbsp;&nbsp;in an extremely small number of applications and did not<br>
+cause system crashes. We believe this was an insignificant problem that affected few<br>
+applications and very few customers. The problem was not new and was not caused by<br>
+the introduction of System Software 6.0.5 or 6.0.7.
+</p>
+<p>
+&nbsp;Based on developer feedback, customer feedback, and extensive in-house testing,<br>
+Apple has identified very few affected applications. Because the problem affects only an<br>
+extremely small number of developers, Apple is working with those developers to fix<br>
+their applications. The best solution, however, is to upgrade to System 7.0, as it<br>
+includes an enhancement to the Memory Manager to address this issue.
+</p>
+<p>
+&nbsp;During extensive testing and research, Apple investigated a variety of solutions to<br>
+enhance the Memory Manager performance. One area researched was a software<br>
+solution called the Memory Manager INIT (a software "patch"), or MMInit as it's most<br>
+often called. Through testing we discovered that this patch did not enhance Memory<br>
+Manager performance and introduced risks such as decreased performance in some<br>
+mainstream applications.
+</p>
+<p>
+&nbsp;An unofficial version of the Memory Manager INIT has surfaced. This INIT should not<br>
+be used, because it has been modified from Apple's experimental version and could<br>
+cause data corruption, data loss, and crashes. Apple strongly urges that you discard the<br>
+INIT if you have obtained a copy, and not use it. If any version of this INIT is used<br>
+under System 7.0, it defeats the enhanced Memory Manager and reintroduces the bugs<br>
+that were present in the System 6.0.x Memory Manager.
+</p>
+<p>
+&nbsp;You may still wonder if you have been affected by this problem and how to avoid it<br>
+under 6.0.x. The problem is most severe when allocating pointers in a heap with a<br>
+rather large number of handles (on the order of tens of thousands). It's helpful to<br>
+allocate enough master pointers (via MoreMasters) during initialization. If the<br>
+Memory Manager has to call MoreMasters later on, not only could it fragment<br>
+memory, but it could take an exceedingly long time. It's also helpful not to allocate<br>
+thousands of handles. Besides requiring lots of master pointers, it takes the Memory<br>
+Manager a long time to crunch through them during heap compaction.
+</p>
+<p>
+<b>Q</b><i> Does setting the is32BitCompatible bit in the 'SIZE' resource have any effect in</i><br>
+<i>System 7.0?</i>
+</p>
+<p>
+<b>A</b> The alert box that was to be shown for applications with the 'SIZE' resource's<br>
+is32BitCompatible flag disabled was found to be too confusing for an end user, so the<br>
+is32BitCompatible flag is not used and the alert box is not displayed in the final<br>
+System 7.0. (It is, however, displayed in A/UX 2.0 and 2.0.1.) This could change in<br>
+the future.
+</p>
+<p>
+<b>Q</b><i> Can you describe a procedure for extracting TrueType character outline data directly</i><br>
+<i>from the Macintosh system software?</i>
+</p>
+<p>
+<b>A</b> Future releases of Macintosh system software probably will include calls for<br>
+accessing TrueType character outline data. In the meantime, sample code showing how<br>
+to parse the 'sfnt' outline font resource is available on the <i> Developer Essentials </i> disc<br>
+and on AppleLink in the Developer Support: Developer Services:Developer Technical<br>
+Support:Developer Essentials:Sample Code folder.
+</p>
+<p>
+<b>Q</b><i> Where can I find information on manipulating TrueType fonts under System 6.0.7?</i>
+</p>
+<p>
+<b>A</b> The System 6.0.7 TrueType INIT includes all the outline calls in System 7.0, so<br>
+everything you need is in <i> Inside Macintosh</i>&nbsp;&nbsp;Volume VI. Use Gestalt's<br>
+gestaltFontMgrAttr selector (described in the "Compatibility Guidelines" chapter of<br>
+Volume VI, and available in System 6.0.4 and later) to determine whether TrueType is<br>
+available on the machine in question, and then use outline calls freely and with<br>
+abandon. The latest MPW release has the header files, called OutlineCalls. Use version<br>
+4.1 of Font/DA Mover to move outline fonts under System 6.0.7. Both the TrueType<br>
+INIT and Font/DA Mover 4.1 are available on AppleLink and on the<i> Developer</i><br>
+<i>Essentials </i> disc,&nbsp;&nbsp;and you can license Font/DA Mover to include it with your product<br>
+release by contacting Apple's Software Licensing group.
+</p>
+<p>
+<b>Q</b><i> Why doesn't the StyleWriter</i> &#174;<i> like&nbsp;&nbsp;the SetLineWidth PicComment (182)? It</i><br>
+<i>prints the line at a 1-point weight.</i>
+</p>
+<p>
+<b>A</b> Most of Apple's QuickDraw printers do not support the SetLineWidth PicComment.<br>
+Because there's no feedback as to whether the PicComment was successful, use of the<br>
+comment is problematic. It's not regularly handled, except in PostScript printers.
+</p>
+<p>
+&nbsp;The best way to make full use of a Macintosh printer's resolution is through the<br>
+PrGeneral trap. You'll find it thoroughly described in the article "Meet PrGeneral, the<br>
+Trap That Makes the Most of the Printing Manager" in Issue 3 of <i> develop</i> , and also<br>
+covered in <i> Inside Macintosh</i>&nbsp;&nbsp;Volume V. PicComments are discussed in Macintosh<br>
+Technical Notes #91 and #175.
+</p>
+<p>
+<b>Q</b><i> How can a Macintosh in 24-bit addressing mode read from disk into a GWorld? If the</i><br>
+<i>GC card is installed, sometimes the GWorld is a 32-bit one cached on the card. How do</i><br>
+<i>we ensure the GWorld will be in main memory?</i>
+</p>
+<p>
+<b>A</b> When you create your GWorld, set the keepLocal flag in the flags field of the<br>
+NewGWorld call. This ensures that the newly created GWorld will be in main memory<br>
+where you can access it. Read your data into the GWorld and then clear the keepLocal<br>
+flag with a call to SetPixelState. This will issue a "GWorld has been updated" type of<br>
+message, causing the GWorld to be cached off to the GC card, giving you the best<br>
+performance. When you want to load another image, call SetPixelState again, setting<br>
+the keepLocal flag to bring the GWorld back to main memory. Using this technique<br>
+you'll be able to load your GWorld and cache it too, and you won't need to recreate the<br>
+GWorld each time you want to load more data into it.
+</p>
+<p>
+<b>Q</b><i> What are the effects of InitCM, InitCRM, InitCRMUtilities, and similar calls to the</i><br>
+<i>Macintosh Communications Tools by nonapplications such as INITs or background</i><br>
+<i>processes? What effect do multiple INIT calls have on Communications Tools</i><br>
+<i>operations and any existing connections? What do these calls do, and when (and how</i><br>
+<i>many times) is it safe to call them?</i>
+</p>
+<p>
+<b>A</b> All these initialization calls deal with the process of loading the 'cmtb' resource into<br>
+the system heap, putting entries into the Communications Toolbox (CTB) dispatch<br>
+table with references to the current heap zone, and setting up various things having to<br>
+do with resource management for the operation of the CTB. You can call them over and<br>
+over again without damaging existing information.
+</p>
+<p>
+&nbsp;With this new perspective, you can see that a synergy exists between operations of the<br>
+CTB and the Resource Manager. The CTB needs to be in the appropriate heap zone when<br>
+a ConnHandle is generated or referenced for it to operate as desired. If you're writing a<br>
+background process that maintains its own persistent heap zone, you shouldn't have<br>
+any difficulties using the CTB.
+</p>
+<p>
+&nbsp;If you're writing an INIT, matters are more complex. You must SetZone(SystemZone)<br>
+while performing all CTB operations (including initialization, CMGetProcID, and<br>
+CMNew) to be sure the heap zone will persist after the INIT has completed. Possibly<br>
+the reason for doing this at INIT time is to create ConnHandles that will persist for CTB<br>
+access at a later time. It seems reasonable that ConnHandles thus created require a<br>
+SetZone(SystemZone) by any routine that needs to access them for<br>
+Read/Write/Status/Delete operations.
+</p>
+<p>
+<b>Q</b><i> Is there some kind of bug with the Macintosh Balloon Help feature in System 7.0? It</i><br>
+<i>goes into the application and uses the text from the 'STR#' resource ID 4001 instead of</i><br>
+<i>the 'STR#' resource ID 4001 of Finder Help.</i>
+</p>
+<p>
+<b>A</b> The System 7.0 Help Manager stores its balloon strings in the Finder TM Help<br>
+resource file. Under certain circumstances, the Help Manager will access the string<br>
+resources in your application before it accesses the resources of the Finder Help file.<br>
+Consequently, problems will occur if your application contains certain 'STR#' and<br>
+'STR ' resources. There are only&nbsp;&nbsp;two circumstances in which your application may be<br>
+affected. First, if your application uses a 'STR#' resource with ID 4001, the Help<br>
+Manager will use the first string resource of the list instead of the corresponding<br>
+resource in Finder Help. When the pointer is placed over your application icon's text<br>
+on the desktop, the default text, "Change the icon's name by clicking on the name and<br>
+typing," will be changed to the text stored in 'STR#' 4001 of your application.
+</p>
+<p>
+&nbsp;Second, if your application has a 'STR ' resource with ID 17251, the Help Manager<br>
+will use that string resource instead of the corresponding string resource in Finder<br>
+Help. The default text, "This is an application--a program with which you . . . " will<br>
+be changed to the text stored in 'STR ' 17251 of your application.
+</p>
+<p>
+&nbsp;To avoid these problems, you have a few options. You can create your own 'hfdr'<br>
+resource to override 'STR ' 17251, or you can avoid using 'STR ' 17251 and 'STR#'<br>
+4001. If you must use 'STR#' 4001, paste the text "Change the icon's name by<br>
+clicking on the name and typing" into the first string and use the rest of the strings for<br>
+your application's use.
+</p>
+<p>
+<b>Q</b><i> How can I determine the intrinsic styles supported by a particular PostScript font?</i>
+</p>
+<p>
+<b>A</b> To find the styles that are supported by a particular font, you need to access one of<br>
+two tables. To find the screen fonts that are available, you can use the font association<br>
+table, shown on page 38 of <i>Inside Macintosh</i>&nbsp;&nbsp;Volume IV. Each entry in the table<br>
+contains the size and style of the font, as well as the resource ID. Each font in this table<br>
+should be available for the screen.
+</p>
+<p>
+&nbsp;When you print a font to a PostScript printer, the Font Manager uses the<br>
+style-naming table in the family record to create a PostScript name for the font. The<br>
+table has a list of strings, followed by an entry for each style supported by that<br>
+particular font. A table for Times might look like this:
+</p>
+<p><table border="0"><tr><td><b>Value</b></td><td><b></b><b>Description</b></td><td><b></b><b>Hex Dump</b></td></tr>
+<tr><td>9</td><td>Number of Strings &lt;INTEGER&gt;</td><td>09</td></tr>
+<tr><td>"Times"</td><td>Basename of font</td><td>05, 54, 69, 6D, 65, 73</td></tr>
+<tr><td>6, 7</td><td>Suffix index for style 1</td><td>02, 06, 07</td></tr>
+<tr><td></td><td><i>Pascal String that looks like:</i></td><td></td></tr>
+<tr><td></td><td><code>String[0] := CHR(2);</code></td><td></td></tr>
+<tr><td></td><td><code>String[1] := CHR(6);</code></td><td></td></tr>
+<tr><td></td><td><code>String[2] := CHR(7);</code></td><td></td></tr>
+<tr><td>6,8</td><td>Suffix index for style 2</td><td>02, 06, 08</td></tr>
+<tr><td>6,9</td><td>Suffix index for style 3</td><td>02, 06, 09</td></tr>
+<tr><td>6,8, 9</td><td>Suffix index for style 4</td><td>03, 06, 08, 09</td></tr>
+<tr><td>"-"</td><td>Suffix 1</td><td>01, 2D</td></tr>
+<tr><td>"Roman"</td><td>Suffix 2</td><td>05, 52, 6F, 6D, 61, 6E</td></tr>
+<tr><td>"Bold"</td><td>Suffix 3</td><td>04, 42, 6F, 6C, 64</td></tr>
+<tr><td>"Italic"</td><td>Suffix 4</td><td>06, 49, 74, 61, 6C, 69, 63</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;Except for the first entry, all entries in the table are stored as Pascal strings with a<br>
+length byte followed by one byte for each character in the string.
+</p>
+<p>
+&nbsp;The table is used to build the PostScript font name for a particular style. This is a<br>
+little complicated, so hang on. Let's look at the table again, with each line numbered,<br>
+and without all the hex:
+</p>
+<p>
+0: 9<br>
+1: "Times"<br>
+2: 6, 7<br>
+3: 6, 8<br>
+4: 6, 9<br>
+5: 6, 8, 9 6: "-"<br>
+7: "Roman"<br>
+8: "Bold"<br>
+9: "Italic"
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;Entry #0 is the number of strings in this table. Entry #1 is the basename of the font.<br>
+Entries #6- 9 are the suffixes that will be appended to the basename for particular<br>
+styles. Entries #2-5 are the indexes of the suffixes required to create the PostScript<br>
+names for the different styles (entry 2 = plain, 3 = bold, 4 = italic, and 5=<br>
+bold+italic).
+</p>
+<p>
+&nbsp;Let's use entry #2 to build a name: 1. Always start with the basename: "Times" 2.<br>
+Append the first suffix, #6 in this case: "Times-" 3. Append the second and last suffix,<br>
+#7: "Times-Roman"
+</p>
+<p>
+&nbsp;The style-naming table is not documented in the Font Manager chapter of <i> Inside</i><br>
+<i>Macintosh</i>&nbsp;&nbsp;because it's too specific to PostScript. Instead, it's documented in the <br>
+<i>LaserWriter Reference</i>&nbsp;&nbsp;(Addison-Wesley) on pages 28-35. The manual's description<br>
+doesn't include examples, so the above example makes things easier to understand.
+</p>
+<p>
+<b>Q</b><i> What is the easiest way to reset a Macintosh color map or palette to the default</i><br>
+<i>system color map?</i>
+</p>
+<p>
+<b>A</b> Use RestoreDeviceClut(gd:GDHandle). You pass the handle to the device in question,<br>
+or nil if you want all devices reset. The call is described in the Palette Manager<br>
+chapter of<i>Inside Macintosh</i> Volume VI. 
+</p>
+<p>
+<b>Q</b><i> If System 7.0 were the Seven Dwarfs, which dwarf would Virtual Memory be?</i>
+</p>
+<p>
+<b>A</b> Sneezy. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Kudos to our readers</b> who care enough to ask us terrific and well thought-out<br>
+questions. The answers are supplied by our teams of technical gurus; our thanks to all.<br>
+Special thanks to Pete "Luke" Alexander, Mark Baumwell, Jim "Im" Beninghaus, Neil<br>
+Day, Tim Dierks, Godfrey DiGiorgi, Steve Falkenburg, Bill Guschwan, C. K. Haun, Pete<br>
+Helme, Dave Hersey, Dennis Hescox, Mark Johnson, Jim Luther, Jim Mensch, Bill<br>
+Mitchell, Guillermo Ortiz, Greg Robbins, Jack Robson, Kent Sandvik, Gordon Sheridan,<br>
+Paul Snively, Bryan Stearns, Forrest Tanaka, Vincent Tapia, and Scott "Zz"<br>
+Zimmerman for the material in this Q &amp; A column.<b> *</b>
+</p>
+<p>
+<b>Have more questions?</b> Need more answers? Take a look at the Dev Tech Answers<br>
+library on AppleLink (updated weekly) or at the Q &amp; A stack on the <i> Developer</i><br>
+<i>Essentials </i> disc.<b>*</b>
+</p>
+</body>
+</html>

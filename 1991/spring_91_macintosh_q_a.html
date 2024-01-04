@@ -1,0 +1,398 @@
+<html>
+<head>
+<!-- Article ID: 20 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Spring 91 - MACINTOSH Q & A</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH Q &amp; A</h2>
+<h1>MACINTOSH DEVELOPER TECHNICAL SUPPORT</h1>
+<p>
+<b>Q</b><i> The TrapAvailable function listed in the "Compatibility Guidelines" chapter of Inside</i><br>
+<i>Macintosh Volume VI contains code that checks the size of the trap table. Do I have to do</i><br>
+<i>this if my application doesn't support the old 64K ROMs?</i>
+</p>
+<p>
+<b>A</b> Yes, you do. With the introduction of the Macintosh Plus and 128K ROMs, the trap<br>
+table was divided into the OS trap table and Toolbox trap table. The number of trap<br>
+table entries was increased and the format of those entries was expanded. For<br>
+additional information on this expansion see the "Using Assembly Language" chapter of<br>
+<i>Inside Macintosh </i> Volume IV. However, the 64K to 128K ROM trap table expansion is<br>
+not what the code in the TrapAvailable function is checking for. The Toolbox trap table<br>
+was expanded yet again when the Macintosh II was introduced. The Macintosh Plus and<br>
+SE use the smaller Toolbox trap table on pre-7.0 systems. To be sure your application<br>
+is compatible with these machines on pre- 7.0 systems, check the size of the Toolbox<br>
+trap table.
+</p>
+<p>
+<b>Q</b><i> What are the guidelines for determining how much of an image CopyBits can copy to a</i><br>
+<i>Macintosh pixel map at one time, given a particular set of characteristics for the</i><br>
+<i>source map and the destination map and given how much stack space is available? For</i><br>
+<i>example, say that we have an 8-bit-deep pixMap to be copied to a 32-bit-deep pixMap</i><br>
+<i>using the ditherCopy mode and expanded by a factor of 4, and we have 45K of stack</i><br>
+<i>space.</i>
+</p>
+<p>
+<b>A</b> CopyBits' stack requirement depends on the width of each scan line (rowBytes). The<br>
+rule of thumb is that you need at least as much stack as the rowBytes value in your<br>
+image (which can be huge with 32-Bit QuickDraw), with the following additional<br>
+modifiers: add an additional rowBytes for dithering; add an additional rowBytes for any<br>
+stretching (source rect != dest rect); add an additional rowBytes for any color map<br>
+changing; add an additional rowBytes for any color aliasing. The stack space you need is<br>
+roughly five times the rowBytes of your image. In general, you're better off<br>
+processing narrower scan lines. Reducing the vertical size will not affect stack<br>
+requirements. Narrow, tall bands (if you can use them) will reduce the stack<br>
+requirements.
+</p>
+<p>
+<b>Q</b><i> Where can I find documentation on how to write a Macintosh printer driver</i><br>
+<i>equivalent to the ImageWriter&#174; or LaserWriter driver? In particular, how are</i><br>
+<i>Printing Manager and QuickDraw commands translated into calls to the printer</i><br>
+<i>driver?</i>
+</p>
+<p>
+<b>A</b> DTS's "Learning to Drive" document and "SampleWriter" source code, available in<br>
+AppleLink's Developer Support folder and on the latest <i> Developer Essentials</i>&nbsp;&nbsp;CD, are<br>
+helpful references.
+</p>
+<p>
+<b>Q</b><i> How can I determine what hardware device is driven by a particular Macintosh</i><br>
+<i>gDevice? I can call GetDeviceList and GetNextDevice to get the driver reference</i><br>
+<i>number of each gDevice but not the hardware ID. The system 'scrn' resource for the</i><br>
+<i>hardware ID of each device doesn't give me the driver reference number. The device</i><br>
+<i>list produced by calling GetDeviceList and GetNextDevice isn't always in the same</i><br>
+<i>order as the 'scrn' resource slot information.</i>
+</p>
+<p>
+<b>A</b> The following code shows how to obtain the slot number:
+</p>
+<pre>DCEHand = (AuxDCEHandle) GetDCtlEntry(DevInfoList[index].gdRefNum);
+DevInfoList[devCount].gdSlot = (*DCEHand) -&gt; dCtlSlot;
+                                             /* Get slot number. */</pre>
+<p>
+Once you have the slot number, you can call the Slot Manager to get the board name and<br>
+other information you may need to identify the device, as in the following code:
+</p>
+<pre>/* Get the board name from the Slot Manager's board sResource. */
+spB.spSlot = DevInfoList[devCount].gdSlot;
+spB.spID = 0;
+spB.spExtDev = 0;
+spB.spCategory = 1;             /* board sResource sRsrcType value */
+spB.spCType = 0;
+spB.spDrvrSW = 0;
+spB.spDrvrHW = 0;
+if (! SNextTypesRsrc(&amp;spB) ) {
+  spB.spID = 2;       /* Found board sRsrc now, get the sRsrcName. */
+  if ( ! SGetCString(&amp;spB) ) {
+      /* Let C unravel its own strings. */
+      for (count = 0;
+           DevInfoList[devCount].bdName[count+1]
+                 = *((char *)(spB.spResult)+count);
+           count++);
+       DevInfoList[devCount].bdName[0] = count;
+  }
+}</pre>
+<p>
+<b>Q</b><i> When I draw a 32-bit Macintosh 'PICT' image from a file to an 8-bit port via an</i><br>
+<i>off-screen GWorld, I use dithered mode in the CopyBits call and the results are quite</i><br>
+<i>impressive. If there's not enough memory to allocate the GWorld, I draw the image</i><br>
+<i>directly to the port. But since there doesn't seem to be any way to tell QuickDraw to</i><br>
+<i>use dithered drawing mode, the image looks horrible. Should I use dithered mode</i><br>
+<i>instead of source mode? I don't want to try to parse the 'PICT' myself, but I thought</i><br>
+<i>that maybe a QuickDraw global could be modified in my StdBits proc to force dithered</i><br>
+<i>drawing for that operation only.</i>
+</p>
+<p>
+<b>&nbsp;A</b> You can install a bitsProc bottleneck procedure to get all the CopyBits calls when<br>
+the picture is being played back. One of the parameters to the bitsProc call is the mode.<br>
+You can install a procedure that passes ditherMode to the original StdBits proc.
+</p>
+<p>
+<b>&nbsp;Q</b><i> Why does a call to gestaltNuBusConnectors return zero slots when there actually is</i><br>
+<i>a NuBusTM card or a PDS (Processor Direct Slot) card in the Macintosh IIsi slot?</i>
+</p>
+<p>
+<b>&nbsp;A</b> A call to gestaltNuBusConnectors returns zero slots because there's no way to<br>
+determine if there's a NuBus card or a PDS card in the Macintosh IIsi slot. Gestalt can't<br>
+assume that there's always a NuBus or PDS slot, so it just says there's no slot.<br>
+However, Apple recommends that you always use the Slot Manager instead of Gestalt to<br>
+search for cards, after first checking to see that the Slot Manager trap is implemented.<br>
+The Slot Manager will safely do all the necessary work for you whether a card with a<br>
+valid declaration ROM is installed or not, and you can search for the card using a<br>
+variety of criteria. This technique will allow you to locate NuBus cards, but has the<br>
+added benefit of being able to find PDS cards that contain declaration ROMs.
+</p>
+<p>
+&nbsp;The Macintosh SE/30, IIfx, and LC have the Slot Manager and PDS slots. It's safe to<br>
+assume the Slot Manager will be resident in all future machines that have either<br>
+NuBus or PDS slot capability.
+</p>
+<p>
+<b>&nbsp;Q</b><i> Do you have any available tools or test programs for testing how well our Macintosh</i><br>
+<i>application responds to core Apple events? We need a test application that will, for</i><br>
+<i>example, send events to open a document and print it within our application.</i>
+</p>
+<p>
+<b>A</b> One of the best tools to test Apple events like 'odoc' and 'pdoc' is the Finder&#174;. The<br>
+System 7.0 beta CD version of the Finder provides excellent 'odoc' and 'pdoc' testing<br>
+capabilities. That's what most of DTS uses to test sample applications.
+</p>
+<p>
+&nbsp;There are no tools designed specifically to send Apple events to an&nbsp;&nbsp;application as a<br>
+test. Try using some of the DTS sample applications on the<i> Developer Essentials</i>&nbsp;&nbsp;disc to<br>
+test your application. One of the easiest to use&nbsp;&nbsp;and adapt is the TrafficLight 3.0<br>
+sample. It already will send its own&nbsp;&nbsp;MoveWindow Apple event to any application,<br>
+allowing you to see how your&nbsp;&nbsp;application is handling "foreign" events.
+</p>
+<p>
+&nbsp;Also, you can adapt the CreateAndSendAppleEvent function in&nbsp;&nbsp;AppleEvents.c to send<br>
+any type of event you'd like, which allows you to test&nbsp;&nbsp;events that may be specific to<br>
+your application.<b>Q</b><i> Why do I get a bomb when I create a Macintosh filename starting</i><br>
+<i>with a period (.)?</i>
+</p>
+<p>
+<b>A</b> Macintosh filenames are not allowed to begin with a period, to avoid possible<br>
+confusion with driver names, which must begin with a period. (This restriction does<br>
+not apply to folder names.) Ideally, the Finder should catch this possible error and<br>
+require the file to be renamed, but it doesn't. Future versions of the Finder should<br>
+catch this potential problem, but until then users must remember not to begin a<br>
+filename with a period. See Macintosh Technical Note #102, HFS Elucidations, for<br>
+details.
+</p>
+<p>
+<b>Q</b><i> Can the refNum returned by FSOpen ever be 1? What is the range or format of legal</i><br>
+<i>refNums?</i>
+</p>
+<p>
+<b>A</b> Macintosh file reference numbers (refNums) are currently positive and that means<br>
+any positive number, including 1. This doesn't mean that they won't change in the<br>
+future, however. To maintain system compatibility, use refNums only as they're<br>
+intended to be used.
+</p>
+<p>
+<b>Q</b><i> Calling Create from an INIT causes the INIT to be called twice if it alphabetically</i><br>
+<i>follows the file it creates. Is there a workaround?</i>
+</p>
+<p>
+<b>A</b> This particular limitation of the startup process occurs when you create files in the<br>
+same folder as the INIT that alphabetically precede your INIT file. HFS orders files<br>
+alphabetically, and the startup process does its thing by incrementing the ioFDirIndex<br>
+field of a PBGetFileInfo call. Your INIT file (for example, file #5) is getting opened,<br>
+your INIT is called, and it creates a file. The file it creates, for example, is file<br>
+#3--that is, it's alphabetically before your INIT file. Now your INIT file is file #6,<br>
+and when you return, it increments the ioFDirIndex value from 5 to-- you guessed<br>
+it--6, opens that file, and runs your INIT again.
+</p>
+<p>
+&nbsp;The workaround is to avoid creating files in the same folder as the INIT that<br>
+alphabetically precede your INIT file. Also, the file you create should be placed in the<br>
+Preferences folder within the System Folder, for both System 6 and System 7. Check<br>
+for a Preferences folder within the System Folder using FindFolder, and create one if<br>
+it doesn't exist. 
+</p>
+<p>
+<b>Q</b><i> During a Macintosh application's life, does the value of A5 change? Why does</i><br>
+<i>SetCurrentA5 have to set A5 to CurrentA5? Aren't A5 and CurrentA5 the same while</i><br>
+<i>an application is executing non-interrupt- time code?</i>
+</p>
+<p>
+<b>A</b> A5 is not necessarily always equal to CurrentA5. Because the Macintosh operating<br>
+system and Toolbox don't need to access your application's jump table or global<br>
+variables (which A5 points to), they often use A5 for other purposes, except for the<br>
+parts of the Toolbox that need to perform graphics operations and use the QuickDraw<br>
+globals defined by your application.
+</p>
+<p>
+&nbsp;Because the operating system or Toolbox can change A5, you must make sure it's set<br>
+correctly if the operating system or Toolbox ever calls your code in the form of a<br>
+callback. For example, if you make an asynchronous File Manager call, your I/O<br>
+completion routine must call SetCurrentA5 for your I/O completion routine. Other<br>
+places where you may want to call SetCurrentA5 are in trap patches, your<br>
+GrowZoneProc, custom MDEFs, WDEFs, or CDEFs, or control action procedures.
+</p>
+<p>
+&nbsp;Please note that even SetCurrentA5 is not sufficient when writing code that's executed<br>
+at interrupt time, such as VBL and Time Manager tasks. When an interrupt occurs that<br>
+your application wants to handle, there is no guarantee that the low-memory global<br>
+CurrentA5 belongs to your application. The interrupt could occur while some other<br>
+application is running under MultiFinder&#174;. In this case, you should use other<br>
+approaches to setting A5. Please see Technical Note #180, MultiFinder Miscellanea,<br>
+for further information.
+</p>
+<p>
+<b>Q</b><i> My Macintosh application receives information from the serial port, keeping as</i><br>
+<i>much information in memory as possible. However, if I do run out of memory, my</i><br>
+<i>GrowZone routine is allowed to delete older information. Does the operating system</i><br>
+<i>allow the GrowZone routine to be called recursively? That is, if in handling a</i><br>
+<i>GrowZone call, my code does something that requires memory, such as bringing in a</i><br>
+<i>font that isn't there, can I call the GrowZone routine again or would doing so cause an</i><br>
+<i>error? Am I allowed to update things on the screen, such as windows and text in</i><br>
+<i>windows, while in my GrowZone routine?</i>
+</p>
+<p>
+<b>A</b> Neither the GrowZone routine nor the Macintosh system is reentrant. There is very<br>
+little that you can safely do in a GrowZone routine. The system expects that the typical<br>
+extent of a GrowZone routine is to check a table or some other predesignated criteria<br>
+and then to release or not to release any memory blocks it can. Any sort of user<br>
+interface is well beyond the reasonable scope of this level of routine.
+</p>
+<p>
+&nbsp;Keep a list of handles to blocks of text that you're willing to purge, so that your<br>
+GrowZone routine can look through them when called and then release one or more<br>
+blocks. Any more than that is really stretching GrowZone too far. By the way,<br>
+SetGrowZone should not be assumed&nbsp;&nbsp;to return a result. <i> Inside Macintosh </i> is incorrect<br>
+in saying that D0 contains a result code on exit.
+</p>
+<p>
+<b>Q</b><i> Do I need to call StripAddress when using SwapMMUMode to switch to 32-bit mode?</i><br>
+<i>I would like to assume that all my pointers are valid 32-bit quantities when in 32-bit</i><br>
+<i>mode.</i>
+</p>
+<p>
+<b>A</b> Yes, though it would be nice to be able to assume that all your master pointers are<br>
+valid 32-bit quantities when in 32-bit mode, the assumption would only be true of<br>
+master pointers that were created in a zone created while you were in 32-bit mode,<br>
+and even this would only be true on systems that have a 32-bit Memory Manager (the<br>
+Macintosh IIci, IIfx, LC, and IIsi).
+</p>
+<p>
+&nbsp;You need to call StripAddress on any master pointers that were created in a&nbsp;&nbsp;24-bit<br>
+world that you expect to use while in 32-bit mode. You also need to call StripAddress<br>
+on distinct master pointers that were created in 24-bit mode if you want to compare<br>
+them, regardless of whether you're currently in 32-bit mode.
+</p>
+<p>
+<b>Q</b><i> When building a standalone code resource (such as an 'XCMD', 'INIT', 'CDEV', or</i><br>
+<i>'CDEF') with the MPW Linker, the main entry point is specified with the "-m" option.</i><br>
+<i>So why does one also need to make sure that the main routine is the first one in its</i><br>
+<i>object file, and that that object file is the first one linked? Why isn't "-m" enough for</i><br>
+<i>the Linker to figure this out?</i>
+</p>
+<p>
+<b>A</b> The MPW<i>&#174; </i> Linker generally places modules in the output file in the order that they<br>
+appear in the sequence of files to be linked. When building an application, the Linker<br>
+builds the jump table after building all the code resources; thus, it doesn't need to have<br>
+"seen" the main procedure first in order to place the main procedure's entry first in<br>
+the jump table. For standalone code resources (which have no jump table), the main<br>
+procedure must be first in the code resource. The simplest way to make sure this<br>
+happens is, as you say, to make sure that the main procedure is the first one the<br>
+Linker sees.
+</p>
+<p>
+<b>Q</b><i> Why does MPW Pascal convert SINGLE numbers to extended, create a temporary area</i><br>
+<i>for them, and then pass a pointer to those extended numbers on the stack?</i>
+</p>
+<p>
+<b>A</b> The conversion of single-precision values to extended is being done to maintain<br>
+accuracy. It's entirely possible to generate values of extended precision while doing the<br>
+intermediate math with single-precision values, and the MPW compilers do this<br>
+conversion to preserve accuracy.&nbsp;&nbsp;If your application doesn't need the accuracy, you<br>
+can declare the parameters to be of type LONGINT, and typecast them as necessary<br>
+within your procedure or function. There's no way to tell the MPW compilers not to do<br>
+the conversion if the parameters are declared as SINGLE.
+</p>
+<p>
+<b>Q</b><i> What is the difference between RelString and EqualString? What should Macintosh</i><br>
+<i>developers use when sorting? Do you suggest having an option for the international</i><br>
+<i>sort?</i>
+</p>
+<p>
+<b>A</b> RelString and EqualString are mainly intended for the File Manager. The File<br>
+Manager uses them for quick-and-dirty string comparison so that it knows how to<br>
+return files ordered alphabetically when you use indexed File Manager routines, and so<br>
+that it can detect file name collisions. Beyond that, RelString and EqualString aren't<br>
+localizable or extensible.
+</p>
+<p>
+&nbsp;The International Utilities string comparison routines are localizable and extensible.<br>
+They use information in the active 'itl2' resource to determine how the characters are<br>
+sorted. Most localized systems come with their own 'itl2' resource, so string<br>
+comparisons are done correctly for the region for which the system is localized.<br>
+Because RelString and EqualString stay the same for all these regions, you'll probably<br>
+find some cases in which strings are compared incorrectly by these routines.
+</p>
+<p>
+&nbsp;One important place where RelString and EqualString don't work very well is with the<br>
+new characters in the extended Macintosh character set. When the LaserWriter was<br>
+introduced, the LaserWriter fonts used the extended Macintosh character set, which<br>
+added many new characters, including several new uppercase characters with<br>
+diacriticals. In system software version 6.0.4, the International Utilities were<br>
+updated to take advantage of these new characters. For example, the uppercase "E" with<br>
+a grave accent first appeared in the extended Macintosh character set. With 6.0.4, the<br>
+lowercase and uppercase "E" with a grave accent were considered to be equal in<br>
+primary ordering, and unequal in secondary ordering, which is correct. Even today,<br>
+RelString and EqualString think in the old Macintosh character set, erroneously<br>
+believing that lowercase and uppercase "E" with a grave accent have nothing to do with<br>
+each other.
+</p>
+<p>
+<b>Q</b><i> The Macintosh IIsi and LC computers don't come with programmer's switches. How do</i><br>
+<i>I get reset and NMI on these machines?</i>
+</p>
+<p>
+<b>A</b> Both machines have an ADB (Apple Desktop Bus) I/O processor which incorporates<br>
+the reset and NMI functions through the keyboard. The functions are accessed as<br>
+follows:
+</p>
+<ul>
+<li> Use MacsBug 6.2 or later to enable the NMI on the Macintosh IIsi or LC.<br>
+Both machines&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;start up with NMI disabled because nontechnical users might<br>
+get into trouble with it, so the&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ADB controller must be programmed to<br>
+enable it. Once MacsBug is installed, you can&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;activate NMI by holding down<br>
+the Command key while pressing the Power button.</li>
+<li> Hold down the Command and Control keys while pressing the Power<br>
+button, with or&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;without MacsBug installed, to reset these Macintosh<br>
+systems.</li>
+</ul>
+<p>
+&nbsp;Under some circumstances you may have to hold the reset and NMI key combinations<br>
+down for a little while (but no more than a second) to make sure the ADB processor<br>
+sees them.
+</p>
+<p>
+&nbsp;You'll find the latest MacsBug on the <i> Developer Essentials </i> disc and in AppleLink's<br>
+Developer Support folder. The MacsBug reference manual is very helpful. A package<br>
+containing both MacsBug 6.2 and the manual is available from APDA for $35.00<br>
+(#M7034/B).
+</p>
+<p>
+<b>Q</b><i> What's wrong with having VBL (Vertical Blanking) tasks make calls to the Macintosh</i><br>
+<i>Memory Manager, either directly or indirectly?</i>
+</p>
+<p>
+<b>A</b> The problem is that the Memory Manager could be moving memory around when an<br>
+interrupt occurs. If the VBL task also moves memory, the heap could be destroyed. VBL<br>
+tasks are intended to&nbsp;&nbsp;provide a method of time-syncing to the video beam of the<br>
+display. (On slotted Macintosh models you'd use SlotVInstall.) They're also used to get<br>
+periodic time for short tasks, although the Time Manager is better for this. VBL tasks<br>
+should minimize execution time. The best use of a VBL task is to do a short condition<br>
+check and set a flag for the main process to indicate that it's now a good time to do<br>
+something.
+</p>
+<p>
+<b>Q</b><i> Can I still write to James Brown at his work release address?</i>
+</p>
+<p>
+<b>A</b> The Godfather of Soul was released from prison on parole last March. His new<br>
+address is<br>
+Universal Attractions<br>
+218 West 57 Street<br>
+New York, NY 10019
+</p>
+<p>
+<b>Kudos to our readers</b> who care enough to ask us terrific and well thought-out<br>
+questions. The answers are supplied by our teams of technical gurus; our thanks to all.<br>
+Special thanks to Pete "Luke" Alexander, Mark Baumwell, Rich Collyer, Marcie "MG"<br>
+Griffin, C. K. Haun, Dennis Hescox, Kevin Mellander, Guillermo Ortiz, Keith Rollin,<br>
+Kent Sandvik, Gordon Sheridan, Paul Snively, Bryan Stearns, Forrest Tanaka, Vince<br>
+Tapia, and Scott "Zz" Zimmerman for the material in this Q &amp; A column.<b>*</b>
+</p>
+<p>
+<b>Have more questions?</b> Need more answers? Take a look at the developer technical<br>
+library on AppleLink (updated weekly) or the Q &amp; A stack on the <i> Developer Essentials</i><br>
+disc.<b>*</b>
+</p>
+</body>
+</html>

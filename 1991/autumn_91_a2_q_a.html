@@ -1,0 +1,166 @@
+<html>
+<head>
+<!-- Article ID: 41 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Autumn 91 - A2 Q&A</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>APPLE II Q &amp; A</h2>
+<h1>APPLE II DEVELOPER TECHNICAL SUPPORT</h1>
+<p>
+<b>Q</b><i> How can I "dim" text in my Apple II GS application, similar to the way the Toolbox</i><br>
+<i>dims menu titles and menu options, and the way that HiliteControl dims a button name?</i>
+</p>
+<p>
+<b>A</b> Dimming text is a piece of cake. Here's how the Apple II GS Menu Manager does it in<br>
+both 640 and 320 mode. The same thing works great for both.
+</p>
+<ol>
+<li>Calculate the bounding box of the text.</li>
+<li>Fill it with the proper background color for the operation in question.</li>
+<li>Draw the text.</li>
+<li>Execute code that looks something like this:</li>
+</ol>
+<pre>    pea dimmed>>16
+    pea dimmed
+    _SetPenMask         ;Set the pen mask to "dimmed" mask
+    pea textRect>>16
+    pea textRect        ;Push pointer to text boundary rect
+    lda backColor       ;Get text's background color
+    and #$00FF          ;Always solid
+
+; Here you need to do something in your code to get the
+; appropriate pattern for the text you're drawing. This will be
+; one of the 16 patterns in the 512-byte table, starting with 16
+; bytes of $00, 16 bytes of $11, and ending with 16 bytes of $FF.
+; We leave the routine GetColorPtr for you to code, but our
+; example assumes it returns the pointer we need in A (low word)
+; and X (high word).
+
+    jsr GetColorPtr         ;(see above)
+    phx                     ;high word
+    pha                     ;low word
+    _FillRect               ;Fill will be dithered
+    pea nor_mask>>16  ;Reset drawing mask to normal solid
+    pea nor_mask
+    _SetPenMask
+    rts
+
+textRect    DC.B $00,00,00,00   ;Put your rectangle here
+backColor   DC.W $0000          ;Background color of text to dim
+
+dimmed      DC.B $55,$AA,$55,$AA,$55,$AA,$55,$AA
+nor_mask    DC.B $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF</pre>
+<p>
+&nbsp;Yes, it's really this easy!
+</p>
+<p>
+<b>Q</b><i> When I call FixFontMenu from my Apple II GS new desk accessory (NDA),</i><br>
+<i>everything works fine, but if the current application has a font menu it stops working.</i><br>
+<i>What's wrong?</i>
+</p>
+<p>
+<b>A</b> FixFontMenu keeps only one correspondence between menu item IDs and font family<br>
+numbers--if you call FixFontMenu from an NDA, you blow away the already existing<br>
+correspondence that the application was using, maintained within the Font Manager.<br>
+ItemID2FamNum then works only on item IDs corresponding to your NDA's font menu,<br>
+and these usually are unrelated to the values the application passes from its font menu.<br>
+Worse, FamNum2ItemID will subsequently return menu item IDs for font family<br>
+numbers that have nothing to do with the application's menus; depending on how the<br>
+application operates on the resulting item ID, this could be disastrous.
+</p>
+<p>
+&nbsp;Fortunately, doing this yourself is fairly easy with the Font Manager's help.<br>
+CountFamilies tells you how many font families there are, and FindFamily returns the<br>
+name of each of them. You can manipulate this information into a font menu in a fairly<br>
+straightforward way, using standard Menu Manager calls. While you're at it, you can<br>
+also use FindFontStats to figure out what point sizes and styles are available for each<br>
+font family, so you can indicate this in your Size and Style menus. You could even use<br>
+the information to build your own font-choosing dialog, much as HyperCard IIGS does.<br>
+Remember that your NDA should run in either 320 or 640 mode, so don't make the<br>
+dialog box too wide.
+</p>
+<p>
+<b>Q</b><i> When using an Apple II GS run queue item, can I use the second reserved field to find</i><br>
+<i>out when the item was last executed? I assume this value is the tickCount. Currently, I</i><br>
+<i>just get the current tickCount and subtract the last tickCount. Using this field could</i><br>
+<i>save me one tool call, and when doing animation via a RunQ, every extra tick counts.</i>
+</p>
+<p>
+<b>A</b> No, you should not use undocumented fields in the run queue header because they<br>
+could change with future software releases. However, there is a fast way to get the<br>
+current tick count. Pass refNum $0005 to the GetAddr function in the Miscellaneous<br>
+Tools once each time your program runs, and it tells you the location of the tick<br>
+counter. Since the tick count changes during heartbeat interrupts, be sure to disable<br>
+interrupts around your direct accesses to the tick counter (PHP, SEI, access tick<br>
+count, PLP).
+</p>
+<p>
+&nbsp;If your application makes certain tool calls frequently, it may be worthwhile to<br>
+short-circuit the tool dispatcher and transfer control to the Toolbox function directly<br>
+(if the tool takes a long time to execute anyway, it isn't worth it). You can get a<br>
+function's address and work area pointer by calling GetFuncPtr and GetWAP in the Tool<br>
+Locator. When the function gets control, the Y and A registers must contain the tool<br>
+set's work area pointer, the X register must contain the function number, and there<br>
+must be <i> two</i>&nbsp;&nbsp;RTL addresses on the stack.
+</p>
+<p>
+<b>Q</b><i> Does the Apple IIe Card for the Macintosh LC have a technical reference manual?</i>
+</p>
+<p>
+<b>A</b> There's no separate technical reference manual. Use the <i> Apple IIe Technical</i><br>
+<i>Reference</i>&nbsp;&nbsp;(Addison- Wesley), together with Apple IIe Technical Note #10, "The<br>
+Apple IIe Card for the Macintosh LC."
+</p>
+<p>
+<b>Q</b><i> What's the proper method of saving the Apple II GS Super Hi-Res (SHR) screens? If</i><br>
+<i>my application both uses shadowing and is fast-port aware, the restored screen colors</i><br>
+<i>are garbaged. Can I simply use HandToPtr with ptr representing the screen addresses,</i><br>
+<i>or will this mess up the scan-line control byte (SCB) restoration since these are</i><br>
+<i>read-modify-write locations?</i>
+</p>
+<p>
+<b>A</b> The shadowed screen's SCBs may not be correct, so by saving and restoring them<br>
+you're causing random data to be restored into the standard SCBs. Your best bet, if<br>
+shadowing is on, is to turn shadowing off, restore the bank $01 screen, including its<br>
+SCBs and color tables, turn shadowing on, and restore the $E1 screen and contents. If<br>
+you don't want to double-restore the $E1 screen and $01 screen, you should turn<br>
+shadowing off, restore the bank $01 color tables/SCBs, turn shadowing on, and<br>
+restore the $01 screen. But, since these screens are never guaranteed to be the same<br>
+when you save, you should always restore both screens separately.
+</p>
+<p>
+&nbsp;QuickDraw never touches the shadowed screen SCBs, so if the fastPort flag is set you<br>
+can ignore the restoring of the bank $01 SCBs/color tables, since the application<br>
+promised not to&nbsp;&nbsp;interfere with them. But since this won't save very much time, you<br>
+probably shouldn't worry about it.
+</p>
+<p>
+<b>Q</b><i> I am using an Apple II GS utility to generate resources for my application, and I</i><br>
+<i>noticed that some of the resource IDs generated are in the range $07FF0000 to</i><br>
+<i>$07FFFFFF, which is reserved for the system software's use. What's happening?</i>
+</p>
+<p>
+<b>A</b> Your utility is calling UniqueResourceID with an IDRange of $FFFF, to request any<br>
+unused resource ID. A bug in system software version 5.0.x allows UniqueResourceID<br>
+to accidentally return a system-range resource ID <i>if</i>&nbsp;&nbsp;any system-range resources of<br>
+that type are already present. This will be fixed in System 6. In the meantime,<br>
+utilities can use UniqueResourceID with IDRange values other than $FFFF, and you<br>
+should watch your resource IDs carefully to avoid using system-range resource IDs.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Kudos to our readers</b> who care enough to ask us terrific and well thought-out<br>
+questions. The answers are supplied by our teams of technical gurus; our thanks to all.<br>
+Special thanks to Matt Deatherage, Jim Luther, Dave Lyons, Jim Mensch, and Eric<br>
+Soldan for the material in this Q &amp; A column. *
+</p>
+<p>
+<b>Have more questions? </b>Need more answers? Take a look at the Dev Tech Answers<br>
+library on AppleLink (updated weekly) or at the Q &amp; A stack on the <i> Developer CD</i><br>
+<i>Series </i> disc.*
+</p>
+</body>
+</html>

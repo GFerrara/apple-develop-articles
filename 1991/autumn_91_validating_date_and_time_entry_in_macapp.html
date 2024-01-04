@@ -1,0 +1,612 @@
+<html>
+<head>
+<!-- Article ID: 35 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Autumn 91 - VALIDATING DATE AND TIME ENTRY IN MACAPP</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>VALIDATING DATE AND TIME ENTRY IN MACAPP</h2>
+<h1>JAMES PLAMONDON</h1>
+<p>
+<img src="img/190.gif" width="384 px"></img>
+</p>
+<p>
+<i>&nbsp;MacApp's TEditText class checks strings entered by the user, displaying an error</i><br>
+<i>message when an invalid string is encountered. This article shows how TEditText's</i><br>
+<i>validation and error notification schemes can be made more flexible, and demonstrates</i><br>
+<i>this flexibility in TEditText subclasses for the entry of dates and times. You can try out</i><br>
+<i>these classes in the sample program that's on the Developer CD Series disc.</i>
+</p>
+<p>
+&nbsp;My favorite high school teacher, Mrs. Whalen, had a sign under the wall clock in her<br>
+classroom that read "Time passes--but will you?" Back when I was in the Class of<br>
+'78, there were many times I wished that I could set the clock back (during a tough<br>
+quiz) or forward (on a warm afternoon).&nbsp;&nbsp;&nbsp;Although I can't offer any such hope to the<br>
+Class of '91, I can at least provide MacApp developers with classes that make the entry<br>
+of dates and times as easy as I ever dreamed. 
+</p>
+<p>
+&nbsp;I wrote these classes during some recent work on a MacApp application that involved<br>
+the entry and validation of dates and times. After considering and rejecting all sorts of<br>
+controls--controls that looked like little monthly calendars, 24-hour clocks, and so<br>
+on--I settled on simple editable text boxes. I thought that with these boxes, those<br>
+pesky localization issues that plagued the other designs wouldn't be a problem, because<br>
+I could use the Macintosh Script Manager to handle the different date and time formats<br>
+described by the international resources in the operating system. I also figured that if<br>
+I used MacApp's TEditText class, writing editable text boxes for date and time entry<br>
+would be trivial. An override here, a little data there, and voil&amp;agrave;--done. It<br>
+wasn't the first time I've been wrong.
+</p>
+<p>
+&nbsp;But to understand TEditText's flaws, first you have to know how it works. 
+</p>
+<h2>TEDITTEXT REVEALED</h2>
+<p>
+TEditText is a TControl subclass. It encapsulates the Toolbox's TextEdit routines. A<br>
+TEditText view is to one of MacApp's TDialogViews what an editText item is to one of the<br>
+Dialog Manager's dialogs: it allows the user to enter strings into a box in a dialog box.<br>
+In addition, TEditText extends the functionality of editable text items to include the<br>
+notion of validation. If an invalid string is entered into a TEditText view, an alert is<br>
+displayed, notifying the user of the problem. 
+</p>
+<p>
+&nbsp;The validation process implemented by TEditText centers on its Validate method. In<br>
+TEditText, a valid string is any string that's not longer than the maximum allowed<br>
+length, which is specified by the application's author. If the string is valid, the<br>
+Validate method returns the constant value kValidValue; otherwise--that is, if the<br>
+string is too long--it returns the error code kTooManyCharacters. TNumberText, a<br>
+subclass of TEditText that handles the entry and validation&nbsp;&nbsp;of integer numbers, can<br>
+return additional error codes--kValueTooSmall, kValueTooLarge, or<br>
+kNonNumericCharacters. 
+</p>
+<p>
+<img src="img/191.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1</b> MacApp's Validation Error Alert
+</p>
+<p>
+&nbsp;The only place Validate is ever called in MacApp is from the TDialogView method<br>
+DeselectCurrentEditText. If Validate returns a value other than kValidValue, that value<br>
+is assumed (in a call to TDialogView.CantDeselect) to be an index into a string list<br>
+resource called kInvalidValueReasons. It's expected that the string at that index will<br>
+describe the error encountered.&nbsp;&nbsp;&nbsp;This string is then displayed in an error alert that<br>
+tells the user why the string entered is invalid.&nbsp;&nbsp;&nbsp;Figure 1 shows the alert displayed<br>
+when the user types too many characters into a TEditText view.
+</p>
+<p>
+&nbsp;My dad used to say "Whenever a guy's telling you what he's gonna do<i>for</i>&nbsp;&nbsp;you, start<br>
+worrying about what he's gonna do<i>to</i>&nbsp;&nbsp;you." It wasn't long before I realized that<br>
+TEditText was like that. I had hoped that it would be easy to extend the checking done in<br>
+TEditText.Validate to include checking for a valid date or time, but it wasn't. To add this<br>
+kind of checking, I was going to have to rewrite Validate from scratch-- just the kind<br>
+of thing object-oriented programming is supposed to prevent.
+</p>
+<p>
+<b>&nbsp;DON'T FIX WHAT AIN'T BROKE</b><br>
+When in the course of application programming it becomes necessary to replace a<br>
+mechanism written by the MacApp engineers, one should declare the causes that impel<br>
+this decision. I hold these truths to be self-evident:
+</p>
+<ol>
+<li>That the reuse of existing code is preferable to the addition of new code. </li>
+<li>That the addition of new code is preferable to the alteration of existing<br>
+code. </li>
+<li>That the alteration of existing code is preferable to missing a deadline. </li>
+</ol>
+<p>
+&nbsp;MacApp's approach to text validation fails to meet a number of these criteria. First, it<br>
+assumes that new error strings will simply be added to the STR# resource called<br>
+kInvalidValueReasons, with new error codes indexing the added strings. However, this<br>
+won't work: TDialogView.CantDeselect uses a constant, kNoOfDefaultReasons, to<br>
+indicate the number of strings in this resource. It can only be changed by altering and<br>
+recompiling MacApp--a violation of self-evident Truth #2. 
+</p>
+<p>
+&nbsp;Also, the error-code-equals-string-index scheme can be a problem when one<br>
+combines existing class libraries; two different TEditText subclasses, written<br>
+independently, may use the same error codes (and string indices) to indicate different<br>
+problems. Resolving this conflict would probably require changing and recompiling at<br>
+least one of the conflicting classes. 
+</p>
+<p>
+&nbsp;Further, the use of error strings can cause problems during localization since not all<br>
+languages can stick an arbitrary string into a sentence and have the result make any<br>
+sense. Static error strings also give little context--they may not be able to display the<br>
+invalid string, or a valid example string, to help the user figure out what went wrong.<br>
+For all of these reasons, MacApp's use of a single error string list--with Validate's<br>
+result being used as an index into this list--seems inappropriate. Each class should<br>
+instead build its own error strings in any manner it sees fit, using its own string lists<br>
+as necessary.
+</p>
+<p>
+&nbsp;That's not all. The error alert displayed when invalid strings are encountered has only<br>
+one button.&nbsp;&nbsp;&nbsp;But what if two or more alternative actions can be taken in response to<br>
+the entry of an invalid string? 
+</p>
+<p>
+&nbsp;Consider the following validation case (which has nothing to do with dates or times).<br>
+Assume that the user needs to enter the name of a category--like Work, School, or<br>
+Personal--into an editable text box. If the string the user enters matches the name of<br>
+an existing category (for example, "Work"), the string is valid; otherwise--for<br>
+example, if the user types "Wirk"--the string is invalid.
+</p>
+<p>
+<img src="img/192.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2 </b> Two-Option Validation Error Alert
+</p>
+<p>
+&nbsp;In addition, we want to allow the user to add new categories to the list by entering<br>
+them into the editable text box. To do this, we must distinguish those entries that are<br>
+simply mistyped (like "Wirk") from those intended to become new category names<br>
+(like "School" or "Personal"). In effect, we need to present the user with a two-button<br>
+dialog box like that in Figure 2.
+</p>
+<p>
+&nbsp;Unlike the default MacApp validation alert, which has only one button, the dialog box<br>
+in Figure 2 allows the user to decide whether the entered string--"Personal," in this<br>
+case--is valid or invalid. 
+</p>
+<h2>TVALIDTEXT: THE UNAUTHORIZED BIOGRAPHY</h2>
+<p>
+So to extend validation to dates and times, I decided to write two new classes,<br>
+TDateEditText and TTimeEditText. After writing these classes, I realized that they had<br>
+so much validation code in common that it made sense to put this code in a common<br>
+superclass. I called this superclass TValidText.
+</p>
+<p>
+&nbsp;TValidText is a pretty simple extension to TEditText. It adds three notions to<br>
+TEditText-- strictness, required value, and an invalid entry alert ID. It also<br>
+significantly enhances the text validation process. 
+</p>
+<p>
+&nbsp;TValidText is an example of an "abstract class"--a class that's never expected to be<br>
+instantiated directly. It exists only to factor out the code that's expected to be common<br>
+to its subclasses. All of TValidText's subclasses will simply inherit its validation and<br>
+error reporting code, while overriding a few methods to implement their own specific<br>
+validation tests and error messages. 
+</p>
+<p>
+&nbsp;The class declaration for TValidText is as follows:
+</p>
+<pre>TValidText = OBJECT(TEditText)
+    fStrict:    BOOLEAN;
+    fRequired:  BOOLEAN;
+    fAlertID:   INTEGER;
+    .
+    .   <i> See the Developer CD Series disc for method declarations.</i>
+    .
+END; {TValidText}</pre>
+<p>
+TValidText's fStrict field, a Boolean variable, determines whether or not strict<br>
+checking will be used when validating. This field exists here because both the date and<br>
+time classes needed the concept.&nbsp;&nbsp;&nbsp;TValidText itself doesn't use fStrict, except to get and<br>
+set its value. It might be more general to implement it as a scalar (maybe a signed<br>
+byte) to provide multiple strictness levels. We'll look at strictness again in the<br>
+discussion of the date and time classes later in this article. 
+</p>
+<p>
+The fRequired field answers the question of whether an empty string is valid or not. As<br>
+far as TValidText is concerned, if fRequired is true, an empty string is invalid;<br>
+otherwise, it's valid.&nbsp;&nbsp;&nbsp;TValidText's subclasses may add additional conditions to the<br>
+notion of validity by overriding the method IsValid and calling the inherited version.<br>
+Both the date and time editing classes do this, as we'll see later. 
+</p>
+<p>
+The fAlertID field contains the resource ID of the alert to be displayed when the<br>
+current text doesn't pass validation. It may contain the value phInvalidValue (defined<br>
+in UDialog), or the resource ID of any other ALRT resource. It would be easy to<br>
+override the routines involved to display a MacApp dialog box rather than a Toolbox<br>
+alert, in which case fAlertID could be the ID of the appropriate view resource. 
+</p>
+<h2>THE NATURE OF VALIDITY</h2>
+<p>
+The TValidText declaration introduces a new method, IsValid:
+</p>
+<pre>FUNCTION TValidText.IsValid(
+    VAR     theText: Str255;
+    VAR     whyNot: INTEGER)
+    :BOOLEAN;</pre>
+<p>
+In addition to returning a Boolean indicating the validity of the given string, IsValid<br>
+returns in whyNot an indication of why the string is invalid (or the value noErr, if<br>
+it's valid). This is very similar in functionality to TEditText's Validate routine, with<br>
+one major difference: the string being validated is passed in as an argument. Where<br>
+TEditText.Validate assumes that it's supposed to validate the string currently being<br>
+edited, TValidText.IsValid can be used to test arbitrary strings for validity. 
+</p>
+<p>
+I overrode the Validate method in TValidText to make it a flow-of-control method. It<br>
+validates the current string and displays the error alert when necessary, as follows:
+</p>
+<pre>FUNCTION  TValidText.Validate:LONGINT; OVERRIDE;
+    VAR
+        parentResult:   LONGINT;
+        theText:            Str255;
+        whyNot:         INTEGER;
+   
+    BEGIN
+    {Make sure the current text passes the superclass's validation.}
+    parentResult := INHERITED Validate;
+    IF (parentResult &lt;&gt; kValidValue)
+    THEN
+        Validate := parentResult
+    ELSE
+        BEGIN
+        GetText(theText);
+        IF IsValid(theText, whyNot)
+        THEN
+            Validate := HandleValidText(theText)
+        ELSE
+            Validate := HandleInvalidText(theText, whyNot);
+        END;    {else}
+    END;    {Validate}</pre>
+<p>
+This structure places the responsibility for handing invalid cases in the class itself,<br>
+rather than relying on MacApp's code for mapping error codes to error strings in<br>
+TDialogView.CantDeselect (never trust a method with a contraction in its name). Given<br>
+this structure, you can change any step in the validation process without changing the<br>
+nature of validation itself by overriding IsValid, HandleValidText, or<br>
+HandleInvalidText. That's the whole idea behind flow-of-control methods. 
+</p>
+<p>
+HandleValidText simply returns kValidValue (defined in UDialog), after notifying its<br>
+superview that the text is valid. Two lines of code--no fuss, no muss. 
+</p>
+<p>
+HandleInvalidText has to do a little more, but not much. It calls the method<br>
+ValidationErrorAlert to notify the user of the problem. Although the default alert has<br>
+only an OK button, I've also added support for a Cancel button. If the user clicks OK,<br>
+HandleAlertAccepted is called; otherwise--if the user clicks Cancel--<br>
+HandleAlertCancelled is called.
+</p>
+<pre>FUNCTION  TValidText.HandleInvalidText(
+                    VAR     theText:        Str255;
+                            theError:       INTEGER)
+                            :LONGINT;
+    BEGIN
+    IF ValidationErrorAlert(theText, theError)
+    THEN
+        HandleInvalidText :=
+                HandleAlertAccepted(theText, theError)
+    ELSE
+        HandleInvalidText :=
+                HandleAlertCancelled(theText, theError);
+    END;    {HandleInvalidText}</pre>
+<p>
+In either case, a handler routine is called. Again, this kind of flow-of-control method,<br>
+which calls other methods to do the dirty work, is a very useful addition to the object<br>
+programmer's repertoire. 
+</p>
+<p>
+ValidationErrorAlert is equally trivial, consisting of only two lines. The first is a call<br>
+to PrepareErrorAlert, while the second displays the alert itself, returning TRUE if the<br>
+user accepts the dialog box and FALSE if the user cancels out of it. 
+</p>
+<p>
+PrepareErrorAlert is also only two lines of code:
+</p>
+<pre>PROCEDURE TValidText.PrepareErrorAlert(
+                    VAR     theText:        Str255;
+                            theError:       INTEGER);
+    {This routine sets up the dialog that is displayed by
+     ValidationErrorAlert.}
+    VAR
+        theString:      Str255;
+   
+    BEGIN
+    {Get the best string to describe the given error.}
+    ErrorToString(theError, theString);
+    ParamText(theString, '', '', '');
+    END;    {PrepareErrorAlert}</pre>
+<p>
+PrepareErrorAlert converts the given error code to a string by calling ErrorToString,<br>
+and then calls ParamText to get the string into the dialog. The error code was generated<br>
+by IsValid way back in the Validate method. The essential feature of these routines is<br>
+that they're all teeny-tiny pieces of code, each with a single, well-defined goal. Any<br>
+one of them can be overridden in isolation, to tweak the validation mechanism one way<br>
+or another. I think you'll find it to be a big improvement over TEditText's validation<br>
+mechanism. 
+</p>
+<h2>VALIDATING THE DATE</h2>
+<p>
+The TDateEditText class allows the user to enter a date string and have the Macintosh<br>
+Script Manager's LongDateTime routines figure out what date it is, in a convenient,<br>
+internationally compatible manner. It can display the resulting date in any of the three<br>
+formats supported by the Script Manager: short (9-13-91), abbreviated (Fri, Sep<br>
+13, 91), or long (Friday, September 13, 1991). 
+</p>
+<p>
+TDateEditText overrides four TValidText methods to implement date validation: IsValid,<br>
+HandleValidText, ErrorToString, and PrepareErrorAlert. 
+</p>
+<p>
+IsValid looks pretty complicated, and it is--by my standards, anyway. It has to set up<br>
+not only its Boolean return value, but also an error code if the given text is not valid.<br>
+This latter chore is complicated by the optional strict checking, embodied in fStrict.<br>
+The Script Manager provides two different levels of error messages when converting<br>
+dates (and times) to strings. It will take almost anything you give it and make a date<br>
+out of it, but it will warn you about leftover characters, nonstandard separators, and<br>
+the like. Strict checking for dates means that only perfectly formed date strings will<br>
+be accepted, while nonstrict checking means that so long as a date can be extracted<br>
+from the string, you don't want to hear the Script Manager complain about how hard it<br>
+was to get it. 
+</p>
+<pre>FUNCTION  TDateEditText.IsValid( VAR theText: Str255;
+    VAR whyNot: NTEGER) :BOOLEAN;
+OVERRIDE;
+
+    VAR
+        theError:       INTEGER;
+        valid:          BOOLEAN;
+        dateSecs:       LongDateTime;
+
+    BEGIN
+    IF (NOT INHERITED IsValid(theText, theError))
+    THEN
+        BEGIN
+        valid  := FALSE;
+        whyNot := theError;
+        END
+    ELSE
+        BEGIN
+        {Use the Script Manager to convert the date string to a
+         LongDateTime.}
+        theError := StringToDate(theText, dateSecs);
+        IF fStrict
+        THEN
+            valid := (theError = noErr) | (theError = longDateFound)
+        ELSE       
+        {Error codes &gt;= noErr mean a valid date was found.}
+            valid := (theError &gt;= noErr);
+        IF (theError = dateTimeNotFound) &amp;      {Date isn't found,}
+            (NOT fRequired) &amp;               {empty strings are OK,}
+            (Length(theText) = 0)       {and the string is empty.}
+        THEN        {Empty string is OK if entry isn't required.}
+            valid := TRUE;
+        IF valid
+        THEN
+            whyNot := noErr
+        ELSE
+            whyNot := theError;
+        END;    {else}
+    IsValid := valid;
+    END;    {IsValid}</pre>
+<p>
+HandleValidText just sets the fDateSecs instance variable to reflect the date of the<br>
+given string, and then calls the inherited version of the HandleValidText routine in<br>
+TValidText. 
+</p>
+<p>
+Likewise, ErrorToString catches those errors that it knows about and converts them to<br>
+strings; others, it just passes on to the inherited version of ErrorToString. Don't you<br>
+love inheritance? 
+</p>
+<pre>PROCEDURE TDateEditText.ErrorToString( theError: INTEGER;
+        VAR theString: Str255);
+OVERRIDE;
+    {This routine sets theString to the string that best
+     explains the given error. It's intended to be called
+     only from PrepareErrorAlert.}
+    VAR
+        strIndex:   INTEGER;
+
+    BEGIN
+    CASE theError OF
+        {These are the error codes returned by the Script Manager's
+         string-to-date routine.}
+
+        {strIndex 1 contains the default string, "invalid date".}
+        leftOverChars:          strIndex :=  2;
+        sepNotIntlSep:          strIndex :=  3;
+        fieldOrderNotIntl:      strIndex :=  4;
+        extraneousStrings:      strIndex :=  5;
+        tooManySeps:            strIndex :=  6;
+        sepNotConsistent:       strIndex :=  7;
+        tokenErr:               strIndex :=  8;
+        cantReadUtilities:      strIndex :=  9;
+        dateTimeNotFound:       strIndex := 10;
+        dateTimeInvalid:        strIndex := 11;
+           
+        OTHERWISE               strIndex :=  0; {Not our error.}
+        END;    {case theError}
+    IF (strIndex &gt; 0)
+    THEN    {It's an error we know how to describe, so handle it.}
+        GetIndString(theString, kInvalidDateReasons, strIndex)
+    ELSE    {Never heard of it - ask our superclass to handle it.}
+        INHERITED ErrorToString(theError, theString);
+    END;    {ErrorToString}</pre>
+<p>
+TDateEditText.PrepareErrorAlert (below) calls ErrorToString to convert the given<br>
+error code to a string. This string will then be displayed in the validation error alert<br>
+(see Figure 3). It also converts the current system date to a string to be displayed in<br>
+the alert, where it will serve as an example of the proper date format. 
+</p>
+<pre>PROCEDURE TDateEditText.PrepareErrorAlert(
+                    VAR     theText:            Str255;
+                            theError:           INTEGER);
+                            OVERRIDE;  
+    VAR
+        errString:      Str255;
+        dateSecs:       LongDateTime;
+        dateString:     Str255;
+   
+    BEGIN
+    {Get the current date, as a string.}
+    GetCurrentDate(dateSecs);
+    DateToString(dateSecs, shortDate, dateString);
+
+    {Get the best string to describe the given error.}
+    ErrorToString(theError, errString);
+    ParamText(errString, dateString, '', '');
+    END;    {PrepareErrorAlert}</pre>
+<p>
+<img src="img/193.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 3 </b> TDateEditText's Validation Error Alert
+</p>
+<p>
+&nbsp;TDateEditText.PrepareErrorAlert can't call the version of PrepareErrorAlert it<br>
+inherits from TValidText. The inherited version's call to ParamText would cloud the<br>
+effect of the override's call. I got around this by duplicating the body of<br>
+TValidText.PrepareErrorAlert in the override, and not calling the inherited version at<br>
+all. This duplication is a violation of Truth #1 (reusing code is better than writing<br>
+new code), but I couldn't figure out how to avoid it--so I just duplicated it, thus<br>
+adhering to Truth #3 (anything's better than missing a deadline). 
+</p>
+<p>
+&nbsp;Eventually, if an invalid date like February 31 has been entered by the user,<br>
+TDateEditText displays an alert similar to that shown in Figure 3.
+</p>
+<h2>VALIDATING THE TIME</h2>
+<p>
+Given the description and discussion of TDateEditText above, the most striking thing<br>
+about TTimeEditText is its similarity to TDateEditText. That shouldn't be surprising.<br>
+The validation of dates has been designed to follow a particular series of steps, which<br>
+can also be applied to time.&nbsp;&nbsp;&nbsp;Validating time therefore involves subtly tailoring the<br>
+behavior of a few steps rather than writing the validation logic from scratch. You can<br>
+see this in the code on the<i>Developer CD Series</i> disc, which includes a test application<br>
+and its source.
+</p>
+<h2>WHAT'S DONE IS DONE</h2>
+<p>
+If you build the test application yourself and bang on it even a little, you'll find a bug:<br>
+if you've got invalid text in one editText item, and click on the other, you'll see the<br>
+invalid entry alert twice. This is very annoying. Fixing this problem requires a change<br>
+to MacApp, however, because that's where the bug lives. Consider MacApp's<br>
+TEditText.HandleMouseDown method:
+</p>
+<pre>FUNCTION TEditText.HandleMouseDown(
+                            theMouse:       VPoint;
+                    VAR     info:           EventInfo;
+                    VAR     hysteresis: Point;
+                    VAR     theCommand: TCommand)
+                            : BOOLEAN;
+                            OVERRIDE;
+    BEGIN
+    {Get the floating TE installed if necessary.}
+    IF IsViewEnabled &amp; (gTarget &lt;&gt; fTEView)
+    THEN
+        DoChoice(SELF, fDefChoice);
+    HandleMouseDown := INHERITED HandleMouseDown(
+                        theMouse, info, hysteresis, theCommand);
+    END;    {HandleMouseDown}</pre>
+<p>
+The call to DoChoice goes to TDialogView, which attempts to deselect the currently<br>
+edited item with a call to its Validate method. If validation fails, the validation failure<br>
+alert is displayed. The subsequent call to INHERITED HandleMouseDown eventually<br>
+calls DoMouseCommand. This call, in turn, creates and returns a control tracker that<br>
+eventually calls TDialogView.DoChoice again.&nbsp;&nbsp;&nbsp;TDialogView.DoChoice again attempts to<br>
+deselect its currently edited item, and the validation again fails (since nothing has<br>
+changed), displaying the invalid entry alert for the second time.
+</p>
+<p>
+To fix the problem, we must add an override of DoMouseCommand to TEditText. Just<br>
+overriding DoMouseCommand in TValidText won't fix the problem, since the flaw is in<br>
+TEditText itself. 
+</p>
+<pre>FUNCTION TEditText.DoMouseCommand(
+                        VAR     theMouse:       Point;
+                        VAR     info:           EventInfo;
+                        VAR     hysteresis: Point)
+                                : TCommand;
+                                OVERRIDE;   BEGIN
+    IF (gTarget = fTEView)      {Only true when validation succeeds.}
+    THEN        {Validation has succeeded, so Do the Right Thing.}
+        DoMouseCommand := INHERITED DoMouseCommand(
+                                theMouse, info, hysteresis)
+    ELSE        {Validation failed - stop cold.}
+        DoMouseCommand := NIL;
+    END;    {DoMouseCommand}</pre>
+<p>
+Thus INHERITED DoMouseCommand is called only when all is as it should be. (I'd like<br>
+to thank Tom Dinger for suggesting this solution, which is cleaner than my originally<br>
+proposed change to TEditText.HandleMouseDown.) I added this change to my copy of<br>
+MacApp, and used it to build the compiled version of the sample application you'll find<br>
+on the<i>Developer CD Series</i> disc--so it demonstrates the fix, not the bug. 
+</p>
+<h2>. . . AND NOW, THE QUIZ</h2>
+<p>
+That about wraps up TValidText, TDateEditText, and TTimeEditText. Their use is<br>
+demonstrated further in the accompanying sample program. You can use the TValidText<br>
+class as a common basis for the validation of any quantity-related editable text<br>
+control--such as controls for numbers, currency, and weights and measures--in the<br>
+same uniform and flexible manner. If you have any questions, I'm sorry, but your time<br>
+is up: please put down your pencils, and pass your papers forward.&nbsp;&nbsp;&nbsp;Class dismissed! 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>ACKNOWLEDGMENTS</b><br>
+This article wouldn't have been possible without the support of Steve Starr, Marian<br>
+Cauwet, or Ed Lauing, who have made Power Up Software such a great place to work, or<br>
+my family, who have made my home such a great place to live. To the former, I give my<br>
+thanks and respect; to the latter, my love. Many thanks also to my editor, Geta Carlson.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Special thanks to the MacApp engineers, past and present, for writing such a great<br>
+piece of work. If inflexible string validation is the worst flaw I can find in MacApp, it<br>
+must be pretty good. And thanks to our technical reviewers: Jesse Feiler of The<br>
+Philmont Software Mill, author of articles on topics related to this one; Carl Nelson,<br>
+President of Software Architects and former President of the MacApp Developer's<br>
+Association (MADA); Bryan Stearns, Macintosh guru and Tech Note author; and David<br>
+Taylor of Bear River Associates, author of Calendar Creator 1.0, the first shipping<br>
+retail application written using MacApp 2.0. 
+</p>
+<h2>WHAT ABOUT MACAPP 3.0?</h2>
+<p>
+MacApp is an evolving system, just like the Macintosh itself. With the coming of<br>
+System 7, a new and more powerful version of MacApp is in the works: MacApp 3.0.
+</p>
+<p>
+Totally rewritten in C++, this new version of MacApp is still in development;<br>
+however, an early version, MacApp 3.0b1, is available to Macintosh developers on the<br>
+<i>Essentials*Tools*Objects </i> CD #5.
+</p>
+<p>
+MacApp 3.0 will offer a lot of new features, most of them directed toward support for<br>
+System 7. A discussion of most of these features is far beyond the scope of this article.<br>
+With regard to text validation, MacApp 3.0's display of validation error alerts is much<br>
+improved.
+</p>
+<p>
+In MacApp 3.0, the TargetValidationFailed method has been added to TEvtHandler to<br>
+allow each class to handle validation errors in a class-specific manner. An override of<br>
+TargetValidationFailed in TDialogTEView calls another override of the same method in<br>
+TEditText, which displays the error alert and restores the TEditText's previous<br>
+contents. Thus the validation error alert is posed by TEditText, not by TDialogView, as<br>
+was the case in MacApp 2.0. That's a big improvement.
+</p>
+<p>
+Unfortunately, the nature of TEditText's Validate routine remains unchanged in MacApp<br>
+3.0. If your application requires more flexible validation than that provided by<br>
+MacApp, you may still need to use some of the techniques described in this article.
+</p>
+<p>
+<b>JAMES PLAMONDON </b>was born, is hanging around for a while, and will soon die, like<br>
+everybody else. But he's trying to have fun in the meantime. As a software engineer at<br>
+Power Up Software Corporation of San Mateo, California, he has worked on an as yet<br>
+unreleased MacApp product he can't talk about, and he has recently begun working on<br>
+the Microsoft Windows version of this product--but he can't talk about that either.<br>
+The founder of the Bay Area MacApp Developer's Association (BAMADA), his interests<br>
+include raising his four kids, following international politics, writing the Great<br>
+American Computer Game, and trying to convince Apple to port MacApp to Windows. (If<br>
+only he could get his kids to write the international version of his game using MacApp<br>
+for Windows, his life would be complete.) *
+</p>
+<p>
+<b>The fRequired field </b>might better be called fEmptyStringValid or something to this<br>
+effect. I called it fRequired to match a comment in the method TNumberText.Validate in<br>
+the UDialog unit of the MacApp 2.0 source code. *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS</b> Jesse Feiler, Carl Nelson, Bryan<br>
+Stearns, David Taylor *
+</p>
+</body>
+</html>

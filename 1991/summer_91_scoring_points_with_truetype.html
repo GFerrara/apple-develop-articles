@@ -1,0 +1,693 @@
+<html>
+<head>
+<!-- Article ID: 24 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Summer 91 - SCORING POINTS WITH TRUETYPE</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>SCORING POINTS WITH TRUETYPE</h2>
+<h1>KONSTANTIN OTHMER AND MIKE REED</h1>
+<p>
+<i>TrueType, Apple's outline font technology, opens up a world of possibilities for</i><br>
+<i>improved handling of text. For example, with outline fonts, users can resize text as</i><br>
+<i>they've always been able to resize other objects in drawing programs--by grabbing</i><br>
+<i>handles and dragging. This article shows how to program this and other exciting</i><br>
+<i>transformations to text. </i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The Font Manager in System 7.0 can use TrueType outline fonts, in addition to<br>
+bitmapped fonts, to produce text on the screen and on a printer. In outline fonts, the<br>
+appearance of individual characters is defined by outlines, not bitmaps. The TrueType<br>
+font mechanism is also available as an INIT for System 6.0.7 users.
+</p>
+<p>
+Your application can take advantage of the special capabilities provided by TrueType<br>
+fonts to transform text in decorative and useful ways. These transformations include<br>
+shrinking or stretching text to fit a given bounding box and creating patterned,<br>
+antialiased text. This article provides routines for accomplishing both of these kinds of<br>
+transformations. First, though, let's explore in more detail how TrueType fonts differ<br>
+from their predecessor, bitmapped fonts. 
+</p>
+<h2>WHY TRUETYPE IS TRULY WONDERFUL</h2>
+<p>
+To understand why TrueType is truly wonderful, you first have to understand the<br>
+trouble with bitmapped fonts. With bitmapped fonts, to generate fonts of sizes for<br>
+which no bitmap exists, QuickDraw simply picks an available font size according to a<br>
+gnarly algorithm and stretches or shrinks the bits. Unfortunately, when a bitmap is<br>
+resized the resulting image is often far from pleasing.
+</p>
+<p>
+This problem is easily understood: imagine you're shrinking a 1-bit image by a factor<br>
+of two in the vertical dimension. This means two pixels in the source image combine to<br>
+form one pixel in the result. If both source pixels are black or both are white, the<br>
+solution is easy. The problem comes when the two source pixels are different. In this<br>
+case, since most images on the Macintosh appear on a white background, QuickDraw<br>
+preserves black. Thus, if either source pixel is black, the result is black. 
+</p>
+<p>
+QuickDraw uses this same algorithm for larger shrinks. When an image is shrunk<br>
+vertically by a factor of eight, if any one of the eight source pixels is black, the<br>
+resulting pixel is black. Because there is more information in the source than can be<br>
+represented in the destination, the resulting image often looks ragged and is typically<br>
+too dark. 
+</p>
+<p>
+A similar problem is encountered when enlarging an image. QuickDraw enlarges<br>
+images by replicating pixels; thus, the result becomes blocky. There simply is not<br>
+enough information in the&nbsp;&nbsp;source image to provide a better scaled-up representation.<br>
+Figure 1 shows a 72-point B in the bitmapped Times&#174; font resized by various<br>
+amounts. 
+</p>
+<p>
+<img src="img/162.gif" width="530 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1</b> Resizing a Bitmapped Character
+</p>
+<p>
+&nbsp;This problem with resizing has further implications. Have you ever tried to resize<br>
+text in the same way you resize other objects in a drawing program like MacDraw&#174;?<br>
+If you have, you've discovered that when you move the handles on the bounding box, the<br>
+text clipping and formatting change, but the text isn't resized. This inconsistency<br>
+between the way text and other objects are handled can be very confusing to users and<br>
+may deny them the function they really want: to stretch the text to fill the box. The<br>
+reason for this difficulty is--you guessed it! Although resizing an object such as a<br>
+rectangle produces excellent results, resizing a bitmapped font results in an image<br>
+that is, well, ugly. 
+</p>
+<p>
+&nbsp;Enter TrueType. With TrueType fonts, each character is stored as an outline.<br>
+QuickDraw knows the shape of the character, much as it knows the shape of a circle.<br>
+When a character is imaged, its outline is scaled to the appropriate size and then filled.<br>
+When a character is scaled, the outline is scaled rather than the bits. Thus, an<br>
+excellent representation of the character is possible at all scaling factors. Figure 2<br>
+shows how an outline font looks when compared to a bitmapped font drawn in a size for<br>
+which no bitmap exists. 
+</p>
+<p>
+<img src="img/163.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> Bitmapped Versus Outline Font
+</p>
+<p>
+Because characters maintain their integrity at all sizes in TrueType, it's now possible<br>
+to resize text in the same way users have always been able to resize other objects in<br>
+drawing programs. We'll show you a routine for doing this. It's also possible to<br>
+superimpose a text mask on any picture you want in order to create decorative effects.<br>
+We'll also show you how to do this. 
+</p>
+<h2>&nbsp;SCALING TEXT TO FIT A GIVEN RECTANGLE</h2>
+<p>
+To show how easy it is with TrueType to produce high-quality text scaled to given<br>
+dimensions, we've written a routine called BoxText that scales a string of text to fit a<br>
+given rectangle. It takes a parameter that indicates how the text should be constrained:<br>
+vertically, horizontally, both, or neither.&nbsp;&nbsp;&nbsp;Figure 3 shows examples of text treated in<br>
+these ways with the BoxText routine. 
+</p>
+<p>
+&nbsp;The BoxText routine is fairly simple. It first checks to see if any constraints are<br>
+turned on. The constraints are defined as follows:
+</p>
+<pre>typedef enum boxTextOptions {
+    noConstraints,
+    constrainH,
+    constrainV
+} boxTextOptions;</pre>
+<p>
+&nbsp;Normally, BoxText works just like DrawString. If you pass constraints, the text is<br>
+stretched to fit the bounding rectangle's width, or height, or both. This is done through<br>
+a call to StdText. The stretching factors are computed from the text's original bounds<br>
+and the bounds passed to BoxText. 
+</p>
+<p>
+<img src="img/164.gif" width="287 px"></img>
+</p>
+<p>
+Unconstrained,&nbsp;&nbsp;&nbsp;Constrained horizontally,&nbsp;&nbsp;Constrained vertically,&nbsp;&nbsp;Constrained both
+</p>
+<p>
+<b>&nbsp;Figure 3</b> Text Scaled With the BoxText Routine
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<pre>void GetTextRect(char* text, Rect* bounds)
+{
+    Point       identity;
+    SetPt(&amp;identity, 1, 1);     /* No scaling. */
+    GetTextBounds(text, identity, identity, bounds);
+}
+void GetTextBounds(char* text, Point numer, Point denom,
+        Rect* bounds)
+{
+    FontInfo    info;
+    Fixed       hScale = FixDiv(numer.h, denom.h);
+    Fixed       vScale = FixDiv(numer.v, denom.v);
+
+    GetFontInfo(&amp;info);
+    SetRect( bounds, 0, FixMul(-info.ascent, vScale),
+                FixMul(StringWidth(text), hScale),
+                FixMul(info.descent + info.leading, vScale) );
+    OffsetRect(bounds, thePort-&gt;pnLoc.h, thePort-&gt;pnLoc.v);
+}</pre>
+<p>
+GetTextRect calls GetTextBounds. GetTextBounds takes a string and scaling factors and<br>
+returns the bounding rectangle; note that it calls GetFontInfo to determine the height<br>
+and StringWidth to determine the width. GetFontInfo is used instead of OutlineMetrics<br>
+since the measurements for the entire font (not just individual characters) are used to<br>
+calculate the rectangle for the text.&nbsp;&nbsp;&nbsp;Furthermore, GetFontInfo is faster than<br>
+OutlineMetrics. 
+</p>
+<p>
+The bounds are then scaled by the given scaling factors. The ascent is scaled by the<br>
+vertical stretching factor to correctly place the text's baseline. Without this<br>
+adjustment, the top of the text would not align with the top of the constraining<br>
+rectangle. Finally, the rectangle is offset to the current pen location. 
+</p>
+<p>
+When the text is constrained to fit in the rectangle both horizontally and vertically,<br>
+the numerator for vertical scaling is set to the height of the rectangle and the<br>
+denominator is set to the height of the text. For horizontal scaling, the numerator is<br>
+set to the rectangle width and the denominator is set to the string width. Traditionally,<br>
+these scaling factors have been stored in point records, and in our routine the code<br>
+uses SetPt to set the values. Then MoveTo is called to position the pen at the location<br>
+where the text is to be drawn. Finally, the scaled text is drawn using StdText and the<br>
+text size is restored. 
+</p>
+<p>
+Note the technique used to call StdText: First the code checks to see whether there are<br>
+custom bottlenecks in the current port (as there are when printing). If so (the<br>
+grafProcs field is nonzero), the StdText bottleneck routine, rather than the trap, is<br>
+called. This is necessary to allow BoxText to print. (Calling the StdText bottleneck is<br>
+accomplished via the macro, given for both MPW and THINK C, before the BoxText<br>
+routine.)
+</p>
+<pre>#ifdef MPW
+    typedef pascal void (*StdTextProc)(short count, Ptr text,
+        Point numer, Point denom);
+    #define STDTEXTPROC(count, text, numer, denom) \
+        ((StdTextProc)thePort-&gt;grafProcs-&gt;textProc) \
+        (count, text, numer, denom)
+#else       /* THINK C version. */
+    #define STDTEXTPROC(count, text, numer, denom)  \
+        CallPascal(count, text, numer, denom, \
+        thePort-&gt;grafProcs-&gt;textProc)
+#endif
+
+void BoxText(char* myPString, Rect *dst, boxTextOptions options)
+{
+    Point       numer, denom;
+    short       txSize;
+    Rect        src;
+
+    if (!(options &amp; (constrainH | constrainV))) {
+        /* If there are no constraints, just call DrawString. */
+        MoveTo(dst-&gt;left, dst-&gt;bottom);
+        DrawString(myPString);
+        return;
+    }
+
+    /* Save the current point size. */
+    txSize = thePort-&gt;txSize;
+
+    /* Temporarily set the size to something big, so that our
+     * source rectangle is more precise. This is needed since QD
+     * doesn't return fixed-point values for ascent, descent, and
+     * leading. */
+    TextSize(100);
+
+    MoveTo(0, 0);
+    GetTextRect(myPString, &amp;src);
+
+    switch (options) {
+
+        case constrainH:
+            numer.h = numer.v = dst-&gt;right - dst-&gt;left;
+            denom.h = denom.v = src.right - src.left;
+            break;
+
+        case constrainV:
+            numer.h = numer.v = dst-&gt;bottom - dst-&gt;top;
+            denom.h = denom.v = src.bottom - src.top;
+            break;
+
+        case (constrainH | constrainV):
+        /* Constrain both dimensions. */
+            SetPt(&amp;numer, dst-&gt;right - dst-&gt;left,
+                dst-&gt;bottom - dst-&gt;top);
+            SetPt(&amp;denom, src.right - src.left,
+                src.bottom - src.top);
+            break;
+    }
+
+    if (denom.h &amp;&amp; denom.v) {
+        /* Since we're applying a fixed scale to src.top, a short,
+         * the result, baseline, is also a short. */
+        short baseline = FixMul(-src.top, FixDiv(numer.v, denom.v));
+        MoveTo(dst-&gt;left, dst-&gt;top + baseline);
+        /* If there are bottleneck procs installed, call them instead
+         * of calling the trap directly. */
+        if (thePort-&gt;grafProcs)
+            STDTEXTPROC(*myPString, myPString+1, numer, denom);
+        else
+            StdText(*myPString, myPString+1, numer, denom);
+    }
+    TextSize(txSize);
+}</pre>
+<h2>RESIZING TEXT INTERACTIVELY</h2>
+<p>
+In most drawing programs, you change the size of an object by clicking and dragging<br>
+with the mouse.&nbsp;&nbsp;&nbsp;This type of interactive resizing is called<i>rubberbanding</i> since the<br>
+borders of the object stretch and shrink like a rubber band. Using the previously<br>
+described BoxText routine, it's easy to achieve this result for text.
+</p>
+<p>
+The following routine, SlowRubberBandText, performs the operation. As you can<br>
+probably guess from the routine name, the performance is not optimal. We'll return to<br>
+this issue later with the FastRubberBandText routine. 
+</p>
+<p>
+The first thing SlowRubberBandText does is to set the pen mode and text mode to Xor.<br>
+Xor mode is used so that drawing and erasing can be accomplished without buffering the<br>
+screen contents and thus without using much memory. The drawback is that the text<br>
+flickers when it's being resized. A commercial application would check to see if enough<br>
+memory is available to buffer the screen contents, and if so would provide<br>
+flicker-free resizing. 
+</p>
+<p>
+Next we have a do-while loop that tracks the mouse as long as the button is held down.<br>
+On each iteration through the loop, a rectangle is constructed from the anchor point<br>
+and the current mouse position. This rectangle is drawn and then BoxText is called to<br>
+draw the text scaled to the rectangle. 
+</p>
+<p>
+The do-while loop waits for the mouse to move or for the button to be let up. If either<br>
+of these conditions occurs, the text is erased (by being drawn again in the same place).<br>
+If the button is let up (the terminating condition on the do-while loop), the routine<br>
+exits, returning the bounding rectangle.&nbsp;&nbsp;&nbsp;Otherwise, the text is drawn scaled, using<br>
+the new mouse position. 
+</p>
+<pre>void SlowRubberBandText(char* myPString, Point anchorPoint,
+        Rect *theRect, boxTextOptions options)
+{
+    Point       oldPoint;
+    Point       newPoint;
+
+    PenMode(patXor);
+    TextMode(srcXor);
+    SetRect(theRect, 0, 0, 0, 0);
+    do {
+        GetMouse(&amp;oldPoint);
+        Pt2Rect(oldPoint, anchorPoint, theRect);
+        FrameRect(theRect);                     /* Draw it. */
+        BoxText(myPString, theRect, options);
+        newPoint = oldPoint;
+        while (EqualPt(newPoint, oldPoint) &amp;&amp; Button())
+            GetMouse(&amp;newPoint);
+        FrameRect(theRect);                     /* Erase it. */
+        BoxText(myPString, theRect, options);
+    } while (Button());
+}</pre>
+<p>
+While this routine is a simple illustration of the use of BoxText, it's excruciatingly<br>
+slow. The reason is that QuickDraw must rerender the outline every time the scaling<br>
+changes. The FastRubberBandText routine images the text into a 1-bit off-screen<br>
+GWorld, and then uses CopyBits to stretch the resulting bitmap to fit the specified<br>
+rectangle. This is similar to the method QuickDraw uses to scale bitmapped fonts,<br>
+described previously, and is much faster than the slow case.
+</p>
+<p>
+The code first allocates a sufficiently large bitmap so that the text looks good even at<br>
+large sizes. If the allocation fails in both temporary memory and the application heap,<br>
+the code tries smaller rectangles in both heaps. If this also fails, it calls the<br>
+SlowRubberBandText routine. If the needed memory is available, GWorld gyrations are<br>
+performed to image the text into the off-screen pixMap.&nbsp;&nbsp;&nbsp;Then a do-while loop similar<br>
+to the one in the SlowRubberBandText routine is executed, but rather than calling<br>
+BoxText, it calls CopyBits. The exit conditions are similar to SlowRubberBandText,<br>
+with the addition that the GWorld is disposed of. 
+</p>
+<pre>void FastRubberBandText(char* myPString, Point p, Rect *theRect,
+     boxTextOptions constraints)
+{
+    Rect                srcRect, dstRect, origRect;
+    GDHandle            oldGD;
+    GWorldPtr           oldGW;
+    GWorldPtr           myOffGWorld;
+    Point               oldPoint;
+    Point               newPoint;
+    PixMapHandle        myPixMapHandle;
+    short               theFont = thePort-&gt;txFont;
+    short               theFace = thePort-&gt;txFace;
+    short               err;
+    GetTextRect(myPString, &amp;origRect);
+    srcRect = origRect;
+    OffsetRect(&amp;srcRect, -srcRect.left, -srcRect.top);
+/* Scale rectangle up by a factor of 8 to get good results when
+ * resizing bitmap. */
+    srcRect.right <<= 3;
+    srcRect.bottom <<= 3;
+/* Take a ride on the GWorld allocation loop. Try temporary memory
+ * first, then the application heap. If both fail, keep trying with
+ * smaller rectangles until success or until the rectangle is
+ * smaller than the original rectangle. */
+    do
+        if (err = NewGWorld(&amp;myOffGWorld, 1, &amp;srcRect, 0, 0,
+               useTempMem))
+            if (err = NewGWorld(&amp;myOffGWorld, 1, &amp;srcRect, 0, 0,
+                   0)) {
+                srcRect.right >>= 1;
+                        /* Try rectangle smaller by factor of 2. */
+                srcRect.bottom >>= 1;
+            }
+    while (err &amp;&amp; srcRect.right &gt;= (origRect.right - origRect.left));
+    if (!err) {
+        GetGWorld(&amp;oldGW,&amp;oldGD);
+
+    /* Copy font info from current port into GWorld, clear GWorld,
+     * and draw the text into the GWorld. This leaves a pixMap that
+     * can be stretched using CopyBits. */
+        SetGWorld(myOffGWorld, 0);
+        TextFont(theFont);      /* Use font from the current port. */
+        TextFace(theFace);      /* Ditto. */
+        myPixMapHandle = GetGWorldPixMap(myOffGWorld);
+        LockPixels(myPixMapHandle);
+        EraseRect(&amp;srcRect);
+        BoxText(myPString, &amp;srcRect, constraints);
+    /* Back to old GWorld for drawing. */
+        SetGWorld(oldGW, oldGD);
+        PenMode(patXor);
+        TextMode(srcXor);
+        do {
+            GetMouse(&amp;oldPoint);
+            Pt2Rect(oldPoint, p, &amp;dstRect);
+            ConstrainRect(&amp;srcRect, &amp;dstRect, theRect,
+                constraints);
+            FrameRect(&amp;dstRect);     /* Draw the text scaled to
+                                          * fit in the rectangle. */
+            CopyBits(*myPixMapHandle, &amp;thePort-&gt;portBits,
+                &amp;srcRect, theRect, srcXor, 0);
+            newPoint = oldPoint;
+            while (EqualPt(newPoint, oldPoint) &amp;&amp; Button())
+                GetMouse(&amp;newPoint);
+            FrameRect(&amp;dstRect);            /* Erase the text. */
+            CopyBits(*myPixMapHandle, &amp;thePort-&gt;portBits,
+                &amp;srcRect, theRect, srcXor, 0);
+        } while (Button());
+        UnlockPixels(myPixMapHandle);
+        DisposeGWorld(myOffGWorld);
+    }
+    else
+/* If GWorld allocation fails, use the slow version, which doesn't
+ * require a GWorld. */
+        SlowRubberBandText(myPString, p, theRect, constraints);
+}</pre>
+<p>
+&nbsp;The FastRubberBandText routine calls ConstrainRect, which mirrors the scaling<br>
+performed by BoxText. The routine scales the source rectangle to fit inside the<br>
+destination rectangle with regard to constraints.
+</p>
+<pre>void ConstrainRect(Rect* src, Rect* dst, Rect* result,
+        boxTextOptions constraints)
+{
+    Fixed       ratio;
+    *result = *dst;
+    switch (constraints) {
+        case constrainH:
+            ratio = FixDiv(src-&gt;bottom - src-&gt;top,
+                src-&gt;right - src-&gt;left);
+            result-&gt;bottom = dst-&gt;top +
+                FixMul(dst-&gt;right - dst-&gt;left, ratio);
+            break;
+        case constrainV:
+            ratio = FixDiv(src-&gt;right - src-&gt;left,
+                src-&gt;bottom - src-&gt;top);
+            result-&gt;right = dst-&gt;left +
+                FixMul(dst-&gt;bottom - dst-&gt;top, ratio);
+            break;
+    }
+}</pre>
+<h2>&nbsp;CREATING PATTERNED, ANTIALIASED TEXT</h2>
+<p>
+Generation of high-quality scaled text is only one of the fun tricks of the new outline<br>
+fonts in System 7.0. You can also create patterned, antialiased text with just a few<br>
+lines of code. (Antialiased text is text whose edges have been smoothed by the addition<br>
+of gray, creating a softer effect; see Figure 4, and see the antialiased version in color<br>
+on the inside front cover of this issue.) The possibilities this opens up for writing a<br>
+"Hello, World" program are staggering, as illustrated in Figure 5. 
+</p>
+<p>
+<img src="img/165.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 4</b> Regular Versus Antialiased Text
+</p>
+<p>
+<img src="img/166.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 5</b> How "Hello, World" Looks in 1991
+</p>
+<p>
+&nbsp;To achieve this result you use the CopyDeepMask call (available only in System 7.0).<br>
+Your application generates a source pixMap with the pattern or picture you want to<br>
+use; the CreateTextMask routine creates a GWorld containing the text mask; and<br>
+finally, you call CopyDeepMask to image the source through the mask onto the<br>
+destination. Figure 6 illustrates this. 
+</p>
+<p>
+<b>&nbsp;GENERATING THE MASK</b><br>
+The CreateTextMask routine works as follows: First, we attempt to allocate a GWorld<br>
+that would allow text to be rendered at four times its final size. (If there's not enough<br>
+memory in the application heap or temporary memory to allocate a GWorld this big,<br>
+GWorlds of three times and then two times the final size are created. If all of these<br>
+attempts fail, nil is returned.) Next the 1-bit GWorld is cleared to white and the text<br>
+is imaged into it scaled by a factor of four (or whatever multiple the 1- bit GWorld<br>
+turned out to be) in each direction. Then CopyBits with mode ditherCopy is used to<br>
+shrink the large 1-bit GWorld to a 4-bit gray-scale GWorld; this is illustrated in<br>
+Figure 7. 
+</p>
+<p>
+&nbsp;Because the mask will consist only of grays, the 4-bit GWorld is given a gray-scale<br>
+CLUT. We are now finished with the 1-bit GWorld and dispose of it. The 4-bit<br>
+gray-scale image we just created is returned by CreateTextMask. Notice that this<br>
+routine may return a GWorld allocated in temporary memory, so you must dispose of<br>
+the GWorld before calling WaitNextEvent. 
+</p>
+<p>
+<img src="img/167.gif" width="640 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 6</b> Using CopyDeepMask
+</p>
+<p>
+<img src="img/168.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 7</b> Shrinking the Mask With ditherCopy
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<pre>GWorldPtr CreateTextMask(char* text, Rect* myRect,
+        boxTextOptions options)
+{
+PixMapHandle        bigPixMap;
+GDHandle            oldGD;
+GWorldPtr           oldGW, maskWorld, bigWorld;
+short               theFont = thePort-&gt;txFont;
+short               theFace = thePort-&gt;txFace;
+Rect                myRectBig;
+
+/* Create the 4-bit maskWorld. */
+    {   CTabHandle ctab = GetCTable(4+32);
+        if (NewGWorld(&amp;maskWorld, 4, myRect, ctab, 0,
+                useTempMem) != noErr)
+            if ((NewGWorld(&amp;maskWorld, 4, myRect, ctab, 0,
+                     0) != noErr)) {
+                DisposHandle(ctab);
+                return 0;
+            }
+    }
+
+/* Create the supersample bigWorld. First try to use a GWorld 4
+ * times larger. If that fails, try 3 and 2 times larger. If all
+ * attempts fail, return a nil GWorld. */
+    {   short zoom = 4;
+        short width = myRect-&gt;right-myRect-&gt;left;
+        short height = myRect-&gt;bottom-myRect-&gt;top;
+        do {
+            SetRect(&amp;myRectBig, 0, 0, width * zoom, height * zoom);
+            if (NewGWorld(&amp;bigWorld, 1, &amp;myRectBig, 0, 0,
+                    useTempMem) == noErr)
+                break;
+            else
+            if (NewGWorld(&amp;bigWorld, 1, &amp;myRectBig, 0, 0,
+                    0) == noErr)
+                break;
+            zoom--;
+        } while (zoom &gt; 1);
+        if (zoom == 1) {
+            DisposeGWorld(maskWorld);
+            return 0;
+        }
+    }
+
+/* Draw the text into supersample bigWorld. */
+    GetGWorld(&amp;oldGW, &amp;oldGD);
+    SetGWorld(bigWorld, 0);
+    TextFont(theFont);
+    TextFace(theFace);
+    LockPixels(bigPixMap = GetGWorldPixMap(bigWorld));
+    EraseRect(&amp;myRectBig);
+    BoxText(text, &amp;myRectBig, options);
+
+/* Create 4-bit maskWorld by shrinking the big GWorld (with
+ * ditherCopy) into the 4-bit gray-scale GWorld. NOTE: This is one of
+ * the slowest steps, and is relatively easy to optimize with a
+ * custom shrinking procedure. */
+    {   PixMapHandle maskPixMap = GetGWorldPixMap(maskWorld);
+        LockPixels(maskPixMap);
+        SetGWorld(maskWorld, 0);
+        CopyBits(*bigPixMap, *maskPixMap, &amp;myRectBig, myRect,
+               ditherCopy+srcCopy, 0L);
+        UnlockPixels(maskPixMap);
+    }
+    DisposeGWorld(bigWorld);
+    SetGWorld(oldGW, oldGD);
+
+    return maskWorld;
+}</pre>
+<p>
+<b>SAYING "HELLO, WORLD"</b><br>
+Now we're ready to say "Hello, World" in patterned, antialiased text as shown in<br>
+Figure 4. The following routine combines the BoxText, FastRubberBandText, and<br>
+CreateTextMask routines to produce its results. In this example, the source pixMap<br>
+contains a picture that's read in from a resource file. This pixMap could, of course,<br>
+contain anything, and that image would peek through the text mask. The interesting<br>
+thing to notice is that if you scale the source picture to the size of the text, the image<br>
+behind each letter will stay the same regardless of the scaling factor. 
+</p>
+<pre>void JustShowOff(Point anchorPt)
+{
+#define     kBoxOptions  constrainH | constrainV
+
+    Rect            myRect;
+    GWorldPtr       mask = 0;
+    char            *text = "\pHello, World";
+
+    FastRubberBandText(text, anchorPt, &amp;myRect, kBoxOptions);
+
+    if (mask = CreateTextMask(text, &amp;myRect, kBoxOptions)) {
+
+        GWorldPtr           oldGW;
+        GWorldPtr           src;
+        PicHandle           pic;
+        PixMapHandle        maskBits;
+        PixMapHandle        srcbits;
+        GDHandle            oldGD;
+
+        if (NewGWorld(&amp;src, 8, &amp;myRect, 0, 0,
+                useTempMem) != noErr)
+            if (NewGWorld(&amp;src, 8, &amp;myRect, 0, 0, 0) != noErr)
+                goto EXIT;
+        if (!(pic = GetPicture(1001)))  /* Assumes the PICT is marked
+                                         * purgeable. */
+            goto EXIT;
+        GetGWorld(&amp;oldGW, &amp;oldGD);
+        SetGWorld(src, 0);              /* Set to draw into
+                                         * off-screen 8-bit. */
+        DrawPicture(pic, &amp;myRect);      /* Stretch picture to fill
+                                         * user's rect. */
+        LockPixels(maskBits = GetGWorldPixMap(mask));
+        LockPixels(srcBits = GetGWorldPixMap(src));
+        SetGWorld(oldGW, oldGD);
+        CopyDeepMask(*srcBits, *maskBits, &amp;thePort-&gt;portBits,
+            &amp;myRect, &amp;myRect, &amp;myRect, srcCopy, 0L);
+        DisposeGWorld(src);
+    }
+EXIT:
+    if (mask) DisposeGWorld(mask);
+}</pre>
+<h2>SUMMARY AND PARTING THOUGHTS</h2>
+<p>
+TrueType fonts provide high-quality characters at all sizes and scaling factors. This is<br>
+possible because TrueType fonts are stored as outlines rather than bitmaps, and<br>
+scaling an outline produces much better results than scaling a bitmap. The BoxText<br>
+routine described in this article uses the StdText call to stretch text to fit within a<br>
+specified box. A logical extension of this could solve a problem that has plagued<br>
+humankind (or at least high school students): how to expand six and a half pages of text<br>
+to produce a report that's exactly ten pages long, as required by law or a high school<br>
+teacher.
+</p>
+<p>
+Usually tactics such as adjusting the margins, line spacing, and font size can get you<br>
+close. But this trial-and-error process could easily be replaced with a procedure<br>
+written by some enterprising and humanitarian programmer:
+</p>
+<pre>FitTextToPages(char *text, long numPages);</pre>
+<p>
+Rather than simply adjusting the margins and line spacing, this routine could<br>
+uniformly stretch a block of text to fill the desired number of pages. 
+</p>
+<p>
+System 7.0 also allows applications to pass a deep mask to CopyMask or<br>
+CopyDeepMask. By imaging text into a large bitmap and then scaling it down with<br>
+ditherCopy, it's possible to generate a soft- edged mask for producing antialiased text.<br>
+Furthermore, text drawn using CopyDeepMask can have any image as the source<br>
+pixMap, making it easy to produce patterned or picture text. 
+</p>
+<p>
+In the process of producing all of these great effects with text, we used GWorlds<br>
+extensively. From the code samples it should be clear that GWorlds are extremely<br>
+simple to create and manipulate.&nbsp;&nbsp;&nbsp;Judicious use of temporary memory for holding<br>
+GWorlds allows our sample "Hello, World" program to run in a 100K heap and still<br>
+produce very large (bigger than 1200 x 500 pixels) scaled text (provided there's<br>
+enough temporary memory available, of course). 
+</p>
+<p>
+Enjoy! 
+</p>
+<p>
+<b>KONSTANTIN OTHMER AND MIKE REED</b> Have you seen these two guys?<br>
+Konstantin and Mike, better known as Jake and Elwood, were last seen driving an old<br>
+Black &amp; White to the Palace Hotel Ballroom where they performed such hits as<br>
+"Everybody Needs Some PixMaps to CopyBits" and "Gimme Some TrueType."<br>
+Frequented hangouts: kitchen after lunch meetings, football field, poker tables,slopes<br>
+at Tahoe, beach, Fitness Center, center stage. Known contacts: Bruce "Second Hand"<br>
+Leak, Dave "Know" Good. Distinguishing marks: gym bag, running shoes, soft-edged<br>
+clip art, smooth text forms. Latest fortune cookie: Ask and you shall receive; this<br>
+includes trouble. Any information as to the whereabouts of these rascals should be sent<br>
+to their managers, who are probably looking for them. *
+</p>
+<p>
+<b>Note that the fonts shown </b> in the illustrations are drawn at screen resolution, so<br>
+they don't look as good as they would if drawn on a higher-resolution device such as a<br>
+printer. *
+</p>
+<p>
+<b>The example code shown here</b> was written in THINK C. The <i> Developer Essentials </i><br>
+disc contains both THINK C and MPW &#174;versions. *
+</p>
+<p>
+<b>The antialiasing technique</b> used in this article requires a<br>
+multiple-bits-per-pixel destination device. Since most printers are 1 bit per pixel,<br>
+these antialiasing techniques are useful primarily for the screen. A second problem<br>
+with printing antialiased text using these techniques is that QuickDraw does not pass<br>
+the CopyDeepMask call to printer drivers. For multiple-bits-per- pixel printers,<br>
+you could image the antialiased text into a GWorld and then use CopyBits to draw the<br>
+image on a printer. *
+</p>
+<p>
+<b>For details on using CopyBits </b>with ditherCopy, see "QuickDraw's CopyBits<br>
+Procedure" in <i> develop</i>, Issue 6. *
+</p>
+<p>
+<b>Thanks to Our Technical Reviewers </b>Pete "Luke" Alexander, John Harvey, Bryan<br>
+"Beaker" Ressler *
+</p>
+</body>
+</html>

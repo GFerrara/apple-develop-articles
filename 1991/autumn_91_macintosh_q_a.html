@@ -1,0 +1,510 @@
+<html>
+<head>
+<!-- Article ID: 40 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Autumn 91 - MACINTOSH Q & A</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH Q &amp; A</h2>
+<h1>MACINTOSH DEVELOPER TECHNICAL SUPPORT</h1>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Q</b><i> When my application is running, it relies on the MultiFinder's "puppet strings"</i><br>
+<i>(which choose Open from the application's File menu and suppress the SFGetFile</i><br>
+<i>dialog) to open a document that was double- clicked in the Finder. Why doesn't this</i><br>
+<i>work under System 7? The high-level event-aware bit in my 'SIZE' resource is clear.</i>
+</p>
+<p>
+<b>A</b> System 7 will not pull puppet strings for an application that makes use of the<br>
+System 7 Standard File routines, such as StandardGetFile and CustomGetFile, nor will<br>
+it pull them if the application's high-level event-aware bit is set.
+</p>
+<p>
+&nbsp;If you update an older application to take advantage of any System 7 features, be sure<br>
+to also add support for the 'odoc' and other required Apple events. Sample code showing<br>
+how to support the required Apple events is available on the System 7 Golden Master<br>
+CD.
+</p>
+<p>
+<b>Q</b><i> Why does Gestalt tell me I have Color QuickDraw features on a non-Color QuickDraw</i><br>
+<i>machine?</i>
+</p>
+<p>
+<b>A</b> The gestaltQuickdrawFeatures ('qdrw') selector, used for determining your system's<br>
+Color QuickDraw features, has a bug that causes it to tell you incorrectly that noncolor<br>
+machines have color. The fix is quite simple: Gestalt has another selector,<br>
+gestaltQuickdrawVersion ('qd '), which simply returns the QuickDraw version<br>
+number. This version number is &lt; gestalt8BitQD for classic QuickDraw and &gt;=<br>
+gestalt8BitQD for Color QuickDraw (see <i> Inside Macintosh</i>&nbsp;&nbsp;Volume VI, page 3-39, for<br>
+more information). The trick is to ask Gestalt for the QuickDraw version first; once<br>
+you've determined that you have Color QuickDraw, the 'qdrw' selector is OK to use to<br>
+find out specifics.
+</p>
+<p>
+<b>Q</b><i> What do we return to the Apple event handler if we get an application error while</i><br>
+<i>processing a standard event, Edition Manager event, or custom Apple event for</i><br>
+<i>commands and queries? Probably not errAENotHandled, since that means we didn't</i><br>
+<i>handle the event, which is different from trying to handle it and failing. Would it be</i><br>
+<i>errAEFail? What if we want to return more specific error information? Do we define</i><br>
+<i>our own errors, or try to use Apple's errors such as memFullErr or parmErr?</i>
+</p>
+<p>
+<b>A</b> You pass back errAENotHandled, because it's true, and because some simple<br>
+applications will not be able to handle anything more than that. What you can also do,<br>
+and what most commercial applications will do (particularly applications that want to<br>
+be scripting savvy), is add errn and errs parameters to the reply record for that<br>
+event (as shown on page 6-49 of <i> Inside Macintosh</i>&nbsp;&nbsp;Volume VI). You can be as<br>
+descriptive as you like in the text--the more the better, in fact, since this text will be<br>
+seen at the user level usually. The errn value you pass back can be the system error<br>
+number; then the sending program may be able to recover and try again.
+</p>
+<p>
+<b>Q</b><i> According to the QuickTime Movie Toolbox documentation, "The Movie Toolbox</i><br>
+<i>maintains a set of global variables for every application using it." How much global</i><br>
+<i>memory is required? Our application is shy on global data space.</i>
+</p>
+<p>
+<b>A</b> The information maintained is not kept with the application's global variables. The<br>
+handle created by the EnterMovies call is stored in the system heap, not in the<br>
+application heap. You don't have to worry about how much space to allocate in your<br>
+application. This initialization does not affect your A5 world either.
+</p>
+<p>
+&nbsp;EnterMovies initializes everything, including setting up the necessary data space and<br>
+creating a handle to it. When you're done, be sure to make a call to ExitMovies to clean<br>
+up the QuickTime data. If an application makes multiple calls to EnterMovies, a<br>
+different set of "globals," or data area, is set up for each call. A call to ExitMovies<br>
+should be made before exiting the area that made the call to EnterMovies. For example,<br>
+an application that uses QuickTime will call EnterMovies and set up the QuickTime<br>
+world. Then an external may be called upon that wants to use QuickTime. This external<br>
+would have to make a call to EnterMovies to set up another QuickTime world for its<br>
+use. Before leaving, the external should call ExitMovies to clean up after itself. The<br>
+application can then continue to use QuickTime with the original world it set up.
+</p>
+<p>
+<b>Q</b><i> Why does the longword at location $0 get changed to 0x40810000 at every trap?</i>
+</p>
+<p>
+<b>A</b> In System 7, the Process Manager slams a benign value into location $0 to help<br>
+protect against bus errors when an application inadvertently dereferences a NIL<br>
+pointer. (There's no bus-error checking on writes to ROM, so the "benign value" is<br>
+usually ROMBase+$10000.)
+</p>
+<p>
+&nbsp;If you're debugging, you want the opposite effect: you want these inadvertent accesses<br>
+to "cause" bus errors. If you put a different value in location $0 before the Process<br>
+Manager starts up (that is, from MacsBug or TMON initialization, or from an INIT like<br>
+EvenBetterBusError), it will force that value instead. For more information, see the<br>
+"Macintosh Debugging" article in this issue.
+</p>
+<p>
+<b>Q</b><i> I'm filling a large buffer with one SCSIRead call. What happens if the Macintosh runs</i><br>
+<i>under System 7 with virtual memory (VM) and parts of my buffer are swapped out?</i>
+</p>
+<p>
+<b>A</b> Parts of your buffer must <i> not </i> be swapped out. Before calling SCSIGet, you must<br>
+ensure that all code and buffers accessed while the SCSI bus is busy are held in<br>
+physical memory. If there isn't enough real memory to allocate a full buffer, the<br>
+application must request smaller blocks (if possible) from the SCSI device, because<br>
+it's not possible to swap in and out any buffer space during a single I/O operation. Page<br>
+faults are not serviced while SCSI I/O is in progress. If SCSI I/O is performed at<br>
+device driver-level Read or Write calls, VM holds your buffer for you. Otherwise, you<br>
+are responsible for doing this yourself. If there is insufficient physical memory for<br>
+VM to hold your buffers for you, the Read or Write call fails with an error result.
+</p>
+<p>
+&nbsp;In general, I/O buffer space used by drivers <i> must</i>&nbsp;&nbsp;be held in real memory for the<br>
+duration of the I/O operation. This is especially true for SCSI I/O because VM uses<br>
+SCSI to swap virtual memory in and out, and encountering another page fault would<br>
+cause a bus error. Device Manager-level I/O handles this automatically, by holding<br>
+down the appropriate memory when the driver is entered through a Read or Write call.<br>
+The Device Manager does not take care of this for you when the driver is entered<br>
+through a Control or Status call, however. If the SCSIRead call is made from within a<br>
+device driver as a result of a PBRead, no special action is necessary. Any other type of<br>
+code must be very careful not to cause page faults between SCSIGet and SCSIComplete.<br>
+This requires holding or placing in the system heap any code or data structures<br>
+referenced during this time.
+</p>
+<p>
+<b>Q</b><i> Is there anything special that a Macintosh hard disk or a removable cartridge driver</i><br>
+<i>must do to be fully compatible with System 7?</i>
+</p>
+<p>
+<b>A</b> One important thing you should be aware of regarding removable cartridges is that a<br>
+cartridge can't be removable if VM is to use it for a backing store. Some removables<br>
+allow you to fix this with a SCSI command to prohibit ejection and, just as important,<br>
+the drive must be marked nonejectable in the drive queue.
+</p>
+<p>
+&nbsp;Here are a couple of suggestions: Read Macintosh Technical Note #285, "Coping with<br>
+VM and Memory Mappings." Also, take a look at the Memory Management chapter of <br>
+<i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI and the Virtual Memory paper (Goodies:VM Goodies:VM<br>
+Paper) on the System 7 Golden Master CD.
+</p>
+<p>
+<b>Q</b><i> What does the "!" mean when I use the MacsBug Heap Zone (HZ) command? It</i><br>
+<i>appears in front of one of the zone names listed, or just after the address if the zone</i><br>
+<i>doesn't have a name.</i>
+</p>
+<p>
+<b>A</b> MacsBug's HZ command does a quick-and-dirty heap check, and if it thinks<br>
+something is wrong with a heap, it puts the exclamation point after the address range<br>
+of the heap. If you select the heap flagged with a "!" with the Heap Exchange (HX)<br>
+command and then use the regular Heap Check (HC) command, MacsBug tells you what<br>
+it thinks is wrong with that heap.
+</p>
+<p>
+<b>Q</b><i> I want to display only visible files and folders in a Standard File dialog, but I can't</i><br>
+<i>find a way to filter out invisible folders--specifically the 000Move&amp;Rename folder.</i><br>
+<i>The FileFilter routine filters only files, not folders. If I put in a nonzero TypeList,</i><br>
+<i>invisible folders seem to be removed, but I want to open all types of files, just not</i><br>
+<i>invisible files or folders. Any suggestions?</i>
+</p>
+<p>
+<b>A</b> This is, in fact, impossible under System 6 using general methods. The problem is<br>
+that passing -1 as numTypes means not only to display all items, but to display<br>
+invisible items. A file filter can be used to remove the invisible files but cannot affect<br>
+invisible folders. The only current way to do this is to use CustomGetFile under System<br>
+7, as described in the Standard File Package chapter of <i>Inside Macintosh </i> Volume VI.<br>
+This provides a filter that allows you to filter both files and folders. This will give you<br>
+the right functionality, but will work only under System 7. We recommend that you<br>
+use this method under System 7, and a more standard SFGetFile when running under<br>
+earlier systems.
+</p>
+<p>
+<b>Q</b><i> How can I obtain the volume reference information in my DlgHook function for a&nbsp;&nbsp;file</i><br>
+<i>selected by the user before SFPPutFile or SFPGetFile has completed the reply record?</i>
+</p>
+<p>
+<b>A</b> On exit, SFPGetFile and SFPPutFile generate a working directory reference number<br>
+in the vRefNum field of the reply record. This is not available to you from within the<br>
+operation of a DlgHook function. WDRefNums are provided to allow compatibility with<br>
+older, pre-HFS functions that took vRefNum values of integer size with the older flat<br>
+file system.
+</p>
+<p>
+&nbsp;We suggest that, unless you plan to support the flat file system of 64K ROM Macintosh<br>
+systems, you move your file system interfaces to the HFS interfaces documented in the<br>
+File Manager sections of <i>Inside Macintosh </i> Volumes IV and V (or to the equivalent<br>
+high-level calls as documented in Macintosh Technical Note #218, "New High-Level<br>
+File Manager Calls"). If you're using the HFS calls, low-memory globals SFSaveDisk<br>
+and CurDirStore contain, respectively, the negative of the "real" volume reference<br>
+number for the current volume and the HFS ID of the directory that Standard File is<br>
+displaying. You then have all the information you need to create, open, rename, or<br>
+delete files from within the SFPGetFile and SFPPutFile DlgHook functions. If a user is<br>
+accessing an MFS volume on an HFS system, these calls are designed tohandle file<br>
+access transparently.
+</p>
+<p>
+&nbsp;Moving your file system interfaces to the HFS-level conventions has a side benefit of<br>
+being closer to the System 7 file system specifications. If you look at the new<br>
+high-level file system calls in <i>Inside Macintosh </i> Volume VI, you'll recognize much of<br>
+the HFS information embedded in the new data structures.
+</p>
+<p>
+&nbsp;If your file system interfaces depend on MFS-style vRefNums, or WDRefNums in the<br>
+HFS nomenclature, you can use the HFS functions PBOpenWD, PBCloseWD, and<br>
+PBGetWDInfo to open, close, and obtain volume reference numbers and directory IDs.<br>
+This is particularly important if, for instance, you're using the THINK C ANSI file I/O<br>
+functions, which rely on SetVol to operate correctly.
+</p>
+<p>
+&nbsp;Complete information on the HFS-level calls that will be most useful in Standard File<br>
+customization is contained in the File Manager chapters of <i> Inside Macintosh </i> Volumes<br>
+IV and V, and in Macintosh Technical Notes #66, 77, 102, 140, 179, 190, and 218.<br>
+For C users, Macintosh Technical Note #246 summarizes a list of the difficulties with<br>
+mixing C file I/O with Macintosh file I/O. Macintosh Technical Notes #47 and 80<br>
+discuss a few points of Standard File customization from the point of view of HFS.
+</p>
+<p>
+<b>Q</b><i> Why does GetGWorldPixMap (when called on a Macintosh II, IIcx, or IIx running</i><br>
+<i>system software version 6.0.5 or 6.0.7 with 32-Bit QuickDraw 1.2) return a</i><br>
+<i>combination of the device field (two bytes) and the first two bytes of the portPixMap</i><br>
+<i>field? Is this a bug?</i>
+</p>
+<p>
+<b>A</b> Your analysis of GetGWorldPixMap is exactly right: It doesn't work correctly in<br>
+system software version 6.0.5 and 6.0.7 with 32-Bit QuickDraw 1.2. It returns a<br>
+value that's two bytes before the value it's supposed to return.
+</p>
+<p>
+&nbsp;The solution is to use GWorldPtr-&gt;portPixMap instead of GetGWorldPixMap. It's safe<br>
+to do this, but you should use GetGWorldPixMap under System 7. Not only is the bug<br>
+fixed there, but dereferencing the port is dangerous under System 7 because it may not<br>
+be CGrafPort. Use Gestalt with the gestaltQuickdrawVersion selector to determine<br>
+whether you can use GetGWorldPixMap. If Gestalt returns a value from gestalt8BitQD<br>
+($0100) through gestalt32BitQD12 ($0220), then GetGWorldPixMap either doesn't<br>
+exist or is the buggy version. If it returns gestalt32BitQD13 ($0230) or higher,<br>
+then GetGWorldPixMap does exist and works correctly. Interestingly,<br>
+GetGWorldPixMap can be called on a black-and-white QuickDraw machine under<br>
+System 7. It returns a handle to a structure which should be treated as a BitMap<br>
+structure, though there are some undocumented fields after the normal BitMap fields.<br>
+To tell whether GetGWorldPixMap is available on a black-and-white QuickDraw<br>
+machine, you must check the system software version by calling Gestalt with the<br>
+gestaltSystemVersion selector. If it returns $0700 or higher, GetGWorldPixMap is<br>
+available.
+</p>
+<p>
+<b>Q</b><i> DrawText with srcCopy takes six times as long as with srcOr now that my Macintosh</i><br>
+<i>is running System 7. Why is this so slow? Is this a bug in System 7?</i>
+</p>
+<p>
+<b>A</b> It's true that srcCopy is slower than srcOr when handling text, especially in color<br>
+mode. This loss in speed occurs because CopyBits is a lot smarter than it used to be. It<br>
+can handle foreground and background colors a lot better, but that improvement came<br>
+at the cost of speed. Our recommended method for drawing text is to erase before<br>
+drawing, and use srcOr to draw, not srcCopy. Alternatively, you could draw colorized<br>
+text in srcOr mode off screen and then use CopyBits to draw it on the screen in srcCopy<br>
+mode without colorization.
+</p>
+<p>
+<b>Q</b><i> I'm creating PICTs that are comprised of many lines drawn in srcOr mode. When</i><br>
+<i>using the LaserWriter 6.x or 7.x driver with the Color/Grayscale radio button</i><br>
+<i>selected, some lines fail to print. Why is this happening?</i>
+</p>
+<p>
+<b>A</b> The problem is a bug in the LaserWriter driver. Sometimes, when using a<br>
+CGrafPort, the driver doesn't reproduce lines drawn in srcOr mode. (A CGrafPort is<br>
+used when the Color/Grayscale print option is selected; in Black &amp; White print mode, a<br>
+regular grafPort is used.) A workaround is to use srcCopy instead of srcOr when<br>
+drawing QuickDraw objects within your PICTs.
+</p>
+<p>
+<b>Q</b><i> Is there any way to determine whether I'm printing to either a color printer or a</i><br>
+<i>printer simulating color, such as the LaserWriter set for Color/Grayscale?</i>
+</p>
+<p>
+<b>A</b> Check the grafPort returned by your call to PrOpenDoc. If the rowBytes of the<br>
+grafPort is less than 0, the Printing Manager has returned a color grafPort. You can<br>
+then make Color QuickDraw calls into this grafPort. LaserWriter driver version 6.0<br>
+and later returns a color grafPort from the PrOpenDoc call, if the Color/Grayscale<br>
+button has been set.
+</p>
+<p>
+&nbsp;The following code fragment demonstrates this:
+</p>
+<pre> (* This function determines whether the port passed to it is a *)
+(* color port. If so, it returns TRUE.  *)
+FUNCTION IsColorPort(portInQuestion: GrafPtr): BOOLEAN;
+BEGIN
+    IF portInQuestion^.portBits.rowBytes &lt; 0 THEN
+        IsColorPort := TRUE
+    ELSE
+        IsColorPort := FALSE;
+END;</pre>
+<p>
+&nbsp;A third-party printer driver should return the type of grafPort that represents the<br>
+abilities of its printer. Therefore, if the printer supports color and/or grayscale, and<br>
+if Color QuickDraw is present, the application will receive a color grafPort after<br>
+calling PrOpenDoc. Otherwise, if the Macintosh you're running on does not support<br>
+Color QuickDraw, you should return a&nbsp;&nbsp;black-and-white grafPort.
+</p>
+<p>
+<b>Q</b><i> If I use the PostScriptHandle PicComment to send PostScript code to the LaserWriter</i><br>
+<i>driver, do I need to open a picture and then draw the picture to the driver, or can I</i><br>
+<i>just use the PicComment with no picture open while drawing to the printer's</i><br>
+<i>grafPort?</i>
+</p>
+<p>
+<b>A</b> You don't need to create a picture with your PicComment in it and draw the picture to<br>
+the driver. The best method for sending PostScript code to the LaserWriter is to use<br>
+the PostScriptHandle PicComment documented in Macintosh Technical Note #91,<br>
+"Optimizing for the LaserWriter--Picture Comments," as shown below.
+</p>
+<pre>PrOpenPage(...)
+{ Send some QuickDraw so that the Printing Manager gets a }
+{ chance to define the clipping region. }
+PenSize(0,0);
+MoveTo(0,0);
+LineTo(0,0);
+PenSize(1,1);
+PicComment(PostScriptBegin, 0, NIL);
+{ QuickDraw representation of graphic. }
+MoveTo(100, 100);
+LineTo(200, 200);
+{ PostScript representation of graphic. }
+thePSHandle^^ := '100 100 moveto 200 200 lineto stroke';
+
+PicComment(PostScriptHandle, GetHandleSize(thePSHandle),
+              thePSHandl);
+PicComment(PostScriptEnd, 0, NIL);
+PrClosePage(...)</pre>
+<p>
+&nbsp;The above code prints a line on any type of printer, PostScript or not. The first<br>
+MoveTo/LineTo combination is required to give the LaserWriter driver a chance to<br>
+define a clipping region. The LaserWriter driver replaces the grafProcs record in the<br>
+grafPort returned from PrOpenDoc. In order for the LaserWriter driver to get<br>
+execution time, you must execute a QuickDraw drawing routine that calls one of the<br>
+grafProcs. In this case, the MoveTo/LineTo combination calls the StdLine grafProc.<br>
+When StdLine executes, it notices that the grafPort has been reinitialized, and<br>
+therefore initializes the clipping region for the port. Until the MoveTo/LineTo<br>
+combination is executed, the clipping region for the port is set to (0,0,0,0). If<br>
+PostScript code is sent via the PostScriptHandle PicComment before executing any<br>
+QuickDraw routines, all PostScript operations will be clipped to (0,0,0,0).
+</p>
+<p>
+&nbsp;The next thing that's done is to send the PostScriptBegin PicComment. This comment is<br>
+recognized only by PostScript printer drivers. When the driver receives this<br>
+comment, it saves the current state of the PostScript device (by executing the<br>
+PostScript gsave operator), then disables all QuickDraw drawing operations. This<br>
+way, the QuickDraw representation of the graphic will be ignored by PostScript<br>
+devices. In the above example, the second MoveTo/LineTo combination is executed only<br>
+on non-PostScript devices.&nbsp;&nbsp;The next PicComment is PostScriptHandle, which tells the<br>
+driver that the data in thePSHandle is to be sent to the device as PostScript code. The<br>
+driver then passes this code unchanged to the PostScript device for execution. The<br>
+PostScriptHandle comment is recognized only by PostScript printer drivers.
+</p>
+<p>
+&nbsp;The last PicComment, PostScriptEnd, tells the driver to restore the previous state of<br>
+the device (via a PostScript grestore call), and to enable QuickDraw drawing<br>
+operations.
+</p>
+<p>
+&nbsp;Since most PicComments are ignored by QuickDraw devices, only the QuickDraw<br>
+representation is printed. Since PostScriptBegin tells PostScript drivers to ignore<br>
+QuickDraw operations, only the PostScript representation is printed on PostScript<br>
+devices. This is a truly device-independent method for providing both PostScript and<br>
+QuickDraw representations of a document.
+</p>
+<p>
+<b>Q</b><i> How do users install the Macintosh Communications Toolbox (CTB)?</i>
+</p>
+<p>
+<b>A</b> The Communications Toolbox consists of two parts: the CTB managers and the CTB<br>
+tools. The installation procedure for CTB tools is different between System 6 and<br>
+System 7. Under System 6 the CTB tools are dragged from the <i> Basic Connectivity Set</i> <br>
+disk to the Communications Folder in the System Folder on the hard disk. Under System<br>
+7 the CTB tools are dragged from the <i>Basic Connectivity Set </i> disk to the Extensions<br>
+folder in the System Folder on the hard disk. Of course, because of the way System 7<br>
+works, CTB tools can simply be dragged to the System Folder and the Finder will<br>
+automatically move them to the Extensions folder where they belong.
+</p>
+<p>
+&nbsp;No installation of the CTB managers is required under System 7, since System 7<br>
+includes the Communications Toolbox as part of the system. Users running System<br>
+6.0.5 should use the Installer and Install script on the <i> Communications 1</i>&nbsp;&nbsp;disk to<br>
+install the CTB managers and other resources onto their hard disks. Users running<br>
+System 6.0.7 should use the Installer and Install script on the <i>Network Products</i><br>
+<i>Installer</i>&nbsp;&nbsp;disk, which is part of the System 6.0.7 set users receive with their<br>
+Macintosh systems. The <i>Network Products Installer</i>&nbsp;&nbsp;disk does not contain the CTB<br>
+managers and other resources, but it prompts the user to insert the <i> Communications</i><br>
+<i>1</i>&nbsp;&nbsp;disk during the installation procedure.
+</p>
+<p>
+&nbsp;The <i>Basic Connectivity Set</i>&nbsp;&nbsp;and <i>Communications 1</i>&nbsp;&nbsp;disks should be shipped with your<br>
+CTB-aware product. Contact Apple's Software Licensing group (AppleLink<br>
+SW.LICENSE) for a licensing agreement to ship the disks.
+</p>
+<p>
+<b>Q</b><i> Can any AppleTalk routines be called at interrupt time? Inside Macintosh says that</i><br>
+<i>DDPWrite and DDPRead can't be called from interrupts. If all higher-level AppleTalk</i><br>
+<i>protocols are based on DDP, it seems that they all would not work.</i>
+</p>
+<p>
+<b>A</b> The AppleTalk routines you can't call at interrupt time are the original AppleTalk<br>
+Pascal Interfaces listed in <i>Inside Macintosh</i>&nbsp;&nbsp;Volume II; these are also known as the<br>
+"Alternate Interface" AppleTalk routines, or ABPasIntf.
+</p>
+<p>
+&nbsp;The Alternate Interface routines cannot be called at interrupt time because they<br>
+allocate the memory structures needed to make the equivalent assembly language<br>
+AppleTalk call. For example, when the NBPLookup routine is called, it's passed a<br>
+handle to an ABusRecord. NBPLookup then has to allocate an MPPParamBlock and move<br>
+the parameters from the ABusRecord into the newly allocated MPPParamBlock. Then<br>
+NBPLookup makes a LookupName call, passing it the MPPParamBlock. When<br>
+LookupName completes, NBPLookup must move results into the ABusRecord and<br>
+release the memory used by the MPPParamBlock. Since memory is allocated and<br>
+released within the routine, it cannot be called at interrupt time.
+</p>
+<p>
+&nbsp;With that out of the way, the calls you can make at interrupt time (with some<br>
+restrictions listed below) are what Apple calls the "Preferred Interface" AppleTalk<br>
+routines.&nbsp;&nbsp;Most of the Preferred Interface routines are listed on page 562 of <i> Inside</i><br>
+<i>Macintosh</i>&nbsp;&nbsp;Volume V. There are a few additional calls that were added after the<br>
+publication of <i> Inside Macintosh</i>&nbsp;&nbsp;Volume V; they're documented in the AppleTalk<br>
+chapter of <i> Inside Macintosh</i>&nbsp;&nbsp;Volume VI.
+</p>
+<p>
+&nbsp;The Preferred Interface AppleTalk routines can be made at interrupt time as long as:
+</p>
+<ul>
+<li>You make them asynchronously with a completion routine (that is, the<br>
+asynch parameter must be TRUE and you must provide a pointer to the<br>
+completion routine in the ioCompletion field of the call's parameter block).<br>
+Making a call asynchronously and polling ioResult immediately afterward<br>
+within the <i> same</i>&nbsp;&nbsp;interrupt-time code (which is basically the same as making<br>
+the call synchronously) is <i> not </i> the same as using a completion routine.</li>
+<li>They are not listed as routines that may move or purge memory. The<br>
+Preferred Interface routines do not allocate or dispose of any memory, since<br>
+they're just high-level ways to make the assembly language AppleTalk calls<br>
+and are <i> not</i>&nbsp;&nbsp;built upon the old Alternate Interface routines.</li>
+</ul>
+<p>
+<b>Q</b><i> Why do I get only the left channel of a stereo sound out of my Macintosh IIcx?</i>
+</p>
+<p>
+<b>A</b> The only Macintosh models that combine the two stereo channels into one for<br>
+playback out of the internal speaker are the Macintosh SE/30 and the IIsi. All others<br>
+use just the left channel. If you would like to check for the machine's ability to do<br>
+mixing, you can use Gestalt. This is documented in <i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI, page<br>
+22-70. Bit 1 of the Gestalt selector for sound will tell you whether the machine has<br>
+stereo mixing on the internal speaker.
+</p>
+<p>
+<b>Q</b><i> Inside Macintosh Volume VI, page 2-22, recommends updating the window positions</i><br>
+<i>in a file without changing the last modification date and time on the file. How do I alter</i><br>
+<i>a file without automatically changing the timestamp?</i>
+</p>
+<p>
+<b>A</b> To modify the contents of a file's data or resource fork without changing the last<br>
+modified date, get the modified date before performing any save operations on the file<br>
+and restore it when you're done. You can use the PBHGetFInfo and PBHSetFInfo calls to<br>
+do this. A short Pascal snippet that modifies the contents of a known file's resource<br>
+fork without modifying its modification date is included in the Snippets folder on this<br>
+issue's <i> Developer CD Series</i>&nbsp;&nbsp;disc. The code shows how the parameter block is filled in<br>
+with the file's information at the start of the routine with a PBHGetFInfo call, and the<br>
+same data is then used without modification to set the file information at the end of the<br>
+routine with a PBHSetFInfo. <i> Inside Macintosh</i>&nbsp;&nbsp;Volume IV, page 150, tells you which<br>
+fields can be changed with PBHSetFInfo.
+</p>
+<p>
+<b>Q</b><i> Help! I've just added Balloon Help to my application, but I'm having some problems.</i><br>
+<i>Whenever a balloon appears, it immediately begins floating away off the top of the</i><br>
+<i>screen. What can I do to stop this madness?</i>
+</p>
+<p>
+<b>A</b> It appears you failed to heed our warning when it comes to routines that can move<br>
+balloons. Consult Appendix D of <i>Inside Macintosh X-Ref</i> , "Routines That May Pop<br>
+Balloons or Cause Barometric Disturbances," for a complete listing of these help<br>
+balloon meteorological nightmares. In addition, be sure to call the new trap<br>
+HMSetBalloonContents:
+</p>
+<pre> OSErr HMSetBalloonContents (balloonContents: INTEGER);
+CONST   { types of balloon contents }
+    helium = 0;
+    air = 1;
+    water = 2;
+    whippedCream = 3;</pre>
+<p>
+&nbsp;with balloonContents set to something greater than helium.
+</p>
+<p>
+<b>Kudos to our readers</b> who care enough to ask us terrific and well thought-out<br>
+questions. The answers are supplied by our teams of technical gurus; our thanks to all.<br>
+Special thanks to Pete "Luke" Alexander, Sonya Andreae, Mark Baumwell, Mike Bell,<br>
+Jim "Im" Beninghaus, Rich Collyer, Neil Day, Tim Dierks, Marcie "MG" Griffin, C.K.<br>
+Haun, Pete Helme, Dave Hersey, Dennis Hescox, Jim Luther, Joseph Maurer, Jim<br>
+Mensch, Guillermo Ortiz, Craig Prouse, Dave Radcliffe, Greg Robbins, Jack Robson,<br>
+Kent Sandvik, Paul Snively, Bryan "Stearno" Stearns, Forrest Tanaka, Vincent Tapia,<br>
+John Wang, and Scott "Zz" Zimmerman for the material in this Q &amp; A column.*
+</p>
+<p>
+<b>Have more questions?</b> Need more answers? Take a look at the Dev Tech Answers<br>
+library on AppleLink (updated weekly) or at the Q &amp; A stack on the <i> Developer CD</i><br>
+<i>Series </i> disc.*
+</p>
+</body>
+</html>

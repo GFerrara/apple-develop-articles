@@ -1,0 +1,1160 @@
+<html>
+<head>
+<!-- Article ID: 11 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Winter 91 - ASYNCHRONOUS BACKGROUND NETWORKING ON THE MACINTOSH</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>ASYNCHRONOUS BACKGROUND NETWORKING ON THE<br>
+MACINTOSH</h2>
+<p>
+<img src="img/135.gif" width="216 px"></img>
+</p>
+<h1>HARRY R. CHESLEY</h1>
+<p>
+<i>LACS is a program that provides lightweight asynchronous conferencing for</i><br>
+<i>Macintosh&#174; computers connected to the same AppleTalk&#174; network. This article</i><br>
+<i>discusses the techniques used for implementing the asynchronous network operations,</i><br>
+<i>techniques that work well even when the application is running in the background</i><br>
+<i>under MultiFinder&#174;.&nbsp;&nbsp;&nbsp;While the article provides the basic algorithms and techniques,</i><br>
+<i>the</i> Developer Essentials<i>disc includes full source code for the entire LACS application. </i>
+</p>
+<p>
+Every Macintosh includes a local area network--LocalTalk &#174; . Any two or more<br>
+Macintosh computers can easily be configured to communicate with each other, passing<br>
+data back and forth to work together as a larger system. There are many applications of<br>
+computers that require or benefit from this sort of multiple workstation operation.<br>
+Most of these applications involve groups of people working together and are known as<br>
+collaborative computing, or computer supported cooperative work. While there are<br>
+limited numbers of applications available in this category today, the numbers are<br>
+increasing rapidly, and the potential for this genre&nbsp;&nbsp;is exciting.
+</p>
+<p>
+Similarly, with the advent of MultiFinder and the ability to run programs in the<br>
+background while the user continues working on a foreground application, it has<br>
+become possible to write applications that operate on the user's behalf even when not<br>
+immediately controlled by the user. These sorts of background "daemons" have long<br>
+been available on mini, main-frame, and even workstation computers, but are<br>
+relatively new to personal computers.
+</p>
+<p>
+Network and background applications are, by their very nature, asynchronous.<br>
+Network applications must communicate with other machines that may be slower than<br>
+the local machine or busy with some other task. The other machines may even be<br>
+temporarily turned off. Background operations must step very lightly to make sure<br>
+that they don't affect the responsiveness of the system as perceived by the user. This<br>
+usually involves using asynchronous techniques.
+</p>
+<p>
+Asynchronous programs are often the hardest to design and develop. Our minds don't<br>
+deal well with multi-threaded algorithms. And the Macintosh today has little in the<br>
+way of development tools to help in this respect--there are no facilities for<br>
+lightweight processes within Macintosh applications, for example.
+</p>
+<p>
+The Lightweight Asynchronous Conferencing System (LACS) is a program&nbsp;&nbsp;that uses<br>
+asynchronous background networking to propagate information from machine to<br>
+machine. It distributes messages over a network of locally connected Macintosh<br>
+computers. The LACS implementation provides examples of how to do the following:
+</p>
+<ul>
+<li> Invoke network operations asynchronously.</li>
+<li> Use an abstract superclass to simplify asynchronous design.</li>
+<li> Use NBP and ADSP.</li>
+<li> Operate in the background under MultiFinder.</li>
+<li> Implement a distributed database without requiring central control or<br>
+coordination.</li>
+</ul>
+<p>
+This article describes LACS, concentrating on the first two of these elements,&nbsp;&nbsp;with<br>
+some limited discussion of the other items. You 're encouraged to examine the source<br>
+code of LACS (provided on the<i> Developer Essentials </i> disc) in order to uncover more<br>
+details.
+</p>
+<h2>THE LIGHTWEIGHT ASYNCHRONOUS CONFERENCING SYSTEM<br>
+(LACS) APPLICATION</h2>
+<p>
+LACS spreads messages from machine to machine across the local network. It is<br>
+designed to run in the background under MultiFinder and communicate quietly with<br>
+other machines. It uses the AppleTalk Name Binding Protocol (NBP) to&nbsp;&nbsp;find other<br>
+machines to communicate with, and it uses the AppleTalk Data Stream Protocol (ADSP)<br>
+to actually exchange messages. When new messages come in, the Notification Manager<br>
+is used to alert the user.
+</p>
+<p>
+LACS is written in Object Pascal using MacApp &#174;. It uses object-oriented techniques<br>
+to simplify the problem of implementing periodic asynchronous functions. To<br>
+accomplish this, it uses an abstract superclass that provides a framework for other<br>
+classes of the same type.
+</p>
+<p>
+From the user's point of view, the application consists of three windows: Messages,<br>
+New Message, and Status. Figure 1 shows these three windows. To create a new<br>
+message, the user simply types in the New Message window and clicks the Send<br>
+Message button. The message can be any text the user wants--but no pictures or<br>
+graphics in this edition. The application then spreads the message to other locally<br>
+connected Macintosh computers. When a new message arrives from another machine, it<br>
+appears in the Messages window on that machine. The Messages window displays two<br>
+lists of messages, one for those which have yet to be read and one for those which the<br>
+user has already read at least once. Only the first few words of each message appear in<br>
+the read or unread list. When the user clicks on an entry in one of the lists, the full<br>
+text of the message appears in a third section of the window. The Status window<br>
+contains information about how many messages have been seen, what other machines<br>
+are actively communicating, and so on.
+</p>
+<p>
+There is more to the program than is covered in this brief description; for example,<br>
+users can set expiration dates for the messages they create. You might want to&nbsp;&nbsp;run<br>
+LACS to experience what it does and how it goes about it. However, the above<br>
+description is sufficient for our purposes here. The basic operation and intent of the<br>
+program is quite simple.
+</p>
+<p>
+<b>ALGORITHM FOR DISTRIBUTING MESSAGES</b><br>
+From the programmer's point of view, LACS maintains a distributed database of<br>
+messages across multiple loosely connected computers. The central problem is&nbsp;&nbsp;how to<br>
+distribute database updates across the network quickly and efficiently. The solution<br>
+comes from a paper published by Xerox PARC:<i> Epidemic Algorithms for Replicated</i><br>
+<i>Database Maintenance.</i>&nbsp;&nbsp;(See references at the end of the article. Seems like everything<br>
+interesting comes from PARC, doesn't it?) In fact, LACS was directly inspired by<br>
+reading this paper.
+</p>
+<p>
+In oversimplified form, the algorithm operates as follows: When a new message is<br>
+first heard, it is considered "hot." The program then tries to tell other network nodes<br>
+the new message. When a node passes on a message, the receiving node tells whether<br>
+it's already heard the message or not. The more times the program tries to spread the<br>
+message to nodes that have already heard it, the cooler the message becomes.<br>
+Eventually it becomes completely cold and the program stops trying to spread the<br>
+message to more nodes. The people at Xerox called the action of this algorithm "rumor<br>
+mongering."
+</p>
+<p>
+<img src="img/136.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1</b> LACS User Interface
+</p>
+<p>
+&nbsp;In LACS, the algorithm is implemented on top of the AppleTalk protocols. The Name<br>
+Binding Protocol (NBP) is used to register LACS on the network. This allows the<br>
+application to find other machines that are interested in exchanging messages. Each<br>
+copy of LACS registers itself using the local machine's Chooser name with an NBP type<br>
+of "LACS." The program then builds a list of other nodes of type "LACS." Rather than<br>
+trying to maintain a list of all the systems on the net (potentially a very large list), it<br>
+keeps up to ten nodes with which it communicates directly. These nodes communicate<br>
+with up to ten others, they communicate with up to ten others, and so forth.&nbsp;&nbsp;<br>
+Periodically, one of the entries in the local list is replaced with another machine<br>
+chosen at random, so that the list slowly changes over time.&nbsp;&nbsp;The Apple Data Stream<br>
+Protocol (ADSP) is used to communicate between LACS systems. This protocol provides<br>
+reliable byte-stream connections, correcting for any errors in transmission across<br>
+the network. When a LACS machine decides to spread a message, it makes an ADSP<br>
+connection with another LACS node. It exchanges messages with the other machine and<br>
+then closes the ADSP connection.
+</p>
+<p>
+<b>MESSAGE EXCHANGE PROTOCOL</b><br>
+LACS implements a message exchange protocol on top of ADSP's reliable byte stream.<br>
+This message exchange protocol consists of separate commands, each having a command<br>
+name and a series of parameters. For example, the "Here's a new message" command<br>
+includes the message itself, its origination and expiration dates, and other related<br>
+information as parameters.
+</p>
+<p>
+The ADSP session consists of a series of command exchanges. The originating node<br>
+starts the conversation. The destination node then responds with a command of its own.<br>
+Usually, the conversation starts with an attempt by the originator to pass on a<br>
+message; this is known as "pushing." But under some circumstances, the originator<br>
+may instead ask the other machine for a message; this is known as "pulling." In that<br>
+case, the other machine takes control of the conversation and sends a message. When<br>
+the controlling side has nothing further to say, the connection is closed.
+</p>
+<p>
+The message exchange protocol commands include
+</p>
+<ul>
+<li> "Here's a new message."<br>
+Valid responses: "I've seen it." or "I haven't seen it."</li>
+<li> "Give me a hot message."<br>
+Valid responses: "Here's a new message."</li>
+<li> "Give me a message; I don't care if it's hot or cold."<br>
+Valid responses: "Here's a new message."</li>
+</ul>
+<p>
+The responses "I've seen it" and "I haven't seen it" are actually implemented as<br>
+commands as well. But they are only generated in response to a "Here's a new message"<br>
+command.
+</p>
+<p>
+The protocol is very simple and is designed to use only ASCII text in the commands and<br>
+responses. This makes it easy for someone to write a program other than LACS that can<br>
+become part of the community of message spreaders. For example, a gateway could<br>
+spread messages from the local network to a wider area network.&nbsp;&nbsp;Or an archive agent<br>
+could collect and save messages.
+</p>
+<p>
+Internally, LACS keeps track of the number of times it successfully or unsuccessfully<br>
+tried to pass on a message. The number of failed attempts is used to determine when a<br>
+message becomes cold and also how long to wait until the next attempt to pass it on.
+</p>
+<p>
+The program actually implements several variations of the basic algorithm, which can<br>
+be selected by changing a few global parameters to the program. The default<br>
+parameters are
+</p>
+<ul>
+<li> Cool off messages deterministically (as opposed to stochastically).</li>
+<li> Consider a message to be cold after 30 redistribution failures. This<br>
+makes it highly likely that all machines will see each message, since each<br>
+machine tries 30 times to redistribute it.&nbsp;&nbsp;Of course, once most machines have<br>
+seen the message, most redistribution attempts will fail, since they will more<br>
+than likely pick a machine that has already seen the message.</li>
+<li> Push messages (rather than pull). This means that connections are only<br>
+made when there actually are messages to be transmitted. </li>
+<li> When picking another LACS machine with which to communicate, look in<br>
+the local AppleTalk zone twice as frequently as in other zones. This tends to<br>
+reduce network overhead by keeping communications local.</li>
+<li> Use an exponential back-off when determining how long to wait before<br>
+attempting to distribute the message again. This allows for quick initial<br>
+redistribution, but keeps the messages "hot" for some time, so that they get to<br>
+machines that were turned off when the message initially entered the network.</li>
+</ul>
+<p>
+See the paper mentioned earlier from Xerox PARC, the source code of LACS, and the file<br>
+"About LACS" on the<i> Developer Essentials </i> disc for complete details of the algorithm<br>
+and variations used in LACS.
+</p>
+<h2>ASYNCHRONOUS OPERATION: TPERIODIC</h2>
+<p>
+LACS requires that several activities proceed asynchronously. Since it runs in the<br>
+background under MultiFinder, it cannot wait for the completion of a network<br>
+operation. It has to release control to the foreground process as quickly as possible. In<br>
+addition, there are several semi-independent activities in the program. Making them<br>
+dependent on each other, even to the extent that only one operates at a time, would<br>
+unnecessarily complicate the design.
+</p>
+<p>
+The semi-independent, asynchronous activities in LACS include the following:
+</p>
+<ul>
+<li> Build and maintain a list of AppleTalk zones.    </li>
+<li> Build and maintain a list of other LACS nodes with which to communicate.</li>
+<li> Initiate outgoing communication sessions.    </li>
+<li> Receive incoming communication sessions.    </li>
+<li> Perform housecleaning operations, such as saving the message database to<br>
+disk&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;periodically.</li>
+</ul>
+<p>
+In order to keep the design manageable, it is important to be able to separate these<br>
+activities into distinct code modules. Each individual piece is relatively easy to<br>
+understand and implement. It's only when they're taken together that the problem<br>
+becomes difficult.
+</p>
+<p>
+This design separation is provided by building an abstract superclass, TPeriodic, that<br>
+implements periodic asynchronous operations. The model for TPeriodic is that<br>
+asynchronous periodic activities follow a particular pattern:
+</p>
+<ol>
+<li>Wait for a set period of time.</li>
+<li>Initiate an asynchronous action.</li>
+<li>Check repeatedly to see if the action has completed.</li>
+<li>Do something with the result.</li>
+<li>Repeat from step 1.</li>
+</ol>
+<p>
+The concrete subclasses of TPeriodic include TZoneLookup, TNodeLookup, TGossip, and<br>
+TDocumentSaver. Each of these subclasses are discussed in more detail in subsequent<br>
+sections.
+</p>
+<p>
+<b>INTERFACE</b><br>
+The interface to TPeriodic looks like this:
+</p>
+<pre>PeriodicStates = (kPeriodicInactive, kPeriodicWaiting,
+         kPeriodicActive);
+
+TPeriodic = object(TEvtHandler)
+    fInactiveIdle: longInt;     { Idle period when inactive. }
+    fActiveIdle: longInt;      
+                        { Idle period when waiting for completion. }
+    fState: PeriodicStates;     { Current state. }
+
+    procedure TPeriodic.IPeriodic(initialIdle, inactiveIdle,
+                        activeIdle: longInt);
+        { Initialize the periodic object. }
+
+    procedure TPeriodic.Free; override;
+        { Free the periodic object. }
+
+    procedure TPeriodic.WaitForAsync;
+        { Wait until any asynchronous activity is finished. }
+   
+    procedure TPeriodic.Kick;
+        { Get things moving right now. }
+
+    function TPeriodic.DoIdle(phase: IdlePhase): boolean; override;
+        { Internal method -- perform idle activities. }
+
+
+    procedure TPeriodic.Activate;
+        { Start asynchronous operation.
+            To be overridden by subclass. }
+
+    procedure TPeriodic.Waiting;
+        { Check for completion of asynchronous operation.
+            To be overridden by subclass. }
+
+    procedure TPeriodic.DoIt;
+        { Take action after completion of asynchronous operation.
+            To be overridden by subclass. }
+
+    end;</pre>
+<p>
+<b>STATE MACHINE</b><br>
+TPeriodic implements the state machine shown in Figure 2.
+</p>
+<p>
+<img src="img/137.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 2</b>TPeriodic State Machine
+</p>
+<p>
+IPeriodic and Free are called to initialize and free instances of TPeriodic. Kick&nbsp;&nbsp;is<br>
+called to start an activity even though the time-out hasn't expired yet. Each&nbsp;&nbsp;subclass<br>
+of TPeriodic overrides Activate, Waiting, and DoIt to implement their&nbsp;&nbsp;own<br>
+functionality. DoIdle is an internal routine that is discussed later with the<br>
+implementation. WaitForAsync is a utility method used by Free to wait until any<br>
+outstanding asynchronous operations have completed before freeing the object.
+</p>
+<p>
+&nbsp;The current state is stored in fState. While a TPeriodic object is waiting for&nbsp;&nbsp;the<br>
+time-out to occur, fState is kPeriodicInactive. When the time-out happens, Activate is<br>
+called, which sets fState to some new value. If the Activate procedure&nbsp;&nbsp;has started an<br>
+asynchronous activity, it sets fState to kPeriodicWaiting. If it has&nbsp;&nbsp;taken some<br>
+synchronous action and then wants to go back to sleep, it sets fState to<br>
+kPeriodicInactive again. While in kPeriodicWaiting, the method Waiting is called<br>
+repeatedly. Waiting's task is to test for completion of the asynchronous activity begun<br>
+by Activate. When completion occurs, it sets fState to kPeriodicActive.&nbsp;&nbsp;If no action is<br>
+needed after the asynchronous activity, or if the asynchronous&nbsp;&nbsp;activity failed, Waiting<br>
+sets fState back to kPeriodicInactive. Finally, when fState is kPeriodicActive, DoIt is<br>
+called immediately (no time delay). The DoIt method takes the appropriate actions with<br>
+the results of the asynchronous activity, and then sets fState to kPeriodicInactive. The<br>
+process then repeats.
+</p>
+<p>
+&nbsp;The instance variable fInactiveIdle determines the length of time between activations.<br>
+The variable fActiveIdle determines the length of time between calls&nbsp;&nbsp;to Waiting when<br>
+an asynchronous activity has been started--that is, how often to check if it's finished<br>
+yet. These are set by the inactiveIdle and activeIdle parameters to IPeriodic. The<br>
+initialIdle parameter to IPeriodic determines the initial time-out to be used-- how<br>
+long to wait for the very first activation.
+</p>
+<p>
+&nbsp;TPeriodic is a subclass of the MacApp TEvtHandler class. IPeriodic installs the<br>
+instance in the MacApp cohandler chain. Most of the work is then done by facilities<br>
+already built into MacApp. DoIdle, which is called by MacApp software when the<br>
+cohandler's time-out occurs, simply decides which of the Activate, Waiting, and DoIt<br>
+methods to call. Those methods set fState to determine what to do next. Since Activate,<br>
+Waiting, and DoIt are implemented by the subclasses, TPeriodic consists only of the<br>
+four methods IPeriodic, Free, DoIdle, and Kick plus one internal utility method,<br>
+WaitForAsync. Here is the actual code:
+</p>
+<pre>procedure TPeriodic.IPeriodic(initialIdle, inactiveIdle,
+        activeIdle: longInt);
+    { Initialize the object. }
+
+    begin
+        IEvtHandler(nil);
+        fIdleFreq := initialIdle;
+        fInactiveIdle := inactiveIdle;
+        fActiveIdle := activeIdle;
+        fState := kPeriodicInactive;
+        { Install the object in the co-handler chain. }
+        gApplication.InstallCohandler(self,true);
+    end;
+
+procedure TPeriodic.Free;
+    { Free the object. }
+
+    begin
+        { First wait for any outstanding operation to complete. }
+        WaitForAsync;
+        { Deinstall ourselves from the co-handler chain. }
+        gApplication.InstallCohandler(self,false);
+        { Free ourselves. }
+        inherited Free;
+    end;
+
+procedure TPeriodic.WaitForAsync;
+    { Wait until any asynchronous activity is finished. }
+
+    begin
+        while fState = kPeriodicWaiting do Waiting;
+    end;
+
+function TPeriodic.DoIdle(phase: IdlePhase): boolean;
+    { Internal method -- idle the object. }
+
+    var fi: FailInfo;
+
+    procedure hdlFailure(error: OSErr; message: LongInt);
+        { If we fail, reset to inactive. }
+
+        begin
+            fState := kPeriodicInactive;
+            fIdleFreq := fInactiveIdle;
+            exit(DoIdle);
+        end;
+
+    begin
+        DoIdle := false;
+        if phase = IdleContinue then
+            begin
+                CatchFailures(fi,hdlFailure);
+                { If we've just timed out, then activate the
+                  object. }
+                if fState = kPeriodicInactive then Activate
+                else
+                    begin
+                        { If we're waiting, see if we're done yet. }
+                        if fState = kPeriodicWaiting then Waiting;
+                        { If we're done, do something with the
+                          results. }
+                        if fState = kPeriodicActive then DoIt;
+                    end;
+                { Figure out the new idle frequency. }
+                if fState = kPeriodicInactive then
+                    fIdleFreq := fInactiveIdle
+                else fIdleFreq := fActiveIdle;
+                Success(fi);
+            end;
+    end;
+
+procedure TPeriodic.Kick;
+    { Start things up even if it isn't normally time yet. }
+
+    begin
+        fIdleFreq := 0;
+    end;</pre>
+<h2>&nbsp;MAINTAINING AN APPLETALK ZONES LIST: TZONELOOKUP</h2>
+<p>
+In order to maintain its list of AppleTalk zones, LACS contains a TPeriodic subclass<br>
+called TZoneLookup. Looking up the list of AppleTalk zones can be done in one of two<br>
+ways. The old way involved talking directly to a nearby AppleTalk Router. The newer<br>
+and simpler way, which is used in LACS, makes use of AppleTalk Phase 2 calls, leaving<br>
+the underlying communication with the Router to the AppleTalk software. 
+</p>
+<p>
+&nbsp;However, the new technique will not work with older versions of AppleTalk (prior to<br>
+System 6.0.3). It is important, therefore, to check and make sure that AppleTalk<br>
+Phase 2 is available before using TZoneLookup. This test is performed in<br>
+TLACSApplication.ILACSApplication, and takes the following form:
+</p>
+<pre>{ Check for AppleTalk phase 2. }
+if gConfiguration.atDrvrVersNum &lt; 53 then
+    begin
+        StdAlert(phNoPhase2);
+        ExitMacApp;
+    end;</pre>
+<p>
+&nbsp;The interface to TZoneLookup primarily overrides the TPeriodic methods Activate,<br>
+Waiting, and DoIt. In addition, it defines several constants, a data type used in the new<br>
+AppleTalk calls, instance variables used by TZoneLookup, and the initialization<br>
+function IZoneLookup.
+</p>
+<pre>const
+
+{ csCodes for new .XPP driver calls: }
+xCall = 246;
+
+{ xppSubCodes: }
+zipGetLocalZones = 5;
+zipGetZoneList = 6;
+zipGetMyZone = 7;
+
+type
+
+{ Offsets for xCall queue elements: }
+xCallParam =
+    packed record
+        qLink: QElemPtr;
+        qType: INTEGER;
+        ioTrap: INTEGER;
+        ioCmdAddr: Ptr;
+        ioCompletion: ProcPtr;
+        ioResult: OsErr;
+        ioNamePtr: StringPtr;
+        ioVRefNum: INTEGER;
+        ioRefNum: INTEGER;
+        csCode: INTEGER;
+        xppSubCode: INTEGER;
+        xppTimeOut: Byte;
+        xppRetry: Byte;
+        filler: INTEGER;
+        zipBuffPtr: Ptr;
+        zipNumZones: INTEGER;
+        zipLastFlag: INTEGER;
+        zipInfoField: packed array[1..70] of Byte;
+    end;
+
+xCallPtr = ^xCallParam;
+
+const
+
+kXPPTimeOutVal = 3;         { Re-try XPP attempt every 3 seconds. }
+kXPPRetryCount = 5;         { For five times. }
+kZonesBufferSize = 578;     { Size of buffer for zone names. }
+kMaxZones = 100;            { Maximum number of zones to handle. }
+
+type
+
+TZoneLookup = object(TPeriodic)
+   fDocument: TLACSDocument; { The document we're looking up for. }
+   fZoneCount: integer;      { How many zones we've found. }
+   fXPPPBPtr: xCallPtr;      { XPP parameter block. }
+   fZonesBuffer: Ptr;        { Input buffer. }
+   fOurZone: Str32;          { The name of our own zone. }
+   fZones: array [1..kMaxZones] of Str32;  { Zone names. }
+
+    procedure TZoneLookup.IZoneLookup(aDoc: TLACSDocument;
+                    initialIdle, inactiveIdle, activeIdle: longInt);
+        { Initialize the zone lookup object. }
+
+    procedure TZoneLookup.Free; override;
+        { Free the zone lookup object. }
+
+    procedure TZoneLookup.Activate; override;
+        { Start a zone list lookup. }
+
+    procedure TZoneLookup.Waiting; override;
+        { Wait for the zone lookup to complete. }
+
+    procedure TZoneLookup.DoIt; override;
+        { Process returned zone list. }
+
+    end;</pre>
+<p>
+<b>&nbsp;INITIALIZATION AND FREEING</b><br>
+During initialization, in IZoneLookup, the current zone list size is cleared out,<br>
+emptying the list, and some buffers that are needed for the zone lookup procedure are<br>
+allocated:
+</p>
+<pre>procedure TZoneLookup.IZoneLookup(aDoc: TLACSDocument;
+                    initialIdle, inactiveIdle, activeIdle: longInt);
+    { Initialize the zone lookup object. }
+
+    begin
+            IPeriodic(initialIdle,inactiveIdle,activeIdle);
+            fDocument := aDoc;
+            fOurZone := '';
+            fZoneCount := 0;
+            { Allocate memory blocks we'll need later. }
+            fXPPPBPtr := xCallPtr(NewPtr(sizeof(xCallParam)));
+            FailNil(fXPPPBPtr);
+            fZonesBuffer := NewPtr(kZonesBufferSize);
+            FailNil(fZonesBuffer);
+    end;</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;When the TZoneLookup object is freed, it waits for any asynchronous activity&nbsp;&nbsp;to<br>
+complete and then deallocates its buffers. If it didn't do the WaitForAsync call, an<br>
+outstanding operation might try to write something into one of the buffers after it was<br>
+deallocated.
+</p>
+<pre>procedure TZoneLookup.Free;
+    { Free the zone lookup object. }
+
+    begin
+        WaitForAsync;
+        DisposPtr(Ptr(fXPPPBPtr));
+        DisposPtr(fZonesBuffer);
+        inherited Free;
+    end;</pre>
+<p>
+<b>ZONES LIST REQUEST</b><br>
+When the zone lookup process is started in Activate, two actions are taken. First, the<br>
+local zone name is obtained and stored for future use.&nbsp;&nbsp;&nbsp;This is done synchronously,<br>
+since it shouldn't take very long. Second, an asynchronous request for a complete list<br>
+of zones is issued. The results of the request will be dealt with in DoIt.
+</p>
+<pre>procedure TZoneLookup.Activate;
+    { Start a zone list lookup. }
+
+    var addrBlock: AddrBlock;
+        ignore: integer;
+        s: Str255;
+
+    begin
+        { Let the user know what we're doing. }
+        fDocument.fStatusWindow.SetStatus(kStatZoneUpdate);
+        { Clear out the zone list. }
+        fZoneCount := 0;
+        { Get our zone name. }
+        with fXPPPBPtr^ do
+            begin
+                ioRefNum := xppRefNum;      { Driver refNum -41. }
+                csCode := xCall;
+                xppSubCode := zipGetMyZone;
+                zipBuffPtr := @s;
+                zipInfoField[1] := 0;       { ALWAYS 0. }
+                zipInfoField[2] := 0;       { ALWAYS 0. }
+            end;
+        { Send the getMyZone request synchronously (and cross }
+        {   our electronic fingers it doesn't take long). }
+        if PBControl(ParmBlkPtr(fXPPPBPtr), false) &lt;&gt; noErr then
+            fState := kPeriodicInactive
+        else
+            begin
+                { Update the display to reflect any changes. }
+                if (s &lt;&gt; fOurZone) and (s &lt;&gt; '') then
+                    begin
+                        fOurZone := s;
+                        fDocument.fNewWindow.GetSignature;
+                    end;
+                { Now make a getZoneList request. }
+                with fXPPPBPtr^ do
+                    begin
+                        { ALWAYS 0 on first call; contains state info
+                        {   on subsequent calls. }
+                        zipInfoField[1] := 0;
+                        { ALWAYS 0 on first call; contains state info
+                        {   on subsequent calls. }
+                        zipInfoField[2] := 0;
+                        ioRefNum := XPPRefNum;{ Driver refNum -41. }
+                        csCode := xCall;
+                        xppSubCode := zipGetZoneList;
+                        xppTimeOut := kXPPTimeOutVal;
+                        xppRetry := kXPPRetryCount;
+                        { This buffer will be filled with packed zone
+                        {   names. }
+                        zipBuffPtr := Ptr(fZonesBuffer);
+                        zipLastFlag := 0;
+                    end;
+                { Send off the request. }
+                ignore := PBControl(ParmBlkPtr(fXPPPBPtr), true);
+                fState := kPeriodicWaiting;
+            end;
+    end;</pre>
+<p>
+<b>PERIODIC CHECKING</b><br>
+The Waiting method then checks periodically to see if the result has come in or an<br>
+error has occurred.
+</p>
+<pre>procedure TZoneLookup.Waiting;
+    { Wait for the zone lookup to complete. }
+
+    begin
+        if fXPPPBPtr^.ioResult = noErr then fState := kPeriodicActive
+        else if fXPPPBPtr^.ioResult &lt; noErr then
+            fState := kPeriodicInactive;
+    end;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>COLLECTING THE RESULTS</b><br>
+Finally, when the result is available, DoIt is called to record the new zones in the local<br>
+list. If there were more zones than fit in this message, another asynchronous call is<br>
+made, and the state returns to kPeriodicWaiting. Otherwise, the zone lookup process is<br>
+finished.
+</p>
+<pre>procedure TZoneLookup.DoIt;
+    { Process returned zone list. }
+
+    var dCount: integer;
+        dCurr: Ptr;
+        ignore: OSErr;
+
+    begin
+        { Cycle through the returned list. }
+        dCount := fXPPPBPtr^.zipNumZones;  
+                                      { Find out how many returned. }
+        dCurr := fZonesBuffer;      { Put current pointer at start. }
+        while (fZoneCount &lt; kMaxZones) and (dCount &gt; 0) do
+                                                   { Get each zone. }
+            begin
+                fZoneCount := fZoneCount+1;
+                fZones[fZoneCount][0] := chr(dCurr^);
+                BlockMove(pointer(ord4(dCurr)+1),
+                    pointer(ord4(@fZones[fZoneCount])+1),dCurr^);
+                dCurr := pointer(ord4(dCurr) + dCurr^+1);
+                dCount := dCount-1;
+            end;
+        { If there are more to come, do another request. }
+        if (fZoneCount &lt; kMaxZones) and
+               (fXPPPBPtr^.zipLastFlag = 0) then
+            begin
+                ignore := PBControl(ParmBlkPtr(fXPPPBPtr), true);
+                fState := kPeriodicWaiting;
+            end
+        { Otherwise, we're all done. }
+        else fState := kPeriodicInactive;
+    end;</pre>
+<h2>LOOKING UP NODES: TNODELOOKUP</h2>
+<p>
+Finding the NBP names of other LACS systems is handled by class TNodeLookup. This<br>
+class uses standard NBP name lookup procedures, and is otherwise similar to<br>
+TZoneLookup. Therefore, its implementation is left as an exercise for the reader (or<br>
+for the CD- ROM driver, as the full source code can be found on the<i> Developer</i><br>
+<i>Essentials </i> disc). Meanwhile, we will jump straight into the TGossip class.
+</p>
+<h2>MESSAGE PASSING: TGOSSIP</h2>
+<p>
+&nbsp;Being a gossiper (who initiates the communication session) and being a gossipee (who<br>
+listens for others who want to communicate with it) are much the same, so they are<br>
+implemented as the same class, but with a parameter to IGossip to declare which case a<br>
+particular instance is. Two copies of TGossip are instantiated, one to initiate<br>
+message-passing sessions over ADSP and one to respond. The TGossip class looks much<br>
+the same as the other TPeriodic subclasses:
+</p>
+<pre>TGossip = object(TPeriodic)
+  fDocument: TLACSDocument; { The document we're communicating in. }
+  fOutgoing: boolean;       { Whether this is an outgoing gossiper. }
+  fDidPull: boolean;        { Whether we just did a pull. }
+  fADSPSocket: integer;     { Our socket number. }
+  fADSP: DSPPBPtr;          { The ADSP IO block pointer. }
+  fCcbPtr: Ptr;             { CCB for ADSP. }
+  fSendQueue: Ptr;          { Send queue for ADSP. }
+  fRecvQueue: Ptr;          { Receive queue for ADSP. }
+  fAttnPtr: Ptr;            { Attention pointer for ADSP. }
+  fADSPData: Ptr;           { The data buffer pointer. }
+  fNTE: ^NamesTableEntry;   { Our names table entry. }
+
+
+procedure TGossip.IGossip(aDoc: TLACSDocument; outgoing: boolean;
+                initialIdle, inactiveIdle, activeIdle: longInt);
+    { Initialize the gossip object. }
+
+procedure TGossip.Free; override;
+    { Free the gossip object. }
+
+procedure TGossip.Activate; override;
+    { Start a new gossip session (outgoing only). }
+
+procedure TGossip.Waiting; override;
+    { Wait for more input or a connection to open. }
+
+procedure TGossip.DoIt; override;
+    { Handle new input. }
+
+procedure TGossip.PassiveOpen;
+    { Do a passive connection open. }
+
+procedure TGossip.ResetConnection;
+    { Reset the connection. }
+
+    end;</pre>
+<p>
+We'll quickly summarize the straightforward methods of TGossip, and go into detail<br>
+only on the central DoIt method. Again, full details can be found in the source code on<br>
+the<i> Developer Essentials</i> disc.
+</p>
+<p>
+<b>INITIALIZATION</b><br>
+IGossip allocates buffers and prepares for connections. If this is for incoming messages<br>
+(the outgoing parameter is false), IGossip starts up a listen for a new ADSP connection<br>
+(by calling PassiveOpen) and registers the system's name using NBP. If this object is<br>
+going to be initiating connections (the outgoing parameter is true), it simply waits for<br>
+the first Activate time-out to take action.
+</p>
+<p>
+<b>INITIATING A CONNECTION</b><br>
+The Activate method is used to initiate a connection with another LACS machine. The<br>
+other LACS machine is chosen at random and an ADSP session initiated by issuing an<br>
+ADSP active open call. After the connection is open, the rest of the work is done in DoIt.<br>
+Note that Activate is never called for instances that are waiting for incoming<br>
+connections--they always go straight to the kPeriodicWaiting state since they're<br>
+always waiting for another connection from outside.
+</p>
+<p>
+<b>TESTING FOR COMPLETION</b><br>
+The method Waiting tests for the completion of the last ADSP request, the result&nbsp;&nbsp;of<br>
+which is either an opened connection or a completed data transmission. Whether the<br>
+connection was initiated by this object or the other communicating system depends<br>
+upon whether this is an incoming or outgoing gossip object. And a data transmission<br>
+may be either a send or a receive. (A discussion of how data transmissions get started<br>
+comes later.)
+</p>
+<p>
+<b>THE HEART OF TGOSSIP: DOIT</b><br>
+DoIt is called when a network operation has completed. Initially, that operation is the<br>
+establishment of a connection. Once the connection is established, the machine that<br>
+initiated it needs to generate the first command to be sent; the machine that did not<br>
+initiate the connection needs to start up a receive to obtain that command from the<br>
+other node. Once the connection is open and a command is sent and received, a response<br>
+must be constructed and sent. All of this is done by DoIt.
+</p>
+<p>
+While this seems like a lot of functionality to cram into one routine, it isn't really all<br>
+that bad. Because there are no distractions from other aspects of the communication<br>
+activity, and because much of the component functionality is provided by other parts of<br>
+the system (by TMessage, for example), all the functionality can be included in one<br>
+routine without overloading the programmer who is reading, writing, or maintaining<br>
+that code.
+</p>
+<p>
+The following is a slightly simplified copy of TGossip.DoIt. (See the source code on<br>
+the<i>Developer Essentials</i> disc for the full implementation.) DoIt decides which of the<br>
+possible operations it should perform based on the csCode field of the I/O block.
+</p>
+<p>
+This field tells what operation was last requested (open, read, or write). The csCode<br>
+field is effectively used as another state machine within the state machine already in<br>
+use and defined by fState. (State machines tend to be very useful in implementing<br>
+asynchronous algorithms.)
+</p>
+<p>
+If the connection just opened, the initiator must find a hot message to spread,&nbsp;&nbsp;build a<br>
+"Here's a new message" command, and start an ADSP write. After the receiving node<br>
+reads the command from the connection, the command is passed to<br>
+HandleIncomingCommand. That routine builds a reply command, which needs&nbsp;&nbsp;to be sent<br>
+via another write. If a write or a non-initiated opening of a connection just occurred,<br>
+the receiver starts up an ADSP read.
+</p>
+<p>
+Most of the real work is done in GetHotMessage, BuildMessage, and<br>
+HandleIncomingCommand. GetHotMessage decides what messages to send. BuildMessage<br>
+and HandleIncomingCommand implement the message exchange protocol on top of ADSP.<br>
+These methods are implemented in other classes of the system, which know more about<br>
+those other parts of the application. For example, BuildMessage is in the class<br>
+TMessage, which knows all the internal details of a message object.
+</p>
+<pre>procedure TGossip.DoIt;
+    { Handle new input. }
+
+    var r: TMessage;
+        p: Ptr;
+        noGood: boolean;
+
+    begin
+        noGood := false;
+        { If this is a session open and we're the initiator... }
+        if (fADSP^.csCode = dspOpen) and fOutgoing then
+            begin
+                { Get a message to send. }
+                r := fDocument.GetHotMessage;
+                { Decide if we've something to send. }
+                if r &lt;&gt; nil then
+                    begin
+                        { Generate the appropriate send request. }
+                        with fADSP^ do
+                            begin
+                                p := fADSPData;
+                                reqCount := r.BuildMessageCommand(p);
+                                dataPtr := fADSPData;
+                                eom := 1;
+                                flush := 1;
+                                csCode := dspWrite;
+                            end;
+                        { Send it. }
+                        if PBControl(ParmBlkPtr(fADSP),true) &lt;&gt;
+                                noErr then
+                            noGood := true;
+                    end
+                else noGood := true;
+            end
+        { If this is a completed read... }
+        else if fADSP^.csCode = dspRead then
+            begin
+            { Handle the incoming command, and build a reply if
+              appropriate. }
+                with fADSP^ do
+                    begin
+                        reqCount := fDocument.HandleIncomingCommand
+                            (fADSPData,fADSP^.actCount);
+                        dataPtr := fADSPData;
+                        eom := 1;
+                        flush := 1;
+                        csCode := dspWrite;
+                    end;
+                { If there's a reply, send it. }
+                if fADSP^.reqCount &gt; 0 then
+                    begin
+                        if PBControl(ParmBlkPtr(fADSP),true) &lt;&gt;
+                               noErr then
+                            noGood := true;
+                    end
+                else noGood := true;
+            end
+        { Otherwise... }
+        else
+            begin
+                { Start up a receive. }
+                with fADSP^ do
+                    begin
+                        dataPtr := fADSPData;
+                        reqCount := kADSPMaxCommand;
+                        csCode := dspRead;
+                    end;
+                if PBControl(ParmBlkPtr(fADSP),true) &lt;&gt; noErr then
+                    noGood := true;
+            end;
+        { If we're all done, reset the connection. }
+        if noGood then ResetConnection
+        { Otherwise, wait for the results. }
+        else fState := kPeriodicWaiting;
+    end;</pre>
+<h2>AUTO-SAVING: TDOCUMENTSAVER</h2>
+<p>
+It's also possible to use TPeriodic for activities which are not related to the network at<br>
+all, for example, to automatically save a document periodically. Since LACS is intended<br>
+to be kept running all the time the Macintosh is on, it can accumulate&nbsp;&nbsp;a large number<br>
+of changes to its message database over time. The user could periodically issue a<br>
+command to save the data base to disk, but it's much nicer if LACS does it<br>
+automatically. TDocumentSaver provides that functionality.
+</p>
+<p>
+When the time-out occurs, TDocumentSaver waits for LACS to be in the foreground and<br>
+then saves the document to disk. Saving could occur in Activate, without waiting for the<br>
+application to be in the foreground. But saving can potentially take several seconds,<br>
+much too long an activity for a background task. On the other hand, the document could<br>
+be saved asynchronously, one piece at a time, in the background. But that would have<br>
+been difficult to implement, since none of the MacApp existing document read/write<br>
+structure could be used. It uses an entirely synchronous implementation.
+</p>
+<pre>procedure TDocumentSaver.IDocumentSaver(aDoc: TLACSDocument;
+                    initialIdle, inactiveIdle, activeIdle: longInt);
+
+    begin
+        IPeriodic(initialIdle,inactiveIdle,activeIdle);
+        fDocument := aDoc;
+    end;
+
+procedure TDocumentSaver.Activate;
+
+    begin
+        fState := kPeriodicWaiting;
+    end;
+
+procedure TDocumentSaver.Waiting;
+
+    begin
+        if not gInBackground then fState := kPeriodicActive;
+    end;
+
+procedure TDocumentSaver.DoIt;
+
+    begin
+        fDocument.Save(cSave,false,false);
+        fState := kPeriodicInactive;
+    end;</pre>
+<h2>INITIALIZING AND LAUNCHING THE PERIODIC OBJECTS</h2>
+<p>
+Each of the periodic objects must be allocated and initialized. In LACS, this happens in<br>
+the TLACSDocument initialization methods as follows:
+</p>
+<pre>const
+
+{ Document saver: }
+kDocSaverInitial = 60*60*30;            { 30 minutes. }
+kDocSaverInactive = 60*60*30;           { 30 minutes. }
+kDocSaverActive = 30;                   { 1/2 second. }
+
+{ Zone lookup: }
+kZoneLookupInitial = 0;                 { Right away. }
+kZoneLookupInactive = 60*60*60*4;       { 4 hours. }
+kZoneLookupActive = 30;                 { 1/2 second. }
+
+{ Node lookup: }
+kNodeLookupInitial = 60*8;              { 8 seconds. }
+kNodeLookupFastInactive = 60*8;         { 8 seconds. }
+kNodeLookupSlowInactive = 60*60*20;     { 20 minutes. }
+kNodeLookupActive = 30;                 { 1/2 second. }
+
+{ Gossipee: }
+kGossipeeInitial = 0;                   { Right away. }
+kGossipeeInactive = 60*60 + 13;         { 1 minute. }
+kGossipeeActive = 30;                   { 1/2 second. }
+
+{ Gossiper: }
+kGossiperInitial = 60*21;               { 21 seconds. }
+kGossiperInactive = 60*30 + 27;         { 30 seconds. }
+kGossiperActive = 30;                   { 1/2 second. }
+
+var ds: TDocumentSaver;
+    zl: TZoneLookup;
+    nl: TNodeLookup;
+    g: TGossip;
+
+.
+.
+.
+    { Document saver. }
+    new(ds);
+    FailNil(ds);
+    ds.IDocumentSaver(self,kDocSaverInitial,kDocSaverInactive,
+                        kDocSaverActive);
+    fDocumentSaver := ds;
+
+    { Zone lookup. }
+    new(zl);
+    FailNil(zl);
+    zl.IZoneLookup(self,kZoneLookupInitial,kZoneLookupInactive,
+                        kZoneLookupActive);
+    fZoneLooker := zl;
+
+    { Node lookup. }
+    new(nl);
+    FailNil(nl);
+    nl.INodeLookup(self,kNodeLookupInitial,kNodeLookupFastInactive,
+                        kNodeLookupSlowInactive,kNodeLookupActive);
+    fNodeLooker := nl;
+
+    { Gossipee. }
+    new(g);
+    FailNil(g);
+    g.IGossip(self,false,kGossipeeInitial,kGossipeeInactive,
+                        kGossipeeActive);
+    fGossipee := g;
+
+    { Gossiper. }
+    new(g);
+    FailNil(g);
+    g.IGossip(self,true,kGossiperInitial,kGossiperInactive,
+                        kGossiperActive);
+    fGossiper := g;</pre>
+<p>
+Note that some of the idle times are slightly odd numbers. This is to keep activities<br>
+from becoming synchronized--occurring at the same time--and therefore taking a<br>
+noticeable amount of processing time within a particular time period.
+</p>
+<h2>USER INTERFACE AND THE INTERNAL DATABASE</h2>
+<p>
+The rest of LACS is concerned with the internal message database and with the user<br>
+interface.
+</p>
+<p>
+The internal database consists of a collection of objects of class TMessage. Each of these<br>
+objects contains a message and includes the text of the message, the date it was created,<br>
+the date it is to expire, how many times it has successfully been passed on to other<br>
+LACS systems, how many times it was unsuccessfully passed on because&nbsp;&nbsp;the recipient<br>
+had already heard it, and so forth. The messages are kept in a TLACSDocument object.<br>
+Besides holding the message objects, TLACSDocument knows how to search for hot<br>
+messages.
+</p>
+<p>
+The user interface is handled by vanilla MacApp classes such as TStaticText,<br>
+TCheckBox, TTEView, and so on. The only special case is in handling the read and<br>
+unread message lists. For this, LACS creates the subclasses TTextListView and<br>
+TSortedList to provide a new pair of classes that know about each other and<br>
+automatically propagate changes between the two paired objects. When a new object is<br>
+inserted in TSortedList, it is immediately added to the TTextListView in the Messages<br>
+window.
+</p>
+<p>
+All of these objects are managed by TLACSDocument, which acts as a central<br>
+coordinator for the database and message-passing activities of the system. For<br>
+example, TLACSDocument includes HandleIncomingCommand, which decides what<br>
+actions to take based on an incoming command from an ADSP connection. As currently<br>
+implemented, there is only one TLACSDocument active at a time. However, by<br>
+combining the active elements of the database and network into a document object, it is<br>
+an easy extension to allow multiple simultaneous databases to be active. This allows for<br>
+the possibility of parallel sets of LACS systems divided by topic or security level. It<br>
+also opens the door to other types of documents supported by the same<br>
+application--archiving or gateway functions, for instance.
+</p>
+<h2>SUMMARY</h2>
+<p>
+The Lightweight Asynchronous Conferencing System (LACS) implements a distributed<br>
+database update algorithm in order to spread messages around a local network using<br>
+AppleTalk protocols. It is implemented in Object Pascal using MacApp. In order to<br>
+accomplish its goals, LACS must implement multiple asynchronous background<br>
+activities.
+</p>
+<p>
+Asynchronous network and background operations tend to be challenging to implement<br>
+on the Macintosh. Much of the difficulty involves the inherent problems of dealing with<br>
+parallel algorithms-- we humans prefer to deal with one thing at a time. 
+</p>
+<p>
+It is possible, however, to greatly reduce the cognitive burden of implementing this<br>
+type of algorithm by providing a proper context for the implementation. LACS does this<br>
+by creating an abstract superclass in the MacApp environment. Using this approach,<br>
+the problem is isolated from other, irrelevant, parts of the application, and the<br>
+individual parts of the particular asynchronous activity are clearly broken out. 
+</p>
+<p>
+This abstract superclass is called TPeriodic. It implements the generic algorithm<br>
+"wait for time out; start asynchronous operation; wait for asynchronous operation to<br>
+complete; do something with the results; start over." The algorithm is implemented as<br>
+a state machine, driven by TPeriodic, but with details supplied by TPeriodic's<br>
+subclasses. Specific subclasses may use all or only portions of the state machine.
+</p>
+<p>
+Using the TPeriodic framework, it becomes quite straightforward to implement classes<br>
+for performing zone name lookup, node name lookup, initiating messages, receiving<br>
+messages, automatically saving the document to disk, and more. Each individual<br>
+function is implemented separately without regard for the other periodic,<br>
+asynchronous functions in the system.
+</p>
+<p>
+In addition to the explanation of the TPeriodic class within this article, it is hoped that<br>
+the source code supplied on CD-ROM will serve as an example of how to implement<br>
+each of the separate pieces of network functionality listed. Many of them were taken<br>
+from example code fragments in the Technical Notes, Sample Code, and elsewhere, but<br>
+they are drawn together here into a coherent, working application and integrated into<br>
+the MacApp environment.
+</p>
+<h2>ACKNOWLEDGMENTS</h2>
+<p>
+This program would be roughly half as good as it is if it weren't for Brian Bechtel. He<br>
+provided suggestions, encouragement, testing, evangelism, and the ear the Notification<br>
+Manager flashes in the menu bar. Thanks also to Michael Gough, who pointed me to the<br>
+article from Xerox PARC, which got me started on this whole project in the first place.<br>
+And thanks to our early group of testers, who put up with a fair number of flaky<br>
+releases. Of course, all of this was done in the very serious pursuit of collaborative<br>
+computing research.
+</p>
+<p>
+<b>For information on collaborative computing see</b><br>
+Irene Greif: <i>Computer-Supported Cooperative Work: A Book of Readings</i> , Margaret<br>
+Kaufmann Publishers, Inc., 1988.
+</p>
+<p>
+<b>For details on the algorithm see</b><br>
+Alan Demers, Mark Gealy, Dan Greene, Carl Hauser, Wes Irish, John Larson, Sue<br>
+Manning, Scott Shenker, Howard Sturgis, Dan Swinehart, Doug Terry, Don Woods: <br>
+<i>Epidemic Algorithms for Replicated Database Maintenance</i> , Xerox PARC Technical<br>
+Report CSL-89-1, January 1989.
+</p>
+<p>
+<b>For information on protocols see</b>
+</p>
+<ul>
+<li>Gursharan S. Sidhu, Richard F. Andrews, Alan B. Oppenheimer:<i>Inside</i><br>
+<i>AppleTalk</i> , Addison-Wesley, 1989. </li>
+<li><i>Inside Macintosh</i> , volume II, chapter 10, "The AppleTalk Manager,"<br>
+Addison-Wesley, 1985.</li>
+<li><i>Inside Macintosh</i> , volume V, chapter 28, "The AppleTalk Manager,"<br>
+Addison-Wesley, 1988.</li>
+<li>Macintosh Technical Note #132, AppleTalk Interface Update, March<br>
+1988.</li>
+<li>Macintosh Technical Note #225, Using RegisterName, February 1989.</li>
+<li>Macintosh Technical Note #250, AppleTalk Phase 2 on the Macintosh,<br>
+December 1989.</li>
+</ul>
+<p>
+<b>HARRY CHESLEY </b>Due to a rare psychological impediment, Harry Chesley frequently<br>
+finds himself incapable of giving short, simple answers to questions, instead reciting<br>
+long stories that are only vaguely related to the original question.&nbsp;&nbsp;To spare you from<br>
+having to read about Harry for hours, we took great care not to ask him too many<br>
+questions about himself.&nbsp;&nbsp;&nbsp;Despite this cautious approach, we did discover that he has<br>
+been at Apple so long that he no longer remembers his official title, that he has been<br>
+programming the Macintosh since the 512K came out (and made it possible to do so<br>
+without a Lisa), and that the first personal computer he bought was an Apple I (still<br>
+buried in the closet somewhere). In the interest of brevity, the long stories behind<br>
+each of these facts have been omitted. Even longer stories surround other events of his<br>
+past life. He's been an independent Mac software developer (the genesis of PackIt is a<br>
+novella unto itself) and worked in a startup company named Metapath and at SRI (don't<br>
+even ask). His favorite pastimes are playing with his two-and-a-half year old<br>
+daughter (she has her own Macintosh but doesn't yet know how to run MPW &#174;) and<br>
+programming. Given the opportunity, he also enjoys writing about himself in the third<br>
+person.&nbsp;&nbsp;*
+</p>
+<p>
+<b>Thanks to Our Technical Reviewers</b>Mary Boetcher, Michael Gough, Kerry Lynn<br>
+*
+</p>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<html>
+<head>
+<!-- Article ID: 28 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Summer 91 - Apple II Q& A</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Apple II Q&amp; A</h2>
+<h1>Apple II DEVELOPER TECHNICAL SUPPORT</h1>
+<p>
+<b>Q</b><i> Our Apple IIGS&#174; TextEdit field created with NewControl2 appears to be redrawn</i><br>
+<i>within the TESetText call, but Apple II GS Toolbox Reference Volume 3 says controls</i><br>
+<i>won't be redrawn until the next update event. Is this a mistake in the documentation or</i><br>
+<i>in our logic?</i>
+</p>
+<p>
+<b>A</b> Internally, TextEdit uses control records for all TextEdit records. The main<br>
+difference between control and noncontrol records is that the control defproc handles<br>
+many of the standard TextEdit functions without requiring your application to do so. In<br>
+the case of TESetText, though, TextEdit will always redraw the entire viewRect. This is<br>
+a mistake in the manual.
+</p>
+<p>
+<b>Q</b><i> We want to load $BC files from a folder when our program is launched. How do we</i><br>
+<i>ask the Apple II GS System Loader to discard these loaded files at application shutdown</i><br>
+<i>time? We tried using the main program's master ID from the Memory Manager, but</i><br>
+<i>the files are still not unloaded.</i>
+</p>
+<p>
+<b>A</b> The Loader is not designed to support more than one program with one user ID. It<br>
+assumes that InitialLoad or InitialLoad2 will be called with distinct user IDs for each<br>
+"program" to be controlled individually.
+</p>
+<p>
+&nbsp;You need to get new user IDs (probably $1000 type) for each module you load, so that<br>
+you can call UserShutDown on each of them individually when you need to. Don't<br>
+dispose of the memory at the end; call UserShutDown on each of the IDs and the Loader<br>
+will take care of the rest. If you're not quitting, you might want to shut them down in<br>
+zombie state so that they don't have to be reloaded from disk if the memory is<br>
+available. You can just pass $1000 as the user ID to InitialLoad and it will get a new ID<br>
+for you and return it on the stack.
+</p>
+<p>
+&nbsp;Remember that $BC auxiliary types are reserved and must be assigned by Apple<br>
+Developer Technical Support.
+</p>
+<p>
+<b>Q</b><i> How can I turn off the GS/OS file system cache, or keep it from writing to a disk</i><br>
+<i>while my file system optimizer is running?</i>
+</p>
+<p>
+<b>A</b> Altering volumes at the block level will confuse GS/OS<i> &#174;</i> , because the ProDOS<i>&#174;</i> <br>
+File System Translator (FST) keeps copies of file system structures that aren't in the<br>
+cache. You need to use DWrite, although using DWrite instead of WRITE_BLOCK risks<br>
+destroying the integrity of any open files on disk, such as the system resource file. If<br>
+you use WRITE_BLOCK, you must close any open files, including the system resource<br>
+file if you optimize the boot disk.
+</p>
+<p>
+&nbsp;Once you start optimizing, don't make any calls that could directly or indirectly result<br>
+in operating system calls--no DA access, no Font Manager calls, no loading tools,<br>
+nothing. When you're done, GS/OS's internal volume control records (VCRs) will be<br>
+completely invalid and you'll have to call OSShutDown.
+</p>
+<p>
+<b>Q</b><i> When is it OK to make Apple II GS system service calls? I'd like to make calls such as</i><br>
+<i>MOVE_INFO from a driver that's executing asynchronously.</i>
+</p>
+<p>
+<b>A</b> It's OK to make system service calls in response to a GS/OS request, for example.<br>
+Most of them require the OS environment, such as GS/OS's direct page, but<br>
+MOVE_INFO, SET_SYS_SPEED, DYN_SLOT_ARBITER, and SIGNAL do not. When you're<br>
+not in the GS/OS environment, make sure the proper language card bank of bank 1 is<br>
+swapped in. Just JSLing there will put you into something that's not a system service<br>
+call. You can either use the bank $E1 equivalents of MOVE_INFO, SET_SYS_SPEED, and<br>
+DYN_SLOT_ARBITER, or you can make sure that the right $01 language card bank is<br>
+enabled:
+</p>
+<pre>    short
+    lda &gt;$E0C068
+    pha
+    lda &gt;$E0C08B
+    lda &gt;$E0C08B
+    longmx
+; Set up the registers and make your
+; JSL  My_Favorite_SysSrv_Call
+    short
+    lda &gt;$E0C083
+    lda &gt;$E0C083
+    pla
+    sta &gt;$E0C068
+    longmx</pre>
+<p>
+<b>Q</b><i> Do I have to write extra program code for my Apple II GS program to grow a</i><br>
+<i>resource?</i>
+</p>
+<p>
+<b>A</b> No, it's pretty straightforward. All you have to do to modify the content of any<br>
+resource (including growing it) is to load the resource in, make any changes you want<br>
+to the handle (such as change the data inside or call SetHandleSize to make it bigger),<br>
+and then call MarkResourceChange. The Resource Manager updates the contents of your<br>
+file when you call UpdateResourceFile. The Resource Manager recognizes the change in<br>
+the size of the handle automatically.
+</p>
+<p>
+<b>Q</b><i> The Apple IIGS does not seem to sort out equivalent devices on the Apple Desktop</i><br>
+<i>Bus</i>TM<i> (ADB) as the Macintosh does and as outlined in the ADB specification. We want</i><br>
+<i>multiple keyboard support, but the Apple IIGS ADB micro just begins reading blindly</i><br>
+<i>from addresses 2 and 3, assuming one keyboard and one mouse are attached. Is this</i><br>
+<i>information correct?</i>
+</p>
+<p>
+<b>A</b> The Apple IIGS does not do the same kind of dynamic device mapping and remapping<br>
+that the Macintosh ADB Manager does. The "Apple Desktop Bus Tool Set" chapter of the <br>
+<i>Apple IIGS Toolbox Reference</i>&nbsp;&nbsp;gives instructions on how to remap devices dynamically<br>
+yourself. Essentially, you have two options:
+</p>
+<ul>
+<li>You can leave the second keyboard address as 2, allowing input from<br>
+multiple keyboards, but the keyboards' modifier key input will be mixed.</li>
+<li>You can dynamically remap the keyboards in your program or in an INIT<br>
+(although some forms of remapping require the user to press a key on the<br>
+device to be remapped) and then a second keyboard will not appear as the<br>
+standard keyboard--requiring all who use it to do their own ADB requests to<br>
+get at the information entered from a second keyboard.</li>
+</ul>
+<p>
+&nbsp;If you don't expect many developers to use a second keyboard, you might just choose to<br>
+remap it inside any program that uses it. You could write an external library or<br>
+functions that remap a second keyboard and read from it.
+</p>
+<p>
+<b>Q</b><i> Where can I find documentation on how to recognize SCSI partitions, such as MS DOS</i><br>
+<i>partitions, from GS/OS?</i>
+</p>
+<p>
+<b>A</b> The documents you'll need are the <i> GS/OS Reference</i>&nbsp;&nbsp;(Addison-Wesley) and the<br>
+<i>GS/OS Device Driver Reference</i>&nbsp;&nbsp;(APDA). You can recognize SCSI hard disk partitions<br>
+programmatically by looking for a SCSI Hard Drive device type ($0005) and a<br>
+forwardLink or headLink that's nonzero.&nbsp;&nbsp;This will give you all SCSI hard disk<br>
+partitions, but it won't give you non-SCSI partitions, which have a different device<br>
+type.
+</p>
+<p>
+&nbsp;Bit 13 of the Device Characteristics word is for "Linked devices" like partitions, but<br>
+the <i> GS/OS Device Driver Reference</i>&nbsp;&nbsp;says that bit applies to removable media, so not<br>
+all third-party GS/OS drivers may set that bit for partitions (even though Apple's<br>
+SCSI hard disk driver does).
+</p>
+<p>
+&nbsp;Remember that GS/OS requires each partition to appear as a separate device, so<br>
+there's no support for multiple partitions on one logical device.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Kudos to our readers</b> who care enough to ask us terrific and well thought-out<br>
+questions. The answers are supplied by our teams of technical gurus; our thanks to all.<br>
+Special thanks to Matt Deatherage, C. K. Haun, Jim Luther, and Jim Mensch for the<br>
+material in this Q &amp; A column. *
+</p>
+<p>
+<b>Have more questions?</b> Need more answers? Take a look at the Dev Tech Answers<br>
+library on AppleLink (updated weekly) or at the Q &amp; A stack on the <i> Developer</i><br>
+<i>Essentials </i> disc. *
+</p>
+</body>
+</html>

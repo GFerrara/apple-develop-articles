@@ -1,0 +1,952 @@
+<html>
+<head>
+<!-- Article ID: 43 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Autumn 91 - CURVES AHEAD: WORKING WITH CURVES IN QUICKDRAW</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>CURVES AHEAD: WORKING WITH CURVES IN QUICKDRAW</h2>
+<h1>MIKE REED AND KONSTANTIN OTHMER</h1>
+<p>
+<img src="img/201.gif" width="365 px"></img>
+</p>
+<p>
+<i>&nbsp;Imagine being able to build into your application the capability to draw freehand</i><br>
+<i>curves. Imagine being able to save these curves so that they can be loaded into other</i><br>
+<i>programs like MacDraw or printed using the LaserWriter. And imagine being given the</i><br>
+<i>key to an abundant supply of previously defined curves to play with. Imagine no more .</i><br>
+<i>. . this article reveals all.</i>
+</p>
+<p>
+&nbsp;QuickDraw is a heck of a fine drawing engine for the Macintosh, but it does have its<br>
+limitations. In particular, it supports a limited set of geometric primitives for<br>
+drawing: lines, rectangles, rounded- corner rectangles, ovals, arcs, and polygons (see<br>
+Figure 1). If you want your application to provide the capability of drawing contours<br>
+consisting of curves and straight lines, you're out of luck. 
+</p>
+<p>
+&nbsp;Sure, you can use the arc primitive to draw a curve, but if you want to connect the<br>
+curve to anything, you've got a problem. An arc represents a segment of an ellipse and<br>
+is specified by a bounding rectangle (defining the ellipse) and start and stop angles<br>
+(see Figure 2). Because an arc is not specified by starting and ending points, it's hard<br>
+to know the exact points where QuickDraw will begin and end drawing the arc. Thus,<br>
+the arc does not lend itself to being combined with other arcs or lines.
+</p>
+<p>
+&nbsp;A more useful curve primitive would be one that describes its start and end positions<br>
+as points. The quadratic B&#201;zier is just such a curve. Applications such as MacDraw&#174;<br>
+use this type of curve to allow the drawing of freehand curves, and the Macintosh itself<br>
+uses this type of curve in an internal procedure to describe TrueType fonts.
+</p>
+<p>
+&nbsp;In this article we give you the lowdown on the quadratic B&#201;zier. We show the coding<br>
+and the data structures used by programs like MacDraw to draw this kind of curve, and<br>
+we show how your application can interchange data about this kind of curve with<br>
+MacDraw and with devices equipped with a PostScript&#174; interpreter. And since the<br>
+quadratic B&#201;zier happens to be the same curve that TrueType uses (in combination<br>
+with other shapes) to draw outline fonts, we show how to extract curve data from<br>
+TrueType fonts.
+</p>
+<p>
+<img src="img/202.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1</b> QuickDraw's Geometric Primitives
+</p>
+<h2>&nbsp;DRAWING CURVES AND PATHS</h2>
+<p>
+The quadratic B&#201;zier has a couple of properties that make it useful as a basis for<br>
+drawing curves in QuickDraw. First, it can be rotated easily by changing just the<br>
+starting, ending, and middle points and not the underlying equation itself. Second, it<br>
+can easily be subdivided into any number of shorter curves that become flatter and<br>
+flatter, until in effect it can be drawn with a series of straight lines.&nbsp;&nbsp;&nbsp;Indeed, the basic<br>
+technique for drawing a curve using the existing QuickDraw primitives is by <br>
+subdividing the curve into a series of line segments. If you're interested in the<br>
+mathematics behind this, see "Parametric Equations, Anyone?"
+</p>
+<p>
+&nbsp;This section begins by showing sample C code that implements the subdivision<br>
+algorithm that produces a curve. We then move on to consider how to produce a<br>
+combination of curves and straight lines, known in the lingo as a<i>path</i> . Then we talk<br>
+about how to combine paths to produce shapes.&nbsp;&nbsp;&nbsp;Note that for a curve, as for every<br>
+geometric primitive in QuickDraw, you always have two options: you can either frame<br>
+it or fill it. We show you how to do the framing; you can do the filling using the call<br>
+FillPoly or PaintPoly. 
+</p>
+<p>
+<img src="img/203.gif" width="558 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> How an Arc Is Specified in QuickDraw
+</p>
+<p>
+<b>FRAMING A CURVE</b><br>
+The code that implements the subdivision algorithm to produce a curve takes a value<br>
+for the number of times the curve should be subdivided before it's drawn as straight<br>
+lines. This number can be dynamically computed based on the size of the curve and the<br>
+quality-versus-speed trade-off the application wants to make. The code uses<br>
+fixed-point coordinates to maintain high precision during the subdivisions.
+</p>
+<p>
+To begin, let's define a few macros to help us use fixed-point coordinates in an<br>
+integer-based graphics system. 
+</p>
+<pre>#define FR(x)              ((x) + 0x8000 >> 16)
+#define ff(x)               ((long)(x) << 16)
+#define fmoveto(x,y)        MoveTo(FR(x), FR(y))
+#define flineto(x,y)        LineTo(FR(x), FR(y))
+#define AVE(a,b)            (((a) + (b)) / 2)
+
+FR      The same as FixRound: takes a Fixed and makes it a short.
+ff      The reverse of FixRound: takes a short and promotes it to a
+        Fixed. 
+fmoveto The same as MoveTo, but takes Fixed coordinates. 
+flineto The same as LineTo, but takes Fixed coordinates. 
+AVE     Averages two numbers, either Fixed, short, or long. </pre>
+<p>
+To represent fixed-point coordinates, we define a struct called point. Note that this is<br>
+similar to QuickDraw's Point, but uses Fixed numbers instead of integers. 
+</p>
+<pre>typedef struct {
+    Fixed x;
+    Fixed y;
+} point;</pre>
+<p>
+To represent a curve, we need three points: a start point, a control point, and an<br>
+endpoint. (These correspond to<i>a, b,</i>&nbsp;&nbsp;and<i> c</i>&nbsp;&nbsp;in Figure 3.)
+</p>
+<pre>typedef struct {
+    point start;
+    point control;
+    point end;
+} curve;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;The function FrameCurve (below) draws a quadratic B&#201;zier using subdivision. If the<br>
+level for the FrameCurve routine is 0, a LineTo (using flineto) operation is<br>
+performed; otherwise, the curve is subdivided and FrameCurve is called recursively,<br>
+once for the left half of the curve and once for the right. FrameCurve assumes the<br>
+caller has already called fmoveto on the start point of the curve. The second routine,<br>
+ExampleCurve, calls FrameCurve requesting four levels of subdividing. Thus, the final<br>
+curve consists of 2^4, or 16, lines. It's shown in Figure 5.
+</p>
+<p>
+<img src="img/204.gif" width="335 px"></img>
+</p>
+<p>
+<b>Figure 5</b> The Curve Drawn by ExampleCurve
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<pre>void FrameCurve(curve *cur, int level)
+{
+    if (level)
+    {   curve left, right;
+
+        left.start = cur-&gt;start;
+        left.control.x = AVE(cur-&gt;start.x, cur-&gt;control.x);
+        left.control.y = AVE(cur-&gt;start.y, cur-&gt;control.y);
+        right.control.x = AVE(cur-&gt;control.x, cur-&gt;end.x);
+        right.control.y = AVE(cur-&gt;control.y, cur-&gt;end.y);
+        left.end.x = right.start.x = AVE(left.control.x,
+            right.control.x);
+        left.end.y = right.start.y = AVE(left.control.y,
+            right.control.y);
+        right.end = cur-&gt;end;
+
+        FrameCurve(&amp;left, level-1);
+        FrameCurve(&amp;right, level-1);
+    }
+    else
+        flineto(cur-&gt;end.x, cur-&gt;end.y);
+}
+
+void ExampleCurve()
+{
+    static curve myCurve = {ff(0), ff(0), ff(100), ff(100), ff(100),
+        ff(0)};
+
+    fmoveto(myCurve.start.x, myCurve.start.y);
+    FrameCurve(&amp;myCurve, 4);
+}</pre>
+<p>
+<b>&nbsp;FRAMING A PATH</b><br>
+Drawing contours such as font outlines requires drawing a combination of straight<br>
+lines and curves.&nbsp;&nbsp;&nbsp;Such a combination is known as a<i>path</i> . A path is defined by the<br>
+following data structure:
+</p>
+<pre> typedef struct {
+    long    vectors;        /* The number of points in the path. */
+    long    controlBits[anyNumber];
+    point   vector[anyNumber];  /* The points. */
+} path;</pre>
+<p>
+&nbsp;A path is similar to a polygon except that it has a set of control bits that determine<br>
+whether each point is on or off the curve. There's one control bit for each point,<br>
+beginning with the most significant bit for point 0. If the bit is set, the corresponding<br>
+point is an off-curve point and therefore the control point for a curve. If the bit is<br>
+clear, the corresponding point is an on-curve point and therefore an endpoint for<br>
+either a line segment or a curve segment. Two consecutive on-curve points form a<br>
+straight line.
+</p>
+<p>
+&nbsp;Here's a routine that takes an index and the control bits and returns TRUE (nonzero)<br>
+if the point is on the curve:
+</p>
+<pre> Boolean OnCurve(long *bits, long index)
+{
+    bits += index >> 5;     /* Skip to the appropriate long. */
+    index &amp;= 31;       /* Mask to get index into current long. */
+    return (*bits &amp; (0x80000000 >> index)) == 0;
+}</pre>
+<p>
+&nbsp;Two consecutive off-curve points imply an on-curve point at their midpoint, as<br>
+shown in Figure 6.&nbsp;&nbsp;&nbsp;This path consists of two curve segments. The first is defined by<i>a,</i><br>
+<i>b,</i>&nbsp;&nbsp;(<i>b</i>&nbsp;&nbsp;+<i> c</i> ) / 2 and the&nbsp;&nbsp;second by (<i>b</i>&nbsp;&nbsp;+<i> c</i> ) / 2,<i>c, d. </i>
+</p>
+<p>
+&nbsp;This ability to store a series of off-curve points allows a path to describe an<br>
+arbitrarily complex shape without having to store unneeded intermediate points.<br>
+However, this is just a storage nicety. When we draw the path, we need it broken down<br>
+into a series of line and curve segments. This is done with an iterator function called<br>
+NextPathSegment. It's called continuously, each time filling a record that is either a<br>
+line segment or a curve segment, until it returns FALSE. 
+</p>
+<p>
+<img src="img/205.gif" width="293 px"></img>
+</p>
+<p>
+<b>Figure 6</b> On-Curve Point Implied by Two Off-Curve Points
+</p>
+<pre>typedef struct {
+    int     isLine;
+    curve   c;
+
+    /* Private. */
+    long    index;
+    long    ep;
+    long    *bits;
+    point   *p;
+} pathWalker;
+
+void InitPathWalker(pathWalker *w, path *aPath)
+{
+    w-&gt;index = 0;
+    w-&gt;ep = aPath-&gt;vectors - 1;
+    w-&gt;bits = aPath-&gt;controlBits;
+    /* Skip past the control bits to point to the first point. */
+    w-&gt;p = (point *)(w-&gt;bits + (aPath-&gt;vectors + 31 >> 5));
+}
+
+int NextPathSegment(pathWalker *w)
+{
+    long prevIndex, nextIndex;
+    if (w-&gt;index == 0)     /* 0 means this is the first segment. */
+    {   if (OnCurve(w-&gt;bits, w-&gt;ep))
+            w-&gt;c.start = w-&gt;p[w-&gt;ep];
+        else
+        {   if (OnCurve(w-&gt;bits,0))
+            {   w-&gt;c.start = w-&gt;p[0];
+                w-&gt;index = 1;
+            }
+            else    /* Start at an implied on-curve point. */
+            {   w-&gt;c.start.x = AVE(w-&gt;p[0].x, w-&gt;p[w-&gt;ep].x);
+                w-&gt;c.start.y = AVE(w-&gt;p[0].y, w-&gt;p[w-&gt;ep].y);
+            }
+        }
+    }
+    else    /* Start where we previously left off. */
+        w-&gt;c.start = w-&gt;c.end;
+
+NEXT_SEGMENT:
+    /* Compute the point index before and after the current one.
+     * This wraps around, since we assume the contour is closed. */
+    prevIndex = w-&gt;index == 0 ? w-&gt;ep : w-&gt;index - 1;
+    nextIndex = w-&gt;index == w-&gt;ep ? 0 : w-&gt;index + 1;
+
+    if (OnCurve(w-&gt;bits, w-&gt;index))
+    {   if (OnCurve(w-&gt;bits, prevIndex))
+        {   w-&gt;isLine = true;        /* This means we have a line. */
+            w-&gt;c.end = w-&gt;p[w-&gt;index];
+        }
+        else if (w-&gt;index++ &lt;= w-&gt;ep)
+            goto NEXT_SEGMENT;
+    }
+    else
+    {   w-&gt;isLine = false;       /* This means we have a curve. */
+        w-&gt;c.control = w-&gt;p[w-&gt;index];
+        if (OnCurve(w-&gt;bits, nextIndex))
+            w-&gt;c.end = w-&gt;p[nextIndex];
+        else
+        {   w-&gt;c.end.x = AVE(w-&gt;p[w-&gt;index].x, w-&gt;p[nextIndex].x);
+            w-&gt;c.end.y = AVE(w-&gt;p[w-&gt;index].y, w-&gt;p[nextIndex].y);
+        }
+    }
+
+    return w-&gt;index++ &lt;= w-&gt;ep;
+    /* Return TRUE if there are still more segments. */
+}</pre>
+<p>
+The FramePath routine uses a pathWalker to traverse the path and draw it as it goes.
+</p>
+<pre>path *NextPath(path *aPath)
+{
+    return (path *)((long *)aPath + 1 + (aPath-&gt;vectors + 31 >> 5) +
+        aPath-&gt;vectors * 2);
+}
+
+path *FramePath(path *cont)
+{
+    pathWalker walker;
+
+    InitPathWalker(&amp;walker, cont);
+    /* The first segment is special, since it calls fmoveto. */
+    if (NextPathSegment(&amp;walker))
+    {   fmoveto(walker.c.start.x, walker.c.start.y);
+        if (walker.isLine)
+            flineto(walker.c.end.x, walker.c.end.y);
+        else
+            FrameCurve(&amp;walker.c, kCurveLimit);
+    }
+    /* Keep looping until we run out of segments. */
+    while (NextPathSegment(&amp;walker))
+        if (walker.isLine)
+            flineto(walker.c.end.x, walker.c.end.y);
+        else
+            FrameCurve(&amp;walker.c, kCurveLimit);
+    /* Return the next path, used if this path is one of several
+     * within a series of paths. */
+    return NextPath(cont);
+}</pre>
+<p>
+Now we can draw the path shown in Figure 6 that demonstrates consecutive off-curve<br>
+points. 
+</p>
+<pre>void ExamplePath()
+{
+  long myPath[] = {
+    5,              /* Five points. */
+    0x60000000,     /* The second and third are off-curve points. */
+    0,0,ff(10),0,ff(20),ff(10),ff(20),ff(20),0,ff(20) /* x,y data */
+  };
+
+  FramePath((path *)myPath);
+}</pre>
+<p>
+<b>FRAMING A SHAPE MADE OF SEVERAL PATHS</b><br>
+To describe a shape that contains several disjoint paths (such as an outline letter<i>o</i> ),<br>
+we use a simple data structure that's just a composite of several path structures:
+</p>
+<pre>typedef struct{
+    long    contours;
+    path    contour[anyNumber];
+} paths;</pre>
+<p>
+Drawing such a shape (called in the vernacular a<i>paths</i>&nbsp;&nbsp;) is straightforward:
+</p>
+<pre>typedef struct{
+    long    contours;
+    path    contour[anyNumber];
+} paths;</pre>
+<p>
+Drawing such a shape (called in the vernacular a paths) is straightforward:
+</p>
+<pre>void FramePaths(paths *aPath)
+{
+    long ctr = aPath-&gt;contours;
+    path *cont = aPath-&gt;contour;
+
+    while (ctr--)
+        cont = FramePath(cont);
+}</pre>
+<p>
+The following code draws the paths shown in Figure 7. 
+</p>
+<pre>void ExamplePaths()
+{
+  long myPaths[] = {
+    5,              /* Five contours. */
+    3, 0xE0000000, 0, ff(16), 0, ff(8), ff(14), ff(12),
+    3, 0xE0000000, ff(8), 0, ff(16), 0, ff(12), ff(14),
+    3, 0xE0000000, ff(24), ff(8), ff(24), ff(16), ff(10), ff(12),
+    3, 0xE0000000, ff(16), ff(24), ff(8), ff(24), ff(12), ff(10),
+    16, 0x11110000,
+        ff(8), 0, ff(12), ff(4), ff(16), 0, ff(16), ff(8),
+        ff(24), ff(8), ff(20), ff(12), ff(24), ff(16), ff(16),
+        ff(16), ff(16), ff(24), ff(12), ff(20), ff(8), ff(24),
+        ff(8), ff(16), 0, ff(16), ff(4), ff(12), 0, ff(8), ff(8),
+        ff(8)
+  };
+
+    FramePaths((paths *)myPaths);
+}</pre>
+<h2>SAVING PATHS IN PICTS</h2>
+<p>
+Now that you know how to give your application the capability to draw all sorts of<br>
+curved shapes on the screen or on a QuickDraw printer, you might wonder whether<br>
+you can cut and paste these shapes into other applications or send them to a PostScript<br>
+printer. The answer is yes, thanks to picture comments. Picture comments<br>
+encapsulate non-QuickDraw graphics data that other "smarter-than- QuickDraw"<br>
+applications can interpret.
+</p>
+<p>
+<img src="img/206.gif" width="390 px"></img>
+</p>
+<p>
+<b>Figure 7</b> A Shape Made of Several Paths
+</p>
+<p>
+Fortunately, there's a picture comment that takes quadratic B&#201;zier information<br>
+directly: PolySmooth.&nbsp;&nbsp;&nbsp;When this comment is encountered in a PICT it indicates that<br>
+the endpoints of the following lines are control points of a quadratic B&#201;zier.<br>
+Unfortunately, the comment assumes that all the control points lie off the curve. This<br>
+is a major drawback of the PolySmooth comment and forces us to break a path down<br>
+into curves and lines, rather than allowing us to put an entire path in at once.
+</p>
+<p>
+When a picture interpreter (such as the LaserWriter driver) sees a PolySmooth<br>
+picture comment, it interprets the following points (put in the picture with a LineTo<br>
+opcode) as off-curve control points.&nbsp;&nbsp;&nbsp;Since DrawPicture ignores picture comments<br>
+completely, the clipping rectangle is set to empty so that no drawing will occur. The<br>
+picture interpreter now has the control points and can render the curve however it<br>
+sees fit. 
+</p>
+<p>
+To save a path in a picture, we start with the PolyBegin picture comment. This<br>
+comment indicates that a special polygon follows. If the path is closed, we add the<br>
+picPlyClo comment. Then we set the clipping to empty so that DrawPicture will not<br>
+render the following data. Next we add the PolySmooth comment, followed by the<br>
+control points.
+</p>
+<p>
+When the whole polygon is in the picture, we restore the clipping to its previous state<br>
+and add the PolyIgnore picture comment. Anyone reading picture comments will know<br>
+to ignore the following QuickDraw polygon. DrawPicture, which ignores all picture<br>
+comments and skips over the smooth polygon since the lines are all clipped out, will<br>
+draw the polygon just as it should. 
+</p>
+<p>
+Thus, we have something like the following (where an asterisk indicates a picture<br>
+comment):
+</p>
+<p>
+Save the current clip<br>
+*PolyBegin<br>
+Set the clip to the empty rectangle to turn off drawing<br>
+*PolySmooth<br>
+Record the PostScript version of the curves (just the control points)<br>
+*PolyIgnore<br>
+Restore the original clip to turn drawing back on<br>
+Record the QuickDraw version of the curves (subdivided into short lines)<br>
+*PolyEnd
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Since the PolySmooth picture comment allows only off-curve points, it's necessary to<br>
+break the path down into segments. This is done by the AddPathsToPict routine, which<br>
+calls AddSegmentToPict for each path fragment (either a single quadratic B&#201;zier or a<br>
+line). AddSegmentToPict copies two sets of points into the PICT, one that contains the<br>
+actual control points of the curve or line segment (for PostScript printing or pasting<br>
+into MacDraw) and another that is the QuickDraw rendering of the curve or line.
+</p>
+<p>
+In AddSegmentToPict (below), cur is the current segment to be added; isLine is a<br>
+Boolean identifying whether the segment is a curve or a line segment; and delta<br>
+specifies an amount to offset the data when recording the PostScript version, to<br>
+account for the difference between PostScript's centered pen and QuickDraw's upper<br>
+left pen. 
+</p>
+<pre>void AddSegmentToPict(curve *cur, point *delta, int isLine)
+{
+    /* Real programs check errors. */
+    Handle          verbHdl = NewHandle(1);
+    RgnHandle       origClip = NewRgn();
+    Rect            emptyRect = {0, 0, 0, 0};
+
+    **verbHdl = kPolyFrame;
+    GetClip(origClip);
+
+    PicComment(POLYBEGIN, 0, 0);
+    ClipRect(&amp;emptyRect);       /* This turns drawing off. */
+    PicComment(POLYSMOOTH, 2, verbHdl);
+        /* Record the endpoints for PostScript. */
+        fmoveto(cur-&gt;start.x + delta-&gt;x, cur-&gt;start.y + delta-&gt;y);
+        if (isLine)
+            flineto(cur-&gt;end.x + delta-&gt;x, cur-&gt;end.y + delta-&gt;y);
+        else
+            flineto(cur-&gt;control.x + delta-&gt;x,
+                cur-&gt;control.y + delta-&gt;y);
+        flineto(cur-&gt;end.x + delta-&gt;x, cur-&gt;end.y + delta-&gt;y);
+
+    PicComment(POLYIGNORE, 0, 0);
+    SetClip(origClip);          /* This turns drawing back on. */
+        /* Record the lines for QuickDraw. */
+        fmoveto(cur-&gt;start.x, cur-&gt;start.y);
+        if (isLine)
+            flineto(cur-&gt;end.x, cur-&gt;end.y);
+        else
+            FrameCurve(cur, kCurveLimit);
+    PicComment(POLYEND, 0, 0);
+
+    DisposeRgn(origClip);
+    DisposHandle(verbHdl);
+}</pre>
+<p>
+AddPathsToPict is relatively simple. It walks through each path, and each segment<br>
+within each path, and records the segments by calling AddSegmentToPict.
+</p>
+<pre>AddPathsToPict(paths *myPaths)
+{
+    point penDelta;
+    long    i;
+    path    *cont;
+
+    /* Compute half the pen's thickness as a delta, since
+     * PostScript's pen is centered and QuickDraw's hangs
+     * to the right and down. */
+    penDelta.x = ff(thePort-&gt;pnSize.h) / 2;
+    penDelta.y = ff(thePort-&gt;pnSize.v) / 2;
+
+    /* Record the curve data. */
+    cont = myPaths-&gt;contour;
+
+    for (i = 0; i &lt; myPaths-&gt;contours; i++)
+    {   pathWalker walker;
+
+        /* This loop looks a lot like FramePath. */
+        InitPathWalker(&amp;walker, cont);
+        while (NextPathSegment(&amp;walker))
+            AddSegmentToPict(&amp;walker.c, &amp;penDelta, walker.isLine);
+        cont = NextPath(cont);
+    }
+}</pre>
+<p>
+A word about rounding: We've kept all our data in Fixed, even during the subdivision<br>
+process, up until calling LineTo; still, when we record the data into a PICT, we're<br>
+forced to throw away information since the PICT records only integer coordinates. The<br>
+upshot of this is that a given series of paths may draw much better in your application<br>
+than when it's been put into a PICT and pasted into another application.
+</p>
+<h2>EXTRACTING CURVES FROM TRUETYPE</h2>
+<p>
+Because TrueType uses the quadratic B&#201;zier as its curve primitive, as mentioned<br>
+earlier, the outlines in a TrueType font represent a rich source of curve data for<br>
+programmers. In fact, a program demonstrated at Apple's Worldwide Developers<br>
+Conference in May of this year uses TrueType fonts as a basis for turning text typed by<br>
+the user into outlines that can be rotated, filled, stretched and shrunk, and<br>
+transformed in other amusing ways. All it takes to produce such a program is to<br>
+convert TrueType data from its native storage structure into a paths data structure.<br>
+We show you how to do that here, and then discuss the sample program you'll find on<br>
+the<i>Developer CD Series</i> disc that draws outlines extracted from TrueType fonts. 
+</p>
+<p>
+<b>CONVERTING THE DATA</b><br>
+For space reasons, the data for TrueType outlines is not stored in a paths data<br>
+structure but instead is compressed as byte deltas. Code provided on this<br>
+issue's<i>Developer CD Series</i> disc fills out a glyph outline data structure given a<br>
+TrueType font and a glyph ID. The glyph outline data structure looks like this:
+</p>
+<pre>typedef struct {
+    long        contourCount;
+    long        pointCount;
+    point       origin;
+    point       advance;
+    short       **endPoints;        /* [contourCount] */
+    Byte        **onCurve;          /* [pointCount] */
+    Fixed       **x;                /* [pointCount] */
+    Fixed       **y;                /* [pointCount] */
+} GlyphOutline;</pre>
+<p>
+A glyph outline is a bit less compact than a paths data structure, but contains enough<br>
+information to be converted into one. One difference from the paths data structure is<br>
+that in a path, if a control bit is set, the point is treated as an off-curve point. In a<br>
+glyph outline, if the onCurve byte is set, the point is treated as an on-curve point.<br>
+Another difference is that in a glyph outline, the points for all the contours are stored<br>
+contiguously, rather than separated into discrete path structures.
+</p>
+<p>
+The utility function PackControlBits takes an array of bytes, each representing a<br>
+point, and packs them into a bit array, suitable for a path. It then returns a pointer to<br>
+the long after the last control long. 
+</p>
+<pre>long *PackControlBits(long *p, Byte *onCurve, long count)
+{
+    unsigned long mask = 0x80000000;
+   
+    *p = 0;
+    while (count--)
+    {   if (!mask)
+        {   mask = 0x80000000;
+            *++p = 0;
+        }
+        if (!*onCurve++)
+            *p |= mask;
+        mask >>= 1;
+    }
+    return p + 1;
+}</pre>
+<p>
+The function OutlineToPaths takes a glyph outline and returns a pointer to a path that<br>
+represents the outline. NewPtr is called, so when the application has finished using the<br>
+path it should call DisposePtr. 
+</p>
+<pre>paths *OutlineToPaths(GlyphOutline *out)
+{
+    long size, *p, *origP;
+
+    /* First compute how big the resulting path will be. */
+    size = sizeof(long);    /* paths.contours */
+
+    {   long i, sp = 0;
+        for (i = 0; i &lt; out-&gt;contourCount; i++)
+        {   long pts = (*out-&gt;endPoints)[i] - sp + 1;
+            size += sizeof(long);             /* path.vectors */
+            size += (pts + 31 >> 5) << 2;
+                                              /* path.controlBits */
+            size += pts << 3;           /* path.vector[] */
+            sp = (*out-&gt;endPoints)[i] + 1;
+        }
+    }
+
+    /* Now allocate the paths. */
+    origP = p = (long *)NewPtr(size);
+    /* Real programs check errors. */
+
+    /* Record the number of contours. */
+    *p++ = out-&gt;contourCount;
+    {   long    i, sp = 0;
+        Fixed *x = *out-&gt;x;
+        Fixed *y = *out-&gt;y;
+        short *ep = *out-&gt;endPoints;
+        Byte    *onCurve = *out-&gt;onCurve;
+
+        /* For each contour, record the point count,
+         * record the control bits, then the points. */
+        for (i = 0; i &lt; out-&gt;contourCount; i++)
+        {   long pts = *ep - sp + 1;
+            *p++ = pts;
+            p = PackControlBits(p, onCurve, pts);
+            onCurve += pts;
+            while (pts--)
+            {   *p++ = *x++;
+                *p++ = *y++;
+            }
+            sp = *ep++ + 1;
+        }
+    }
+    return (paths *)origP;
+}</pre>
+<p>
+<b>ABOUT OUR SAMPLE APPLICATION</b><br>
+The sample application QD Curves on the<i>Developer CD Series</i> disc uses paths to draw<br>
+the outlines of TrueType text. It can put the outlines onto the Clipboard so that they can<br>
+be pasted into another application for editing or printing. In addition, the application<br>
+uses some of the other TrueType access functions to build variable-length font and<br>
+style menus and display information about a font, such as its version number,<br>
+copyright notice, and trademark (see Figure 8). 
+</p>
+<p>
+To display a path, the application determines how large the path currently is and<br>
+scales it to fill the window. The utility functions OffsetPaths, ScalePaths, and<br>
+GetPathsBounds are used in positioning and scaling paths. 
+</p>
+<p>
+<img src="img/207.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 8</b>Font Information Displayed by QD Curves
+</p>
+<pre>void OffsetPaths(paths* p, Fixed dx, Fixed dy)
+{
+    long ctrs = p-&gt;contours;
+    path *aPath = p-&gt;contour;
+
+    while (ctrs--)
+    {   long    pts = aPath-&gt;vectors;
+        /* Skip the control bits. */
+        Fixed *coord = (Fixed *)aPath + 1 + (pts + 31 >> 5);
+       
+        /* Apply the offsets; remember, x comes before y. */
+        while (pts--)
+        {   *coord++ += dx;
+            *coord++ += dy;
+        }
+        /* The next path follows the end of the current path. */
+        aPath = (path *)coord;
+    }
+}
+
+void ScalePaths(paths *p, Fixed sx, Fixed sy)
+{
+    long ctrs = p-&gt;contours;
+    path *aPath = p-&gt;contour;
+    /* Apply the scales; remember, x comes before y. */
+    while (ctrs--)
+    {   long    pts = aPath-&gt;vectors;
+        /* Skip the control bits. */
+        Fixed *coord = (Fixed *)aPath + 1 + (pts + 31 >> 5);
+       
+        while (pts--)
+        {   *coord = FixMul(*coord, sx);
+            coord++;
+            *coord = FixMul(*coord, sy);
+            coord++;
+        }
+        /* The next path follows the end of the current path. */
+        aPath = (path *)coord;
+    }
+}
+
+void GetPathsBounds(paths *p, Rect *r)
+{
+    long ctr = p-&gt;contours;
+    path *cont = p-&gt;contour;
+
+    /* Begin with the minimum rectangle. */
+    r-&gt;left = r-&gt;top = 32767;
+    r-&gt;right = r-&gt;bottom = -32678;
+
+    while (ctr--)
+    {   long    *bits = cont-&gt;controlBits;
+        /* Skip the control bits. */
+        long    *coord =
+                    (long *)(bits + (cont-&gt;vectors + 31 >> 5));
+        long    pts = cont-&gt;vectors;
+
+        while (pts--)
+        {   short x = FR(*coord++);
+            short y = FR(*coord++);
+
+            if (x &lt; r-&gt;left)
+                r-&gt;left = x;
+            else if (x &gt; r-&gt;right)
+                r-&gt;right = x;
+            if (y &lt; r-&gt;top)
+                r-&gt;top = y;
+            else if (y &gt; r-&gt;bottom)
+                r-&gt;bottom = y;
+        }
+        /* The next path follows the end of the current path. */
+        cont = (path *)coord;
+    }
+}</pre>
+<p>
+Note that what is returned is the bounds for the control points of the paths, not<br>
+necessarily the bounds of the actual paths being drawn (see Figure 9). That requires a<br>
+slightly more complex, though useful, function, which we leave to you as an exercise.<br>
+(Hint: Find the<i>x</i>&nbsp;&nbsp;and<i> y</i>&nbsp;&nbsp;extrema for the curve.&nbsp;&nbsp;&nbsp;To do this, find the local extrema in<i>t</i> <br>
+by setting the derivative of the equation in<i>x</i>&nbsp;&nbsp;or<i> y</i>&nbsp;&nbsp;equal to 0, and solve for<i>t.&nbsp;&nbsp;</i> )
+</p>
+<p>
+As part of its display options, the application will also mark the on-curve points in<br>
+the paths. 
+</p>
+<pre>void MarkPaths(paths *aPath)
+{
+    long    ctr = aPath-&gt;contours;
+    path    *cont = aPath-&gt;contour;
+    Point loc;
+    Rect    r;
+
+    while (ctr--)
+    {   long    *bits = cont-&gt;controlBits;
+        long    *coord = (long *)(bits + (cont-&gt;vectors + 31 >> 5));
+        long    ptIndex;
+
+        for (ptIndex = 0; ptIndex &lt; cont-&gt;vectors; ptIndex++)
+        {   r.left = FR(*coord++) - 2;
+            r.top = FR(*coord++) - 2;
+            r.right = r.left + 5;
+            r.bottom = r.top + 5;
+            if (OnCurve(bits, ptIndex))
+                PaintOval(&amp;r);
+#ifdef mark_off_curve
+            else
+                FrameOval(&amp;r);
+#endif
+        }
+        cont = (path *)coord;
+    }
+}</pre>
+<p>
+<img src="img/208.gif" width="435 px"></img>
+</p>
+<p>
+<b>Figure 9</b> Bounds of the Control Points Versus Bounds of the Curve
+</p>
+<p>
+&nbsp;This function to mark the control points of a path is a good framework for adding<br>
+curve editing. We leave that to you also, and suggest that besides simple<br>
+point-by-point direct mouse editing, you consider providing the capability to do the<br>
+following:
+</p>
+<ul>
+<li>do direct curve editing by hit-testing the curve itself instead of just its<br>
+control points</li>
+<li>select groups of points/segments to move at once, similar to selecting<br>
+multiple icons in the Finder</li>
+<li>do constrain-based editing, where tangent continuity is maintained<br>
+between adjacent segments</li>
+<li>interpolate changes to a set of key points across the rest of the path,<br>
+allowing, for instance, creation of a bold character by simply moving a few<br>
+points on the stems and then smoothing out the rest of the outlines</li>
+</ul>
+<h2>&nbsp;NOW IT'S UP TO YOU</h2>
+<p>
+This article has given you the tools to do some fancy work with curves in your<br>
+applications. We've given you routines for drawing curves and paths using QuickDraw,<br>
+discussed how to save these in PICTs so that they can be loaded into other programs like<br>
+MacDraw or printed using the LaserWriter, and shown how to extract paths from<br>
+TrueType fonts, giving you an abundant supply of path data. Now it's up to you to play<br>
+off this knowledge by adding curve editing, text rotation, and other means of<br>
+transforming your new freehand curves. 
+</p>
+<h2>PARAMETRIC EQUATIONS, ANYONE?</h2>
+<p>
+Though you can draw curves without understanding the mathematics behind the<br>
+operation, some people find this kind of thing interesting. This explanation is for those<br>
+people (you know who you are).
+</p>
+<p>
+A quadratic B&#201;zier (or parabola) can be defined by the parametric equation
+</p>
+<p>
+<i>f</i> (<i>t</i> ) = <i>a</i> (1 - <i>t</i> )2 + 2<i>bt</i> (1 - <i>t</i> ) + <i>ct</i> 2
+</p>
+<p>
+where <i>t</i>&nbsp;&nbsp;is a scalar and <i>a, b, </i> and <i>c</i>&nbsp;&nbsp;are points.
+</p>
+<p>
+This parametric formulation has the advantage of being rotationally independent: since<br>
+<i>t</i>&nbsp;&nbsp;is the independent variable, and not <i>x</i>&nbsp;&nbsp;or <i>y</i> , there is no bias for curves that are<br>
+symmetric about the x- or y-axis. Thus, to rotate the curve, you only need to rotate <i>a,</i><br>
+<i>b, </i> and <i>c</i>&nbsp;&nbsp;into their new positions, while the equation for the curve stays the same.
+</p>
+<p>
+To better understand the equation, take a look at its geometric representation in Figure<br>
+3. You'll note there that as the curve is drawn from point <i> a</i>&nbsp;&nbsp;to point <i>c</i> , <i>t</i>&nbsp;&nbsp;varies from<br>
+0 to 1.&nbsp;&nbsp;The curve at <i> a</i>&nbsp;&nbsp;is tangential to the line<i>ab,</i>&nbsp;&nbsp;and the curve at <i>c</i>&nbsp;&nbsp;is&nbsp;&nbsp;tangential to<br>
+the line <i> bc.</i>&nbsp;&nbsp;Its maximum displacement from the line that could be drawn from <i>a </i> to <i>c</i> <br>
+is reached at point <i>q</i> , where <i>t</i>&nbsp;&nbsp;is 0.5.&nbsp;&nbsp;In addition, the curve at <i> q</i>&nbsp;&nbsp;is parallel to the<br>
+(imagined) line <i>ac</i> .
+</p>
+<p>
+Perhaps the most useful property of the curve in this form is the easy way it can be<br>
+decomposed into a pair of smaller curves, each of the same form. This is called <br>
+<i>subdivision</i>&nbsp;&nbsp;and is the basis for drawing curves in QuickDraw.
+</p>
+<p>
+Suppose we subdivide the curve at point <i>q</i> , as shown in Figure 4. The point <i> q </i> is
+</p>
+<p>
+<i>q</i>&nbsp;&nbsp;= <i>f</i>&nbsp;&nbsp;( 0.5) = (<i>a</i>&nbsp;&nbsp;+ 2<i>b</i>&nbsp;&nbsp;+ <i>c</i> ) / 4
+</p>
+<p>
+The tangent (that is, the first derivative) of the curve at <i> q</i>&nbsp;&nbsp;is parallel to the line <i> ac.</i>
+</p>
+<p>
+<i>f'</i>&nbsp;&nbsp;(<i>t</i> ) = -2<i>a</i> (1 - <i>t</i> ) + 2<i>b</i> (1 - 2<i>t</i> ) + 2<i>ct</i>
+</p>
+<p>
+<i>f'</i> (0.5) = <i>c</i>&nbsp;&nbsp;- <i>a</i>
+</p>
+<p>
+The line from the point <i>b' </i> = (<i>a</i>&nbsp;&nbsp;+ <i>b</i> ) / 2 to <i>q</i>&nbsp;&nbsp;is tangential to the curve at <i> q</i> .
+</p>
+<p>
+<i>q</i>&nbsp;&nbsp;- <i>b' </i> =
+</p>
+<p>
+(<i>a </i> + 2<i>b </i> + <i>c</i> ) / 4 - (<i>a</i>&nbsp;&nbsp;+ <i>b</i> ) / 2 =
+</p>
+<p>
+(<i>a</i>&nbsp;&nbsp;+ 2<i>b</i>&nbsp;&nbsp;+ <i>c</i>&nbsp;&nbsp;- 2<i>a</i>&nbsp;&nbsp;- 2<i>b</i> ) / 4 =
+</p>
+<p>
+(<i>c</i>&nbsp;&nbsp;- <i>a</i> ) / 4
+</p>
+<p>
+By symmetry, the same holds for <i> b''</i>&nbsp;&nbsp;= (<i>b</i>&nbsp;&nbsp;+ <i>c</i> ) / 2.
+</p>
+<p>
+Thus, the formulas for the two curves that make up the left and right halves of the<br>
+original curve are as follows:
+</p>
+<p>
+Left:<i> a'</i>&nbsp;&nbsp;= <i>a</i>
+</p>
+<p>
+<i>&nbsp;b'</i>&nbsp;&nbsp;= (<i>a</i>&nbsp;&nbsp;+ <i>b</i> ) / 2
+</p>
+<p>
+<i>&nbsp;c'</i>&nbsp;&nbsp;= (<i>a</i>&nbsp;&nbsp;+ 2<i>b</i>&nbsp;&nbsp;+ <i>c</i> ) / 4
+</p>
+<p>
+Right:<i> a'' </i> = (<i>a</i>&nbsp;&nbsp;+ 2<i>b</i>&nbsp;&nbsp;+ <i>c</i> ) / 4
+</p>
+<p>
+<i>&nbsp;b'' </i> = (<i>b </i> + <i>c</i> ) / 2
+</p>
+<p>
+<i>&nbsp;c'' </i> = <i>c</i> The equations for the new points are especially nice, since the arithmetic can<br>
+be performed with only shifts and adds, making it very efficient.
+</p>
+<p>
+Notice in Figure 4 that each of the resulting smaller curves is flatter than the original<br>
+curve, by a factor of 4. This means that the distance from the midpoint of the curve to<br>
+the midpoint of the straight line drawn from the start point to the endpoint is reduced<br>
+by 4. Thus, if the curve is subdivided enough times, drawing the curve will be<br>
+equivalent to drawing a line from the start point to the endpoint for each of the little<br>
+curves. This is the basis for drawing the curve in QuickDraw.
+</p>
+<p>
+<img src="img/209.gif" width="246 px"></img>
+</p>
+<p>
+<b>Figure 3 </b>Geometric Representation of Our B&#201;zier
+</p>
+<p>
+<img src="img/210.gif" width="294 px"></img>
+</p>
+<p>
+<b>Figure 4 </b>Our B&#201;zier, Subdivided
+</p>
+<p>
+<b>MIKE REED AND KONSTANTIN OTHMER </b>have become such regular contributors<br>
+to <i> develop</i>&nbsp;&nbsp;that they scarcely need introduction. Still, we've just discovered something<br>
+new about them: they dabble in doggerel. Consider this sample:
+</p>
+<p>
+Late into the night, by the glow of a candle,<br>
+Two men are found working on mischief and scandal.<br>
+Their mice are a-clicking, their keyboards in motion,<br>
+They're working on something of mythic proportion.<br>
+We move closer in, to get a good look,<br>
+And notice they're writing a get-rich-quick book.<br>
+We wonder what topic could hold their attention<br>
+And keep them from working on some new invention.<br>
+Their title reveals what the work will envelop--<br>
+<i>How to Get Rich: Just Write for develop.</i>&nbsp;&nbsp;*
+</p>
+<p>
+<b>For an explanation of the Fixed data type, </b> see <i>Inside Macintosh</i>&nbsp;&nbsp;Volume I,<br>
+Chapters 3 and 16. *
+</p>
+<p>
+<b>For more information about picture comments, </b>see Technical Note #91,<br>
+"Optimizing for the LaserWriter--Picture Comments." This tech note explains how<br>
+picture comments work and documents a number of standard picture comments<br>
+supported by the LaserWriter printer driver.*
+</p>
+<p>
+<b>Complete information on the TrueType format </b>is provided in <i>The TrueType</i><br>
+<i>Font Format Specification</i>&nbsp;&nbsp;, available from APDA (#M0825LL/A).*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS</b> Pete "Luke" Alexander, Guillermo<br>
+Ortiz, Sean Parent*
+</p>
+</body>
+</html>

@@ -1,0 +1,789 @@
+<html>
+<head>
+<!-- Article ID: 16 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Spring 91 - THREADS ON THE MACINTOSH</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>THREADS ON THE MACINTOSH</h2>
+<h1>MICHAEL GOUGH</h1>
+<p>
+<img src="img/150.gif" width="188 px"></img>
+</p>
+<p>
+<i>&nbsp;Threads are a great way to improve the performance and simplify the design of</i><br>
+<i>programs. Apple's Advanced Technology Group developed a Threads Package to</i><br>
+<i>implement this programming technique on the Macintosh. This article explains how</i><br>
+<i>you can use this package to incorporate threads in your own code.</i>
+</p>
+<p>
+&nbsp;The idea for the Threads Package arose during the design phase of some scientific<br>
+visualization software, when we discovered that some of the applications we were<br>
+working on needed a way to juggle several simultaneous activities. It quickly became<br>
+clear that the Macintosh run-time environment posed some serious obstacles to anyone<br>
+wanting to implement threads on the Macintosh. With some effort, we were able to<br>
+come up with workarounds that made the use of threads with the Macintosh OS<br>
+relatively painless. 
+</p>
+<p>
+&nbsp;These workarounds are the main subject of this article. After briefly introducing the<br>
+purpose and mechanics of threads in general, the article presents some specific details<br>
+of the Macintosh threads implementation as it currently stands. A summary of the<br>
+functions in the Threads Package appears at the end of the article. The Threads Package<br>
+itself and several simple example programs can be found on the <i>Developer Essentials </i><br>
+disc for this issue.
+</p>
+<p>
+&nbsp;The Threads Package was developed as a means to an end, and it's by no means the last<br>
+word on threads for the Macintosh. We welcome any suggestions you may have for<br>
+improvements.
+</p>
+<h2>WHAT THREADS DO</h2>
+<p>
+Suppose you want to write an AppleLink &#174;-like communications program. You'd like<br>
+to write the program so that while it's downloading a file, it can also print an existing<br>
+file and allow the user to write a new message. A typical program can perform only one<br>
+of these functions at a time, displaying the watch cursor until the task is completed.<br>
+What's needed is some technique for allowing the program to perform these tasks<br>
+concurrently. 
+</p>
+<p>
+&nbsp;Programmers have often tried to achieve concurrency through the use of idle procs.<br>
+For your communications program, for instance, you could write the downloading,<br>
+printing, and text entry tasks as idle procs. While the download procedure is<br>
+executing, it could regularly call a printing idle proc to send a few lines of a message<br>
+to the printer. The download procedure could also periodically call an editing<br>
+procedure to allow the user to enter text for a new message in a window. 
+</p>
+<p>
+&nbsp;But think of the tremendous effort involved in writing the program so that it can<br>
+switch among these tasks. Every task would have to save variables each time it returns<br>
+so that it could resume where itleft off.&nbsp;&nbsp;Most complex functions would not be able to<br>
+contain deep levels of nesting because that would make it impossible to freely return to<br>
+the caller at any time. In fact, you'd have to divide most functions into inconveniently<br>
+small chunks so that you could juggle between them. The net result is that the<br>
+modularity of your program would be destroyed, and you'd have a tremendous<br>
+programming headache on your hands. 
+</p>
+<p>
+Threads are a much better technique for achieving concurrency than idle procs. When<br>
+your program uses threads, it's like a mind that can have several trains of thought<br>
+simultaneously. A program using idle procs, in contrast, is like a mind with a single<br>
+train of thought that must constantly interrupt itself to attend to side issues.
+</p>
+<p>
+Note that there's a difference between multithreaded programs and multitasking<br>
+systems.&nbsp;&nbsp;&nbsp;Multitasking is the ability to run more than one application at once, but<br>
+each application can still only do one thing at a time. In other words, concurrency is<br>
+happening at the system level. A multithreaded application performs concurrent tasks<br>
+within the same program; concurrency happens at the program level. Of course, it's<br>
+possible to have a multitasking environment in which threaded programs run.
+</p>
+<h2>HOW THREADS WORK</h2>
+<p>
+When writing multithreaded code, you must let go of old ideas about how the machine<br>
+executes your program. Instead of a single program counter marching through your<br>
+code, in a sense you now have many. While the idea of multiple program counters may<br>
+sound complex, you don't have to relearn programming. You just need to be aware that<br>
+the main train of execution in a program is itself a thread and that all threads must<br>
+relinquish control to each other. You also have to remember to share globals and heap<br>
+objects that you used to access exclusively.
+</p>
+<p>
+Here's a sample program that shows how simple it is to use threads. The program is a<br>
+modified version of the ever-popular SillyBalls. Unmodified, the program opens a<br>
+window and draws colored balls into it until the main event loop detects that the mouse<br>
+button is down. This new version forks a thread that beeps while the balls are being<br>
+drawn.
+</p>
+<pre>main()
+{
+    ThreadHandle beepThread;
+
+    Initialize();
+
+/* The InitThreads call initializes the Threads Package, converting
+   the original thread of execution into a swappable thread. */
+
+    InitThreads(nil, false);
+
+/* This code forks a thread that beeps 30 times, and then quits. */
+
+    if (InNewThread(&amp;beepThread, kDefaultStackSize))
+        {
+        long i;
+        for (i=0; i&lt;30; i++)
+            {
+            SysBeep(120);
+            Yield();
+            }
+        EndThread(beepThread);
+        }
+
+/* Here's the main event loop. The only change is the new call to
+   Yield. */
+
+    do
+        {
+        Yield();
+        NewBall();
+        } while (!Button());
+
+/* This call to ExitThreads waits for all threads to die before
+allowing
+   the program to terminate. */
+
+    ExitThreads();
+}</pre>
+<p>
+The InitThreads call is made at the beginning of the program. It initializes threads and<br>
+converts the original thread into something that can be swapped by the Threads<br>
+Package. Once this call is made, you can fork other threads.
+</p>
+<p>
+In this example, execution from the original thread enters the InNewThread procedure.<br>
+Two threads leave the procedure, but at different times. The original thread goes in and<br>
+is cloned before coming out. A new thread now exists, but it hasn't started execution<br>
+yet. InNewThread tests whether the current thread's ID is that of the new thread,<br>
+beepThread, and returns a Boolean indicating the result of this test. It's essentially<br>
+supplying an answer to the question "Am I running the new thread?" Since the original<br>
+thread is still the current thread, it returns from InNewThread with a value of false,<br>
+thus skipping over the code contained in the IF block. It continues execution by<br>
+entering the main event loop, drawing balls, and calling the Yield function. Each time it<br>
+calls Yield, it politely gives control to other threads that may want time to execute. 
+</p>
+<p>
+On the first call to Yield, the newly cloned thread returns from the call to InNewThread<br>
+with a value of true, indicating that this is the new thread and not the original. The new<br>
+thread enters the block of code associated with the IF statement and begins executing<br>
+the loop, which beeps and yields 30 times. Each call to Yield exchanges control with the<br>
+main event loop. The new thread lives out its life within the confines of the IF block.<br>
+After completing its task, it calls EndThread and dies.
+</p>
+<p>
+The conditions for terminating these two threads are different: the beeping thread ends<br>
+after 30 iterations; the original thread ends when the user presses the mouse button.<br>
+The call to ExitThreads at the end of the program ensures that all threads have<br>
+completed before the program terminates.
+</p>
+<h2>SEMAPHORES</h2>
+<p>
+With multiple threads running around in your program, it's possible for them to get<br>
+in each other's way. The Threads Package provides a semaphore mechanism to help you<br>
+manage this problem. The problem occurs when two threads compete for a resource.<br>
+Two threads that are executing at the same time may each want exclusive use of the<br>
+same device, file, or memory location.
+</p>
+<p>
+To deal with this situation, you assign a semaphore to control access to this resource.<br>
+Then, when you write the thread that uses the resource, you always make sure that the<br>
+thread "grabs" the semaphore. After you're done with the resource, you "release" the<br>
+semaphore. 
+</p>
+<p>
+What happens if a thread tries to grab a semaphore that has already been grabbed? The<br>
+thread goes to sleep, waiting in a queue associated with the semaphore. When the<br>
+semaphore does become available, the sleeping thread wakes up with control of the<br>
+semaphore, completely unaware that it had to wait in the queue. It continues executing<br>
+code as usual, and releases the semaphore when it's done, thus giving other threads an<br>
+opportunity to use the resource.
+</p>
+<p>
+Below is a small example program that demonstrates the behavior of semaphores. It's<br>
+very similar to the first example, except that the beeping thread grabs a semaphore<br>
+before beeping 4 times and then releases it. A call to Yield was inserted within this<br>
+inner loop just to demonstrate that even though there is a call to Yield in the loop, no<br>
+balls are drawn during this time. This is because the code that draws the balls grabs<br>
+the semaphore too. When it gets control of the semaphore, it draws 20 balls before<br>
+letting go. After you release a semaphore, you still have to call Yield before other<br>
+threads will get control.
+</p>
+<pre>main()
+{
+    ThreadHandle    beepThread;
+    SemaphoreHandle aSemaphore;
+
+    Initialize();
+
+/* The InitThreads call initializes the Threads Package, converting
+   the original thread of execution into a swappable thread. */
+
+    InitThreads(nil, false);
+    aSemaphore = NewSemaphore();
+
+/* Fork the beeping thread. */
+
+    if (InNewThread(&amp;beepThread, kDefaultStackSize))
+        {
+        long i,j;
+        Yield();
+        for (i=0; i&lt;10; i++)
+            {
+
+/* Grab the semaphore, beep 4 times, and release the semaphore. */
+
+            GrabSemaphore(aSemaphore);
+            for (j=0; j&lt;4; j++)
+                {
+                SysBeep(120);
+                Yield();
+                }
+            ReleaseSemaphore(aSemaphore);
+            }
+        EndThread(beepThread);
+        }
+
+
+/* Here's the main event loop. */
+
+    do
+        {
+        long j;
+        Yield();
+
+/* Grab the semaphore, draw 20 balls, and release the semaphore. */
+
+        GrabSemaphore(aSemaphore);
+        for (j=0; j&lt;20; j++)
+            {
+            NewBall();
+            Yield();
+            }
+        ReleaseSemaphore(aSemaphore);
+       
+        } while (!Button());
+
+/* This call to ExitThreads waits for all threads to die before
+   allowing the program to terminate. */
+
+    ExitThreads();
+}</pre>
+<h2>IMPLEMENTING THREADS ON THE MACINTOSH</h2>
+<p>
+After examining the ramifications of implementing threads in the Macintosh run-time<br>
+environment, we identified three serious problems:
+</p>
+<ul>
+<li> non-reentrant Toolbox and application code</li>
+<li> Toolbox use of memory between the stack and the heap</li>
+<li> segment unloading</li>
+</ul>
+<p>
+Although the Threads Package minimizes the impact of these problems, you must still<br>
+deal with some special coding issues when writing programs that use threads. 
+</p>
+<p>
+<b>NON-REENTRANT TOOLBOX AND APPLICATION CODE</b><br>
+When you develop code that uses threads, it's important to write reentrant code. This<br>
+is a fancy way of saying that your threads must not interfere with each other. A<br>
+common way in which threads do interfere with each other is in the use--or<br>
+misuse--of global variables.
+</p>
+<p>
+The basic problem can be described as follows: Your thread is merrily running along,<br>
+and it politely yields control to the other threads. When it gets control again, the other<br>
+threads may have unexpectedly changed some global variables, causing your thread to<br>
+crash and burn, or behave in an unexpected manner.
+</p>
+<p>
+Let's illustrate this problem with a realistic example. Suppose you want two windows<br>
+in your application, and you want to have some drawing going on in each of them<br>
+simultaneously. Naturally, you would start two threads that draw in the two respective<br>
+windows. Unfortunately, when you run the program, you find that both of the threads<br>
+end up drawing in the same window.
+</p>
+<p>
+What happened? The first thread sets its grafPort to the grafPort of the first window.<br>
+When the first thread yields control to the second thread, the second thread changes the<br>
+grafPort to point to<i>its</i>&nbsp;&nbsp;window. Finally, when the first thread gets control again, the<br>
+grafPort is still pointing to the second window. 
+</p>
+<p>
+You might attempt to solve this problem by placing code that saves and restores your<br>
+grafPort before and after your call to Yield. This approach may appear to work, but<br>
+watch out! There may be other calls to the Yield function in routines that your thread<br>
+is calling. You would have to make sure your save-and-restore code surrounds every<br>
+one of these calls as well. This would be cumbersome, to say the least.
+</p>
+<p>
+A safer solution to the reentrancy problem is simply to write reentrant code from the<br>
+beginning. In other words, just don't misuse global variables. But alas, millions of<br>
+lines of code have already been written for the Macintosh with globals galore. The<br>
+Macintosh Toolbox itself is on the whole non- reentrant. For instance, in the above<br>
+example, the grafPort global is referenced not just in the application but in the<br>
+Toolbox itself. It would be unrealistic to expect reentrancy problems in Toolbox and<br>
+application code to vanish overnight.
+</p>
+<p>
+To get around all this, the Threads Package provides an innovation called <i> customizable</i><br>
+<i>swapping behavior. </i> To understand how this behavior works, you must first know a<br>
+little bit about the thread structure.
+</p>
+<p>
+The thread structure contains additional fields for the custom procedures that the<br>
+Threads Package uses to control a thread. Figure 1 illustrates these fields.
+</p>
+<p>
+You implement the customizable swapping behavior by writing custom routines that<br>
+carefully set up a thread's globals when the thread swaps in and save these values<br>
+before the thread swaps out. You assign these routines to the fields in the thread<br>
+structure, so that the Threads Package can automatically call these routines for you<br>
+when it does the actual swapping. This enables you to getcontrol at the critical times. 
+</p>
+<p>
+Here's how the customizable swapping feature works. Normally when you create a<br>
+thread, the Threads Package assigns default swapping and context-preserving<br>
+functions to the thread. If you want to use all these defaults, just call the InNewThread<br>
+routine to launch a thread. To use customizable swapping, you create the thread object<br>
+yourself, customize it, and then launch it. Note that you must always be sure to call the<br>
+corresponding default routine from within your custom routine. 
+</p>
+<p>
+<img src="img/151.gif" width="540 px"></img>
+</p>
+<p>
+<i>* Don't alter this pointer. In practice we've found that you don't need to override</i><br>
+<i>fSwapOut.</i>
+</p>
+<p>
+<b>Figure 1</b> Customizable Routines in the Thread Structure
+</p>
+<p>
+Remember, you don't necessarily have to use this customizable swapping technique to<br>
+juggle all of your global variables. Some globals are really fixed values and don't<br>
+change when your program switches threads. You only have to worry about the globals<br>
+that other threads are going to change.
+</p>
+<p>
+The following sample program demonstrates how to customize the swapping behavior<br>
+of threads. Notice that there are now two ball-drawing threads. They manage to use the<br>
+same global variable, gBallSize, to draw balls of different sizes. If we assume that this<br>
+global is used by the NewBall procedure to determine the size of the ball, and that you<br>
+don't have control over the implementation of NewBall, then you must have a way to<br>
+juggle the global's value. This example shows you how to do just that:
+</p>
+<pre>pascal void MyCopyContext(ThreadHandle theThread)
+{
+    (**theThread).fUserBytes[0] = gBallSize ;
+    TCopyContext(theThread);
+}
+
+pascal void MySwapIn(ThreadHandle theThread)
+{
+    gBallSize = (**theThread).fUserBytes[0] ;
+    TSwapIn(theThread);
+}
+
+main()
+{
+    ThreadHandle ballThread;
+    ThreadHandle mainThread;
+
+    Initialize();
+
+/* Create and customize the main thread. InitThreads will start
+   it. */
+
+    mainThread = NewThread(kDefaultStackSize);
+    (**mainThread).fCopyContext = &amp;MyCopyContext;
+    (**mainThread).fSwapIn = &amp;MySwapIn;
+    InitThreads(mainThread, false);
+
+/* Create, customize, and start the ball thread. */
+
+    ballThread = NewThread(kDefaultStackSize);
+    (**ballThread).fCopyContext = &amp;MyCopyContext;
+    (**ballThread).fSwapIn = &amp;MySwapIn;
+    StartThread(ballThread);
+    if (InThread(ballThread))
+        {
+        long i;
+        gBallSize = 100;
+        for (i=0; i&lt;100; i++)
+            {
+            NewBall();
+            Yield();
+            }
+        EndThread(ballThread);
+        }
+/* Here's the main event loop. */
+
+    gBallSize = 20;
+    do
+        {
+        Yield();
+        NewBall();
+        } while (!Button());
+
+
+/* This call to ExitThreads waits for all threads to die before
+   allowing the program to terminate. */
+
+    ExitThreads();
+}</pre>
+<p>
+Note that this example uses procedure pointers. As always with procedure pointers,<br>
+make sure that they're A5 relative so that they can be dereferenced from another<br>
+segment. In this case, the Threads Package will be calling your procedures at the<br>
+critical moments before swapping in and swapping out. My preferred technique for<br>
+ensuring that procedure pointers are A5 relative is to put the procedure in its own<br>
+segment, separate from the routine that's generating the reference to it.
+</p>
+<p>
+Figure 2 illustrates how we've customized the thread for the sample program above.
+</p>
+<p>
+<img src="img/152.gif" width="540 px"></img>
+</p>
+<p>
+<b>Figure 2</b> Customizing a Thread
+</p>
+<p>
+<b>TOOLBOX USE OF MEMORY BETWEEN THE STACK AND THE HEAP</b><br>
+Most threads implementations&nbsp;&nbsp;involve keeping a separate stack in the heap for each<br>
+thread. They do their context swapping by altering the stack pointer and the stack base;<br>
+the data on the stack never moves. Unfortunately, there are some routines in the<br>
+Macintosh Toolbox that assume the stack remains in the same place, not in the heap.
+</p>
+<p>
+One of the primary design goals of the Threads Package was Toolbox compatibility, so<br>
+here's the solution we chose. It's a given that there is only one stack and all threads<br>
+must share the use of this stack. However, since a thread needs to maintain its unique<br>
+stack data and protect it from being clobbered by other threads, each thread needs to<br>
+keep this data safe when it doesn't have control of the stack. The way a thread does this<br>
+is by creating its own unique storage area in the heap. The Threads Package's<br>
+context-swapping strategy moves data between the stack and the heap with the<br>
+BlockMove instruction. As a thread swaps out, its context is moved to the heap. As a<br>
+thread swaps in, its context is moved from the heap into the application's stack area. 
+</p>
+<p>
+The context-swapping code is written in such a way that interrupts can function as<br>
+usual, and of course you can call Toolbox routines as usual. The heap storage associated<br>
+with a thread's stack can and will grow dynamically as necessary, since it's free to<br>
+move around in memory while it's not running.
+</p>
+<p>
+Swap time using this strategy is 500 microseconds for a stack size of 256 bytes<br>
+running on an SE/30. Your mileage may vary.
+</p>
+<p>
+You must be careful not to pass pointers to stack objects between threads, since such<br>
+pointers are not valid unless the associated thread is swapped in. One subtle way that<br>
+this problem occurs is in the use of parameter blocks associated with asynchronous<br>
+I/O. Such parameter blocks should not be allocated on the stack because the I/O<br>
+operation may complete when the wrong thread is swapped in.
+</p>
+<p>
+<b>SEGMENT UNLOADING</b><br>
+When you write threaded programs for the Macintosh, you must never unload a code<br>
+segment unless you're certain that there is no thread that has entered that code<br>
+segment and has not yet left. In some cases, you can be sure that there's no way for a<br>
+thread to yield control while it's in a specific code segment. For example, if you have<br>
+some code that does some computation that stands on its own, you can be reasonably<br>
+certain that there's no way for it to call other code that could result in a Yield. In cases<br>
+like this, it's safe to unload the segment as usual.
+</p>
+<p>
+We looked at several mechanisms for overcoming this problem and found that the most<br>
+promising design involves unloading segments at GrowZone time. Here's how this could<br>
+work: The system could call the GrowZone routine when you need more memory in the<br>
+current heap zone. Since the whole idea behind unloading code segments is to free up<br>
+memory, we thought that this would be a good place to
+</p>
+<p>
+unload segments. The trick is to make sure that your GrowZone routine only unloads<br>
+segments that are not needed by any thread. To ensure this, you could augment the<br>
+thread structure to include linked-list pointers that would allow your custom<br>
+GrowZone procedure to traverse a list of all threads (even sleeping threads) in one<br>
+pass. During the traversal, GrowZone would scan the stack of each thread, looking for<br>
+anything resembling a return address. If it found a return address, the associated code<br>
+segment would be "needed." When all the stacks were scanned, GrowZone would simply<br>
+unload all of the unneeded code segments.
+</p>
+<h2>THE THREADS API</h2>
+<p>
+Here's a description of all the routine and data structures provided by the Threads<br>
+Package.
+</p>
+<p>
+<b>THE THREAD STRUCTURE</b><br>
+The API functions all access a thread through its handle. The thread structure as it's<br>
+defined in the Threads.h file is as follows:
+</p>
+<pre>struct Thread
+{
+    struct Thing    fThing;       // Linked-list stuff.
+    ThreadType      fType;        // Obsolete.
+    ThreadState     fState;      
+                         // Running,pending,blocked,sleeping,ended.
+    Boolean         fLocked;      // Obsolete.
+    Handle          fStack;       // The storage for the stack data.
+    ThreadProc      fCopyContext;
+                         // Copy current context and store in fStack.
+    ThreadProc      fSwapIn;     
+                         // Called to context-swap a thread in.
+    ThreadProc      fSwapOut;   
+                  // Calls fSchedule, then fSwapIn on the nextThread.
+    ThreadProc      fFree;        // Called to dispose of the thread.
+    ScheduleProc    fSchedule;   
+            // Queue this thread (if necessary), return the next one.
+    long    fUserBytes[8];        // For user use.
+};</pre>
+<p>
+<b>INITIALIZING THE THREADS PACKAGE</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal void InitThreads(ThreadHandle mainThread, Boolean usesFPU);</pre>
+<p>
+This routine initializes the Threads Package. The first parameter is the handle of the<br>
+main thread, which has been customized with specific swapping behavior. If you don't<br>
+need customized swapping behavior for the main thread, pass nil. The second<br>
+parameter indicates whether you want to swap floating-point registers. If you pass a<br>
+value of true, they'll be swapped. Of course, the Threads Package is smart enough to<br>
+know that some machines don't support FPUs, in which case it ignores a value of true.
+</p>
+<p>
+<b>CUSTOMIZING THREADS</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal ThreadHandle NewThread(long stackSize);</pre>
+<p>
+Each thread structure has a number of fields that are procedure pointers.&nbsp;&nbsp;The Threads<br>
+Package assigns default procedures to these fields when it creates a thread. You can<br>
+create a custom thread by calling NewThread and changing the values of the procedure<br>
+pointers before giving the thread a chance to run.
+</p>
+<p>
+Here's a list of the procedure pointers that you can change in the thread structure:
+</p>
+<pre>ThreadProc fCopyContext;ThreadProc fSwapIn;
+ThreadProc fSwapOut;
+ThreadProc fFree;
+ScheduleProc fSchedule;</pre>
+<p>
+When you change one of these procedure pointers in the thread structure, you're<br>
+overriding the default behavior of a given thread. You will usually customize<br>
+fCopyContext and fSwapIn to save and restore globals at the appropriate moments. If<br>
+you need to deallocate data structures associated with the thread, you should override<br>
+fFree, which is called when the thread dies.
+</p>
+<p>
+If you're using the default behavior, don't forget to call the corresponding default<br>
+procedure appropriately within your procedure. Here's a list of the default<br>
+procedures:
+</p>
+<pre>pascal void TCopyContext(ThreadHandle);
+pascal void TSwapIn(ThreadHandle);
+pascal void TSwapOut(ThreadHandle);
+pascal void TFree(ThreadHandle);
+pascal ThreadHandle TSchedule(ThreadHandle);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+There is a handy place to store information in the thread structure, called fUserBytes.<br>
+If you store handles there, be sure to deallocate them in your override of fFree.
+</p>
+<pre>pascal void StartThread(ThreadHandle theThread);
+pascal Boolean InThread(ThreadHandle theThread);</pre>
+<p>
+Once you've created the thread with the call to NewThread and have customized it, you<br>
+call StartThread, which clones the current stack and saves it in the newly created<br>
+thread structure. The call to StartThread is typically followed by a call to InThread,<br>
+which returns true if the specified thread is currently running. This call is embedded<br>
+in an IF statement that you use to route the respective threads. The original thread<br>
+jumps over the code in the IF statement, while the new thread enters this body of code.
+</p>
+<p>
+<b>CONVENIENCE ROUTINES</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal Boolean InNewThread(ThreadHandle* theThread,
+    long stackSize);</pre>
+<p>
+The InNewThread function combines the features of NewThread, StartThread, and<br>
+InThread. What's different about InNewThread is that it automatically launches a<br>
+thread with the default swapping behavior and doesn't give you the opportunity to<br>
+customize the thread. InNewThread returns a Boolean as does InThread, and returns a<br>
+thread handle in the theThread parameter. You must supply a value for stackSize,<br>
+which is the number of bytes initially allocated for this thread's stack. If the number<br>
+you supply is too small, the Threads Package will automatically grow the block of<br>
+memory that contains the stack. Nice, huh? So if you don't know or care what stack<br>
+size you need, just pass in 0.
+</p>
+<pre>pascal ThreadHandle Spawn(ThreadHandle theThread,
+pascal void (*threadProc)(ThreadHandle, long),
+    long stackSize, long refCon);</pre>
+<p>
+The Spawn routine is for mutants who don't like fork semantics. You supply a thread<br>
+handle, or nil if you want an uncustomized thread. You also supply a procedure pointer<br>
+that points to a procedure containing code for the new thread to run. The new thread<br>
+dies when it returns from your procedure. You also specify a stackSize and a refCon,<br>
+which allows you to pass some context information to the new thread. The refCon field<br>
+is usually a pointer or a handle to a memory block that contains parameters you want<br>
+to pass in.
+</p>
+<p>
+The distinguishing characteristic of spawn semantics is that the code for the new<br>
+thread is separated from the code for the original thread. Some people are more<br>
+comfortable when these things are separated, but passing parameters to initialize the<br>
+new thread is more work. With fork semantics, all of your local variables are right<br>
+there on the stack. You don't need to package them up in a record as you do with spawn<br>
+semantics.
+</p>
+<p>
+<b>OTHER STUFF</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal ThreadHandle GetCurrentThread();</pre>
+<p>
+The GetCurrentThread function returns the handle to the currently executing thread. 
+</p>
+<pre>pascal void Yield();</pre>
+<p>
+The Yield function is called to explicitly give control to other threads. Yield is called<br>
+implicitly through other routines like Sleep. (If the current thread is going to sleep,<br>
+it had better yield control to a waking thread.)
+</p>
+<p>
+<b>STATES OF CONSCIOUSNESS</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal void Sleep(ThreadHandle theThread);
+pascal void Wake(ThreadHandle theThread);
+pascal void EndThread(ThreadHandle theThread);</pre>
+<p>
+These routines allow you to alter a thread's state of consciousness. To put a thread to<br>
+sleep, you simply call Sleep and pass it a thread handle. Usually, a thread will call<br>
+Sleep to put itself to sleep, although there are some cases where this will be done by<br>
+another thread. To wake a thread up, call Wake. To kill the thread, use EndThread.
+</p>
+<h2>THE THREADS ADVANTAGE</h2>
+<p>
+The Threads Package provides a nearly painless way for you to implement multiple<br>
+threads of execution in your programs. All you need to learn is a handful of routines<br>
+and a slightly new way of thinking about program execution. And you can gain a lot:<br>
+easier, more intuitive program design; vastly simpler code; possible performance<br>
+boosts; and, of course, that holy grail of Macintosh programmers, increased user<br>
+satisfaction. It's a deal that's hard to refuse.
+</p>
+<p>
+<b>ACKNOWLEDGMENTS</b>
+</p>
+<p>
+I would like to thank Joe MacDougald for his Herculean contributions to the design and<br>
+implementation of the Threads Package. Without his devoted effort, the Threads<br>
+Package would not exist in its current form. Thanks to Tom Dowdy for the FPU<br>
+register-swapping feature, and numerous other improvements. Thanks also to ATG<br>
+researcher Jed Harris, who originally suggested threads as a solution to our problems.<br>
+Jed helped a great deal with design issues, and some gnarly assembly code debugging.<br>
+The swapping strategy that allows the Threads Package to be Macintosh<br>
+Toolbox-compatible was suggested by Donn Denman. Thanks to P. Nagarajan, the first<br>
+threads user.&nbsp;&nbsp;&nbsp;He dropped threads into his code virtually overnight, giving us valuable<br>
+input that made it possible to steer the design and implementation. 
+</p>
+<p>
+Tom Saulpaugh made significant contributions to the current design of semaphores.<br>
+Thanks, Tom.&nbsp;&nbsp;&nbsp;Thanks to Dave Harrison for reviewing an early version of the source<br>
+code for threads. Thanks to Mitchell Gass for documenting an earlier version of the<br>
+Threads Package. And thanks to my mentor Larry Tesler for supporting the<br>
+development of the first version of threads, and suggesting the convenience functions.
+</p>
+<p>
+Thanks x 106 to my editor Geta Carlson. We had a blast working together on this<br>
+article, although we've never met in person. Thanks to Paul Snively for polishing the<br>
+article and championing threads in DTS. Greg Anderson, C. K. Haun, Dave Johnson, and<br>
+Dave Williams all contributed valuable suggestions that were incorporated. Thanks to<br>
+Monica Meffert, Louella Pizzuti, and Caroline Rose for making the article happen. <br>
+Finally, thanks to my managers Dave Leffler and Ron Metzker for putting up with me<br>
+while I worked on this, and for supporting what this is leading up to. 
+</p>
+<h2>WHY THREADS ARE IMPORTANT IN THE SYSTEM 7.0 ERA</h2>
+<p>
+Interprocess communication (IPC) is one of the most compelling reasons why threads<br>
+are going to become increasingly important in the future. This became clear to a group<br>
+of us working in Apple's Advanced Technology Group when we observed that a client and<br>
+a server application communicating via IPC could easily get into a deadly embrace. A<br>
+client would ask the server application a question and would wait for an answer before<br>
+continuing. Unfortunately, sometimes the client would wait forever for the answer.<br>
+What happened was that the server needed to ask its own question of the client before<br>
+answering the client. However, the client was monitoring exclusively for a response to<br>
+its question and would ignore the server's question. The client needed to answer the<br>
+server's incoming question before it could get an answer to its own question. Both<br>
+client and server would be stopped dead waiting for the other to respond. In a sense, the<br>
+Threads Package exists because the problem described here was intractable without<br>
+threads. The application must be both a client and a server. It must be able to<br>
+simultaneously handle incoming questions and wait for incoming answers. Other<br>
+approaches to doing this, such as idle procs, skirted the core of the problem and led to<br>
+code complexity that was unmanageable. Idle procs push too much of the problem onto<br>
+the application programmer, who already has enough to worry about.
+</p>
+<p>
+The threads solution is even more important now that IPC has been integrated into the<br>
+Macintosh OS in System 7.0. As more programmers will have access to IPC because of<br>
+System 7.0, they will need this elegant method of achieving concurrency.
+</p>
+<h2>IDLE PROCS VERSUS THREADS</h2>
+<p>
+Idle procs have traditionally been used to approach thread-like functionality. This<br>
+involves writing a piece of code to handle a particular task and installing it in a queue<br>
+of things that get called periodically. Thereafter, the flow of control pulses through the<br>
+routine, which can do some finite amount of work and then return, so that other idle<br>
+procs can get pulsed.
+</p>
+<p>
+This approach results in several gnarly coding problems. The most serious is that the<br>
+pulsed routine, which is attempting to execute some algorithm, must return to its<br>
+caller at inopportune moments. Imagine that you're marching through a deeply nested<br>
+piece of code and you want to relinquish control when you reach a certain point. With<br>
+the pulsing approach, you must return to the caller from deep within the nested code.<br>
+You could put in a return statement, but the problem would be that when it's time to<br>
+pick up where you left off, you would have to magically jump back into the code after<br>
+the return statement on the next pulse. Obviously, this is not a simple thing to do when<br>
+you have to bypass several layers of conditionals and loops.
+</p>
+<p>
+The magic of the Threads Package is that it allows you to avoid these problems: you can<br>
+leave a complex function and resume execution of it precisely where you left off. With<br>
+idle procs, on the other hand, you're forced to completely redesign the algorithm. You<br>
+must give the algorithm an "inside out" appearance: code that was in the most deeply<br>
+nested part of the algorithm now appears near either the top or the bottom of the<br>
+routine. You may even have to break your routine into several smaller functions that<br>
+are run in sequence. But doing these things will negate the natural top-down structure<br>
+of a routine. It's a mess. 
+</p>
+<h2>THREADS IN USE TODAY</h2>
+<p>
+Threads are currently in use in a product called Virtual User (APDA #M0987LL/A).<br>
+This program uses a single machine, acting as the "user," to run software tests on<br>
+many CPUs at once. 
+</p>
+<p>
+Virtual User used to wait until each test was done before starting something else on<br>
+another test machine. That was slow, because all the testing machines were waiting for<br>
+one of their siblings to finish something before getting anything to work on. Now, with<br>
+threads, the controlling machine is happily juggling separate conversations with all of<br>
+the testing machines simultaneously. The result is a dramatic boost in performance.
+</p>
+<p>
+<b>MICHAEL GOUGH</b> is a designer in Apple's User Programming Group. We'd tell you<br>
+what he's up to these days, but it's so secret we'd have to kill you if we did. Before<br>
+coming to Apple, Michael worked at STX as a NASA contractor, designing scientific data<br>
+visualization systems. He is best known as the designer and implementor of CDF, a<br>
+"mini-database" that NASA uses to store data from dozens of spacecraft. Michael<br>
+developed software used by NOAA's fleet of oceanographic vessels to map the ocean<br>
+floor. He also worked as a contractor to the United Nations World Meteorological<br>
+Organization, so if you have any problems with the weather, now you know who to<br>
+blame. While he was there, he developed real-time satellite tracking and data ingest<br>
+systems for the TIROS-N, GOES, and GMS spacecraft, and conducted training and<br>
+installation in Beijing and Buenos Aires. In Beijing he used his knowledge of<br>
+electronics, computer science, math, and Scotch tape to successfully complete the<br>
+installation--just goes to show that you never quite know what the right tools for the<br>
+job are going to be. (Here at Apple, we make sure he always has plenty of office<br>
+supplies--just in case.) *
+</p>
+<p>
+<b>Thanks to Our Technical Reviewers</b> C. K. Haun, Paul Snively, Dave Williams *
+</p>
+</body>
+</html>

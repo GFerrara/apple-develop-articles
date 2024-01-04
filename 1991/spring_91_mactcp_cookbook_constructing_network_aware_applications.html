@@ -1,0 +1,1083 @@
+<html>
+<head>
+<!-- Article ID: 18 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Spring 91 - MACTCP COOKBOOK: CONSTRUCTING NETWORK-AWARE APPLICATIONS</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACTCP COOKBOOK: CONSTRUCTING NETWORK-AWARE<br>
+APPLICATIONS</h2>
+<h1>STEVE FALKENBURG</h1>
+<p>
+<img src="img/154.gif" width="336 px"></img>
+</p>
+<p>
+<i>The Macintosh is now a full-fledged player in the world of TCP/IP networking.&nbsp;&nbsp;</i><br>
+<i>MacTCP, an implementation of TCP/IP for the Macintosh, lets applications take</i><br>
+<i>advantage of a protocol suite that is used extensively by many makes of computers.</i><br>
+<i>This article attempts to demystify the process of MacTCP programming and provides a</i><br>
+<i>library of calls that can be used easily by anyone familiar with Macintosh</i><br>
+<i>programming. </i>
+</p>
+<p>
+&nbsp;TCP/IP, which stands for <i>Transmission Control Protocol/Internet Protocol,</i>&nbsp;&nbsp;was<br>
+developed by the U.S. Department of Defense Advanced Research Products Agency<br>
+(DARPA) and used initially on the ARPANET, a national research network created by<br>
+DARPA in the late 1960s. Although the ARPANET no longer exists, the TCP/IP<br>
+protocols are used on many large-scale networks. Many of these networks are<br>
+interconnected and are known collectively as the <i> Internet.</i>
+</p>
+<p>
+&nbsp;The TCP/IP protocol stack, shown in Figure 1, is composed of several layers. At the<br>
+lowest layer, the Internet Protocol (IP) handles transmitting packets of information<br>
+from one host to another. Above this network level, TCP/IP provides two transport<br>
+layer protocols: Transmission Control Protocol (TCP) and User Datagram Protocol<br>
+(UDP). TCP provides reliable connection-based service, while UDP is not connection<br>
+based. The MacTCP &#174; driver gives the programmer interfaces to TCP and UDP, but not<br>
+to the lower-level IP. This article deals only with TCP programming. For information<br>
+on MacTCP UDP programming, consult the <i> MacTCP Programmer's Guide.</i>
+</p>
+<p>
+&nbsp;Several application-level protocols use TCP to provide user-level service. The<br>
+Simple Mail Transfer Protocol (SMTP) is used to send electronic mail, the Network<br>
+News Transfer Protocol (NNTP) is used to transfer and post news, the File Transfer<br>
+Protocol (FTP) is used to transfer files between machines, and the Finger protocol is<br>
+used to retrieve user information. MacTCP does not include programming interfaces or<br>
+implementations for any of these application-level protocols.
+</p>
+<p>
+&nbsp;With connection-based protocols, such as TCP, a connection is defined as a<br>
+bidirectional open line of communication between two hosts. Data is guaranteed to be<br>
+received in the same order as it was sent, and in TCP, data reliability is ensured. To<br>
+open a connection between two computers, the initiating program sends an open<br>
+command containing the network address of the remote computer to MacTCP. If the<br>
+remote computer is listening for a connection, it acknowledges the connection, and data<br>
+can then be transferred on the connection stream. If the remote computer is not<br>
+listening for a connection, the open command fails. Once all transactions have been<br>
+completed, the connection may be closed by either computer.
+</p>
+<p>
+<img src="img/155.gif" width="306 px"></img>
+</p>
+<p>
+<b>Figure 1</b> TCP/IP Protocol Stack
+</p>
+<p>
+&nbsp;Network addressing is essential to this process. Each device connected to a TCP/IP<br>
+network is assigned a unique 4-byte address, also known as the IP number, as shown<br>
+in Table 1. A unique name can also be assigned to each network entity. MacTCP provides<br>
+a name service mechanism, called the Domain Name Resolver (DNR), which translates<br>
+network names to addresses and vice versa.&nbsp;&nbsp;In addition, there's a 2-byte port number<br>
+associated with TCP connections. Each port number is usually mapped to the type of<br>
+application-level service the sender is requesting. For example, the NNTP protocol<br>
+always operates on TCP port 119. This mapping is shown in Table 2. MacTCP does not<br>
+provide a service for translating between service name and port number.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Table 1</b> Network Name to Address Mapping
+</p>
+<p><table border="0"><tr><td><b>Network Name</b></td><td><b></b><b>IP Number</b></td></tr>
+<tr><td>sol.engin.umich.edu</td><td>141.212.4.65</td></tr>
+<tr><td>mondo.engin.umich.edu</td><td>141.212.68.14</td></tr>
+<tr><td>freebie.engin.umich.edu</td><td>141.212.68.23</td></tr>
+<tr><td>daneel.engin.umich.edu</td><td>141.212.68.30</td></tr>
+<tr><td>maize.engin.umich.edu</td><td>141.212.10.56</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Table 2</b> Service to Port Number Mapping
+</p>
+<p><table border="0"><tr><td><b>Service</b></td><td></td></tr>
+<tr><td>ftp</td><td>21</td></tr>
+<tr><td>telnet</td><td>23</td></tr>
+<tr><td>smtp</td><td>25</td></tr>
+<tr><td>finger</td><td>79</td></tr>
+<tr><td>nntp</td><td>119</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<h2>&nbsp;MACTCP PROGRAMMING BASICS</h2>
+<p>
+This section focuses on the basics of MacTCP programming, while the remainder of the<br>
+article discusses high-level, easy-to-use routines. MacTCP is a driver for the<br>
+Macintosh that provides access to TCP/IP through the Device Manager. By making<br>
+standard Device Manager PBControl calls, programs can access TCP/IP transport<br>
+protocols to control and maintain connections. The standard TCP parameter block,<br>
+defined in TCPPB.h, is shown here:
+</p>
+<pre>typedef struct TCPiopb {
+    char        fill12[12];
+    TCPIOCompletionProc ioCompletion;
+                                  /* address of completion routine */
+    short       ioResult;   /* result of call (&gt;0 = incomplete) */
+    char        *ioNamePtr;
+    short       ioVRefNum;
+    short       ioCRefNum;  /* MacTCP driver reference number */
+    short       csCode;     /* command code */
+    StreamPtr   tcpStream;  /* pointer to stream buffer */
+    union {
+        struct TCPCreatePB create; /* var for TCPCreate,TCPRelease */
+        struct TCPOpenPB    open;  
+                           /* var for TCPActiveOpen,TCPPassiveOpen */
+        struct TCPSendPB    send;   /* var for TCPSend */
+        struct TCPReceivePB receive;   
+                    /* var for TCPNoCopyRcv,TCPRcvBfrReturn,TCPRcv */
+        struct TCPClosePB   close;  /* var for TCPClose */
+        struct TCPAbortPB   abort;  /* var for TCPAbort */
+        struct TCPStatusPB  status; /* var for TCPStatus */
+        struct TCPGlobalInfoPB globalInfo; 
+                                          /* var for TCPGlobalInfo */
+        } csParam;
+} TCPiopb;</pre>
+<p>
+From the start of the parameter block up to the tcpStream parameter, this structure<br>
+is a standard Device Manager control block. Three fields must be filled in:
+</p>
+<ul>
+<li> csCode, which specifies the driver command to be executed.</li>
+<li> ioCRefNum, which contains the MacTCP driver reference number.</li>
+<li> tcpStream, which contains a pointer to the pertinent TCP stream. This<br>
+stream pointer, which is described in more detail later, is the unique<br>
+identifier for a connection.</li>
+</ul>
+<p>
+If the call is made asynchronously, as all MacTCP calls may be, a pointer to a<br>
+completion routine can be specified in ioCompletion. Depending on the type of call<br>
+made, there are various ways to fill in the union at the end of this parameter block.
+</p>
+<p>
+<b>TCP DRIVER CALLS</b><br>
+A description of some of the common commands and their parameter blocks follows.<br>
+Unless otherwise specified, a value of zero for any parameter indicates the default<br>
+value.
+</p>
+<p style="margin-bottom: 0px;">
+<b><code>TCPCreate&nbsp;&nbsp;&nbsp;(csCode = 30)</code></b><br>
+<b><code>TCPRelease&nbsp;&nbsp;(csCode = 42)</code></b>
+</p>
+<pre style="margin-top: 0px;">typedef struct TCPCreatePB {
+    Ptr             rcvBuff;    /* pointer to area allocated
+                                   for stream buffer */
+    unsigned long   rcvBuffLen; /* length of stream buffer */
+    TCPNotifyProc   notifyProc; /* address of asynchronous
+                                   notification routine */
+    Ptr userDataPtr;
+}TCPCreatePB;</pre>
+<p>
+TCPCreate allocates a MacTCP stream to be used for opening or listening for a<br>
+connection. The rcvBuff parameter should be a pointer to a block of memory<br>
+previously allocated as a stream buffer; set rcvBuffLen to the length of that buffer. If<br>
+you want to be interrupted when the connection state changes, set notifyProc to the<br>
+address of an asynchronous notification routine (ASR). The code in this article doesn't<br>
+make use of the ASR feature, so in this case notifyProc should be set to nil. A pointer to<br>
+the created stream is returned in tcpStream.
+</p>
+<p>
+TCPRelease removes the stream pointed to by tcpStream from all MacTCP-internal<br>
+stream lists. It returns a pointer to the stream buffer in rcvBuff. When TCPRelease<br>
+completes successfully, this buffer should be disposed of by the calling program.
+</p>
+<p style="margin-bottom: 0px;">
+<b><code>TCPPassiveOpen&nbsp;&nbsp;(csCode = 31)</code></b><br>
+<b><code>TCPActiveOpen&nbsp;&nbsp;&nbsp;(csCode = 32)</code></b>
+</p>
+<pre style="margin-top: 0px;">typedef struct TCPOpenPB {
+    byte        ulpTimeoutValue;     /* upper-layer protocol
+                                        timeout */
+    byte        ulpTimeoutAction;    /* upper-layer protocol
+                                        timeout action */
+    byte        validityFlags;       /* validity flags for options */
+    byte        commandTimeoutValue; /* timeout value for command */
+    ip_addr     remoteHost;          /* IP address of the remote
+                                        host */
+    tcp_port    remotePort;          /* TCP port to connect to on the
+                                        remote host */
+    ip_addr     localHost;           /* local IP number */
+    tcp_port    localPort;           /* local port from which
+                                        connection originates */
+    byte        tosFlags;            /* type of service requested */
+    byte        precedence;          /* priority of connection */
+    Boolean     dontFrag;            /* if true, don't fragment
+                                        packets */
+    byte        timeToLive;          /* maximum number of hops for
+                                        packets */
+    byte        security;            /* security option byte */
+    byte        optionCnt;           /* number of IP options */
+    byte        options[40];         /* other IP options (def in
+                                        RFC 894) */
+    Ptr         userDataPtr;
+}TCPOpenPB;</pre>
+<p>
+TCPPassiveOpen listens for an incoming connection from a specific host and port. The<br>
+command completes when a remote host connects to the port monitored by this<br>
+command. Store the remote host address in remoteHost and specify the remote TCP port<br>
+number in remotePort. Connections from any host and port are possible if these values<br>
+are set to zero. Set the localPort parameter to the local TCP port number or to zero to<br>
+assign an unused port. ULP ("ulp" in the parameter names) stands for <i>upper-layer</i><br>
+<i>protocol. </i> The ulpTimeoutValue parameter is the maximum amount of time MacTCP<br>
+allows for a connection to complete after the connection process has started. If this<br>
+timeout is reached, and the value of ulpTimeoutAction is zero, the ASR, if present, is<br>
+called and the ULP timer is reset. When the timeout is reached, if ulpTimeoutAction is<br>
+nonzero, the command returns an error. The validityFlags parameter indicates which<br>
+of the other command parameters are specified explicitly. Bit 6 is set if the ULP<br>
+timeout action is valid; bit 7 is set if the ULP timeout value is valid. Descriptions for<br>
+the rest of the entries in this structure can be found in the <i> MacTCP Programmer's</i><br>
+<i>Guide. </i> In most cases, they can all be set to zero, indicating default values should be<br>
+used.
+</p>
+<p>
+TCPActiveOpen attempts to initiate a connection with a remote host and completes when<br>
+this connection is established. The parameters are identical to TCPPassiveOpen, with<br>
+the following exceptions: There's no command timeout parameter, although the ULP<br>
+timeout is available. You must fully specify the remote host address and remote port in<br>
+remoteHost and remotePort, respectively, since it's impossible to initiate a connection<br>
+to an arbitrary host without direction.
+</p>
+<p style="margin-bottom: 0px;">
+<b><code>TCPSend (csCode = 34)</code></b>
+</p>
+<pre style="margin-top: 0px;">typedef struct TCPSendPB {
+    byte           ulpTimeoutValue;   /* upper-layer protocol
+                                         timeout */
+    byte           ulpTimeoutAction;  /* upper-layer protocol
+                                         timeout action */
+    byte           validityFlags;     /* validity flags for
+                                         options */
+    Boolean        pushFlag;          /* true if data should be sent
+                                         immediately */
+    Boolean        urgentFlag;        /* identifies the data as
+                                         important */
+    Ptr            wdsPtr;            /* pointer to write data
+                                         structure */
+    unsigned long  sendFree;
+    unsigned short sendLength;
+    Ptr            userDataPtr;
+}TCPSendPB;</pre>
+<p>
+TCPSend sends data to a remote host along an open connection stream. The definitions of<br>
+ulpTimeoutValue, ulpTimeoutAction, and validityFlags are the same as in<br>
+TCPPassiveOpen. The pushFlag parameter is set if the data should be sent immediately<br>
+and the urgentFlag option can be set to indicate that the data is important. The data to be<br>
+sent is stored in a write data structure (WDS). The format of this structure is simply<br>
+an array of wdsEntry structures, which are length/pointer pairs. You terminate the<br>
+WDS by setting the last entry's length to zero.
+</p>
+<pre>typedef struct wdsEntry {
+    unsigned short length;  /* length of buffer */
+    char * ptr;     /* pointer to buffer */
+} wdsEntry;</pre>
+<p style="margin-bottom: 0px;">
+<b><code>TCPRcv&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(csCode = 37)</code></b>
+</p>
+<pre style="margin-top: 0px;">typedef struct TCPReceivePB {   /* for receive and return rcv buff
+                                   calls */
+    byte           commandTimeoutValue;   /* timeout value for
+                                             command */
+    byte           filler;
+    Boolean        markFlag;   /* true if start of read data
+                                  structure is urgent data */
+    Boolean        urgentFlag; /* true if read data structure
+                                  ends in urgent data */
+    Ptr            rcvBuff;    /* pointer to data that has been
+                                  received */
+    unsigned short rcvBuffLen; /* amount of data in bytes that has
+                                  been received */
+    Ptr            rdsPtr;     /* pointer to read data structure */
+    unsigned short rdsLength;  
+    unsigned short secondTimeStamp;
+    Ptr            userDataPtr;
+}TCPReceivePB;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+TCPRcv receives incoming data on an already established connection. Allocate a buffer<br>
+for the incoming data and store a pointer to this location in rcvBuff. Store the<br>
+maximum length to be received in rcvBuffLen. This value is changed to the number of<br>
+bytes received when the command completes. Store the timeout value for this <br>
+command in commandTimeoutValue. Finally, use markFlag and urgentFlag to delimit<br>
+the start and end of urgent data blocks.
+</p>
+<p style="margin-bottom: 0px;">
+<b><code>TCPClose&nbsp;&nbsp;&nbsp;&nbsp;(csCode = 38)</code></b>
+</p>
+<pre style="margin-top: 0px;">typedef struct TCPClosePB {
+    byte ulpTimeoutValue;   /* upper-layer protocol timeout */
+    byte ulpTimeoutAction;  /* upper-layer protocol timeout action */
+    byte validityFlags;     /* validity flags for options */
+    Ptr  userDataPtr;
+}TCPClosePB;</pre>
+<p>
+TCPClose indicates to the remote host that the caller has no more data to send on the<br>
+connection. It's assumed that the remote host will then issue a close command, which<br>
+permits the connection to close.&nbsp;&nbsp;&nbsp;However, the connection will not close until both<br>
+hosts issue this command. The parameters to this call are described in other calls. 
+</p>
+<p style="margin-bottom: 0px;">
+<b><code>TCPAbort&nbsp;&nbsp;&nbsp;&nbsp;(csCode = 39)</code></b>
+</p>
+<pre style="margin-top: 0px;">typedef struct TCPAbortPB {
+    Ptr userDataPtr;
+}TCPAbortPB;</pre>
+<p>
+TCPAbort closes a connection without asking the remote host for permission. This<br>
+command does not ensure that all data transfers have completed. The parameters to this<br>
+call are described earlier.
+</p>
+<p>
+<b>MEDIUM-LEVEL TCP CALLS</b><br>
+Since calling the Device Manager is a painful experience for some programmers, a<br>
+small library of intermediate routines can speed up development time. This article<br>
+includes such a library. There's one medium-level call provided for each associated<br>
+TCP driver command, so these calls simply isolate programmers from filling out<br>
+parameter blocks. This seems to be a big plus with most programmers. The source code<br>
+for the calls is on the <i> Developer Essentials </i> disc<i>.</i>
+</p>
+<p>
+Several of the medium-level calls have hooks that allow them to be called<br>
+asynchronously. Any procedure containing an async flag can be called in this manner.<br>
+If this is done, the parameter block used to make the call is returned in returnBlock.<br>
+The calling program must then poll returnBlock- &gt;ioResult to determine when the<br>
+command has completed. As with any other Device Manager call, the ioResult field<br>
+remains positive while the command is executed and then changes to zero or a negative<br>
+value upon completion, indicating the call's result code. Any number of calls may be<br>
+awaiting completion, since medium-level routines dynamically allocate space for<br>
+parameter blocks. Completion routine hooks are not provided by these routines, but<br>
+could easily be added.
+</p>
+<p>
+If a medium-level routine is called with the async flag false, or if the routine doesn't<br>
+have an async flag, the underlying PBControl call is still called asynchronously. While<br>
+awaiting completion of the command, the medium-level routines call a routine defined<br>
+by
+</p>
+<pre>Boolean GiveTime(unsigned long sleepTime);</pre>
+<p>
+This callback permits the application to carry out other small tasks. In the examples<br>
+in this article, GiveTime spins the cursor and calls WaitNextEvent from a secondary<br>
+main event loop to handle a subset of normal program operation and to give other<br>
+applications time to execute.
+</p>
+<p>
+At this point, you may be thinking that figuring out proper values for these routines is<br>
+as much of a pain as filling out parameter blocks. For this reason, another set of<br>
+high-level routines is provided for sending and receiving data.
+</p>
+<p>
+<b>HIGH-LEVEL TCP CALLS</b><br>
+High-level TCP calls further simplify and generalize the process of calling MacTCP.<br>
+Write data structures are not required to send data, only a single timeout value is<br>
+allowed, and other TCP specifics (mark, push, and so on) have been removed. Instead,<br>
+the high-level calls are a core set of routines that are both understandable and easy to<br>
+use. In most cases, it's to your advantage to use these routines, since they abstract the<br>
+MacTCP programming interface to resemble a generic connection-based protocol<br>
+scheme. This opens the possibility of porting these high-level routines to another<br>
+protocol stack, such as AppleTalk &#174;. In fact, if the high-level routines were modified<br>
+to use AppleTalk Datastream Session Protocol (ADSP), any code written using the<br>
+high-level calls for MacTCP could be compiled for use on an AppleTalk network. The<br>
+source code for these routines is on the <i> Developer Essentials </i> disc.
+</p>
+<p>
+The operation of high-level MacTCP calls is fairly straightforward. For each<br>
+asynchronous routine, there's a corresponding routine to call when the asynchronous<br>
+command completes. The moment of completion can be determined by polling<br>
+returnBlock-&gt;ioResult. This returnBlock parameter is the same as the one returned<br>
+by the medium-level routines and contains the MacTCP parameter block used in the<br>
+pending asynchronous call.
+</p>
+<p>
+<b>NAME RESOLVER CALLS</b><br>
+Before you can build a useful network application, you must consider name-to-address<br>
+resolution.&nbsp;&nbsp;&nbsp;Name-to-address resolution provides a means of converting from domain<br>
+names (unique string identifiers for computers on a TCP/IP network) to IP numbers<br>
+(4-byte addresses) and vice versa. In general, people can remember the name of a<br>
+computer (for example, goofy.apple.com) more easily than they can remember a<br>
+network address (for example, 90.1.0.10). Translation tables between the names and<br>
+numbers can be stored on the local machine (the MacTCP Hosts file, for example) or<br>
+on a remote server. Remote access to network numbers is provided through the Domain<br>
+Name Server protocol. The MacTCP Domain Name Resolver allows name/address<br>
+translations using both the static table and remote server methods. 
+</p>
+<p>
+The MacTCP Developer's Kit (APDA #M0230LL/D) ships with the file dnr.c, a set of C<br>
+routines providing a programming interface to the name resolver. Several important<br>
+calls from this code module are described here.
+</p>
+<pre>OSErr OpenResolver(char *fileName);</pre>
+<p>
+OpenResolver initializes the name resolver. As a parameter to the call, you can supply<br>
+a local file containing important hosts. Passing nil for this filename defaults to the<br>
+Hosts file in the current System Folder.
+</p>
+<pre>OSErr StrToAddr(char *hostName, struct hostInfo *hostInfoPtr,
+        ResultProcPtr ResultProc, char *userDataPtr);</pre>
+<p>
+StrToAddr converts a string of the form "W.X.Y.Z" or "goofy.apple.com" to its 4-byte<br>
+IP address. The hostInfo struct that you pass in looks like this:
+</p>
+<pre>typedef struct hostInfo {
+    long            rtnCode;
+    char            cname [255];
+    unsigned long   addr [NUM_ALT_ADDRS];
+};</pre>
+<pre>OSErr AddrToName(ip_addr addr, struct hostInfo *hostInfoPtr,
+    ResultProcPtr ResultProc, char *userDataPtr);</pre>
+<p>
+AddrToName performs a reverse lookup to retrieve a host name, given a 4-byte IP<br>
+address.
+</p>
+<pre>OSErr CloseResolver();</pre>
+<p>
+CloseResolver closes the resolver and deallocates the resources and the address cache<br>
+that has accumulated.
+</p>
+<p>
+Calls to these dnr.c routines can be combined to construct a fairly simple routine to<br>
+convert host names to IP addresses:
+</p>
+<pre>/* CvtAddr.c
+Converts host names to IP numbers
+written by Steve Falkenburg
+*/
+#include &lt;Types.h&gt;
+#include &lt;MacTCPCommonTypes.h&gt;
+#include &lt;AddressXLation.h&gt;
+#include "CvtAddr.h"
+
+pascal void DNRResultProc(struct hostInfo *hInfoPtr,char
+*userDataPtr);
+
+/*  ConvertStringToAddr is a simple call to get a host's IP number,
+given the name
+    of the host.
+*/
+
+OSErr ConvertStringToAddr(char *name,unsigned long *netNum)
+{
+    struct   hostInfo hInfo;
+    OSErr    result;
+    char     done = 0x00;
+
+    if ((result = OpenResolver(nil)) == noErr) {
+        result = StrToAddr(name,&amp;hInfo,DNRResultProc,&amp;done);
+        if (result == cacheFault)
+            while (!done)
+                ; /* wait for cache fault resolver to be called by
+                     interrupt */
+        CloseResolver();
+        if ((hInfo.rtnCode == noErr) ||
+            (hInfo.rtnCode == cacheFault)) {
+            *netNum = hInfo.addr[0];
+            strcpy(name,hInfo.cname);
+            name[strlen(name)-1] = '\0';
+            return noErr;
+        }
+    }
+    *netNum = 0;
+
+    return result;
+}
+
+/*  This is the completion routine used for name resolver calls.
+    It sets the userDataPtr flag to indicate the call has completed.
+*/
+pascal void DNRResultProc(struct hostInfo *hInfoPtr,
+        char *userDataPtr)
+{
+#pragma unused (hInfoPtr)
+
+    *userDataPtr = 0xff;    /* Setting the user data to nonzero means
+                               we're done. */
+}</pre>
+<h2>PROGRAMMING A SIMPLE MACTCP APPLICATION</h2>
+<p>
+The core set of routines provided in the earlier sections makes it fairly easy to write a<br>
+small but useful TCP application. These core routines can be stacked together to form a<br>
+framework for a basic MacTCP application, as shown in Figure 2. Note that no module<br>
+accesses a module that's farther than one level away. This provides the programmer<br>
+the flexibility needed to improve the networking library or switch protocol stacks<br>
+without losing functionality.
+</p>
+<p>
+<img src="img/156.gif" width="239 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> Finger Code Modularization
+</p>
+<p>
+One of the simplest and most widely used network utilities is finger. Implemented on<br>
+most UNIX workstations, finger is used to retrieve personal information (such as<br>
+phone number and address) for a particular user. The finger utility accesses<br>
+information through the Finger User Information Protocol, discussed in RFC 1194 on<br>
+the <i> Developer Essentials </i> disc. The protocol operates on a client/server model. Figure<br>
+3 is a diagram of a sample transaction.
+</p>
+<p>
+<b>&nbsp;Client Server</b>1. Client sends "sfalken" to retrieve information on user sfalken.
+</p>
+<p>
+<img src="img/157.gif" width="590 px"></img>
+</p>
+<ol>
+<li>Client receives "Phone: 555-1234"    </li>
+<li> Server retrieves information from     from server and closes connection.<br>
+database: "Phone: 555-1234"</li>
+</ol>
+<p>
+<b>Figure 3</b>Finger Protocol Transaction
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The code for a simple MPW tool to implement the Finger protocol is shown here, with<br>
+accompanying explanation:
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<pre>/* MacTCP finger client            */
+/* written by Steven Falkenburg     */
+/*                      */
+
+#include &lt;Types.h&gt;
+#include &lt;Memory.h&gt;
+#include &lt;Packages.h&gt;
+#include &lt;CursorCtl.h&gt;
+#include &lt;String.h&gt;
+
+#include "CvtAddr.h"
+#include "MacTCPCommonTypes.h"
+#include "TCPPB.h"
+#include "TCPHi.h"
+
+/* constants */
+
+#define kFingerPort 79  /* TCP port assigned for finger protocol */
+#define kBufSize 16384  /* Size in bytes for TCP stream buffer and
+                           receive buffer */
+#define kTimeOut 20     /* Timeout for TCP commands (20 sec. pretty
+                           much arbitrary) */
+
+/* function prototypes */
+
+void main(int argc,char *argv[]);
+OSErr Finger(char *userid,char *hostName,Handle *fingerData);
+OSErr GetFingerData(unsigned long stream,Handle *fingerData);
+void FixCRLF(char *data);
+Boolean GiveTime(short sleepTime);
+
+/* globals */
+
+Boolean gCancel = false;  /* This is set to true if the user
+                             cancels an operation. */
+
+/*  main entry point for finger                 */
+/*                                              */
+/*  usage: finger &lt;user&gt;@&lt;host&gt;                 */
+/*                                              */
+/*  This function parses the args from the command line,        */
+/*  calls Finger() to get info, and prints the returned info.   */
+
+void main(int argc,char *argv[])
+{
+    OSErr err;
+    Handle theFinger;
+    char userid[256],host[256];
+   
+    if (argc != 2) {
+        printf("Wrong number of parameters to finger call\n");
+        return;
+    }
+   
+    sscanf(argv[1],"%[^@]@%s",userid,host);
+   
+    strcat(userid,"\n\r");
+   
+    err = Finger(userid,host,&amp;theFinger);
+   
+    if (err == noErr) {
+        HLock(theFinger);
+        FixCRLF(*theFinger);
+        printf("\n%s\n",*theFinger);
+        DisposHandle(theFinger);
+    }
+    else
+        printf("An error has occurred: %hd\n",err);
+}
+
+/*  Finger()    */
+/*  This function converts the host string to an IP number, */
+/*  opens a connection to the remote host on TCP port 79, sends */
+/*  the id to the remote host, and waits for the information on */
+/*  the receiving stream. After this information is sent, the   */
+/*  connection is closed down.      */
+
+OSErr Finger(char *userid,char *hostName,Handle *fingerData)
+{
+    OSErr err;
+    unsigned long ipAddress;
+    unsigned long stream;
+   
+    /* open the network driver */
+   
+    err = InitNetwork();
+    if (err != noErr)
+        return err;
+   
+    /* get remote machine's network number */
+   
+    err = ConvertStringToAddr(hostName,&amp;ipAddress);
+    if (err != noErr)
+        return err;
+   
+    /* open a TCP stream */
+   
+    err = CreateStream(&amp;stream,kBufSize);
+    if (err != noErr)
+        return err;
+   
+    err = OpenConnection(stream,ipAddress,kFingerPort,kTimeOut);
+    if (err == noErr) {
+        err = SendData(stream,userid,
+            (unsigned short)strlen(userid),false);
+        if (err == noErr)
+            err = GetFingerData(stream,fingerData);
+        CloseConnection(stream);
+    }
+   
+    ReleaseStream(stream);
+    return err;
+}
+
+OSErr GetFingerData(unsigned long stream,Handle *fingerData)
+{
+    OSErr err;
+    long bufOffset = 0;
+    unsigned short dataLength;
+    Ptr data;
+   
+    *fingerData = NewHandle(kBufSize);
+    err = MemError();
+    if (err != noErr)
+        return err;
+       
+    HLock(*fingerData);
+    data = **fingerData;
+    dataLength = kBufSize;
+   
+    do {
+        err = RecvData(stream,data,&amp;dataLength,false);
+        if (err == noErr) {
+            bufOffset += dataLength;
+            dataLength = kBufSize;
+            HUnlock(*fingerData);
+            SetHandleSize(*fingerData,bufOffset+kBufSize);
+            err = MemError();
+            HLock(*fingerData);
+            data = **fingerData + bufOffset;
+        }
+    } while (err == noErr);
+   
+    data[0] = '\0';
+   
+    HUnlock(*fingerData);
+    if (err == connectionClosing)
+        err = noErr;
+}
+
+/* FixCRLF() removes the linefeeds from a text buffer. This is  */
+/* necessary, since all text on the network is embedded with    */
+/* carriage return linefeed pairs.      */
+
+void FixCRLF(char *data)
+{
+    register char *source,*dest;
+    long length;
+   
+    length = strlen(data);
+   
+    if (*data) {
+        source = dest = data;
+        while ((source - data) &lt; (length-1)) {
+            if (*source == '\r')
+                source++;
+            *dest++ = *source++;
+        }
+        if (*source != '\r' &amp;&amp; (source - data) &lt; length)
+            *dest++ = *source++;
+        length = dest - data;
+    }
+   
+    *dest = '\0';
+}
+
+/* This routine would normally be a callback for giving time to */
+/* background apps.                             */
+   
+Boolean GiveTime(short sleepTime)
+{
+    SpinCursor(1);
+    return true;
+}</pre>
+<p>
+The main points in the execution of this program can be traced as follows:
+</p>
+<ol>
+<li> Get userid, host</li>
+<li> Initialize MacTCP<code> InitNetwork();</code></li>
+<li> Get address of host<code> ConvertStringToAddr(hostName,&amp;ipAddress);</code></li>
+<li> Make a TCP stream<code>CreateStream(&amp;stream,kBufSize);</code></li>
+<li> Connect to finger<br>
+host<code>OpenConnection(stream,ipAddress,kFingerPort,kTimeOut);</code></li>
+<li> Send userid across stream<code> SendData(stream,userid,(unsigned</code><br>
+<code>short)strlen(userid),false);</code></li>
+<li> Receive finger information<br>
+<code>RecvData(stream,data,&amp;dataLength,false);</code> from stream</li>
+<li> Close connection<code> CloseConnection(stream);</code></li>
+<li> Release stream<code> ReleaseStream(stream);</code></li>
+<li> Quit program</li>
+</ol>
+<p>
+Once the host name and user ID are received, MacTCP is initialized by a call to<br>
+InitNetwork. The IP number of the host is then retrieved by a call to<br>
+ConvertStringToAddr. If this is successful, CreateStream creates a TCP stream, and<br>
+OpenConnection opens a connection on that stream to the finger port on the remote host.<br>
+Next, SendData sends the user ID along this connection. The fingerinformation is<br>
+received through repeated calls to RecvData. Once all data has been sent,<br>
+CloseConnection closes the connection, and the stream is removed with
+</p>
+<p>
+ReleaseStream. Finally, the program terminates, leaving the MacTCP driver open.<br>
+Here's a sample run of the finger tool in action:
+</p>
+<p style="margin-bottom: 0px;">
+<i><code>finger sfalken mondo.engin.umich.edu &lt;enter&gt;</code></i>
+</p>
+<pre style="margin-top: 0px;">Login name: sfalken In real life: Steven
+Falkenburg
+Phone: 555-1234
+Directory: /u/sfalken Shell: /bin/csh
+On since Feb 26 07:08:28 on ttyp2 from rezcop.engin.umi
+No Plan.</pre>
+<p>
+The code for the finger tool can be compiled and linked with the high- and<br>
+medium-level routines into an MPW tool. This example shows how a standard network<br>
+protocol can be easily encapsulated into a simple program. The high-level networking<br>
+calls act somewhat like a Macintosh Toolbox Manager, since they encapsulate the<br>
+complexity of TCP programming. These routines can be used by any programmer with<br>
+a user-level knowledge of networking, making network programming less of a<br>
+mysterious art.
+</p>
+<h2>NEWSWATCHER--A COMPLEX TCP APPLICATION</h2>
+<p>
+The finger tool is limited in scope, but the same techniques can be used to construct<br>
+more complex programs. NewsWatcher, a Macintosh-based network news reader,<br>
+provides an example.
+</p>
+<p>
+One of the most popular services available on the Internet is network news, an<br>
+international forum for discussion of almost any topic you can imagine. Anyone can<br>
+post and read messages. Since thousands of messages are posted every day, the messages<br>
+are divided into more than a thousand newsgroups. Examples of these diverse groups<br>
+include
+</p>
+<p><table border="0"><tr><td>comp.sys.mac.programmer</td><td>Macintosh programming</td></tr>
+<tr><td></td><td>discussions</td></tr>
+<tr><td>comp.sys.mac.misc</td><td>Miscellaneous Macintosh</td></tr>
+<tr><td></td><td>ramblings</td></tr>
+<tr><td>alt.flame.spelling</td><td>People insulting others'</td></tr>
+<tr><td></td><td>spelling skills</td></tr>
+<tr><td>alt.alien.visitors</td><td>Discussions of alien</td></tr>
+<tr><td></td><td>life--intelligent or otherwise</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The volume of network news bombarding readers necessitates a usable interface. I<br>
+wrote NewsWatcher to provide that interface.
+</p>
+<p>
+<b>NAVIGATING THE NET WITH NEWSWATCHER</b><br>
+Before plunging into a deep technical discussion of the NewsWatcher code structure, a<br>
+brief description of the interface is in order. A typical NewsWatcher screen is shown<br>
+in Figure 4.
+</p>
+<p>
+The program is based on a multiwindow browser interface, similar to the Finder<br>
+(without the icons). A window containing all active newsgroups is always available,<br>
+and users can get a full article subject list for a group by double-clicking that group's<br>
+name. This opens up another browsing window, containing the subjects. These<br>
+subjects, in turn, can be opened to display the full text of individual articles in<br>
+separate windows. A user who wants to keep track of a few specific newsgroups and see<br>
+only new articles in those groups can "subscribe" to the specific groups. This is done<br>
+by choosing New Group Window from the File menu, which creates an empty group<br>
+window. The desired groups can then be dragged from the main Newsgroups window to<br>
+this custom group window. The new window can be browsed like any other group<br>
+window. When the user is ready to quit, the custom group list can either be saved to<br>
+disk or uploaded to a UNIX &#174; news file (using FTP). This gives users access to their<br>
+group list from multiple computers.
+</p>
+<p>
+<img src="img/158.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 4</b> A Typical NewsWatcher Screen
+</p>
+<p>
+&nbsp;Not surprisingly, the user interface code for NewsWatcher, though complex, has<br>
+virtually nothing to do with MacTCP programming and is beyond the scope of this<br>
+article. This code, however, is included on the <i>Developer Essentials</i>&nbsp;&nbsp;disc for those<br>
+interested in a multiwindow browsing system.
+</p>
+<p>
+<b>NEWSWATCHER NNTP ROUTINES</b><br>
+The Network News Transfer Protocol (NNTP) is easily implemented from the<br>
+medium-level TCP calls described in the first part of this article. (For information on<br>
+NNTP, see "Introduction to NNTP.") The NNTP calls in NewsWatcher are encapsulated<br>
+into a module named <i> NNTPLow.c.</i>&nbsp;&nbsp;The external functions in this module, along with a<br>
+description of their purpose, are described here:
+</p>
+<pre>OSErr StartNNTP(void);</pre>
+<p>
+StartNNTP initializes the network resources needed to establish an NNTP connection<br>
+with a remote server. Once all proper drivers have been initialized, this routine opens<br>
+a connection to the local NNTP server, whose name is stored in the program's<br>
+configuration file. This connection is maintained throughout the life span of the<br>
+program.
+</p>
+<pre>OSErr CloseNewsConnection(void);</pre>
+<p>
+CloseNewsConnection gracefully terminates a connection with a remote NNTP server.<br>
+This command is executed only when NewsWatcher is quitting.
+</p>
+<pre>OSErr ResetConnection(void);</pre>
+<p>
+ResetConnection is called when a communication error occurs between the client and<br>
+server. This routine terminates and attempts to reestablish connection to the NNTP<br>
+server.
+</p>
+<pre>OSErr GetGroupList(short *numGroups);</pre>
+<p>
+GetGroupList puts the list of newsgroups in the global variable gGroupList. To get the<br>
+list of groups from the server, the command LIST is sent to the server, which<br>
+responds with a list of allknown newsgroups.
+</p>
+<pre>OSErr GetMessages(char *newsGroup,long first,long last,
+TSubject *subjects,long *numSubjects,char *hdrName);</pre>
+<p>
+GetMessages returns a set of subject headers specified by group name and article<br>
+number range. This routine operates by sending the command XHDR <i> groupname</i><br>
+<i>first-last</i>&nbsp;&nbsp;to the NNTP server and parsing the response.
+</p>
+<pre>OSErr GetArticle(char *newsGroup,char *article,char **text,
+        long *length, long maxLength);</pre>
+<p>
+GetArticle retrieves the full text of the article in group newsGroup named <i> article</i> .<br>
+This procedure sends the command ARTICLE <i>article </i> to the NNTP server.
+</p>
+<p>
+These procedures are called in response to user requests for articles and subject lists.<br>
+As you can see, there's absolutely no network dependence at this point, even on the<br>
+NNTP protocol. It would be trivial to write a set of routines with identical function<br>
+prototypes that treated a file hierarchy on a hard disk as a set of newsgroups and<br>
+articles. This layered isolation approach is of critical importance in network<br>
+programming, since network-level protocols may change while applications remain<br>
+the same.
+</p>
+<p>
+<b>OTHER PROTOCOLS IN NEWSWATCHER</b><br>
+In addition to NNTP, several other network protocols are implemented for<br>
+NewsWatcher. These protocols include the Simple Mail Transfer Protocol (SMTP) and<br>
+the File Transfer Protocol (FTP).
+</p>
+<p>
+<b>Simple Mail Transfer Protocol (SMTP).</b> SMTP gives users the ability to<br>
+respond to article postings through electronic mail. This protocol, like NNTP, operates<br>
+on a request-response stream. SMTP servers listen on TCP port 25, and the protocol<br>
+is described in detail in RFC 821 on the <i> Developer Essentials </i> disc. NewsWatcher<br>
+contains a single procedure, SendSMTP, that takes care of setting up a connection to the<br>
+server, sending the message, and disconnecting. The function prototype for this<br>
+function is as follows:
+</p>
+<pre>Boolean SendSMTP(char *text,unsigned short tLength);</pre>
+<p>
+The SendSMTP code is contained within the SMTPLow.c code module. This separation<br>
+allows the code to be used in other programs easily. The routine calls functions in<br>
+TCPLow.c (the medium- level routines) and is called from netstuff.c. 
+</p>
+<p>
+<b>File Transfer Protocol (FTP). </b> NewsWatcher includes FTP-based routines that<br>
+allow users to send lists of newsgroups to, and receive them from, a file on a remote<br>
+machine. This protocol uses a control stream, running on TCP port 21, to set up file<br>
+transfers. When a transfer is initiated, a secondary data stream is opened on a<br>
+negotiated TCP port. The file transfer is completed by means of this secondary stream,<br>
+and the data stream is then closed down. For a detailed description of the protocol and<br>
+command set used, see RFC 959 on the <i> Developer Essentials </i> disc. To shield<br>
+programmers from the complications of FTP, I wrote several high-level routines to<br>
+implement it:
+</p>
+<pre>OSErr FTPInit(ProcPtr statusCallback);</pre>
+<p>
+FTPInit initializes network resources required for FTP transfers. The single<br>
+parameter provided is a pointer to a callback procedure called when a status message<br>
+is received from a remote host.
+</p>
+<pre>OSErr FTPFinish(void);</pre>
+<p>
+Call this routine when file transfers are finished to release network resources used to<br>
+support the FTP session.
+</p>
+<pre>OSErr FTPConnect(unsigned long *connID,char *address,char *userID,
+char *password);</pre>
+<p>
+Call FTPConnect with the address of the remote machine, along with the user ID and<br>
+password of the account needed to access that machine.
+</p>
+<pre>OSErr FTPDisconnect(unsigned long connID);</pre>
+<p>
+After all transfers to a particular host have been completed, call this routine to<br>
+disconnect from the remote host.
+</p>
+<pre>OSErr FTPViewFile(unsigned long connID,Ptr *file,char *fileName);</pre>
+<p>
+FTPViewFile retrieves a file from the remote machine and stores its data in a pointer<br>
+allocated within the function.
+</p>
+<pre>OSErr FTPPutFile(unsigned long connID,char *fileName,char *data,
+    long size);</pre>
+<p>
+FTPPutFile is used to send a file to a remote machine. The remote filename and the file<br>
+data and length must be given.
+</p>
+<p>
+These routines are contained in FTPLow.c, using the same modular layered approach as<br>
+for other protocols.
+</p>
+<p>
+<b>NEWSWATCHER CODE MODULARITY</b><br>
+As in the finger example, the NewsWatcher source code is structured for maximum<br>
+flexibility in case of a protocol switch and to allow for ease in code sharing. The logical<br>
+code blocks are shown in Figure 5. The FTPLow.c module, for example, could easily be<br>
+extended and used as a generic file transfer module in many applications. It simply<br>
+requires the medium- and high-level TCP calls described earlier.
+</p>
+<p>
+<img src="img/159.gif" width="362 px"></img>
+</p>
+<p>
+<b>Figure 5</b>NewsWatcher Code Modularization
+</p>
+<h2>SUMMARY</h2>
+<p>
+Although programming with MacTCP can be fairly complicated from a low-level point<br>
+of view, using high-level routines makes it much simpler to create an easy-to-use<br>
+TCP networking module. Once difficult issues, such as asynchronous behavior, are<br>
+handled at a low level, higher-level modules can successively add protocol support for<br>
+mail, news, and file transfer. These high-level routines can be used by any<br>
+programmer, regardless of network-level knowledge.
+</p>
+<h2>INTRODUCTION TO NNTP</h2>
+<p>
+The Network News Transfer Protocol (NNTP) is a popular protocol for transmitting<br>
+and accessing network news on the Internet. This protocol, which runs out of TCP port<br>
+119 on a news host computer, is described in detail in RFC 977 on the <i>Developer</i><br>
+<i>Essentials</i>&nbsp;&nbsp;disc. NNTP, like finger, is based on the client-server model. An NNTP<br>
+server, usually one per site, stores a copy of each newsgroup and new article. Clients<br>
+contact this server to request news or post new articles.
+</p>
+<p>
+The protocol is based on a request-response model. Clients contact the NNTP server,<br>
+make a request, and receive a response. A sample session with an NNTP server is<br>
+shown below. Commands sent from the client (in this case a Macintosh) are shown in<br>
+italics.
+</p>
+<pre>200 srvr1.engin.umich.edu NNTP server version 1.5.10 + serve.c GNUS
+patch (3 October 1990) ready at Tue Oct 9 23:46:12 1990 (posting ok).
+
+HELP
+
+100 This server accepts the following commands:
+ARTICLE     BODY        GROUP
+HEAD        LAST        LIST
+NEXT        POST        QUIT
+STAT        NEWGROUPS   HELP
+IHAVE       NEWNEWS     SLAVE
+
+Additionally, the following extension is supported:
+
+XHDR Retrieve a single header line from a range of articles.
+
+Bugs to Stan Barber (Internet: nntp@tmc.edu; UUCP: ...!bcm!nntp)
+.
+GROUP comp.sys.mac.misc
+211 281 3035 3744 comp.sys.mac.misc
+ARTICLE 3035
+220 3035 &lt;1990Sep14.145124.25214@midway.uchicago.edu&gt;
+        Article retrieved; head and body follow.
+
+...article text here...
+.
+QUIT
+205 srvr1.engin.umich.edu closing connection.  Goodbye.</pre>
+<p>
+<b>For information on the TCP/IP protocol stack and networking in</b><br>
+<b>general:</b>
+</p>
+<ul>
+<li>Douglas E. Comer: <i>Internetworking with TCP/IP</i> , Prentice Hall, 1991.</li>
+<li>Andrew S. Tanenbaum: <i>Computer Networks</i> , Prentice Hall, 1988.</li>
+</ul>
+<p>
+<b>For an in-depth discussion of some of the protocols:</b>
+</p>
+<ul>
+<li>J. B. Postel: Simple Mail Transfer Protocol, RFC #821, August 1982.</li>
+<li>J. B. Postel and J. K. Reynolds: File Transfer Protocol, RFC #959,<br>
+October 1985.</li>
+<li>Kantor and P. Lapsley: Network News Transfer Protocol, RFC #977,<br>
+February 1986. </li>
+<li>D. P. Zimmerman: Finger User Information Protocol, RFC #1194,<br>
+November 1990.</li>
+</ul>
+<p>
+These RFCs are on the <i>Developer Essentials </i> disc. The library of RFC (Request For<br>
+Comment) memos is available by anonymous FTP from NIS.NSF.NET in the directory<br>
+RFC.&nbsp;&nbsp;Use FTP to connect to this host and use<i>anonymous </i> for username and <i>guest </i> for<br>
+password.
+</p>
+<p>
+<b>A useful on-line reference for TCP/IP:</b>
+</p>
+<ul>
+<li>Computer Science Facilities Group:<i> Introduction to the Internet Protocols</i><br>
+, Rutgers University, 1988.</li>
+</ul>
+<p>
+This on-line reference is on the <i>Developer Essentials </i> disc.
+</p>
+<p>
+<b>STEVE FALKENBURG</b> just started his new life as an Apple Developer Technical<br>
+Support engineer, but when writing this he was still a computer engineering student<br>
+at the University of Michigan at Ann Arbor. Last summer he worked in Apple's<br>
+Advanced Technology Group as an intern, and he claims to have emerged from the<br>
+experience totally normal (a summer in ATG may not be long enough, but a full-time<br>
+job in DTS is another story altogether). He says there is absolutely nothing weird<br>
+about him (which he thinks is a shame), but we're convinced we'll either unearth<br>
+something or inspire it. In addition to attending classes, he's been working for the<br>
+university's Computer-Aided Engineering Network, supporting and programming<br>
+Macintoshes. When not working or studying,&nbsp;&nbsp;he's been seen in the stands at U of M<br>
+football games (so don't misinterpret him when he yells "Go Big Blue"), attending loud<br>
+rock concerts, going to movies, and reading Cyberpunk (his favorite is William<br>
+Gibson). *
+</p>
+<p>
+<b>For a more complete reference </b> to the TCP driver calls, please see the <i> MacTCP</i><br>
+<i>Programmer's Guide.</i> *
+</p>
+<p>
+<b>For interested programmers,</b> full source code to both the finger tool and<br>
+NewsWatcher are available on the <i> Developer Essentials</i>&nbsp;&nbsp;disc. *
+</p>
+<p>
+<b>Thanks to Our Technical Reviewers</b> Pete (Luke) Alexander, Brian Bechtel,<br>
+Harry Chesley, Larry Rosenstein, Andy Shebanow, Gordon Sheridan, John Veizades. *
+</p>
+</body>
+</html>

@@ -1,0 +1,286 @@
+<html>
+<head>
+<!-- Article ID: 42 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Autumn 91 - BE OUR GUEST</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>BE OUR GUEST</h2>
+<h2>GWORLDS AND NUBUS MEMORY</h2>
+<h1>FORREST TANAKA AND PAUL SNIVELY</h1>
+<p>
+<img src="img/200.gif" width="243 px"></img>
+</p>
+<p>
+In Developer Technical Support, we're asked from time to time how to make a GWorld<br>
+so that its pixel image uses memory on a NuBusTM card rather than memory in the<br>
+application's heap. The idea is to create a GWorld, put the address of the card into the<br>
+GWorld, use QuickDraw to draw into the GWorld, which effectively draws into the<br>
+NuBus card's memory, and display the resulting image on the screen. Doing this in a<br>
+way that works well with the 8*24 GC version of QuickDraw and with whatever<br>
+QuickDraw brews up in the future isn't possible without breaking a few guidelines.<br>
+We'll talk about the reasons for this and what you can do instead. For the more cavalier<br>
+among you, we'll also talk about the least offensive method of coercing a GWorld so that<br>
+it uses memory on your NuBus card. 
+</p>
+<p>
+NewGWorld allocates off-screen buffers simply by using the same Memory Manager<br>
+calls that you can make. To allocate the memory, NewGWorld simply calls NewHandle<br>
+to allocate the buffer in your application's heap unless you have the useTempMem bit<br>
+set, in which case it allocates the buffer in temporary memory. It then tries to move<br>
+the buffer as high in your heap as possible by calling MoveHHi. That's really all there<br>
+is to it. The GWorld's pixMap, GDevice, and CGrafPort are allocated similarly--<br>
+they're all allocated in your heap using regular Memory Manager calls with no special<br>
+options, patches, or other nefarious tricks. 
+</p>
+<p>
+None of this changes when you have the 8*24 GC software active--all memory is still<br>
+allocated out of your application's heap. Once you start drawing into the GWorld,<br>
+though, the GC software can copy the parts of the GWorld to the 8*24 GC memory. The<br>
+GWorld and its parts still occupy your heap's memory though, regardless of whether<br>
+it's cached on the 8*24 GC card. 
+</p>
+<p>
+If you have a NuBus card with gobs of memory, NewGWorld can't take advantage of it<br>
+because the Memory Manager calls that it uses can't allocate memory on NuBus<br>
+memory cards. There are no options to NewGWorld or any other GWorld calls that let<br>
+you say, "There's lots of memory over on this NuBus card, all for you." While GWorlds<br>
+are absolutely fantastic for creating off-screen drawing environments for most of the<br>
+usual kinds of situations, they're just not appropriate if you want complete control<br>
+over where or how the parts of a GWorld are allocated. 
+</p>
+<p>
+QuickDraw is the only thing that's supposed to know how GWorlds are constructed. We<br>
+know that they're CGrafPorts and we can get their pixMap, GDevice, and off-screen<br>
+buffer, but we shouldn't make any assumptions about how they were allocated and<br>
+where they are. For example, we know that the off-screen buffer is allocated as a<br>
+handle now, but that won't necessarily be the case in the future.&nbsp;&nbsp;&nbsp;There's no<br>
+guaranteed way to tell which way it was allocated, or even if NewGWorld uses the<br>
+Memory Manager to allocate it at all (which it always does currently, of course). Even<br>
+the GWorld's CGrafPort is allocated as a handle that just happens to be always locked. If<br>
+you try to dispose of a GWorld in which you've modified the baseAddr, you'll need<br>
+DisposeGWorld to make sure everything is deallocated properly, but its behavior is<br>
+undefined when it tries to deallocate the off- screen buffer.&nbsp;&nbsp;So if you want to use the<br>
+memory on your NuBus memory card and feel comfortable that you're not relying on<br>
+something that could change, you're going to have to create your own off-screen<br>
+drawing environment by creating an off-screen pixMap, a color table if your<br>
+off-screen drawing environment uses indexed colors, a GDevice, and a CGrafPort. The<br>
+April 1989 edition of Macintosh Technical Note #120, "Drawing Into an Off-Screen<br>
+Pixel Map," covers creating your own off-screen pixMap, CGrafPort, and color table,<br>
+but it requires you to have the same depth and the equivalent color table that the<br>
+screen has, so it just steals a screen's GDevice. We think it's always a good idea to<br>
+create your own GDevice when you draw off screen. If you use a screen's GDevice for<br>
+drawing off screen, you have to depend on that GDevice's depth and color table. By<br>
+creating your own GDevice, your off-screen drawing environment can use any depth<br>
+and color table you want at any time and still be insulated from whatever changes the<br>
+user makes with the Monitors control panel. 
+</p>
+<p>
+To create your own GDevice, it's better not to use NewGDevice because it always<br>
+creates the GDevice in the system heap; it's better to keep your data structures in your<br>
+own heap so that they don't get orphaned if your application quits unexpectedly and that<br>
+precious system heap space is preserved. Here's what you should set each of your<br>
+GDevice's fields to be:
+</p>
+<p><table border="0"><tr><td>gdRefNum</td><td>Your GDevice has no driver, so just set this to 0.</td></tr>
+<tr><td>gdID</td><td>It doesn't matter what you set this to; you might as well set it</td></tr>
+<tr><td></td><td>to 0. </td></tr>
+<tr><td>gdType</td><td>Set to 2 if your off-screen pixMap uses direct colors (16 or</td></tr>
+<tr><td></td><td>32 bits per pixel) or 0 if it uses a color table (1 through 8</td></tr>
+<tr><td></td><td>bits per pixel). </td></tr>
+<tr><td>gdITable</td><td>Allocate a small (maybe just 2-byte) handle for this field.</td></tr>
+<tr><td></td><td>After you're done setting up this GDevice and your off-screen</td></tr>
+<tr><td></td><td>pixMap, color table (if any), and CGrafPort, set this GDevice</td></tr>
+<tr><td></td><td>as the current GDevice by calling SetGDevice, and then call</td></tr>
+<tr><td></td><td>MakeITable, passing it nil for both the color table and inverse</td></tr>
+<tr><td></td><td>table parameters, and 0 for the preferred inverse table</td></tr>
+<tr><td></td><td>resolution. </td></tr>
+<tr><td>gdResPref</td><td>We reckon that more than 99.9% of all inverse tables out</td></tr>
+<tr><td></td><td>there have a resolution of 4. Unless you have some reason not</td></tr>
+<tr><td></td><td>to, we'd recommend the same here. </td></tr>
+<tr><td>gdSearchProc</td><td>Set to nil. Use AddSearch if you want to use a SearchProc. </td></tr>
+<tr><td>gdCompProc</td><td>Set to nil. Use AddComp if you want to use a CompProc. </td></tr>
+<tr><td>gdFlags</td><td>Set to 0 initially, and then use SetDeviceAttribute after</td></tr>
+<tr><td></td><td>you've set up the rest of this GDevice. </td></tr>
+<tr><td>gdPMap</td><td>Set to be a handle to your off-screen pixMap. </td></tr>
+<tr><td>gdRefCon</td><td>Set to whatever you want. </td></tr>
+<tr><td>gdNextGD</td><td>Set to nil. </td></tr>
+<tr><td>gdRect</td><td>Set to be equal to your off-screen pixMap's bounds. </td></tr>
+<tr><td>gdMode</td><td>Set to -1. Why? We're not sure. This is intended for GDevices</td></tr>
+<tr><td></td><td>with drivers anyway. </td></tr>
+<tr><td>gdCCBytes</td><td>Set to 0. </td></tr>
+<tr><td>gdCCDepth</td><td>Set to 0. </td></tr>
+<tr><td>gdCCXData</td><td>Set to 0. </td></tr>
+<tr><td>gdCCXMask</td><td>Set to 0. </td></tr>
+<tr><td>gdReserved</td><td>Set to 0. </td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+For gdFlags, you should use SetDeviceAttribute to set the noDriver bit. You should also<br>
+set the gDevType bit to 1 if you're using two bits per pixel or more, but it can be left<br>
+at 0 if you're using only one bit per pixel. 
+</p>
+<p>
+The other big difference from the technique shown in Technical Note #120 is that the<br>
+off-screen pixel image shouldn't be allocated. Instead, just point the baseAddr field of<br>
+your off-screen pixMap at your NuBus card's memory. You should also set the<br>
+pmVersion field of your off-screen pixMap to be the constant baseAddr32 (equal to 4).<br>
+That tells Color QuickDraw to use 32-bit addressing mode to access your off-screen<br>
+buffer, and that's a requirement if your off-screen pixel image is located on a NuBus<br>
+card. 
+</p>
+<p>
+When you want to draw into your off-screen pixMap, save the current port with a call<br>
+to GetPort and the current GDevice with a call to GetGDevice. Then set the current port<br>
+to the off-screen CGrafPort with a call to SetPort, and set the current GDevice to the<br>
+off-screen GDevice with a call to SetGDevice. Now all QuickDraw commands are drawn<br>
+off screen and the resulting images are in your NuBus card's memory. To switch back<br>
+to drawing on screen, set the current port and GDevice back to the port and GDevice<br>
+that you saved earlier. Easy! 
+</p>
+<p>
+Even with all this, there might still be a reason to use GWorlds to draw into a NuBus<br>
+memory card.&nbsp;&nbsp;&nbsp;You might just want some quick and dirty way to get an off-screen<br>
+drawing environment that uses your NuBus memory card and don't care whether it<br>
+works with future system software releases or not. We'll talk about that next and also<br>
+discuss the issues that you have to be careful about when you do this. 
+</p>
+<p>
+First, create a GWorld using NewGWorld as usual. If you want to, pass it a color table,<br>
+or you can just pass it nil if you want it to make the default color table. For the GWorld<br>
+flags, make sure you pass only the keepLocal flag. This makes sure that all the pieces<br>
+of the GWorld are kept in your own heap rather than being cached into the 8*24 GC<br>
+card, even when you draw into it. That way, you avoid running into any conceivable<br>
+conflicts with GC QuickDraw over where the GWorld really is.&nbsp;&nbsp;&nbsp;There's no way to tell<br>
+NewGWorld not to allocate the pixel image, so you might want to make the bounds<br>
+rectangle small and then make it bigger later so that your heap isn't hit up for a lot of<br>
+memory that you don't even want. Don't pass it an empty rectangle because NewGWorld<br>
+just gives you a paramErr in that case. Call GetGWorldDevice to get a handle to your<br>
+GWorld's GDevice and save it for later. 
+</p>
+<p>
+Now it's time to have the new GWorld use your NuBus card's memory. The baseAddr of<br>
+your GWorld's pixMap is allocated as a handle, and it has to be thrown out. Call<br>
+GetPixBaseAddr with a handle to your GWorld's pixMap to get a pointer to the pixel<br>
+image that NewGWorld allocated for you. Call RecoverHandle with that pointer to get a<br>
+handle to the pixel image, and then call DisposHandle to get rid of it. Now put the<br>
+address of your NuBus board into the baseAddr of your GWorld's pixMap. Then set the<br>
+pmVersion field of your GWorld's pixMap to the constant baseAddr32. That tells Color<br>
+QuickDraw that the baseAddr of the pixMap is a 32-bit address and so it should switch<br>
+to 32-bit addressing mode whenever it draws into your GWorld. 
+</p>
+<p>
+If you passed NewGWorld a rectangle that's smaller than you actually want, you can<br>
+now set it to the real size. Set the bounds rectangle of your GWorld's pixMap and the<br>
+portRect rectangle of your GWorld's CGrafPort to the rectangle that you really wanted.<br>
+Also, set the visRgn of the CGrafPort and the gdRect field of your GWorld's GDevice to<br>
+that same rectangle. Your GWorld is ready for use! 
+</p>
+<p>
+Now the bad news. Many of the GWorld routines assume that the baseAddr field is<br>
+either a real handle or a copy of the handle's master pointer. Because the pointer in the<br>
+baseAddr field isn't a master pointer, those routines can crash when they expect one.<br>
+Setting the pmVersion field doesn't help in most cases; these routines just assume that<br>
+the GWorld's pixel image was allocated by NewGWorld, which is a reasonable<br>
+assumption. What this implies is that you can no longer call many of the GWorld<br>
+routines to maintain your GWorld without a risk of crashing. When you call SetGWorld<br>
+for your GWorld, you should pass it the GWorld's GDevice instead of nil (that's why we<br>
+recommended that you save the GWorld's GDevice after calling NewGWorld). For<br>
+safety's sake, don't call any of the following:
+</p>
+
+<p>
+LockPixels<br>
+UnlockPixels<br>
+AllowPurgePixels<br>
+NoPurgePixels<br>
+GetPixelsState<br>
+SetPixelsState<br>
+UpdateGWorld<br>
+GetGWorldDevice
+</p>
+<p>
+You can call DisposeGWorld because it won't get hung up trying to deallocate the pixel<br>
+image on your NuBus card; setting your pmVersion to baseAddr32 makes this possible.<br>
+Of course, since all these GWorld routines are off limits, almost all the benefits of<br>
+having a GWorld at all are gone as well. 
+</p>
+<p>
+Another piece of bad news is that this doesn't take advantage of the speed benefits of<br>
+using GWorlds with an 8*24 GC card. Most of the speed benefit of using GWorlds with<br>
+GC QuickDraw is that the GWorld's pixel image is allocated on the 8*24 GC card itself,<br>
+and so the image data doesn't have to take the time to move across NuBus. If your<br>
+GWorld draws into a NuBus memory card, the image data has to be moved across<br>
+NuBus, and so that speed benefit is gone. 
+</p>
+<p>
+The last bit of bad news is that even if you follow all of this, you're still not guaranteed<br>
+that it will still work in future system software or future video card releases. As we<br>
+said earlier, this should only be done if you don't care whether it works on future<br>
+system software releases or not. The description above breaks a lot of rules: don't<br>
+assume that the pixel image is allocated as a handle; don't set the baseAddr of a GWorld;<br>
+don't change the dimensions of a GWorld without UpdateGWorld; and don't set the<br>
+pmVersion field of a GWorld. 
+</p>
+<p>
+You have your choices when you want to use QuickDraw to draw off screen into the<br>
+memory of a NuBus video card. You can be safe for future compatibility by creating<br>
+your own off-screen drawing environment from scratch, or you can modify a GWorld<br>
+so that it uses your NuBus card's memory at the risk of breaking on future systems<br>
+and at the cost of losing most of the benefits of GWorlds. If you choose the first method<br>
+and you have no existing routines to create off-screen drawing environments, it's<br>
+worth it to take a look at Skippy White's Famous High-Level Off-Screen Map Routines<br>
+in DTS Sample Code #15 on the<i>Developer CD Series</i> disc. You can see these routines in<br>
+action in DTS Sample Code #16. These routines are GWorld-like to some extent,<br>
+except this time you have the great benefit of source code! 
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>REFERENCES</b>
+</p>
+<ul>
+<li>"About 32-Bit Addressing," Konstantin Othmer, <i>develop</i>  Issue 6, Spring<br>
+1991, pp. 36-37.</li>
+<li>"Deaccelerated _CopyBits &amp; 8*24 GC QuickDraw," Guillermo Ortiz,<br>
+Macintosh Technical Note #289, January 1991.</li>
+<li>"Drawing Into an Off-Screen Pixel Map," Jim Friedlander, Rick Blair,<br>
+and Rich Collyer, Macintosh Technical Note #120, April 1989.</li>
+<li><i>Inside Macintosh</i>  Volume VI, Graphics Devices Manager chapter,<br>
+Addison-Wesley, 1991.</li>
+<li><i>Inside Macintosh</i>  Volume V, Color Manager chapter, Addison-Wesley,<br>
+1988.</li>
+</ul>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>FORREST TANAKA</b> has been in Developer Technical Support just shy of two years<br>
+after a stint with unemployment and trying to get a job at Apple. Before that, he got a<br>
+BSCS while writing Macintosh device drivers for scanners and writing utility<br>
+software for a PBX. Now he's working with anything that makes images appear on the<br>
+Macintosh's screen while avoiding anything that makes images appear on paper.<br>
+Whenever he's not working, eating, sleeping, watching TV, reading, or watching a<br>
+movie, he's out riding his bike and wondering whether he should shave his legs. *
+</p>
+<p>
+<b>PAUL SNIVELY</b>, formerly of Apple's DTS group, came to Apple from ICOM<br>
+Simulations, Inc., the land of the TMON debugger. He wrote the <i>TMON 2.8 User's Guide </i><br>
+and has written for <i> MacTutor </i> magazine. His interests include natural- language<br>
+processing, knowledge representation, adventure-game programming, horror and<br>
+suspense, hiking, camping, spelunking, and other things better left unsaid.*
+</p>
+<p>
+<b>For information about inverse tables,</b> see pages 137 through 139 in the Color<br>
+Manager chapter of <i> Inside Macintosh</i> Volume V.*
+</p>
+<p>
+<b>Thanks to Guillermo Ortiz</b> for reviewing this column.*
+</p>
+<p>
+<b>We welcome guest columns</b> from readers who have something interesting or<br>
+useful to say. Send your column idea or draft to Caroline Rose at Apple Computer, Inc.,<br>
+20525 Mariani Avenue, M/S 75-2B, Cupertino, CA 95014 (AppleLink: CROSE).*
+</p>
+</body>
+</html>

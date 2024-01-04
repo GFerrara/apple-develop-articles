@@ -1,0 +1,1072 @@
+<html>
+<head>
+<!-- Article ID: 37 - Extracted from develop-1991 -->
+<!-- on 2024-01-04 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Autumn 91 - MACINTOSH DEBUGGING: A WEIRD JOURNEY</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH DEBUGGING: A WEIRD JOURNEY INTO THE BELLY<br>
+OF THE BEAST</h2>
+<h1>BO3B JOHNSON AND FRED HUXHAM</h1>
+<h1>ADAPTED FROM THEIR TALK AT THE WWDC BY DAVE<br>
+JOHNSON</h1>
+<p>
+<img src="img/195.gif" width="384 px"></img>
+</p>
+<p>
+<i>&nbsp;Macintosh debugging is a strange and difficult task. This article provides a collection</i><br>
+<i>of tried-and-true debugging techniques Bo3b and Fred discussed at Apple's Worldwide</i><br>
+<i>Developers Conference in May 1991. These techniques can ease your debugging woes</i><br>
+<i>and make your life a lot simpler. They're guaranteed to help you find your bugs earlier</i><br>
+<i>on, saving you hours of suffering.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;The first thing you should know is that <i>debugging is hard</i> . Drinking gallons of<br>
+Mountain Dew won't help much, nor will seeking magic formulas or spreading fresh<br>
+goat entrails around your keyboard and chanting. The only way to get better at it is to<br>
+do it a lot, and even then it's still hard. What we're going to talk about are a number of<br>
+techniques that will make debugging a little bit easier. 
+</p>
+<p>
+&nbsp;Notice that the title of this article is "Macintosh<i>Debugging</i> " and not<br>
+"Macintosh<i>Debuggers</i> ." We're not going to do a comparative review of debuggers.<br>
+We're not going to show you how to use them.&nbsp;&nbsp;&nbsp;In fact, we recommend that you buy and<br>
+use<i>all</i> the ones described here. Each has useful features that the others don't have.<br>
+Which you use most often is up to you--pick one as your main debugger and really get<br>
+to know it, but keep all of them around. 
+</p>
+<p>
+&nbsp;The main Macintosh debuggers are
+</p>
+<ul>
+<li>MacsBug from Apple</li>
+<li>TMON (we often refer to version 2.8.4 as Old TMON) and TMON<br>
+Professional (version 3.0, called TMON Pro for short) from Icom<br>
+Simulations, Inc. </li>
+<li>The Debugger from Jasik Designs (we'll call it "Jasik's debugger" here,<br>
+because Steve Jasik wrote it, and that's what everybody calls it in<br>
+conversation)</li>
+</ul>
+<p>
+&nbsp;We'll touch on many of the individual features of these debuggers in this article. 
+</p>
+<p>
+&nbsp;The hardest bugs to find are those that are not reproducible. If you have a crashing bug<br>
+that can be reproduced 100 percent of the time, you're well on your way to fixing it.<br>
+But a bug that crashes your application only once every few hours, at seemingly<br>
+random times . . . well, that kind can take days or weeks to find. Often the ultimate<br>
+failure of a program is caused by code that executed long ago.&nbsp;&nbsp;&nbsp;Tracing back to find the<br>
+real problem can be difficult and extremely time consuming.&nbsp;&nbsp;&nbsp;The techniques we show<br>
+you in this article will help turn most of your random bugs into completely<br>
+reproducible ones. These techniques are designed to make your software crash or to<br>
+otherwise alert you as close as possible to where your code is doing something wrong. 
+</p>
+<p>
+We explain what each technique is, why it works, and any gotchas you need to be aware<br>
+of. Then we tell you how to turn it on or invoke it and list some of the common<br>
+Macintosh programming errors it will catch. Finally, we show a code sample or two.<br>
+The code samples were chosen for a number of reasons:
+</p>
+<ul>
+<li>The errors in many of them are subtle. We couldn't tell what was wrong<br>
+with some of them after not looking at them for a couple months, and we wrote<br>
+them in the first place. </li>
+<li>The mistakes are common. We've seen people make these same mistakes<br>
+time and time again. </li>
+<li>They're short. They had to fit on one slide at our Worldwide Developers<br>
+Conference presentation. </li>
+</ul>
+<p>
+So, on to our first technique . . . . 
+</p>
+<h2>SET $0 TO $50FFC001</h2>
+<p>
+The basic idea here is that the number $0 comes up a lot when things go wrong on the<br>
+Macintosh.&nbsp;&nbsp;&nbsp;When you try to allocate memory or read in a resource, and it fails, what<br>
+gets returned is $0.&nbsp;&nbsp;&nbsp;Programs should always check to see that when they ask for<br>
+something from the Toolbox, they actually get it.
+</p>
+<p>
+Programs that don't check and use $0 as an address or try to execute from there are<br>
+asking for trouble. The code will often work without crashing, but presumably it's not<br>
+doing what it was meant to do, since there isn't anything down there that even remotely<br>
+resembles resources or data in a program.
+</p>
+<p>
+Why $50FFC001? Old TMON used this number when we turned on Discipline (more on<br>
+Discipline later). This fine number has the following characteristics:
+</p>
+<ul>
+<li>Used as a pointer (address), $50FFC001 is in funny space on all<br>
+Macintosh computers--that is, it's in I/O space, which is currently just<br>
+blank. Any relative addresses close by are going to be in I/O space as well, so<br>
+positive or negative offsets from that as a base will crash, too. These types of<br>
+offset are common when referencing globals or record fields. </li>
+<li>When used as an address, it will cause a bus error on 68020, '030, and<br>
+'040 machines. Because there's no RAM there, and no device to respond, the<br>
+hardware returns a bus error, crashing the program at the exact instruction.<br>
+Without this handy number, you not only won't crash, you won't even know the<br>
+bug exists (for a while . . . ). </li>
+<li>On 68000 machines, $50FFC001 will cause an address error because it's<br>
+an odd number. This also stops the offending code at the exact line that has a<br>
+bug. </li>
+<li>If the program tries to execute the code at memory location $0, it will<br>
+crash with an illegal instruction, since the $50FF is not a valid opcode. This is<br>
+nice when you accidentally JSR to $0 and the program tries to run from there.<br>
+Those low- memory vectors are certainly not code but don't usually cause a<br>
+crash until much later. </li>
+<li>It's easy to recognize because it doesn't look like any normal number. If a<br>
+program uses memory location $0 as a source for data, this funny number<br>
+will be copied into data structures. If you see it in a valid data structure<br>
+someplace else you know there's a bug lurking in the program that's getting<br>
+data from $0 instead of from where it should. </li>
+</ul>
+<p>
+Many different funny bus error numbers can be used. Take your pick. 
+</p>
+<p>
+<b>AVAILABILITY</b><br>
+You can find various programs that set up memory location $0 in this helpful way, or<br>
+you can build your own.
+</p>
+<ul>
+<li>EvenBetterBusError (included on the<i>Developer CD Series</i> disc) is a<br>
+simple INIT that sets memory location $0 to $50FFC003. It also installs a<br>
+VBL to make sure no one changes it. </li>
+<li>Under System 7, the thing that used to be MultiFinder (now the Process<br>
+Manager) takes whatever is in memory location $0 when it starts up and<br>
+saves it.&nbsp;&nbsp;&nbsp;Periodically it stuffs that saved number back in. If it were a bus<br>
+error number at system startup (from an INIT, say), that number would be<br>
+refreshed very nicely.&nbsp;&nbsp;&nbsp;With MacsBug, it would be easy to build a dcmd that<br>
+stuffs memory location $0 during MacsBug INIT, and MultiFinder would then<br>
+save and restore that number. </li>
+<li>Jasik's debugger has a flag that allows you to turn the option on or off. </li>
+<li>Old TMON will set up the bus error number when Discipline is turned on.<br>
+TMON Pro has a script command, NastyO, that will also do this. </li>
+<li>You can put code in your main event loop that stuffs the bus error number<br>
+into memory location $0. Be sure to remove it before you ship. </li>
+</ul>
+<p>
+<b>ERRORS CAUGHT</b><br>
+The most obvious catch using this technique is the inadvertent use of NIL handles (or<br>
+pointers). NIL handles can come back from the Resource Manager and the Memory<br>
+Manager during failed calls. If a program is being sloppy and not checking errors, it's<br>
+easy to fall into using a NIL handle, and this technique will flush it out. A double<br>
+dereference of a NIL handle will crash the computer. Something like
+</p>
+<pre>newArf := aHandle^^.arf;</pre>
+<p>
+will crash if aHandle is $0 and we've installed this nice bus error number. 
+</p>
+<p>
+This technique will tell when a program inadvertently jumps off to $0 as a place to<br>
+execute code, which can happen from misaligned stacks or from trying to execute a<br>
+purged code resource.
+</p>
+<p>
+By watching for the funny numbers to show up in data structures, you can find out<br>
+when NIL pointers are being used as the source for data. This is surely not what was<br>
+meant, and they're easy to find when a distinctive number points them out. These uses<br>
+won't crash the computer, of course. 
+</p>
+<p>
+<b>CODE SAMPLE</b>
+</p>
+<pre>theHandle = GetResource('dumb', 1);
+aChar = **theHandle;</pre>
+<p>
+This is easy: the GetResource call may fail. If the 'dumb' resource isn't around,<br>
+theHandle becomes NIL. Dereferencing theHandle when it's NIL is a bug, since aChar<br>
+ends up being some wacko number out of ROM in the normal case (ROMBase at $0) and<br>
+cannot be assumed to be what was desired. This bus error technique will crash the<br>
+computer right at the **theHandle, pointing out the lack of error checking. 
+</p>
+<h2>HEAP SCRAMBLE AND PURGE</h2>
+<p>
+With this option on, all movable blocks of memory (handles) are moved, and all<br>
+purgeable blocks are purged, whenever memory <i>can</i> be moved or purged--which is<br>
+different from moving and purging memory whenever it <i>needs</i> to be moved or purged.<br>
+This technique is excellent at forcing those once- a-month crashing bugs to crash<br>
+more often--like all the time. You should run your entire program with this option<br>
+on, in combination with the bus error technique, using all program features and really<br>
+putting it through its paces. You'll be glad you did. Because this debugger option<br>
+simulates running under low-memory conditions all the time, it stress-tests the<br>
+program's memory usage.
+</p>
+<p>
+<b>AVAILABILITY</b><br>
+All the debuggers have this option, but the one most worth using is in Old TMON and<br>
+TMON Pro, since it implements both scramble (moving memory) and purge. MacsBug<br>
+and Jasik's debugger both have scramble, but they're too slow, and neither has a purge<br>
+option. 
+</p>
+<p>
+<b>ERRORS CAUGHT</b><br>
+This technique will catch improper usage of dereferenced or purgeable handles,<br>
+mistakes that fall into the "easy to make, hard to discover" category. The technique<br>
+will also catch blocks that are overwritten accidentally, since there's an implicit heap<br>
+check each time the heap is scrambled.&nbsp;&nbsp;<i>Warning:</i> The bugs you find may not be yours. 
+</p>
+<p>
+<b>CODE SAMPLE</b>
+</p>
+<pre>aPicture = GetPicture(1);
+FailNil(aPicture);
+aPtr = NewPtr(500000);
+FailNil(aPtr);
+aRect = (**aPicture).picFrame;
+DrawPicture(aPicture, &amp;aRect);</pre>
+<p>
+Here, if the picture is purgeable, it might be purged to make room in the heap for the<br>
+large pointer allocated next. This would make aRect garbage, and DrawPicture wouldn't<br>
+work as intended, probably drawing nothing. Here's a similar example in Pascal:
+</p>
+<pre>aPicture := GetPicture(kResNum);
+FailNil(aPicture);
+WITH aPicture^^ DO
+BEGIN
+    aPtr := NewPtr(500000);
+    FailNil(aPtr);
+    aRect := picFrame;
+END; {WITH}</pre>
+<p>
+Here, even if the picture isn't purged, the NewPtr call might move it, invalidating the<br>
+WITH statement and resulting, again, in a bad aRect. 
+</p>
+<h2>ZAPPING HANDLES</h2>
+<p>
+The idea here is to trash disposed memory at the time it's disposed of in order to catch<br>
+subsequent use of the free blocks. The technique fills disposed memory with bus error<br>
+numbers, so that if you attempt to use disposed memory later, the program will crash.<br>
+A related option is MPW Pascal's -u option, which initializes local and global<br>
+variables to $7267. 
+</p>
+<p>
+<b>AVAILABILITY</b><br>
+This technique is implemented as a part of Jasik's Discipline option and is also a dcmd,<br>
+available on the<i>Developer CD Series</i> disc, for TMON Pro or MacsBug. You can also just<br>
+write it into your program by writing bottleneck routines for disposing of memory<br>
+(such as MyDisposHandle, MyDisposPtr) that fill blocks with bus error numbers just<br>
+before freeing them. The problem with this is that memory freed by other calls<br>
+(ReleaseResource, for instance) isn't affected. We recommend the dcmd or Jasik's<br>
+Discipline. 
+</p>
+<p>
+<b>ERRORS CAUGHT</b><br>
+This technique will catch reusing deallocated memory or disposing of memory in the<br>
+wrong order. It can also catch uninitialized variables, since after you've been running<br>
+it for a while, much of the free memory in the heap will be filled with bus error<br>
+numbers. 
+</p>
+<p>
+<b>CODE SAMPLE</b>
+</p>
+<pre>SetWRefCon(aWindowPtr, (long)aHandle);. . .
+DisposeWindow(aWindowPtr);
+DisposHandle((Handle) GetWRefCon(aWindowPtr));</pre>
+<p>
+The GetWRefCon will work on a disposed window, but it's definitely a bug. Zapping the<br>
+handles sets the refCon to a bus error number, forcing the DisposHandle call to fail. 
+</p>
+<h2>CHECKSUM $0</h2>
+<p>
+Once again, we're dealing with the address $0. This technique, however, is sort of the<br>
+opposite of the first one: it catches writing to $0 rather than reading or executing<br>
+from it. 
+</p>
+<p>
+<b>AVAILABILITY</b><br>
+This one is easy: you can set up a checksum so that you'll drop into the debugger<br>
+whenever the value at $0 changes. All the debuggers have a way to do this. Also,<br>
+EvenBetterBusError sets up a VBL to detect if $0 changes, but since VBL tasks don't<br>
+run very often (relative to the CPU, anyway), you'll probably be far away in your<br>
+code by the time it notices. It's still much better than nothing, though, since knowing<br>
+the bug exists is the first step toward fixing it. 
+</p>
+<p>
+Note that on the IIci the Memory Manager itself changes $0, so you'll get spurious<br>
+results.&nbsp;&nbsp;&nbsp;EvenBetterBusError knows about this and ignores it. 
+</p>
+<p>
+<b>ERRORS CAUGHT</b><br>
+The errors caught by this technique are much the same as those caught by the first<br>
+technique, except that this one catches writes rather than reads. This way, if your code<br>
+tries to write to address $0 (by dereferencing a NIL handle or pointer), you'll know. 
+</p>
+<p>
+<b>CODE SAMPLE</b>
+</p>
+<pre>aPtr = NewPtr(kBuffSize);
+BlockMove(anotherPtr, aPtr, kBuffSize);</pre>
+<p>
+This one's pretty obvious: if the NewPtr call fails, aPtr will be NIL, and the BlockMove<br>
+will stomp all over low memory. If kBuffSize is big enough, this will take you right<br>
+out, trashing all your low- memory vectors and your debugger, too. 
+</p>
+<h2>DISCIPLINE</h2>
+<p>
+Discipline is a debugger feature that checks for bogus parameters to Toolbox calls. It<br>
+would of course be nice if the Toolbox itself did more error checking, but for<br>
+performance reasons it can't. (Be forewarned that some versions of the system have<br>
+errors that Discipline will catch.) Discipline is the perfect development-time test. It<br>
+catches all those stupid mistakes you make when typing your code that somehow get<br>
+past the compiler and may persist for some time before you discover them. It can<br>
+literally save you hours tracking down foolish parameter bugs that should never have<br>
+happened in the first place. 
+</p>
+<p>
+<b>AVAILABILITY</b><br>
+Old TMON has an early version of Discipline, but there are no checks for Color<br>
+QuickDraw calls or later system calls, so its usefulness is limited. There is an INIT<br>
+version of Discipline (on the<i>Developer CD Series</i> disc with MacsBug) that works in<br>
+conjunction with MacsBug or TMON Pro that's quite usable, if slow and clunky. Jasik's<br>
+version of Discipline is far and away the best; use it if you can. 
+</p>
+<p>
+<b>ERRORS CAUGHT</b><br>
+As you'd expect, Discipline catches Toolbox calls with bad arguments, like bogus<br>
+handles, and also sometimes catches bad environment states, like trying to draw into a<br>
+bad grafPort. 
+</p>
+<p>
+<b>CODE SAMPLE</b>
+</p>
+<pre>aHandle = GetResource('dumb', 1);
+FailNil(aHandle);
+. . .
+DisposHandle(aHandle);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The problem here is that a resource handle has to be thrown away with<br>
+ReleaseResource, not DisposHandle. Otherwise, the Resource Manager will get confused<br>
+since the resource map won't be properly updated. Sometime later (maybe much<br>
+later) Very Bad Things will happen. 
+</p>
+<h2>32-BIT MEMORY MODE</h2>
+<p>
+Running in full 32-bit mode in System 7 forces the Memory Manager and the program<br>
+counter to use full 32-bit addresses: this is something new on the Macintosh. The<br>
+old-style (24-bit) Memory Manager used the top byte of handles to store the block<br>
+attributes (whether or not the handle was locked, purgeable, and so forth). By running<br>
+your program in 32-bit mode, you'll flush out any code that mucks with the top bits of<br>
+an address, for any reason, accidentally or on purpose. In the past, many programs<br>
+examined or modified block attributes directly. This is a bad idea. Use the Toolbox calls<br>
+HGetState and HSetState to get and set block attributes. 
+</p>
+<p>
+<b>AVAILABILITY</b><br>
+You get 32-bit memory mode with System 7, of course! You use the Memory cdev to<br>
+turn on 32-bit addressing, available only on machines that have 32-bit-clean ROMs<br>
+(Macintosh IIfx, IIci, IIsi). You should also install more than 8 MB of RAM and launch<br>
+your application first, so that it goes into memory that<i>requires</i>&nbsp;&nbsp;32-bit addressing<br>
+(within the 8 MB area, addresses use only 24 bits). We also recommend using TMON's<br>
+heap scramble in 32-bit mode, since the block headers are different. 
+</p>
+<p>
+<b>ERRORS CAUGHT</b><br>
+You can inadvertently mess up addresses in a bunch of ways. Obviously, any code that<br>
+makes assumptions about block structures is suspect. Doing signed math on pointers is<br>
+another one that comes up pretty often. Any messing with the top bytes of addresses can<br>
+get you into big trouble, jumping off into weird space, where you have no business.
+</p>
+<p>
+<b>CODE SAMPLE</b>
+</p>
+<pre>aHandle = (Handle) ((long) aHandle | 0x80000000);</pre>
+<p>
+Naturally, this method of locking a handle is not a good idea, since in 32-bit mode the<br>
+locked bit isn't even there. Use HLock or HSetState; they'll do the right thing. 
+</p>
+<h2>FULL COMPILER AND LINKER WARNINGS</h2>
+<p>
+Always develop your code with full warnings on. When you're compiling and linking<br>
+your program, any number of errors or warnings will be emitted. The errors are for<br>
+things that are just plain wrong, so you'll have to fix those immediately. Warnings,<br>
+however, indicate things that aren't absolutely wrong, but certainly are questionable<br>
+as far as the compiler or linker is concerned. 
+</p>
+<p>
+We think you should fix every problem as soon as a warning first appears, even if<br>
+there's "nothing wrong" with the code. If you leave the warnings in, little by little<br>
+they'll pile up, and pretty soon you'll have pages full of warnings spewing out every<br>
+time you do a build. You know you won't read through them every time. You'll probably<br>
+just redirect the warnings to a file you never look at so that your worksheet won't be<br>
+sullied. Then the one warning that<i>will</i> cause a problem will sneak right by you, and<br>
+much later you'll find out that the totally nasty, hard-to-find bug that you finally<br>
+corrected was one the compiler warned you about a month ago. To avoid this painful<br>
+experience, deal with the warnings when they appear, even if they're false alarms. 
+</p>
+<p>
+<b>AVAILABILITY</b><br>
+Use the compiler and linker options that turn on full warnings:
+</p>
+<ul>
+<li>MPW C++: The "-w2" option turns on the maximum compiler warnings.</li>
+<li> MPW C: Use "-warnings full" ("-w2" does the same thing). In addition,<br>
+the "-r" option will warn you if you call a function with no definition. </li>
+<li> MPW Linker: The "-msg<i>keyword</i> " option controls the linker warnings.<br>
+<i>Keyword</i> is one or more of these: dup, which enables warnings about duplicate<br>
+symbols; multiple, which enables multiple warnings on undefined references<br>
+to a label (you can thus find all the undefined references in one link); and<br>
+warn, which enables warnings. </li>
+<li> THINK C: Because the compile is stopped when a warning is encountered,<br>
+it forces you to fix all warnings. Some people like this; others don't. We do,<br>
+but you decide. Be sure that "Check Pointer Types" is turned on in the<br>
+compiler options. </li>
+<li> Pascal: Most of the things that cause warnings in C are automatically<br>
+enforced. </li>
+</ul>
+<p>
+If you're coding in C, it's also a good idea to prototype<i>all</i> your routines. This avoids<br>
+silly errors. 
+</p>
+<p>
+<b>ERRORS CAUGHT</b><br>
+The compiler and linker will tell you about lots of things. Some examples are
+</p>
+<ul>
+<li>the use of uninitialized variables (which is a real bug)</li>
+<li>bad function arguments</li>
+<li>unused variables (these confuse the code and may be real bugs)</li>
+<li>argument mismatches (probably bugs)</li>
+<li>signed math overflow</li>
+</ul>
+<p>
+In C++, overriding operator new without overriding operator delete is probably a bug<br>
+and unintentional. Even if a warning is caused by something intentional, fix it so that<br>
+the warning won't appear. 
+</p>
+<p>
+<b>CODE SAMPLE</b>
+</p>
+<pre>#define kMagicNumber 12345
+. . .
+short result;
+result = kMagicNumber*99;</pre>
+<p>
+The problem with this code is that the multiplication is overflowing a 16-bit short<br>
+value. If you have full compiler warnings on, the MPW compiler will let you know this<br>
+with the following error message:
+</p>
+<p>
+### Warning 276 This assignment may lose some significant bits
+</p>
+<h2>MEMORY PROTECTION</h2>
+<p>
+This is something you've always wanted: a way to get a protected memory model for the<br>
+Macintosh.&nbsp;&nbsp;&nbsp;With memory protection on, memory accesses outside the application's<br>
+RAM space would be caught as illegal, giving you the chance to find bad program<br>
+assumptions and wild references. Only Jasik's debugger has this feature now. 
+</p>
+<p>
+The protected mode is only partly successful, though, since the Macintosh has nothing<br>
+that resembles a standard operating system. The problems stem from how programs<br>
+are expected to run, in that references to some low-memory globals are OK, and code<br>
+and data share the same address space. Given the anarchy in the system, the way Jasik<br>
+set it up is to allow protection of applications only. The protected mode also protects<br>
+the CODE resources in the application from being overwritten.
+</p>
+<p>
+Although this protected mode is not as good as having the OS support protected memory<br>
+spaces, it's still a giant leap ahead in terms of finding bugs in your programs. By<br>
+catching these stray references during development, you can be assured that the user<br>
+won't get random crashes because of your program. This is an ideal development tool<br>
+for catching latent bugs that don't often show up. Who knows what a write to a random<br>
+spot in memory may hit? Sometimes you're just lucky, and those random "stomper"<br>
+bugs remain benign, but more often they're insidiously nasty. 
+</p>
+<p>
+<b>AVAILABILITY</b><br>
+This tool is currently implemented only in Jasik's debugger. The memory protection is<br>
+implemented using the MMU, and it slows down the machine by around 20 percent. It's<br>
+a mixed blessing, since it will crash on any number of spurious errors-- use it<br>
+anyway. 
+</p>
+<p>
+<b>ERRORS CAUGHT</b><br>
+If the application writes to low memory or to the system heap, it's probably not what<br>
+was desired. A few cases could be deemed necessary, but in general, any references<br>
+outside the application heap space are considered suspect. Certainly, modifying system<br>
+variables is not a common task that applications need to support. This memory<br>
+protection will catch those specific references and give you the chance to be sure that<br>
+they're valid and necessary. 
+</p>
+<p>
+Writing to I/O space or screen RAM is another problem this technique will catch.<br>
+Writing directly to the screen is bad form, and only tacky programs (and games,<br>
+which must do it) stoop this low.&nbsp;&nbsp;&nbsp;Even HyperCard writes directly to the screen;<br>
+please don't emulate it. Some specialized programs could make an argument for writing<br>
+to I/O space, since they may have a device they need to use up there. This protection<br>
+will catch those references and point out a logically superior approach, which is to<br>
+build a driver to interface to that space, instead of accessing it directly. 
+</p>
+<p>
+<b>CODE SAMPLE</b>
+</p>
+<pre>*((long*) 0x16A) = aLong;</pre>
+<p>
+The low-memory global Ticks is being modified. Writing to low-memory globals is a<br>
+Very Bad Thing to do. This will be caught by memory protection.
+</p>
+<h2>LEAKS</h2>
+<p>
+A memory leak occurs when a program allocates a block of memory with either<br>
+NewHandle or NewPtr (or even with Pascal New or C malloc, both of which turn into<br>
+NewPtr at a lower level), but that block is never disposed of, and the reference to it is<br>
+lost or written over. If a program does this often enough, it will run out of RAM and<br>
+probably crash. This leads to the famous statement: "Properly written Macintosh<br>
+programs will run for hours, even days, without crashing"--a standing joke in<br>
+Developer Technical Support for so long we've forgotten the original source.<br>
+Naturally, if the program is leaking in the main event loop, it will crash sooner than<br>
+if it leaks from some rare operation. If it leaks at all, it will ultimately fail and crash<br>
+some poor user. 
+</p>
+<p>
+<b>AVAILABILITY</b><br>
+A simple technique that all debuggers support can tell you whether or not the program<br>
+is leaking. Do a Heap Total and check the amount of free space and purgeable space<br>
+that's available. Run the program through its paces and then see if the amount of free<br>
+space plus purgeable space has dropped.&nbsp;&nbsp;&nbsp;If it has, try again, under the assumption<br>
+that the program might have loaded some code or other data the first time around. If<br>
+it's still smaller, it's likely to be a leak. This approach, of course, only shows that<br>
+you<i>have</i>&nbsp;&nbsp;a leak; tracking it down is the hard part. But, hey, you can't start tracking<br>
+till you know it's there. 
+</p>
+<p>
+There's a dcmd called Leaks (on the<i>Developer CD Series</i> disc) that runs under both<br>
+TMON Pro and MacsBug. The basic premise is to watch all the memory allocations to<br>
+see if they get disposed of correctly. Leaks patches the traps NewHandle, DisposHandle,<br>
+NewPtr, and DisposPtr. When a new handle or pointer is allocated on the heap, Leaks<br>
+saves the address into an internal buffer. When the corresponding DisposHandle or<br>
+DisposPtr comes by, Leaks looks it up in the list and, if it finds the same address,<br>
+dumps that record as having been properly disposed of. Now all those records on the<br>
+Leaks list that didn't have the corresponding dispose are candidate memory leaks.&nbsp;&nbsp;&nbsp;The<br>
+Macintosh has a lot of fairly dynamic data, so Leaks often ends up getting a number of<br>
+things on its list that haven't been disposed of but are not actually leaks. They're just<br>
+first-time data, or loaded resources. To avoid false alarms, the Leaks dcmd requires<br>
+that you perform the operation under question three times, in order to get three or<br>
+more items in its list that are similar in size and allocated from the same place in the<br>
+program. An operation can be as simple or complex as desired, since every memory<br>
+allocation is watched. An example of an operation to watch is to choose New from a<br>
+menu and then choose Close, under the assumption that those are complementary<br>
+functions.&nbsp;&nbsp;&nbsp;If you do this three times in a row with Leaks turned on, anything that<br>
+Leaks coughs out will very likely be a memory leak for that operation.
+</p>
+<p>
+The dcmd saves a shortened stack crawl of where the memory is being allocated, so that<br>
+potential leaks can be found back in the source code.
+</p>
+<p>
+One problem with Leaks as a dcmd is that if it's installed as part of the TMON Pro<br>
+startup, it patches the traps using a tail patch. Tail patches are bad, since they disable<br>
+bug fixes the system may have installed on those traps. This could cause a bug to show<br>
+up in your program that isn't there in an unpatched system. It's still probably worth<br>
+the risk, given the functionality Leaks can provide. The problem doesn't exist with<br>
+MacsBug, since the traps are patched by the dcmd before the system patches them. 
+</p>
+<p>
+A vastly superior way around this problem is to provide the Leaks functionality as<br>
+debugging code, instead of relying on an external tool. By writing an intermediate<br>
+routine that acts as a "wrapper" around any memory allocations your program does,<br>
+you can watch all the handles and pointers go by, do your own list management to know<br>
+when the list should be empty, and dump out the information when it isn't. By<br>
+wrapping those allocations, you avoid patching traps (always a good idea). Be sure to<br>
+watch for secondary allocations, such as GetResource/DetachResource pairs. You may<br>
+still want to run Leaks when you notice memory being lost, but your wrappers don't<br>
+notice it. 
+</p>
+<p>
+<b>ERRORS CAUGHT</b><br>
+Potential memory leaks, but you knew that already. 
+</p>
+<p>
+<b>CODE SAMPLE</b>
+</p>
+<pre>anIcon := GetCIcon(kIconId);
+PlotCIcon(aRect, anIcon);
+DisposHandle(Handle (anIcon));</pre>
+<p>
+This orphans any number of handles, because the GetCIcon call will create several<br>
+extra handles for pixMaps and color tables. This is an easy error to make, since the<br>
+GetCIcon returns a CIconHandle, which seems a lot like a PicHandle. A PicHandle is a<br>
+single handle, though, and a CIconHandle is a number of pieces. Always use the<br>
+corresponding dispose call for a given data structure. In this case, the appropriate call<br>
+is DisposCIcon.
+</p>
+<h2>STRESS ERROR HANDLING</h2>
+<p>
+Here the goal is to see how the program deals with less than perfect situations. Your<br>
+program won't always have enough RAM or disk space to run smoothly, and it's best to<br>
+plan for it. The first step is to write the code defensively, so that any potential error<br>
+conditions are caught and handled in the code. If you don't put in the error-handling<br>
+code, you're writing software that never expects to be stressed, which is an<br>
+unreasonable assumption on the Macintosh.
+</p>
+<p>
+<b>AVAILABILITY</b><br>
+Try running the program in a memory-critical mode, where it doesn't have enough<br>
+RAM even to start up. Users can get into this unfortunate situation by changing the<br>
+application's partition size.&nbsp;&nbsp;&nbsp;Rather than crash, put up an alert to tell users what<br>
+went wrong, and then bail out gracefully. Try running with just enough RAM to start<br>
+up, but not enough to open documents. Be sure the program doesn't crash and does give<br>
+the user some feedback. Try running in situations where there isn't enough RAM to edit<br>
+a document, and make sure it handles them. What happens if you get a memory-low<br>
+message, and you try to save? If you can't save, the user will be annoyed. What<br>
+happens when you try to print?
+</p>
+<p>
+Run your program on a locked disk, and try to save files on the locked disk. The errors<br>
+you get back should be handled in a nice way, giving the user some feedback. This will<br>
+often find assumptions in the code, like, "I'm sure it will always be run from a hard<br>
+disk."
+</p>
+<p>
+To see if you handle disk-full errors in a nice way, be sure to try a disk that has<br>
+varying amounts of free space left. Here again, if you've only ever tested on a big, old,<br>
+empty hard disk, it may shock you to find out that your users are running on a<br>
+double-floppy-disk Macintosh SE and aren't too happy that disk-full errors crash the<br>
+program. A particularly annoying common error is saving over a file on the disk. Some<br>
+programs will delete the old file first and then try to save. If a disk-full error occurs,<br>
+the old copy of the data has been deleted, leaving the user in a precarious state. Don't<br>
+force a user to switch disks, but allow the opportunity. 
+</p>
+<p>
+Especially with the advent of System 7, you should see how your program handles the<br>
+volume permissions of AppleShare. Since any Macintosh can now be an AppleShare<br>
+server, you can definitely expect to see permission errors added to the list of possible<br>
+disk errors. Try saving files into folders you don't have permission to access, and see<br>
+if the program handles the error properly. 
+</p>
+<p>
+<b>ERRORS CAUGHT</b><br>
+Inappropriate error handling, unnecessary crashes, lack of robustness, and general<br>
+unfriendliness. 
+</p>
+<p>
+<b>CODE SAMPLE</b>
+</p>
+<pre>i := 0;
+REPEAT
+    i := i + 1;
+    WITH pb DO
+    BEGIN
+        ioNamePtr := NIL;
+        ioVRefnum := 0;
+        ioDirID := 0;
+        ioFDirIndex := i;
+    END;
+    err := PBGetCatInfo (@pb, False);
+UNTIL err &lt;&gt; noErr;</pre>
+<p>
+This sample is trying to enumerate all files and directories inside a particular<br>
+directory by calling PBGetCatInfo until it gets an error. (Note that this sample does<br>
+one very important thing: initializing the ioNamePtr field to NIL to keep it from<br>
+returning a string at some random place in memory.) The problem with this loop is<br>
+that it assumes that any error it finds is the loop termination case. For an<br>
+AppleSharevolume, you may get something as simple as a permission error for a<br>
+directory you don't have access to. This is probably not the end of the entire search,<br>
+but the code will bail out. This bug would be found by trying the program with an<br>
+AppleShare volume. The appropriate end case would be to look for the exact error of<br>
+fnfErr instead or, better, to add the permErr to the conditional. 
+</p>
+<h2>MULTIPLE CONFIGURATION TESTS</h2>
+<p>
+This technique goes beyond merely finding the crash-and-burn bugs to help ensure<br>
+that the program will run in situations that weren't originally expected. Just fixing<br>
+crash-and-burn bugs is for amateurs.&nbsp;&nbsp;&nbsp;Professional software developers want their<br>
+programs to be as bug-free as possible. As a step toward this higher level of quality,<br>
+testing in multiple configurations can give you more confidence that you haven't made<br>
+faulty assumptions about the system. The idea is to try the program on a number of<br>
+machines in different configurations, looking for combinations that cause unexpected<br>
+results. 
+</p>
+<p>
+<b>AVAILABILITY</b><br>
+Multiple configuration tests should use the Macintosh Plus as the low-end machine to<br>
+be sure that the program runs on 68000-based machines and on ones that have a lot of<br>
+trap patches. Some of the code the system supports is not available, like Color<br>
+QuickDraw. If you use anything like that, you will crash with an unimplemented trap<br>
+number error, ID=12. The Macintosh Plus is a good target for performance testing as<br>
+well, since it's the slowest machine you might expect to run on. Its small screen can<br>
+also point out problems that your users might see in the user interface. For example,<br>
+some programs use up so much menu bar space that they run off the edge of the screen.<br>
+That might not be noticed until you run the program on a machine with a small screen.<br>
+If your program specifically doesn't support low-end machines, you should still put in<br>
+a test for them and warn the user. Crashing on a low-end machine is unacceptable,<br>
+especially when all you needed was a simple check. 
+</p>
+<p>
+Naturally, the multiple configurations include a Macintosh II-class machine to be sure<br>
+that assumptions about memory are caught. Because most development is done on<br>
+Macintosh II computers, this case will likely be handled as part of the initial testing.<br>
+It's virtually certain that your program will be used on a Macintosh II by some users.
+</p>
+<p>
+Using multiple monitors on a single system can point out some window- or<br>
+screen-related assumptions. The current version of the old 512 x 342 fixed-size bug<br>
+is the assumption that the MainGDevice is the only monitor in the system. Testing with<br>
+multiple monitors will point out that although sometimes the main device is black and<br>
+white, there's a color device in the system. Should your users have to change the main<br>
+device and reboot just to run your program in color? 
+</p>
+<p>
+By testing the program within a color environment, even if it doesn't use color, you'll<br>
+find any assumptions about how color might be used or the way bitmaps look. It's a<br>
+rare (albeit lame) program that gets to choose the exact Macintosh it should run on.
+</p>
+<p>
+Try the program under Virtual Memory to see if there are built-in assumptions<br>
+regarding memory. 
+</p>
+<p>
+Use the program under both System 6 and 7. If the program requires System 7, but a<br>
+user runs it under System 6, it should put up an alert and definitely not crash. For the<br>
+short term, it's obvious that you cannot assume all users will have either one system<br>
+or the other. The number of fundamental differences between the systems is<br>
+sufficiently large that the only way to gain confidence that the program will behave<br>
+properly is to run it under both systems. Some bugs that were never caught under<br>
+System 6 may now show up under System 7. The bugs may even be in your code, with<br>
+implicit assumptions about how some Toolbox call works. 
+</p>
+<p>
+Doing a set of functionality tests on these various types of systems will ensure that you<br>
+can handle the most common variations of a Macintosh. Tests of this form will give you<br>
+a better feeling for the limits of your program and the situations it can handle<br>
+gracefully. There's usually no drawback to getting a user's-eye view of your program.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+There is a tool called Virtual User (APDA #M0987LL/B) that can help a lot with these<br>
+kinds of tests.&nbsp;&nbsp;&nbsp;It allows you to script user interactions so that they can be replayed<br>
+over and over, and it can execute scripts on other machines remotely, over AppleTalk.<br>
+So, for instance, you could write a script that puts your program through its paces,<br>
+and then automatically execute that script simultaneously on lots of differently<br>
+configured Macintosh systems. 
+</p>
+<p>
+<b>ERRORS CAUGHT</b><br>
+As discussed above, this technique attempts to flush out any assumptions your code<br>
+makes about the environment it's running in: color capabilities, screen size, speed,<br>
+system software version, and so on. 
+</p>
+<p>
+<b>CODE SAMPLE</b>
+</p>
+<pre>void Hoohah(void)
+{
+    long localArray[2500];
+
+    . . .
+}</pre>
+<p>
+Naturally, this little array is stack hungry and will consume 10K of stack. On a<br>
+Macintosh II machine, this is OK, as the default stack is 24K. On the Macintosh Plus,<br>
+the stack is only 8K, so when you write into this array you will be writing over the<br>
+heap, most likely causing a problem. This type of easy-to-code bug may not be caught<br>
+until testing on a different machine. Merely because the code doesn't crash on your<br>
+machine doesn't mean it's correct. 
+</p>
+<h2>ASSERTS</h2>
+<p>
+Asserts are added debugging code that you put in to alert you whenever a situation is<br>
+false or wrong.&nbsp;&nbsp;&nbsp;They're used to flag unexpected or "can't happen" situations that your<br>
+code could run into. Asserts are used only during development and testing; they'll be<br>
+compiled out of the final code to avoid a speed hit. 
+</p>
+<p>
+<b>AVAILABILITY</b><br>
+You could write a function called ASSERT that takes a result code and drops into the<br>
+debugger if the result is false--or, better yet, writes text to a debugging window. In<br>
+MPW, you can use __FILE__ and __LINE__ directives to keep track of the location in<br>
+the source code. Another thing to check for is bogus parameters to calls, sort of like<br>
+Discipline. Basically, you want to check any old thing that will help you ensure<br>
+consistency and accuracy in your code, the more the merrier, as long as the asserts<br>
+don't "fire" all the time. Fix the bugs pointed out by an assert, or toughen up the<br>
+assert, but don't turn it off. If you just can't stand writing code to check every possible<br>
+error, temporarily put in asserts for the ones that will "never" happen. If an assert<br>
+goes off, you'd better add some error- handling code. 
+</p>
+<p>
+The following sample code shows one way to implement ASSERT. 
+</p>
+<pre>#if DEBUG
+#define ASSERT(what) do \
+    { if(!(what)) dbgAssert(__FILE__,__LINE__); } while(0)
+#else
+#define ASSERT(what) ((void)0)
+#endif
+
+</pre>
+<pre>void dbgAssert(const char* filename, int line)
+{
+    char msg[256];
+
+    sprintf(msg, "Assertion failed # %s: %d", filename, line);
+    debugstr((Str255)msg);
+}</pre>
+<p>
+In this example, ASSERT is defined by a C macro. If DEBUG is true, the macro expands<br>
+to a block of code that checks the argument passed to ASSERT. If the argument is false,<br>
+the macro calls the function dbgAssert, passing it the filename and line number on<br>
+which the ASSERT occurs. If DEBUG is false, the macro ASSERT expands to nothing.<br>
+Making the definition of ASSERT dependent on a DEBUG flag simplifies the task of<br>
+compiling ASSERTs out of final code. 
+</p>
+<p>
+<b>ERRORS CAUGHT</b><br>
+This technique catches all sorts of errors, depending, of course, on how you implement<br>
+it. Logic errors, unanticipated end cases that show up in actual use, and situations that<br>
+the code is not expecting are some of the possibilities. 
+</p>
+<p>
+<b>CODE SAMPLE</b>
+</p>
+<pre>numResources = Count1Resources('PICT');
+for(i=1; i&lt;=numResources; i++) {
+    theResource = Get1IndResource('PICT', i);
+    ASSERT(theResource != nil);
+    RmveResource(theResource);
+}</pre>
+<p>
+The problem here is that the code doesn't account for the fact that Get1IndResource<br>
+always starts at the beginning of the available resources. So the first time through, we<br>
+get the resource with index 1, and we remove it. The next time through, we ask for<br>
+resource 2, but since we removed the resource at the front of the list, we get what<br>
+used to be resource 3; we've skipped one. The upshot is that only half the resources are<br>
+removed, and then Get1IndResource fails. This is a great example of a "never fail"<br>
+situation failing. The ASSERT will catch this one nicely; otherwise, you might not know<br>
+about it for a long time. The solution is to always ask for the first resource. 
+</p>
+<h2>TRACE</h2>
+<p>
+Trace is a compiler option that causes a subroutine call to be inserted at the beginning<br>
+and end of each of your functions. You have to implement the two routines (%__BP and<br>
+%__EP), and then the compiler inserts a JSR %__BP just after the LINK instruction<br>
+and a JSR %__EP just before UNLK.&nbsp;&nbsp;&nbsp;This gives you a hook into every procedure that's<br>
+compiled, which can be extremely useful. Like asserts, trace is debugging code and will<br>
+be compiled out of the final version. 
+</p>
+<p>
+<b>AVAILABILITY</b><br>
+Trace is available in all the MPW compilers and in THINK Pascal. THINK C's profiler<br>
+can be configured and used in the same sort of way. 
+</p>
+<p>
+<b>ERRORS CAUGHT</b><br>
+By being able to watch every call in your program as it's made, you can more easily<br>
+spot inefficiencies in your segmentation and your call chain: If two often-called<br>
+routines live in different segments, under low-memory situations you may be<br>
+swapping code to disk constantly. If you're redrawing your window 12 times during an<br>
+update event, you could probably snug things up a little and gain some performance.<br>
+You can watch the stack depth change, monitor memory usage and free space, and so on.<br>
+Think up specific flow-of-control questions to ask and then tailor your routines to<br>
+answer them.&nbsp;&nbsp;&nbsp;Expect to generate far more data than you can look at. Really get to know<br>
+your program. Go wild. 
+</p>
+<p>
+<b>CODE SAMPLE</b>
+</p>
+<pre>PROCEDURE HooHah
+VAR
+    localArray: ARRAY[1..2500] OF LongInt;
+BEGIN
+    . . .
+END; {HooHah}</pre>
+<p>
+Once again, we're building a stack that's too big for a Macintosh Plus. The stack sniffer<br>
+will catch it eventually, but since VBL tasks don't run very often, you may be far away<br>
+by then. Trace could watch for it at each JSR and catch it immediately. 
+</p>
+<h2>USEFUL COMBINATIONS</h2>
+<p>
+All these techniques are powerful by themselves, but they're even better when used in<br>
+combination.&nbsp;&nbsp;&nbsp;Use them as early and as often as you can. Some of them are a bit of<br>
+trouble, but that smidgen of extra work is paid back many times over in the time saved<br>
+by not having to track down the stupid bugs. Use them throughout development, right<br>
+up to the end. Many bugs show up through interactions that only begin near the end of<br>
+the process. Diligent use of these techniques is guaranteed to find many of the easy<br>
+bugs, so you can spend your time finding the hard ones, which is much more<br>
+interesting and worthwhile. 
+</p>
+<p>
+OK, now armed to the teeth with useful techniques, you're ready to stomp bugs. You<br>
+know what to look for and how to flush them out. But you know what? Debugging is<i>still</i><br>
+hard. 
+</p>
+<h2>THE INSIDE STORY OF THE DEBUGGER</h2>
+<p>
+<b>BY STEVE JASIK</b>
+</p>
+<p>
+<b>WHY WRITE A DEBUGGER</b><br>
+Since I didn't have the right connections for selling illegal drugs, I had to consider the<br>
+alternative of selling legal addictive drugs to Macintosh developers.
+</p>
+<p>
+OK, seriously, I wanted to learn about the 68000 architecture. Given my experience<br>
+writing compilers and code generators for superscalar RISC mainframes, I decided to<br>
+write a disassembler for and on the Macintosh. I introduced my first product,<br>
+MacNosy, in January 1985. It allowed a fair number of developers to discover the<br>
+innards of the Macintosh ROMs, as well as to curse at me for its original TTY interface.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Unhappy with the state of Macintosh debuggers, I decided to write one of my own, using<br>
+MacNosy as a foundation. The resulting product, The Debugger, made its international<br>
+debut in London in November 1986. Since then, it's been expanded to become a system<br>
+debugger (it runs at INIT time and is available to debug any process), include an<br>
+incremental Linker for MPW compiled programs, and more.
+</p>
+<p>
+<b>THE MACINTOSH INTERFACE</b><br>
+The Debugger uses the Macintosh user interface, or at least my interpretation of it.<br>
+The windows, menus, dialogs, and text processing are standard for the Macintosh.
+</p>
+<p>
+The only real problem was the switch in context. I had to swap in all of low memory<br>
+($0 to $1E00 on a Macintosh II-class machine). This may appear to be a bit<br>
+expensive, but in comparison with the screen swap, which is a minimum of 22K on a<br>
+small-screened Macintosh, it's trivial. The biggest problem in this area is that some<br>
+of the values have to be "cross-fertilized" between worlds, and many of the<br>
+low-memory globals are <i>not</i>&nbsp;&nbsp;documented.
+</p>
+<p>
+Using the Macintosh interface became a royal pain as the System 7 group extended the<br>
+system in such a way that the basic ROM code assumed the existence of a Layer Manager<br>
+and MultiFinder functions. In many cases, I had to "unpatch" the standard code and<br>
+substitute my own in order to keep The Debugger functional.
+</p>
+<p>
+<b>MMU PROTECTION</b><br>
+MMU protection was initially designed so that The Debugger would try to protect the<br>
+system from destruction no matter what program was running. As we implemented the<br>
+design, we found that this goal was impossible because many of the applications (MPW<br>
+Shell, ResEdit, Finder) diddled with the system heap. I ended up protecting the rest of<br>
+the system only when an application that's being debugged is running.
+</p>
+<p>
+<b>EASE OF USE</b><br>
+Users have had an influence on the design and feature set in The Debugger. For<br>
+example, the initial version of the watchpoint (memory watch) command was very<br>
+simple. When a user pointed out the usefulness of an auto reset feature in the<br>
+command, we added it.
+</p>
+<p>
+I've tried to use simple commands for the most frequently performed operations in The<br>
+Debugger. The idea has been to make common things easy to do. Some of the more<br>
+complicated operations are difficult to keep simple, as the scripting capability is<br>
+limited. SADE, in contrast, has an extensive scripting capability but is cumbersome to<br>
+use.
+</p>
+<h2>TMON, THEN AND NOW</h2>
+<p>
+<b>BY WALDEMAR HORWAT</b>
+</p>
+<p>
+The first version of TMON was released in late 1984. TMON was a summer project for<br>
+me at TMQ Software when I was a junior in high school. I wrote it because I was<br>
+dreaming about a one-Macintosh debugger (MacsBug required a terminal at the time)<br>
+that had a direct-manipulation user interface. Direct manipulation meant more than<br>
+just having windows--it meant you would be able to change memory or registers<br>
+simply by typing over your values, assemble instructions by typing in a disassembly<br>
+window, and so on.
+</p>
+<p>
+<b>THE ORIGINAL TMON</b><br>
+Memory constraints of the Macintosh 128K forced me to write TMON entirely in<br>
+assembly language--the original version used only 16K plus a little additional<br>
+memory to save the screen. TMON used its own windowing system to avoid reentrancy<br>
+problems with debugging programs that call the system. TMON also included a "User<br>
+Area," a block of code that could extend TMON. The source code was provided for the<br>
+standard user areas, and Darin Adler took great advantage of this facility to add<br>
+numerous features to TMON in his Extended User Area.
+</p>
+<p>
+Writing TMON took a little ingenuity. I didn't have anything that could debug it, so I<br>
+wrote the entire program, assembled it, ran it on a Macintosh, and watched it crash.<br>
+After a couple of dozen builds, I got it to display its menu bar on the screen. By about<br>
+build 100, I had a usable memory dump window that I could then use to debug the rest<br>
+of TMON.
+</p>
+<p>
+<b>TMON PRO</b><br>
+Improving a program written entirely in tight assembly language designed for a<br>
+Macintosh 128K became intractable, so I switched to MPW C++. Version 3.0 of TMON<br>
+(TMON Pro) is written half in assembly language and half in C++. Using C++ turned<br>
+out to be one of the best ways to debug a program: C++ features such as constructors<br>
+and destructors prevented a lot of pesky programming errors. The downside of using a<br>
+high-level language is that code size grows explosively--TMON 3.0's code is about ten<br>
+times larger than TMON 2.8's.
+</p>
+<p>
+When writing TMON 3.0, I reevaluated earlier design decisions. I opted to continue to<br>
+concentrate on debugging at the assembly language level for two reasons. First, there<br>
+are many bugs that can arise on a Macintosh that pure source-level debuggers can't<br>
+handle. Second, I find that I use TMON at least as much for learning about the Macintosh<br>
+as I do for debugging.
+</p>
+<p>
+I sometimes wish I could use the Macintosh windows in TMON. Nevertheless, I decided<br>
+to remain with TMON's custom windows for reasons of safety. Until the Macintosh has a<br>
+real reentrant multitasking system that can switch to another task at <i>any</i>&nbsp;&nbsp;point in the<br>
+code, writing such a debugger would either make it prone to crashing if it was entered<br>
+at the wrong time or require the debugger to be more dependent on undocumented<br>
+operating system internals than I like.
+</p>
+<p>
+I found that writing TMON 3.0 was much harder and took much longer than writing the<br>
+original TMON. Part of this was due to the second-system effect--the product just<br>
+kept on growing over time. Nevertheless, I also found that writing TMON 3.0 was<br>
+difficult because of the loss of the Macintosh "standard." There are now over a dozen<br>
+Macintosh models, using the 68000 through the 68040, some with third-party<br>
+accelerators, various ROM versions, 24- and 32-bit mode, virtual memory, several<br>
+versions of the operating system, and numerous INITs, patches, video cards, and other<br>
+configuration options. These options present unique challenges to a low-level debugger<br>
+such as TMON, which must include special code for many of them.
+</p>
+<p>
+Despite the frustration, I think that writing TMON was worth it--it made many<br>
+developers' lives easier. I plan to continue to evolve TMON in the future and<br>
+incorporate suggestions for improvements.
+</p>
+<h2>A WORD TO THE WISE FROM FRED</h2>
+<p>
+What we've described in this article are a number of tools for doing Macintosh<br>
+software development. Some of you are about to say, "Oh, those sound really great, but<br>
+I don't have time to use them--I'm about to ship," or whatever. I'd like to tell you a<br>
+story that a man of sound advice, Jim Reekes, told me: A young boy walked into a room<br>
+and saw a man pushing a nail into the wall with his finger. The boy asked him, "Hey,<br>
+mister, why don't you go next door and get a hammer?" The man replied, "I don't have<br>
+time." So the boy went next door, got a hammer, and came back. The man was still<br>
+pushing the nail into the wall with his finger. So the boy hit the man in the head with<br>
+the hammer, killed him, and took the nail.
+</p>
+<p>
+<b>BO3B JOHNSON AND FRED HUXHAM </b> didn't want a bio, except to say that they are<br>
+cohosts of "Lunch with Bo3b and Fred." We also feel compelled to tell you that in<br>
+Bo3b's name, the "3" is silent. *
+</p>
+<p>
+<b>THIRD-PARTY COMPATIBILITY TEST LAB</b> Apple maintains a Third-Party<br>
+Compatibility Test Lab for the use of Apple Associates and Partners. The Lab features<br>
+many preconfigured domestic and international systems, extensive networking<br>
+capabilities, support from staff engineers, and so on. If you're an Apple Associate or<br>
+Partner, and you'd like to make a test-session appointment or get more information,<br>
+contact Carol Lockwood at (408)974-5065 or AppleLink LOCKWOOD1.&nbsp;&nbsp;Or you can<br>
+write to Apple Third-Party Test Lab, Apple Computer, Inc., 20525 Mariani Avenue<br>
+M/S 35-BD, Cupertino, CA 95014.*
+</p>
+<p>
+<b>RELATED READING</b><i>Debugging Macintosh Software with MacsBug</i>&nbsp;&nbsp;by Konstantin<br>
+Othmer and Jim Straus (Addison-Wesley, 1991) and <i>How to Write Macintosh</i><br>
+<i>Software</i>&nbsp;&nbsp;by Scott Knaster (Hayden Books, 1988).*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Jim Friedlander, Pete Helme, Jim<br>
+Reekes*
+</p>
+</body>
+</html>
