@@ -1,0 +1,337 @@
+<html>
+<head>
+<!-- Article ID: 11 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Winter 92 - SIMPLE TEXT WINDOWS VIA THE TERMINAL MANAGER</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>SIMPLE TEXT WINDOWS VIA THE TERMINAL MANAGER</h2>
+<h1>CRAIG HOTCHKISS</h1>
+<p>
+<img src="img/134.gif" width="368 px"></img>
+</p>
+<p>
+<i>&nbsp;A major feature of System 7 is the fact that the Macintosh Communications Toolbox is</i><br>
+<i>built in and available for all to use. This article presents code that uses the</i><br>
+<i>Communications Toolbox Terminal Manager to implement a simple text window that</i><br>
+<i>can be dropped into any application. The window is useful for displaying debugging or</i><br>
+<i>status information such as variable values or memory usage during application</i><br>
+<i>development.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;Many times, when writing code, I've wished I had some sort of text repository, a place<br>
+to write some quick text. I tried to use TextEdit for this at first, but its structures<br>
+grow as you add text, so my memory accounting became confused. Sprinkling DebugStr<br>
+calls throughout the code told me what I needed to know most of the time, but they were<br>
+interruptive to both the user interface and timing- sensitive functions. Finally, I<br>
+turned to the Terminal Manager because in addition to a terminal tool it contains the<br>
+nuts and bolts necessary to display a text window and uses a fixed amount of memory. 
+</p>
+<p>
+&nbsp;TermWindow, included on the<i>Developer CD Series</i> disc, consists of a few simple<br>
+routines that use the Terminal Manager and a terminal tool to display text in a<br>
+Macintosh window. The package can be used in any application for purposes such as<br>
+displaying variable values, heap checks, memory usage, and routine paths. I've even<br>
+used some features of the terminal tool to grab attention, like having text blink when I<br>
+encounter an OSErr or when memory begins to get tight.
+</p>
+<p>
+&nbsp;Figure 1 shows a sample TermWindow terminal emulation window. I used the<br>
+Developer Technical Support (DTS) Sample application (included with MPW) and the<br>
+Apple VT102 tool to produce the display. The double-high/double-wide text shown in<br>
+the figure is a feature of the VT102 emulator. I displayed it by writing the escape<br>
+sequences shown on the next page to the window. (Two lines are needed for double-high<br>
+text, one to display the top half of the line, and one for the bottom half.)
+</p>
+<pre>&lt;ESC&gt;#3HELP! I'm trapped in here!
+&lt;ESC&gt;#4HELP! I'm trapped in here!</pre>
+<p>
+<img src="img/135.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1</b>A TermWindow Window
+</p>
+<h2>THE HEADER FILE</h2>
+<p>
+The file TermWindow.h defines a basic TermWindowRec structure that TermWindow<br>
+uses internally for housekeeping and for storage of other structures, including the<br>
+handles for the terminal and control records. 
+</p>
+<pre>struct TermWindowRec
+{
+    WindowRecord    fWindowRec;     // so it can be a WindowPtr
+    short           fWindowType;    // for application use
+    TermHandle      fTermHandle;    // CTB terminal handle
+    TermEnvironRec  fTermEnvirons;  // environment info
+    ControlHandle   fVertScroll;    // vertical scroller
+    ControlHandle   fHorizScroll;   // horizontal scroller
+    Point           fMinWindowSize; // min. width/height of window
+};
+typedef struct TermWindowRec TermWindowRec;
+typedef TermWindowRec *TermWindowPtr;</pre>
+<p>
+Six prototype routines, used to put TermWindow to work in an application, are also<br>
+defined in the header file TermWindow.h. 
+</p>
+<pre>pascal  OSErr   InitTermMgr(void);
+pascal  OSErr   NewTermWindow(TermWindowPtr *termPtr,
+                                const Rect *boundsRect,
+                                ConstStr255Param title,
+                                Boolean visible,
+                                short theProc,
+                                WindowPtr behind,
+                                Boolean goAwayFlag,
+                                Str31 toolName);
+pascal  OSErr   DisposeTermWindow(TermWindowPtr termPtr);
+pascal  Boolean IsTermWindowEvent(TermWindowPtr termPtr,
+                                const EventRecord *theEventPtr);
+pascal  void    HandleTermWindowEvent(TermWindowPtr termPtr,
+                                const EventRecord *theEventPtr);
+pascal  OSErr   WriteToTermWindow(TermWindowPtr termPtr,
+                                Ptr theData, Size *lengthOfData);</pre>
+<h2>HOW TO USE TERMWINDOW</h2>
+<p>
+The six TermWindow routines are easy to use. After normal Macintosh manager<br>
+initialization, you'll initialize the Terminal Manager with a call to InitTermMgr and<br>
+then call NewTermWindow. The NewTermWindow function allocates the<br>
+TermWindowPtr, terminal handle, and control handles. It also creates a Macintosh<br>
+window complete with scroll bars and then attaches the terminal emulation region to<br>
+the window with a call to TMNew. (See the next section for more on initialization.)
+</p>
+<p>
+There are two functions to handle events, IsTermWindowEvent and<br>
+HandleTermWindowEvent.&nbsp;&nbsp;&nbsp;These should be placed in your application event loop.<br>
+IsTermWindowEvent determines whether the incoming event is for the emulation<br>
+window by looking at the EventRecord structure, and it also provides time to the<br>
+terminal emulator by calling TMIdle. HandleTermWindowEvent is a dispatcher that<br>
+routes the event to routines that in turn call the Terminal Manager to process the<br>
+event. These routines are discussed in more detail in the section "Handling Events."
+</p>
+<p>
+The WriteToTermWindow routine, discussed later in this article under "Writing<br>
+Text," uses the Terminal Manager to display your data in the terminal emulation<br>
+window. And finally, DisposeTermWindow performs window and structure cleanup.
+</p>
+<h2>INITIALIZATION</h2>
+<p>
+The InitTermMgr routine prepares to initialize the Terminal Manager by checking the<br>
+status of three Gestalt selectors: gestaltCTBVersion, gestaltCRMAttr, and<br>
+gestaltTermMgrAttr. (We don't have to check for Gestalt, since MPW 3.2 contains the<br>
+code to make Gestalt work.) The gestaltCTBVersion selector tells us which version of<br>
+the Communications Toolbox is available, thereby letting us know that it exists. The<br>
+gestaltCRMAttr and gestaltTermMgrAttr selectors tell us, respectively, whether the<br>
+Communications Resource Manager (which must be initialized for tool resource<br>
+handling) and Terminal Manager are available for use. InitTermMgr then calls the<br>
+Communications Toolbox initialization routines if each Gestalt call returns a value of<br>
+true. It all looks like this:
+</p>
+<pre>pascal OSErr InitTermMgr(void)
+{
+    OSErr   result = noErr;
+    Boolean hasCTB, hasCRM, hasTM;
+    long    gestaltResult;
+   
+    hasCTB = (Gestalt(gestaltCTBVersion, &amp;gestaltResult) ?
+                            false : gestaltResult &gt; 0);
+    hasCRM = (Gestalt(gestaltCRMAttr, &amp;gestaltResult) ?
+                            false : gestaltResult != 0);
+    hasTM = (Gestalt(gestaltTermMgrAttr, &amp;gestaltResult) ?
+                            false : gestaltResult != 0);
+    if ((hasCTB) &amp;&amp; (hasCRM) &amp;&amp; (hasTM))
+        if (noErr == (result = InitCRM()))
+            if (noErr == (result = InitCTBUtilities()))
+                if (noErr == (result = InitTM()))
+   
+    return (result);
+} /*InitTermMgr*/</pre>
+<p>
+You may wonder whether the Communications Toolbox requires that the Macintosh<br>
+Toolbox managers be started up at initialization time. The Communications Toolbox<br>
+managers are loaded in the system heap, so you may have other reasons for starting<br>
+them up in your initialization routine, but TermWindow's only requirement is that<br>
+InitTermMgr be called at some point beforeNewTermWindow. Because the<br>
+NewTermWindow routine has the potential to allocate nonrelocatable memory, calling<br>
+InitTermMgr and NewTermWindow at initialization removes the possibility of heap<br>
+fragmentation. 
+</p>
+<p>
+NewTermWindow begins by validating each parameter that was passed and assigns<br>
+default values if necessary (see Table 1 below; refer to "The Header File" earlier in<br>
+this article for the NewTermWindow declaration). You might notice that a good deal of<br>
+the parameter list to NewTermWindow is very similar to that for the NewWindow<br>
+function in the Macintosh Toolbox.&nbsp;&nbsp;&nbsp;The NewTermWindow parameter list is designed to<br>
+provide as much window control as possible when calling NewWindow, while also<br>
+adding the functionality for the terminal emulation region.&nbsp;&nbsp;&nbsp;Calls to NewControl attach<br>
+scroll bars to the window being created. 
+</p>
+<p>
+<b>Table 1 </b>NewTermWindow Defaults
+</p>
+<p><table border="0"><tr><td><b>Parameter Name</b></td><td><b></b><b>Default Value</b></td></tr>
+<tr><td>termPtr</td><td>Pointer allocated for TermWindow</td></tr>
+<tr><td></td><td>storage</td></tr>
+<tr><td>boundsRect</td><td>FrontWindow window size</td></tr>
+<tr><td>title</td><td>"\pStatus"</td></tr>
+<tr><td>visible</td><td>True</td></tr>
+<tr><td>theProc</td><td>ZoomDocProc</td></tr>
+<tr><td>behind</td><td>FrontWindow</td></tr>
+<tr><td>goAwayFlag</td><td>False</td></tr>
+<tr><td>toolName</td><td>TMChoose user setup dialog box</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Once the Macintosh window is ready, NewTermWindow attaches the terminal emulation<br>
+region to the window with a call to TMNew. Parameters to the TMNew routine tell the<br>
+terminal tool, via the Terminal Manager, how to set up the emulation. (Terminal tools,<br>
+not the Terminal Manager, implement the emulation.) The basic TMNew prototype is<br>
+as follows:
+</p>
+<pre>pascal TermHandle TMNew(const Rect *termRect,
+            const Rect *viewRect,
+            TMFlags flags, short procID, WindowPtr owner,
+            TerminalSendProcPtr sendProc,
+            TerminalCacheProcPtr cacheProc,
+            TerminalBreakProcPtr breakProc,
+            TerminalClikLoopProcPtr clikLoop,
+            TerminalEnvironsProcPtr environsProc,
+            long refCon, long userData);</pre>
+<p>
+In TermWindow's case, NewTermWindow sets termRect and viewRect to the portRect of<br>
+the window's grafPort minus the scroll bar area and sets the flags parameter to 0L.<br>
+(This enables the terminal tool to put up custom menus or provide error alerts to the<br>
+user.) The procID parameter is a terminal tool reference number (obtained with<br>
+TMGetProcID) that tells the Terminal Manager which tool to use. The owner parameter<br>
+is set to the WindowPtr of our Macintosh window. The procedure pointers, refCon, and<br>
+userData are all set to nil or 0L. 
+</p>
+<pre>termPtr-&gt;fTermHandle = TMNew(&amp;termRect, &amp;termRect, 0L, procID,
+                            (WindowPtr)(*termPtr), nil, nil, nil,
+                            nil, nil, 0L, 0L);</pre>
+<h2>HANDLING EVENTS</h2>
+<p>
+Your application's main event loop should use the two event-handling routines,<br>
+IsTermWindowEvent and HandleTermWindowEvent, to process events for the emulation<br>
+window and to determine whether the event has already been handled. I use the<br>
+following fragment just after calling WaitNextEvent; it sets the gotEvent flag to false<br>
+when TermWindow has processed the event, so that I don't try to handle the event<br>
+twice. 
+</p>
+<pre>if (IsTermWindowEvent(&amp;gTheEvent, gTermWindowPtr)) {
+    HandleTermWindowEvent(&amp;gTheEvent, gTermWindowPtr);
+    gotEvent = false;
+}</pre>
+<p>
+IsTermWindowEvent uses FindWindow or the message field of the event record to<br>
+determine whether the event is for the terminal window. (See<i>Inside Macintosh</i> Volume<br>
+I, page 250, for details.) IsTermWindowEvent is also a convenient place to give the<br>
+terminal tool idle time; it calls TMIdle to give the tool a chance to draw text or blink<br>
+the cursor. (Some terminal tools also have the ability to display blinking text; that<br>
+would be done here also.)
+</p>
+<p>
+The HandleTermWindowEvent routine is fairly straightforward, especially if you've<br>
+written window- and scroll-handling code before. As is true when handling normal<br>
+windows, the what field of the event record defines the work to be done. Terminal<br>
+Manager routines exist for most of this work, so handling events is primarily a matter<br>
+of calling the right routine at the appropriate time. For example, window activation<br>
+and deactivation are communicated to the tool with a call to TMActivate.
+</p>
+<pre>TMActivate(termPtr-&gt;fTermHandle,
+            (0 != (theEventPtr-&gt;modifiers &amp; activeFlag)));</pre>
+<p>
+Figure 2 illustrates how a message like TMActivate is routed to accomplish its goal.<br>
+The Terminal Manager receives the TMActivate call and routes the tmActivateMsg<br>
+message to the terminal tool.&nbsp;&nbsp;&nbsp;The terminal tool then takes the opportunity to call<br>
+Macintosh Toolbox routines such as InsertMenu or RemoveMenu (if the tool uses a<br>
+custom menu, as the VT102 tool does) to keep the screen up to date.
+</p>
+<p>
+Update events are handled by a call to TMUpdate sandwiched between BeginUpdate and<br>
+EndUpdate. You'll just need to pass TMUpdate the update region freshly calculated by<br>
+BeginUpdate. Of course, if you check for an empty region first, you won't have to call<br>
+TMUpdate at all. 
+</p>
+<pre>BeginUpdate((WindowPtr)termPtr);
+    if (nil != ((WindowPtr)termPtr)-&gt;visRgn)
+        TMUpdate(termPtr-&gt;fTermHandle, ((WindowPtr)termPtr)-&gt;visRgn);
+EndUpdate((WindowPtr)termPtr);</pre>
+<p>
+<img src="img/136.gif" width="555 px"></img>
+</p>
+<p>
+<b>Figure 2 </b>Calling TMActivate
+</p>
+<p>
+Mouse-click handling is also fairly traditional. FindWindow is used to determine<br>
+where in the window the click took place, and Terminal Manager routines are called to<br>
+let the terminal tool know what to do. When a zoom or grow event causes the size of the<br>
+emulation rectangle to change, the window's portRect gets passed to TMResize. If<br>
+FindWindow returns inContent, FindControl is used to determine the control in which<br>
+the click occurred, so that TermWindow will know whether to scroll horizontally or<br>
+vertically. The partCode returned from FindControl tells how much to scroll by<br>
+indicating the part of the control where the click took place. If FindControl returns nil<br>
+for the ControlHandle parameter, the click is in the emulation region and TMClick is<br>
+called.
+</p>
+<h2>WRITING TEXT</h2>
+<p>
+Writing data is easy via the WriteToTermWindow routine. Here's an example of a<br>
+WriteToTermWindow call with tempString declared as a char array:
+</p>
+<pre>sprintf(tempString, "Hello, world");
+dataLength = strlen(tempString);
+osResult = WriteToTermWindow(termPtr, tempString, &amp;dataLength);</pre>
+<p>
+In a debugging situation, you might want to do something like the following to keep<br>
+track of heap size:
+</p>
+<pre>gAppHeapRef -= FreeMem();
+if (gAppHeapRef) {
+    sprintf(tempString, "\t\t#M# App. heap grew by %ld bytes",
+                    gAppHeapRef);
+    dataLength = strlen(tempString);
+    osResult = WriteToTermWindow(termPtr, tempString, &amp;dataLength);
+}</pre>
+<p>
+WriteToTermWindow hands the data off to the terminal tool, via a call to TMStream.<br>
+You might be tempted here to think that the data should appear in the window<br>
+immediately, but it doesn't--it's simply put in the terminal tool buffer. The terminal<br>
+tool waits for a TMUpdate or TMIdle before actually writing to the window. Another<br>
+point to remember when working with terminal tools is that display fonts are<br>
+controlled by the terminal tool; in fact, many use specific terminal fonts. 
+</p>
+<h2>NOW IT'S YOUR TURN . . .</h2>
+<p>
+That's really all there is to using this simple text window. Now that you have some<br>
+base code to work from, you might want to add the communication abilities needed to<br>
+talk to another computer by using Connection Manager calls like CMRead or CMWrite<br>
+and telling the terminal tool when to use them with procedure pointer parameters to<br>
+TMNew. How about extending TermWindow to write all data displayed to a file? Or if<br>
+you're really up to a challenge, try adding a scroll-back cache to store data that gets<br>
+scrolled out of the emulator. Just scrolling the data around is not too difficult, but<br>
+brush up on your region handling when you try to work with selections.
+</p>
+<p>
+I hope you find the TermWindow package useful. Put it to work, add some features, and<br>
+pass it on.&nbsp;&nbsp;&nbsp;Everything should evolve over time.
+</p>
+<p>
+<b>CRAIG HOTCHKISS </b>works on the Connectivity team in Apple's system software<br>
+group. When he's not pondering new ways for you to discover the world via your<br>
+Macintosh, you might catch him practicing maneuvers with his stunt kite, playing<br>
+chess, or "on his way" to a volleyball game. Before coming to Apple, Craig spent<br>
+several years (in the great state of theworld champion Twins) at the telephone<br>
+company frustrated with DOS in preparation for database work on PDP and VAX<br>
+machines.*<b>For more details </b>on using the Macintosh Communications Toolbox, see<br>
+<i>Inside the Macintosh Communications Toolbox, </i>&nbsp;&nbsp;by Apple Computer, Inc.<br>
+(Addison-Wesley, 1991).*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS</b>James Beninghaus, Mary Chan, Byron<br>
+Han *
+</p>
+</body>
+</html>

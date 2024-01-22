@@ -1,0 +1,642 @@
+<html>
+<head>
+<!-- Article ID: 30 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>August 92 - MACINTOSH Q & A</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH Q &amp; A</h2>
+<h1>MACINTOSH DEVELOPER TECHNICAL SUPPORT</h1>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Q</b><i> Is it my imagination, or does GetPictInfo return a bit depth of 1 on QuickTime</i><br>
+<i>compressed PICT files?</i>
+</p>
+<p>
+<b>A </b> Yep! This is what's happening: The Picture Utilities Package doesn't know of the<br>
+QuickTime Compressed Pixmap opcode (0x8200), so it just skips over the opcode's<br>
+data; then it finds the PacksBitRect opcode containing the black-and-white<br>
+pseudo-alert that you get when you draw the picture on a machine that doesn't have<br>
+QuickTime installed, and GetPictInfo reports back this alert.
+</p>
+<p>
+&nbsp;Trivia: When QuickTime is installed, it displays the compressed image and then<br>
+ignores the following PacksBitRect since QuickTime knows it's only the<br>
+black-and-white alert.
+</p>
+<p>
+<b>Q</b><i> Is it true that if I double-click a document belonging to my application, the</i><br>
+<i>application will be launched and will receive an 'odoc' Apple event, but will not receive</i><br>
+<i>an 'oapp' event--that is, it will receive either 'odoc' or 'oapp' but not both?</i>
+</p>
+<p>
+<b>A </b> Yes, except actually it will receive one of 'oapp', 'odoc', or 'pdoc'. The 'pdoc' will be<br>
+followed (as the next event) by a 'quit' if the 'pdoc' was the event sent as the<br>
+application was launched.
+</p>
+<p>
+&nbsp;This is the <i>normal</i>&nbsp;&nbsp;sequence of events, and should be adhered to by everyone who<br>
+launches applications. However, it isn't enforced by the system or the Finder. It's<br>
+possible for any application to launch your application with <i> any</i>&nbsp;&nbsp;event, since it can<br>
+stuff anything in the launchAppParameters field of LaunchApplication, as long as it's a<br>
+valid high-level (not even Apple) event. Launching another application this way would<br>
+be bad programming, and would break most applications, but you should be aware that<br>
+someone who doesn't understand event handling may do this to you.
+</p>
+<p>
+&nbsp;Note that if another application launches your application using LaunchApplication and<br>
+doesn't specify any high-level event in the launch parameter block, the Finder will<br>
+automatically supply the 'oapp' event. So, in general, if Apple events and launching<br>
+have been coded correctly, you'll always receive an 'oapp', 'odoc', or 'pdoc'.
+</p>
+<p>
+<b>Q</b><i> I'm using the Picture Utilities Package to extract the color table from a picture.</i><br>
+<i>After getting the color table, I use NewPalette to construct a palette from the color</i><br>
+<i>table (usage = tolerant, tolerance = 0). After I do this, the RGB values in the palette</i><br>
+<i>don't always exactly match the RGB values in the source color table, causing my</i><br>
+<i>program to fail. If I use NewPalette without a source color table, and then use</i><br>
+<i>CTab2Palette to copy the colors over (again with usage = tolerant, tolerance = 0), the</i><br>
+<i>colors match exactly.</i>
+</p>
+<p>
+<b>A </b> It turns out that NewPalette doesn't use CTab2Palette, but copies the RGB fields in a<br>
+strange way that's causing the problems you're seeing. NewPalette copies the high byte<br>
+in each color table RGB entry into both the high byte and the low byte of the<br>
+corresponding palette entry. Thus, if the color table entry for red was $F000, it<br>
+becomes $F0F0. This of course makes no difference to QuickDraw since the low byte<br>
+isn't displayed, but if your program expects the low byte to match, that's where your<br>
+problem exists. CTab2Palette is different, in that it doesn't copy the high byte into the<br>
+low byte unless the pmAnimated bit is set.
+</p>
+<p>
+&nbsp;The best solution for your code isn't to compare the entire RGB value when comparing<br>
+colors, but rather to compare the high byte of each RGB component separately. If this<br>
+isn't possible, the next best solution is for you to use the workaround that you've<br>
+already discovered with CTab2Palette. It's unlikely that the Palette Manager is going to<br>
+change in the future for something like this. In fact, we would almost call it a "feature"<br>
+since other developers may even depend on it.
+</p>
+<p>
+<b>Q</b><i> My application wants to open other applications and play with the resources therein,</i><br>
+<i>like ResEdit, but when it calls OpenResFile on an application, the program gets lost in</i><br>
+<i>GetNamedResource. Is there something I'm missing?</i>
+</p>
+<p>
+<b>A </b> Your problem stems from the fact that some resources in the application file you're<br>
+opening with OpenResFile are marked to be preloaded, and so are loaded into memory<br>
+when the resource fork is opened.
+</p>
+<p>
+&nbsp;Since most applications have CODE resources marked to be preloaded, this turns into a<br>
+much bigger problem, because the Segment Loader will treat these preloaded CODE<br>
+resources as your code resources if you make a between-segment call that triggers a<br>
+call to LoadSeg while the opened resource file is first in the resource chain. If this<br>
+happens, you'll begin executing code out of the other application, which will cause<br>
+your Macintosh to crash and burn.
+</p>
+<p>
+&nbsp;The solution to this problem is to bracket OpenResFile calls with SetResLoad(FALSE)<br>
+and SetResLoad(TRUE), and to avoid making between-segment calls when you've got<br>
+another resource file open that contains CODE resources. This will not only prevent<br>
+your application's memory from being used by preloaded resources that you don't<br>
+want, but will also prevent the Segment Loader from jumping into the other<br>
+application's code. If you need to get CODE resources out of the opened resource file,<br>
+you can still prevent the Segment Loader problem by calling UseResFile on your<br>
+application's resource reference number to put your application at the top of the<br>
+resource chain.
+</p>
+<p>
+<b>Q</b><i> How can our application search for files by label or color, getting the actual string</i><br>
+<i>for the label/color field, so that users can select from a menu that looks like what</i><br>
+<i>they'd see in the Finder or ResEdit?</i>
+</p>
+<p>
+<b>A </b> In the icon utilities there's a call that will get you the RGB color and string for the<br>
+Finder's labels. Information from the May 1992 revision of Macintosh Technical Note<br>
+"Drawing Icons the System 7 Way " (formerly #306) is shown below. It includes the<br>
+glue code for the call in MPW Pascal and C formats.
+</p>
+<pre>FUNCTION GetLabel (labelNumber: INTEGER; VAR labelColor: RGBColor;
+    VAR labelString: Str255): OSErr;
+INLINE $303C, $050B, $ABC9;</pre>
+<p>
+&nbsp;The label number is in the range of 0 to 7, and is available in bits 1-3 of the file's<br>
+Finder flags (<i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI, page 9-36). The call returns the actual<br>
+color and string used in the Label menu of the Finder and the label's control panel. This<br>
+information is provided in case you want to include the label text or color when<br>
+displaying a file's icon in your application.
+</p>
+<p>
+<b>Q</b><i> I'm making an asynchronous low-level File Manager call from inside a completion</i><br>
+<i>routine (for example, error := PBxxx(@PB, TRUE);). Occasionally on some</i><br>
+<i>machines, the call immediately returns an error in the function result even though</i><br>
+<i>everything appears to work correctly. Do I need to worry about the result when I make</i><br>
+<i>the call?</i>
+</p>
+<p>
+<b>A </b> It sounds as if you're making the mistake of testing the function result of an<br>
+asynchronous File Manager call (the value of register D0 is returned in the function<br>
+result). There's no useful information in the function result of an asynchronous call<br>
+made to the File Manager; the call might not even have been looked at by the File<br>
+Manager yet. The call's result status is stored only in ioResult after the call completes,<br>
+or in either D0 or ioResult at the entry to the completion routine. If you're polling to<br>
+check for the call's completion, ioResult will indicate the call has completed when it's<br>
+less than or equal to 0. In general, when making asynchronous I/O calls (reads or<br>
+writes) there are only two types of function result error that are of any possible<br>
+consequence: a "driver not open" error (notOpenErr) and a driver reference number<br>
+error (badUnitErr or unitEmptyErr), which indicate the call wasn't successfully<br>
+queued by the driver and the ioCompletion routine won't be called. Neither one of these<br>
+error conditions makes any sense for the File Manager (which isn't a driver); the File<br>
+Manager will <i> always</i>&nbsp;&nbsp;call the completion routine (if any) of a given asynchronous<br>
+call. Your program should just ignore the function result of an asynchronous low-<br>
+level File Manager call and leave it up to the completion routine or the routine polling<br>
+ioResult to check for and handle any errors that may have happened on the call.
+</p>
+<p>
+<b>Q</b><i> Many of the new File Manager calls are just HFSDispatch with new selector codes.</i><br>
+<i>How do I check whether a given selector is implemented? An example of a new File</i><br>
+<i>Manager call is GetVolParms. Currently I don't check, I just read the result code. It</i><br>
+<i>seems to be OK. How should I interpret the response from Gestalt when called with</i><br>
+<i>gestaltFSAttr? As I read it, gestaltFullExtFSDispatching tells me that all the calls are</i><br>
+<i>available. Are there times that only a few of them are available? PBHGetVolParms</i><br>
+<i>seems to be available at all times anyway. Where do I find more info on the workings of</i><br>
+<i>HFSDispatch? In general I would appreciate some more info on the compatibility issue.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>A </b> There are two issues. One is that not all versions of the File Manager support all<br>
+calls. The other is that even if the File Manager supports the calls, individual volumes<br>
+may not.
+</p>
+<p>
+&nbsp;The first issue is addressed by Gestalt's gestaltFSAttr selector. Before System 7,<br>
+HFSDispatch supported a fixed range of selectors. The result was that some advanced<br>
+file services were unavailable, even though the volume would support them. A good<br>
+example is PBCatSearch. If you mount an AppleShare 3.0 or FileShare volume under<br>
+System 6 with the AppleShare 3.0 Chooser extension, the volume will report via<br>
+PBHGetVolParms that bHasCatSearch is true. But if you try to make the call, you'll get<br>
+back a paramErr because HFSDispatch doesn't know about the CatSearch selector.
+</p>
+<p>
+&nbsp;System 7 doesn't restrict the range of HFSDispatch selectors. For external file<br>
+systems, this means it's up to the external file system to determine whether it can<br>
+handle the selector and to return an appropriate error if it cannot. This is the meaning<br>
+of the gestaltFullExtFSDispatching flag. If it's true, there are no limitations on the<br>
+range of selectors.
+</p>
+<p>
+&nbsp;The second problem is that even though HFSDispatch won't limit the range of<br>
+selectors, the volume may still not support the call. To turn the previous example<br>
+around, making a PBCatSearch call in System 7 to a pre-AppleShare 3.0 volume will<br>
+result in an error because the volume doesn't support the call.
+</p>
+<p>
+&nbsp;The best way to determine whether a volume supports a feature is to use<br>
+PBHGetVolParms. This can return most of the information you need about advanced file<br>
+system calls. Unfortunately, there can be problems even with&nbsp;&nbsp;that. For example, when<br>
+the user turns file sharing on and off, the bHasPersonalAccessPrivileges flag can<br>
+change. So you can't just test attributes once and assume they'll never change.
+</p>
+<p>
+&nbsp;As far as knowing whether PBHGetVolParms is available, this is not a new call. It's<br>
+documented in Chapter 21 of <i>Inside Macintosh</i>&nbsp;&nbsp;Volume V. The way to check for it is to<br>
+simply call it and if you get back a paramErr, it's unsupported (page 387). This<br>
+seems to be what you're doing, so you should be safe.
+</p>
+<p>
+&nbsp;To summarize, there's no guaranteed way to know if a particular selector will work<br>
+(but it should never crash, just return paramErr). The right sequence of steps is to<br>
+first check to see if the HFS supports the full range of calls, then check for specific<br>
+features using PBHGetVolParms. And in any event, you should always check for errors<br>
+and be prepared to take appropriate action. A good example of how to do this can be<br>
+found in the January 1992 version of the Macintosh Technical Note "Searching<br>
+Volumes--Solutions and Problems" (formerly #68).</p><p><b>Q</b><i> How does Developer Technical</i>
+<i>Support manage to answer so many difficult questions so accurately?</i>
+</p>
+<p>
+<b>A </b> We swear by the Magic 8-Ball as a technical reference. Not only is it convenient,<br>
+user-friendly, and available at your local toy store for less than ten dollars, but it's<br>
+guaranteed 100% correct. This way, we manage to answer all questions quickly and<br>
+accurately and still leave time for playing Spaceward Ho!
+</p>
+<p>
+<b>Q</b><i> What's the purpose of the MacApp 'mem!' and 'seg!' resources, and where does the</i><br>
+<i>documentation for these resources exist?</i>
+</p>
+<p>
+<b>A </b> The 'mem!' resource allows you to change MacApp's memory allocation reserves in<br>
+various ways. Each contains three numbers: the amount to add to the temporary<br>
+reserve, which is used for system allocations such as system resources and temporary<br>
+handles; an amount to add to the permanent reserve, which is used by you for your<br>
+memory allocation; and an amount of stack space. Having multiple 'mem!' resources<br>
+causes their values to be summed; in this way, you can create a "debugging" 'mem!'<br>
+resource that gives you extra space and delete it when you produce a non-debug<br>
+version. This is discussed in the <i> MacApp 2.0 General Reference,</i>&nbsp;&nbsp;in Chapter 3.
+</p>
+<p>
+&nbsp;The 'seg!' resource is used to reserve space for code segments. If the Macintosh ever<br>
+tries to load a code segment but fails due to lack of memory, it will crash. Thus,<br>
+MacApp keeps a store of memory solely for loading code resources. It sizes this<br>
+reserve by adding together the sizes of the segments named in the 'seg!' resource. One<br>
+way to do this would be to just name all the segments, so that you know there's room<br>
+for them all; however, this would be wasteful, because many segments are often<br>
+unused (your printing code, for example). So what you do is name only those segments<br>
+that represent the largest code path you can have--the calling chain that would<br>
+require the largest set of code segments to be loaded at any time. This is also described<br>
+in Chapter 3 of the <i>MacApp General Reference.</i>&nbsp;&nbsp;In contrast, 'res!' names segments that<br>
+<i>must</i>&nbsp;&nbsp;be resident all the time; they're actually loaded and made resident, as opposed to<br>
+the 'seg!' segments, which are used only to calculate how much memory should be<br>
+reserved for segments in general.
+</p>
+<p>
+<b>Q</b><i> I've been thinking of shutting down the System 7 Finder. Is this a cool thing to&nbsp;&nbsp;do in</i><br>
+<i>my application?</i>
+</p>
+<p>
+<b>A </b> We normally recommend that you don't quit the System 7 Finder application.<br>
+Nevertheless, there may be a few good reasons to shut down the Finder. For example,<br>
+the Installer (the only application Apple ships with a good reason to do so) sometimes<br>
+needs to shut down the Finder and all other applications to make sure system resources<br>
+aren't being used while they're being updated by the Installer.
+</p>
+<p>
+&nbsp;If you find yourself in a situation where you need to shut down the Finder, you should<br>
+know about a few things:
+</p>
+<ul>
+<li>Before you shut down the System 7 Finder, use the Process Manager to see<br>
+if the File Sharing Extension is running. If so, you should shut it down before<br>
+shutting down the Finder. The File Sharing Extension shouldn't be running<br>
+without the Finder because the Finder is the only user interface the File<br>
+Sharing Extension has. You shouldn't take away the user interface to file<br>
+sharing. There's another good reason to shut down the File Sharing Extension<br>
+before the Finder. The Network Extension (not the Network control panel)<br>
+handles all the user interface transactions among the Finder, the File Sharing<br>
+Monitor control panel, the Sharing Setup control panel, the Users &amp; Groups<br>
+control panel, and the File Sharing Extension (the file server). The Network<br>
+Extension opens another file, the Users &amp; Groups Data File, so that it can<br>
+manipulate users and groups. When you shut down the Finder (with a<br>
+kAEQuitApplication Apple event), the Network Extension and its connection to<br>
+the Users &amp; Groups Data File are also closed (almost). Because of a minor bug<br>
+in the system, the File Manager thinks that the file is closed and that the FCB<br>
+used by that access path is free for reuse; however, the File Sharing Extension<br>
+thinks the access path to the Users &amp; Groups Data File from the Network<br>
+Extension is still open. When the File Manager attempts to reuse&nbsp;&nbsp;that FCB to<br>
+open another file later, the file is opened, but because the File Sharing<br>
+Extension thinks that FCB is still in use by the Network Extension, it won't<br>
+allow access to the file and it returns opWrErr (-49) to the Open call. At this<br>
+point, the file that someone was attempting to open can't be accessed or closed.</li>
+<li>If the Finder is shut down and then eventually relaunched, there may be<br>
+some fragmentation of the MultiFinder heap. This can occur because the Finder<br>
+is the first application to be started, so it's always first in the MultiFinder<br>
+heap. When you shut it down, that memory becomes available and other<br>
+processes might occupy that space. When the Finder is restarted, if it can't get<br>
+into its original space in the MultiFinder heap, it will get loaded somewhere<br>
+else and probably won't be shut down again.</li>
+<li>In System 7, the Finder is responsible for filling the Apple menu with the<br>
+items in the Apple Menu Items folder. When the Finder is gone, so are the<br>
+Apple menu items, including things that are important to most users (like<br>
+control panels).</li>
+<li>If the user has selected background printing with a LaserWriter or<br>
+StyleWriter, nothing will print while the Finder is gone. That's because the<br>
+Finder is responsible for monitoring the PrintMonitor Documents folder and<br>
+launching the PrintMonitor application when necessary.</li>
+</ul>
+<p>
+<b>Q</b><i> My Balloon Help message doesn't appear when I use a 'TEXT' resource in a static</i><br>
+<i>window as the message in the balloon, following string resource examples in Inside</i><br>
+<i>Macintosh Volume VI and modifying the code to indicate 'TEXT'. Why doesn't this work?</i>
+</p>
+<p>
+<b>A </b> While using 'TEXT' resources in Help Manager balloons is a way to provide stylized<br>
+text, it doesn't mean that strings longer than 256 are possible. In fact, strings up to<br>
+only 239 characters in length are valid. When string lengths are greater than 239 the<br>
+Help Manager takes a short- circuit return and no balloon is displayed. To work<br>
+around this limit, you can draw a picture with the text you want to display and then<br>
+use the picture in the Help Manager balloon.
+</p>
+<p>
+<b>Q</b><i> My TrueType font has all 256 characters defined with a unique glyph. I've been</i><br>
+<i>unable to draw the $20 (space) character. DrawChar, DrawText, DrawString, and</i><br>
+<i>DrawJust all ignore this character in the font and draw a blank character. How can I</i><br>
+<i>draw it?</i>
+</p>
+<p>
+<b>A </b> Unfortunately, the problem with the space character not being drawn is hard-coded<br>
+into the text-drawing routine in the core of QuickDraw. ASCII 32 is always "optimized<br>
+away," regardless of the font being used or of the particular circumstances. The only<br>
+workaround is to put the corresponding character elsewhere in the ASCII character<br>
+encoding (or, if this isn't possible, to use an additional font).
+</p>
+<p>
+&nbsp;You're lucky that TrueType fonts always render the ASCII code 13 (carriage return)<br>
+if it has a glyph in the font; for bitmapped fonts, if the character drawing happens<br>
+with scaling, or with foreground/background colors different from black/white, even<br>
+the CHR(13) drawing is optimized away.
+</p>
+<p>
+<b>Q</b><i> After connecting to a remote network via AppleTalk Remote Access (ARA) I can call</i><br>
+<i>PGetAppleTalkInfo and it returns the proper zone name. However, after disconnecting,</i><br>
+<i>PGetAppleTalkInfo still returns the remote network's zone name instead of "*" or</i><br>
+<i>nothing as I would expect. Is there some period of time I should wait before expecting</i><br>
+<i>the zone name and network number to return to zero (no internet)?</i>
+</p>
+<p>
+<b>A </b> This is, in fact, a bug with ARA version 1.0. Apple is investigating the problem and<br>
+there will be a fix in a future release. An easy workaround is to check the GetZoneList<br>
+or GetMyZone call to see if it returns any zones.
+</p>
+<p>
+<b>Q</b><i> My application opens a number of resource files. If my 'hrct' resources aren't in the</i><br>
+<i>most recently opened resource file, I get an error -192 (resource not found) from</i><br>
+<i>HMGetIndHelpMsg. Is this a Help Manager bug?</i>
+</p>
+<p>
+<b>A </b> Your 'hrct' resources get loaded only from the most recently opened resource file<br>
+because that's where the Help Manager is looking for them. The Help Manager uses<br>
+Get1Resource to get 'hrct'-type resources to avoid Resource Manager conflicts with<br>
+other resources. This is simply a behavior of the Help Manager. To use<br>
+HMGetIndHelpMsg properly, call UseResFile with the refNum of the file containing the<br>
+'hrct' before you call the Help Manager. If the 'hrct' is stored in your application<br>
+resource fork, you can use HomeResFile or CurResFile (at the start of your program<br>
+before you've opened any other resource files) to get the refNum of the application<br>
+resource file.
+</p>
+<p>
+&nbsp;Not all Help Manager resources are treated this way, due to the design of the<br>
+Macintosh Toolbox; 'hdlg' resources, for example, are loaded using GetResource so that<br>
+things like Standard File can have common help throughout all applications.
+</p>
+<p>
+<b>Q</b><i> We're having problems with the GetScrap function in our desk accessory. After a</i><br>
+<i>user opens our DA, when we call GetScrap to get any text from the Clipboard, GetScrap</i><br>
+<i>returns -102 (no requested type in scrap). After once (or more?) through the event</i><br>
+<i>or SystemTask loop, the scrap suddenly shows up. What's causing this?</i>
+</p>
+<p>
+<b>A </b> The reason for the trouble you're having with desk accessories and GetScrap is that<br>
+you're looking for the converted scrap at the wrong time in the process. According to<br>
+the MultiFinder documentation (<i>Programmer's Guide to MultiFinder </i> and <i> Inside</i><br>
+<i>Macintosh</i>&nbsp;&nbsp;Volume VI), an application is supposed to convert its private scrap and<br>
+write it to the public scrap when it receives a suspend event. When the system opens<br>
+your DA, it immediately sends it an Open message; the application hasn't received its<br>
+suspend event yet. You have to wait until the scrap has been converted. This, for a DA,<br>
+should occur at the first null event, and for applications, when you get a resume event.
+</p>
+<p>
+<b>Q</b><i> QuickTime is a joy! But I've run aground with SetMovieRate. I'm trying to change the</i><br>
+<i>rate at which a movie plays back, but if I call SetMovieRate the movie starts playing</i><br>
+<i>immediately, the controller goes wild, and the next time I hit the play button it ignores</i><br>
+<i>the previous rate. How can I control my playback rate?</i>
+</p>
+<p>
+<b>A </b> SetMovieRate takes effect immediately; that's why the movie starts playing as soon<br>
+as you make the call with a rate other than zero. Also, calling SetMovieRate behind the<br>
+controller's back can only cause confusion because you're changing the state of the<br>
+movie without letting the movie controller know about the change. Note that in normal<br>
+operation the movie controller plays back movies at the standard speed, rate = 1; this<br>
+is the current behavior. It's possible that in a future release the movie controller will<br>
+use the rate the movie was saved with or the one set with SetPreferredMovieRate.
+</p>
+<p>
+&nbsp;A little-known fact is that the standard controller does contain a primitive mechanism<br>
+for controlling the rate of playback. If you hold the Control key down and then click the<br>
+stepping buttons, you can, for example, play the movie backward. Furthermore, if you<br>
+hold the mouse button down you'll get a slider control that does let you play the movie<br>
+at different rates backward or forward.
+</p>
+<p>
+&nbsp;The slider provided by the standard controller isn't intended to set the rate, so if you<br>
+play once at low speed the rate doesn't stick and, as you've found, the next time you<br>
+click the play button you go back to the normal speed. If you need the selected rate to<br>
+remain for the session, you'll have to provide your own method of selection.
+</p>
+<p>
+&nbsp;Once you know your desired speed, you'll need to provide your own filter procedure<br>
+and install it calling MCSetActionFilter. Upon receiving any mcActionPlay actions for<br>
+rate changes, you'll need to call SetMovieRate to set the movie in motion at the desired<br>
+rate (and return TRUE). Using a filter procedure is the proper way of doing this<br>
+because the controller can keep in sync with the actions even though it's your code that<br>
+actually affects the action. Note that you'll have to do some extra work to mimic the<br>
+normal behavior of the standard controller. For example, when you're at the end of the<br>
+movie and the user hits the play button, the controller goes back to the beginning and<br>
+plays the movie. Your filter proc has to do the same when playing back the movie at a<br>
+rate different from the normal. A different behavior will confuse the user.
+</p>
+<p>
+&nbsp;For details on filter procedures, controller actions, and the movie controller in<br>
+general, see the "QuickTime Components" chapter of the <i> QuickTime Developer's Guide</i> .
+</p>
+<p>
+<b>Q</b><i> How does the Magic 8-Ball achieve its high level of technical accuracy?</i>
+</p>
+<p>
+<b>A </b> There are two theories on this: The first is that the Magic 8-Ball picks an answer at<br>
+random and then alters reality to fit the answer it has picked. For example, if you<br>
+were to ask it "Am I a millionaire?" it might pick "Signs point to yes" at random. Then<br>
+it would either have to warp reality so that you actually would have a million dollars<br>
+or, more likely, warp your memory of the question so that you would think you'd asked<br>
+"Is Elvis still alive?" The other theory is that it's just magic.
+</p>
+<p>
+<b>Q</b><i> I'm having trouble with PBGetCatInfo returning old data to my application. For</i><br>
+<i>example, if I change a file label using the Finder Label menu and then run my</i><br>
+<i>program, which calls PBGetCatInfo, the fdFlags field in the FInfo record returned</i><br>
+<i>doesn't reflect the change. I've tried calling PBFlushVol before I do this; the file isn't</i><br>
+<i>open, so there's no way to call PBFlushFile. However, restarting the Macintosh or</i><br>
+<i>changing the file's name causes PBGetCatInfo to work correctly. What's going on and</i><br>
+<i>how do I get around it?</i>
+</p>
+<p>
+<b>A </b> The Finder caches much of the "Finder information," including things like the color<br>
+coding information users can set with the Finder Label menu and the view position of<br>
+objects in folder windows. Changes to the Finder information are cached until the<br>
+folder that contains the objects that were changed is closed (which happens at system<br>
+restart or shutdown time) or until some noncached change is made to the object (for<br>
+example, the file is renamed). The Finder caches what it considers Finder-specific<br>
+information to cut down on the number of disk accesses it must make. (For example,<br>
+rearranging the object view in a window would be very slow on floppy disks if the<br>
+Finder wrote to the disk every time the user drags a group of objects around.) Since in<br>
+most cases no other applications should care about the state of the Finder information,<br>
+this normally doesn't cause problems. There's no workaround for this behavior in the<br>
+current implementation of the Finder.
+</p>
+<p>
+<b>Q</b><i> The Macintosh QuickDraw routine ObscureCursor hides the cursor until the next</i><br>
+<i>time the mouse is moved, but it isn't affected by HideCursor or ShowCursor. Our</i><br>
+<i>application needs to use ObscureCursor while the user is typing but needs the cursor</i><br>
+<i>to be visible after no typing has occurred for a short period. How do we "undo"</i><br>
+<i>ObscureCursor, since we can't rely on the user to move the mouse?</i>
+</p>
+<p>
+<b>A </b> The only way (besides actual mouse movement) to make an obscured cursor visible<br>
+again is to convince the system that the mouse has moved. There's no really good way to<br>
+do this via Toolbox calls, so you're going to have to do it the hard way and simply<br>
+update the low-memory cursor information to tell the system the cursor moved (even<br>
+though you don't need to update the actual position).
+</p>
+<p>
+&nbsp;To tell the system the cursor has changed location, simply set the crsrNew flag (a<br>
+byte located at $08CE) to 1. When the system sees this byte is 1, it will assume the<br>
+cursor has moved and redraw the unobscured cursor at the appropriate place (where<br>
+it was all along), and reset CrsrNew, waiting for the mouse to move again.
+</p>
+<p>
+<b>Q</b><i> In System 7, I want to place my user's preferences file in the Preferences folder in</i><br>
+<i>the System Folder, but I can't seem to get the Preferences folder's directory ID and</i><br>
+<i>other information so that my file will appear there! Also, how do I get to that folder if</i><br>
+<i>the user changes the names of the System Folder and Preferences folder? And once the</i><br>
+<i>user's preferences file is there, am I assuming correctly that the best way to find it</i><br>
+<i>again is to make an alias record to track the file ID?</i>
+</p>
+<p>
+<b>A </b> System 7 introduced the routine FindFolder for locating the Preferences folder.<br>
+Just make this call:
+</p>
+<pre> err := FindFolder (kOnSystemDisk, kPreferencesFolderType,
+        kCreateFolder, prefVRefNum, prefDirID);</pre>
+<p>
+&nbsp;If FindFolder returns noErr, prefVRefNum and prefDirID will contain the vRefNum<br>
+and dirID of the Preferences folder, which can be used later with HCreateResFile,<br>
+HOpenResFile, PBHGetFInfo, and other File Manager calls to locate your preferences<br>
+file. If a Preferences folder doesn't already exist, the kCreateFolder parameter<br>
+instructs FindFolder to make one and return the vRefNum and dirID of the new folder.
+</p>
+<p>
+&nbsp;FindFolder is documented in Chapter 9 of <i> Inside Macintosh</i>&nbsp;&nbsp;Volume VI, under "The<br>
+System Folder and Its Related Directories." Although FindFolder is implemented only<br>
+in System 7, if you're using MPW 3.2 (or the current THINK compilers) glue is<br>
+automatically included in your compiled code, making it safe to call FindFolder in<br>
+System 6. The glue checks whether FindFolder is available and, if it isn't, returns the<br>
+System Folder's vRefNum and dirID for the kPreferencesFolderType selector. Use the<br>
+System Folder values as the location for the preferences file in System 6.
+</p>
+<p>
+&nbsp;If you're not using a development system that provides the FindFolder glue, your code<br>
+should check the FindFolder Gestalt selector gestaltFindFolderAttr to see if FindFolder<br>
+is available. If FindFolder is available, call it. FindFolder is defined as
+</p>
+<pre> FUNCTION FindFolder (vRefNum: INTEGER; folderType: OSType;
+    createFolder: BOOLEAN; VAR foundVRefNum: INTEGER;
+    VAR foundDirID: LONGINT): OSErr;
+INLINE $7000, $A823;</pre>
+<p>
+&nbsp;If FindFolder isn't available, call SysEnvirons to find the System Folder's working<br>
+directory reference number, call PBGetWDInfo or GetWDInfo to convert that number<br>
+to a true vRefNum and dirID, and use those System Folder numbers for the location of<br>
+the preferences file. Example code for this is in the Q&amp;A stack, under Operating<br>
+System:File System:Code for identifying vRefNum and dirID of Macintosh System<br>
+Folder.
+</p>
+<p>
+&nbsp;To locate the Preferences folder, follow the steps described above rather than trying<br>
+to keep an alias of the Preferences folder or of the preferences file. However, if there<br>
+are any other files in the System Folder that the application depends on (such as<br>
+dictionaries) those should be tracked with aliases, stored as 'alis' resources in the<br>
+preferences file. See Chapter 27 of <i> Inside Macintosh</i>&nbsp;&nbsp;Volume VI for information on<br>
+using aliases.
+</p>
+<p>
+<b>Q</b><i> I recall reading that QuickTime includes an implementation of the Alias Manager for</i><br>
+<i>System 6, but I haven't found any precise description of what's included. Is it a bare</i><br>
+<i>minimum to support QuickTime? Or is the full Alias Manager there? Also, is there any</i><br>
+<i>way I can use the FSSpec interface to the File Manager, or must I revert to the System</i><br>
+<i>6 interface?</i>
+</p>
+<p>
+<b>A </b> When QuickTime is installed, most of the Alias Manager is available in System 6,<br>
+with these exceptions:
+</p>
+<ul>
+<li>NewAlias will accept a fromFile parameter, but it never creates a<br>
+relative alias.</li>
+<li>NewAliasMinimalFromFullPath and ResolveAliasFile aren't available.</li>
+<li>ResolveAlias and UpdateAlias will accept a fromFile parameter, but ignore<br>
+it.</li>
+<li>MatchAlias may be called, but the kARMMultVols, kARMSearchMore, and<br>
+kARMSearchRelFirst flags aren't available. If you pass them in, they'll be<br>
+ignored. Furthermore, if you pass in a matchProc, it will never be called.</li>
+<li>The System 6 Alias Manager won't mount network volumes.</li>
+</ul>
+<p>
+&nbsp;To summarize, in System 6 the Alias Manager doesn't handle relative aliases, multiple<br>
+volume searches, "searchMore" searches, and network volume mounting. On the bright<br>
+side, nearly all calls are present. Aliases created in System 6 are compatible with<br>
+System 7 aliases, and aliases created in System 7 will work in System 6.
+</p>
+<p>
+&nbsp;Unfortunately, QuickTime doesn't currently install an Alias Manager Gestalt selector,<br>
+since it's only a partial implementation. You can check for the Alias Manager using<br>
+Gestalt and, if it isn't present, look for QuickTime (using Gestalt); if QuickTime is<br>
+present, assume you have an Alias Manager, subject to the limitations listed above.
+</p>
+<p>
+&nbsp;QuickTime also makes extensive use of the FSSpec data structure introduced in the<br>
+System 7 File Manager. Nearly all the FSSpec calls are available in System 6 when<br>
+QuickTime is installed. The following calls are available in System 6, and should<br>
+behave as documented for System 7: FSMakeFSSpec, FSpOpenDF, FSpOpenRF,<br>
+FSpCreate, FSpDirCreate, FSpDelete, FSpGetFInfo, FSpSetFInfo, FSpSetFLock,<br>
+FSpRstFLock, FSpRename, FSpCatMove, FSpOpenResFile, FSpCreateResFile, and<br>
+FSpGetCatInfo. FSpExchangeFiles isn't available when using the QuickTime System 6<br>
+version of the FSSpec calls.
+</p>
+<p>
+&nbsp;Again, the Gestalt selector for the FSSpec calls isn't installed when QuickTime is<br>
+there. This means that the gestaltFSAttr Gestalt selector may not be present, and<br>
+gestaltHasFSSpecCalls may not be set, even if gestaltFSAttr is present.
+</p>
+<p>
+<b>Q</b><i> I would like to implement the preview/thumbnail feature in the Standard File dialog,</i><br>
+<i>just like the extension included with QuickTime. Is that code available separate from</i><br>
+<i>QuickTime? If not, could I at least get information on how the preview is created?</i>
+</p>
+<p>
+<b>A </b> To implement your own preview/thumbnail feature, simply duplicate the Standard<br>
+File dialog, add the necessary 'DITL' resources, and install a custom filter procedure<br>
+for handling preview commands. On the System 7 CD there's an example,<br>
+StdFileSample, that shows exactly how to create a custom file dialog. The Macintosh<br>
+Technical Note "Customizing Standard File" (formerly #47) describes how to do this<br>
+as well. For generating and displaying the preview, you can use the following<br>
+PreviewResourceRecord, found at the end of the ImageCompression.h file:
+</p>
+<pre> struct PreviewResourceRecord {
+    unsigned long   modDate;
+    short           version;
+    OSType          resType;
+    short           resID;
+};
+
+typedef struct PreviewResourceRecord PreviewResourceRecord;
+typedef PreviewResourceRecord *PreviewResourcePtr, **PreviewResource;</pre>
+<p>
+&nbsp;This is the format for the 'pnot' resource, which defines the preview for the movie<br>
+file, usually pointing to a 'PICT' resource. It's all you need to generate<br>
+QuickTime-compatible preview without using QuickTime.
+</p>
+<p>
+<b>Q</b><i> You guys don't really use the Magic 8-Ball to answer programming questions, do</i><br>
+<i>you?</i>
+</p>
+<p>
+<b>A </b> Reply hazy, try again.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Kudos to our readers </b> who care enough to ask us terrific and well thought-out<br>
+questions. The answers are supplied by our teams of technical gurus; our thanks to all.<br>
+Special thanks to Jim "Im" Beninghaus, Neil Day, Matt Deatherage, Tim Dierks, Steve<br>
+Falkenburg, C. K. Haun, Dave Hersey, Rich Kubota, Scott Kuechle, Edgar Lee, Jim<br>
+Luther, Joseph Maurer, KevinMellander, Jim Mensch, Guillermo Ortiz, Dave<br>
+Radcliffe, Greg Robbins, Eric Soldan, Bryan "Stearno" Stearns, Forrest Tanaka, and<br>
+John Wang for the material in this Q &amp; A column. *
+</p>
+<p>
+<b>Have more questions? </b>Need more answers? Take a look at the Dev Tech Answers<br>
+library on AppleLink (updated weekly) or at the Q &amp; As on the <i> Developer CD Series </i><br>
+disc, or ask a Magic 8-Ball.*
+</p>
+</body>
+</html>

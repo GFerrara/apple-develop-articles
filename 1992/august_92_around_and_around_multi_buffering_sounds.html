@@ -1,0 +1,968 @@
+<html>
+<head>
+<!-- Article ID: 32 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>August 92 - AROUND AND AROUND: MULTI-BUFFERING SOUNDS</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>AROUND AND AROUND: MULTI-BUFFERING SOUNDS</h2>
+<h1>NEIL DAY</h1>
+<p>
+<img src="img/210.gif" width="180 px"></img>
+</p>
+<p>
+<i>The main problem with digital audio is that the data often exceeds the amount of</i><br>
+<i>available memory, forcing programmers to resort to multiple-buffering schemes.</i><br>
+<i>This article presents one such technique, in the form of a program called MultiBuffer,</i><br>
+<i>and explores some interesting things you can do along the way.</i>
+</p>
+<p>
+&nbsp;When dealing with digital audio, you're frequently going to find yourself in situations<br>
+where the sample you want to play won't fit in the memory you have available. This<br>
+leaves you with several alternatives: you can play shorter sounds; you can try to<br>
+squeeze the sound down to a more manageable size by resampling it at a lower<br>
+frequency or by compressing it (both of which will degrade the fidelity of the sound);<br>
+or you can try to fool the machine into thinking it has the whole sample at its disposal.<br>
+In cases where you don't want to compromise length or quality, trickery is your only<br>
+option. 
+</p>
+<p>
+&nbsp;If you've spent any time with the Sound Manager, you no doubt have run across the<br>
+routine SndPlayDoubleBuffer, which provides one reasonably straightforward method<br>
+of implementing a double-buffering scheme. The advantage of using<br>
+SndPlayDoubleBuffer is that it allows you to get a fairly customized double- buffering<br>
+solution up and running with very little work. You need only write a priming routine<br>
+for setting up the buffers and filling them initially, a DoubleBack procedure that takes<br>
+care of swapping buffers and setting flags, and a read service routine for filling<br>
+exhausted buffers; the Sound Manager handles all the other details.<br>
+SndPlayDoubleBuffer is in fact used by the Sound Manager's own play- from-disk<br>
+routine, SndStartFilePlay. 
+</p>
+<p>
+&nbsp;If your program will simply play from disk, your best bet is probably either<br>
+SndPlayDoubleBuffer or SndStartFilePlay. Both offer good performance painlessly,<br>
+saving you development time and avoiding the need to understand the Sound Manager to<br>
+any great degree. If, however, you want to do some snazzier things with your sound<br>
+support, such as adding effects processing, a deeper understanding of multiple<br>
+buffering is essential.&nbsp;&nbsp;Read on . . . 
+</p>
+<h2>PROCESSING SOUNDS WITH THE ASC</h2>
+<p>
+&nbsp;Audio support on the Macintosh computer is handled by the Apple Sound Chip (ASC),<br>
+which takes care of converting the digital representation of your sound back to analog,<br>
+which can then be played by a speaker attached to your Macintosh. (See "Sound: From<br>
+Physical to Digital and Back" for a description of this process.)
+</p>
+<p>
+&nbsp;You can think of the ASC as a digital-to-analog converter with two 1K buffers to hold<br>
+the data to be processed. When either of the buffers reaches the half-full mark, the<br>
+ASC generates an interrupt to let the Sound Manager know that it's about to run out of<br>
+data. Because of this, it's important to makesure that your buffers are a multiple of<br>
+512 bytes, since in an attempt to keep the ASC happy the Sound Manager will pad your<br>
+data with silence if you choose an "odd" buffer size. In the worst case this can lead to<br>
+annoying and mysterious silences between buffers, and at best it will hurt your<br>
+performance. This doesn't mean that you need to limit yourself to 512- or 1024-byte<br>
+buffers: The Sound Manager takes care of feeding large buffers to the ASC a chunk at a<br>
+time so that you don't have to worry about it. As long as your sound is small enough to<br>
+fit into available memory, you can play it simply by passing the Sound Manager a<br>
+pointer to the buffer containing the sample.
+</p>
+<p>
+Assuming that the ASC's buffers never run dry, it will produce what seems to be a<br>
+continuous sound.&nbsp;&nbsp;&nbsp;As long as you can keep handing it data at a rate greater than or<br>
+equal to the speed at which it can process the data, there won't be any gaps in the<br>
+playback. Even the best-quality samples, like those found on audio CDs, play back at<br>
+the leisurely rate of 44,100 sample frames per second (a frame consists of two<br>
+sample points, one for each channel of sound), a rate that the processors of 68020-<br>
+based Macintosh computers and SCSI devices can keep up with. All you need to do is<br>
+hand one buffer to the Sound Manager to play while you're filling another. When the<br>
+buffer that's currently playing is exhausted, you pass the recently filled one to the<br>
+Sound Manager and refill the empty one.&nbsp;&nbsp;&nbsp;This process is the digital equivalent of the<br>
+venerable bucket brigade technique for fighting fires. 
+</p>
+<h2>CONTINUOUS SOUND MANAGEMENT</h2>
+<p>
+This section discusses a general strategy for actually making a multibuffering scheme<br>
+work. First, however, I want to touch on some of the properties and features of the<br>
+Sound Manager that we'll exploit to accomplish multibuffering. If you're already<br>
+familiar with the Sound Manager, you may want to skip ahead to the section "When<br>
+You're Done, Ask for More."
+</p>
+<p>
+<b>CHANNELS, QUEUES, COMMANDS, AND CALLBACKS</b><br>
+The atomic entity in the Sound Manager is a channel. A channel is essentially a<br>
+command queue linked to a synthesizer. As a programmer, you issue commands to the<br>
+channel through the Sound Manager functions SndDoCommand and SndDoImmediate. The<br>
+Sound Manager executes the commands asynchronously, returning control to the caller<br>
+so that your application can continue with its work. The difference between the two<br>
+functions is that SndDoCommand will always add your request to a queue, whereas<br>
+SndDoImmediate bypasses the queuing mechanism and executes the request<br>
+immediately. It's important to understand that at the lowest level the Sound Manager<br>
+always executes asynchronously--your program regains control immediately,<br>
+whether the call is queued or not. 
+</p>
+<p>
+We're interested here in two sound commands, bufferCmd and callBackCmd.
+</p>
+<ul>
+<li>bufferCmd sends a buffer off to the Sound Manager to be played. The buffer<br>
+contains not only the sample, but also a header that describes the<br>
+characteristics of the sound, such as the length of the sample, the rate at<br>
+which it was sampled, and so on.</li>
+<li>callBackCmd causes the Sound Manager to execute a user-defined routine.<br>
+You specify this routine when you initialize the sound channel with the Sound<br>
+Manager function SndNewChannel. Be aware that the routine you specify<br>
+executes at interrupt time, so your application's globals won't be intact, and<br>
+the rules regarding what you can and can't do at interrupt time definitely<br>
+apply. </li>
+</ul>
+<p>
+<b>WHEN YOU'RE DONE, ASK FOR MORE</b><br>
+The key to achieving continuous playback of your samples is always to have data<br>
+available to the ASC. To keep the ASC happily fed with data, your code needs to know<br>
+when the current buffer is exhausted, so that it can be there to hand over another<br>
+buffer. Most asynchronous I/O systems provide completion routines that notify the<br>
+application when an event terminates. Unfortunately, such a routine is not included in<br>
+the current incarnation of the output portion of the Sound Manager.&nbsp;&nbsp;&nbsp;In the absence of<br>
+a completion routine, the best way to accomplish this type of notification is to queue a<br>
+callBackCmd immediately following a bufferCmd. For the purpose of this discussion,<br>
+the bufferCmd-callBackCmd pair can be considered a unit and will be referred to as<br>
+a<i>frame</i> from here on. Since it's often not practical to play an entire sample in one<br>
+frame, you'll probably need to break it up into smaller pieces and pass it to the Sound<br>
+Manager a frame at a time. Figure 1 illustrates howa sample too large to fit in memory<br>
+is broken up into frames consisting of a bufferCmd and callBackCmd. 
+</p>
+<p>
+To further reinforce the illusion of a frame being a standalone entity, it's useful to<br>
+encapsulate the bufferCmd-callBackCmd pair in a routine. A bare-bones version of a<br>
+QueueFrame routine might look like this:
+</p>
+<pre>OSErr QueueFrame (SndChannelPtr chan, Ptr sndData)
+{
+    OSErr       err;
+    SndCommand  command;
+
+    command.cmd = bufferCmd;
+    command.param1 = nil;
+    command.param2 = (long) sndData;
+    err = SndDoCommand (chan, &amp;command, false);
+    if (err)
+        return err;
+
+    command.cmd = callBackCmd;
+    command.param1 = nil;
+    command.param2 = nil;
+    err = SndDoCommand (chan, &amp;command, false);
+    if (err)
+        return err;
+}</pre>
+<p>
+By queuing up another frame from the callback procedure, you can start a chain<br>
+reaction that will keep the sample playing. Be sure to have another frame ready and<br>
+waiting before the Sound Manager finishes playing the current frame. Failure to do<br>
+this will cause a gap in the playback of the sound, often referred to as<i>latency</i> .
+</p>
+<p>
+Two important factors that can cause latency are the speed of your source of sound data<br>
+and the total size of the buffers you're using. The faster your data source, the smaller<br>
+the buffer size you can get away with, while slower sources require larger buffers.<br>
+For example, if you're reading from a SCSI device with an average access time of 15<br>
+milliseconds, you can keep continuous playback going with a total of about 10K of<br>
+buffer space; if your source is LocalTalk, plan on using significantly larger buffers.<br>
+You may need to experiment to find the optimal buffer size.
+</p>
+<p>
+A third factor that can contribute to latency is the speed at which your callback code<br>
+executes. It's very important to do as little work as possible within this routine, and<br>
+in extreme cases it may be advantageous to write this segment of your code in assembly<br>
+language. Of course, faster 68000-family machines will let you get away with more<br>
+processing; a routine that may require hand coding to run on a Macintosh Plus can<br>
+probably be whipped off in quick-and-dirty C on a Macintosh Quadra. As is the case<br>
+with all time-critical code on the Macintosh, it's important to take into account all the<br>
+platforms your code may run on.
+</p>
+<p>
+Once you've compensated for any potential latency problems, this method of chaining<br>
+completion routines has a couple of advantages:
+</p>
+<ul>
+<li>After you start the process by queuing the first frame, the "reaction" is<br>
+self- sustaining; it will terminate either when you kill it or when it runs out<br>
+of data. </li>
+<li>Once started, the process is fully asynchronous. This gives your<br>
+application the ability to continue with other tasks. </li>
+</ul>
+<p>
+<img src="img/211.gif" width="338 px"></img>
+</p>
+<p>
+<b>Figure 1</b> Dividing a Sample into Frames
+</p>
+<p>
+Your callback procedure must take care of three major functions. It must queue the<br>
+next frame, refill the buffer that was just exhausted, and update the buffer indices. In<br>
+pseudocode, the procedure is as follows:
+</p>
+<pre>CallbackService ()
+{
+    //
+    //      Place the next full buffer in the queue.
+    //
+    QueueFrame (ourChannel, fullBuffer);
+    //
+    //      Refill the buffer we just finished playing.
+    //
+    GetMoreData (emptyBuffer);
+    //
+    //      Figure out what the next set of buffers will be.
+    //
+    SwapBuffers (fullBuffer, emptyBuffer);
+}</pre>
+<h2>WHAT MAKES MULTIBUFFER DIFFERENT?</h2>
+<p>
+The previous section discussed general tactics for multiple-buffering models and for<br>
+chaining callback routines; these would be used by any continuous play module.<br>
+MultiBuffer, included on the<i>Developer CD Series</i> disc, uses these basic concepts as its<br>
+foundation, but differs in several important ways in order to address some<br>
+performance issues and attain a higher level of flexibility. 
+</p>
+<p>
+Thus far the discussion has centered on<i>playback-driven</i> buffering models, in which<br>
+the completion routine is keyed to the playback. This model, on which MultiBuffer is<br>
+based, is appropriate for applications that play from a storage device or that play from<br>
+synthesis. Playing from a real-time source, such as a sound input device or a data<br>
+stream coming over a network, requires a<i>source-driven</i> buffering model, in which the<br>
+callback is associated with the read routine. There's little difference between these two<br>
+models, but using the wrong model can lead to the loss of small amounts of sound data. 
+</p>
+<p>
+The major design goal for MultiBuffer was to make it modular enough to be easily<br>
+customized. It includes an independent procedure for reading data from the source<br>
+(ReadProc), as well as a procedure for processing the raw data obtained from the<br>
+ReadProc (ProcessingProc). MultiBuffer also allows you to work with more than two<br>
+buffers; simply modify the constant kNumBuffers. In some situations, more than two<br>
+buffers can be handy, such as instances where you want to reduce the lag between<br>
+playback time and real time. Several classes of filter require that you have a fairly<br>
+extensive set of data available for processing. Pulse-response filters, low- and<br>
+high-pass (first-order) filters, and spectral-compression filters are all examples of<br>
+applications in which multiple buffers can simplify implementation. It's important to<br>
+realize, however, that using many buffers introduces extra overhead, so your buffer<br>
+sizes will need to be correspondingly larger. Because of this added overhead, you can<br>
+end up in a Catch-22 situation; there is a point at which the benefit of having more<br>
+buffers is negated by the increase in buffer size. 
+</p>
+<p>
+The optional processing procedure allows you to perform some simple modifications on<br>
+the data before it's played. It's vital that you keep the issue of latency in mind when<br>
+dealing with your processing procedure; it can have a profound effect on the amount of<br>
+time required to ready a buffer for play. Since this is a time-critical section of the<br>
+buffering code, it's often desirable to write this procedure in assembly language to<br>
+squeeze out the highest performance possible. 
+</p>
+<p>
+Because the procedures for reading sound data and for processing the data are separate<br>
+modules, MultiBuffer is quite flexible. The program includes a simple example of this<br>
+flexibility. One of the playback options is to play an Audio Interchange File Format<br>
+(AIFF) file backward. To achieve this, I altered ReadProc to read chunks of the target<br>
+file from end to beginning, then used ProcessingProc to reverse the contents of the<br>
+buffer. If you take a look in PlayFromFile.c, you'll find that the differences between<br>
+the functions ReadProc and ProcessingProc and their counterparts BackReadProc and<br>
+BackProcessingProc are minimal. 
+</p>
+<p>
+<b>HOW IT HANGS TOGETHER</b><br>
+MultiBuffer is basically a series of three sequentially chained interrupt routines.<br>
+These are the callBackProc, a read completion routine, and a deferred task that takes<br>
+care of any processing that needs to be done on the raw data. Deferred tasks are<br>
+essentially interrupt routines that get put off until the rest of the regularly scheduled<br>
+interrupts have completed. A deferred task won't "starve" important interrupts<br>
+executing at a lower priority level. Such tasks also have the advantage of executing<br>
+when interrupts have been reenabled, allowing regular interrupt processing to<br>
+continue during their execution. Unfortunately, a deferred task is still bound by the<br>
+restrictions on moving or purging memory placed on regular interrupt routines. 
+</p>
+<p>
+The routine DoubleBuffer begins the execution. It takes care of setting up private<br>
+variables, priming the buffers, and initiating the play that starts the chain reaction. <br>
+MultiBuffer is composed of six main files, each of which deals with one of the<br>
+functional aspects of MultiBuffer. 
+</p>
+<ul>
+<li>MainApp.c contains the application framework for the MultiBuffer demo.</li>
+<li>DoubleBuffers.c includes all the code for dealing with multibuffering. For<br>
+most applications, you shouldn't need to modify any of the code in this file.</li>
+<li>AIFFGoodies.c features fun with parsing AIFF header information. The<br>
+basic purpose of the code in this file is to get pertinent information out of an<br>
+AIFF file and into a sound header. </li>
+<li>PlayFromFile.c contains the routines for playing an AIFF file forward and<br>
+backward. </li>
+<li>PlayFromSynth.c has the code necessary for playing a wave segment as a<br>
+continuous sound. </li>
+<li>Oscillator.c is responsible for generating one cycle of a sine wave at a<br>
+specified frequency and amplitude. </li>
+</ul>
+<h2>NUTS AND BOLTS</h2>
+<p>
+The rest of this article goes into gory detail on the inner workings of MultiBuffer.<br>
+You'll find this helpful if you plan on modifying the code to suit your own needs, or if<br>
+you want to gain a painfully in-depth understanding of the processes involved. 
+</p>
+<p>
+<b>CONSTANTS</b><br>
+There are only two constants you need to worry about. 
+</p>
+<p>
+<b>kBufferSize. </b>This indicates the size of the buffer in bytes. The larger this value, the<br>
+more time you have between buffer switches. It should be a multiple of 512. 
+</p>
+<p>
+<b>kNumBuffers. </b>The value of this constant determines the number of buffers that<br>
+MultiBuffer uses. In most cases, this value should be 2. 
+</p>
+<p>
+<b>IMPORTANT DATA STRUCTURES</b><br>
+Listed here are some of the important data structures used by MultiBuffer. All of them<br>
+can be found in the file DoubleBuffer.h. 
+</p>
+<pre>typedef struct {
+    ParamBlockHeader
+    short   ioFRefNum;
+    long    filler1;
+    short   filler2;
+    Ptr     ioBuffer;
+    long    ioReqCount;
+    long    ioActCount;
+    short   ioPosMode;
+    long    ioPosOffset;
+} strippedDownReadPB, *strippedDownReadPBPtr;</pre>
+<p>
+The strippedDownReadPB structure is the minimal parameter block the Device<br>
+Manager needs in order to execute a read from a file. A primary concern was keeping<br>
+MultiBuffer's overhead very low, and since each buffer needs to have a parameter<br>
+block associated with it, using the full-blown ParamBlockRec was undesirable. 
+</p>
+<pre>typedef struct {
+    strippedDownReadPB  pb;
+    Ptr                 userInfo;
+    short               headerNum;
+} ExtParamBlockRec, *ExtParmBlkPtr;</pre>
+<p>
+ExtParamBlockRec is a wrapper that adds a few pieces of MultiBuffer-specific<br>
+information to the end of a parameter block. It allows us to get information about the<br>
+state of the program to the completion routine without using any globals, which would<br>
+make for ugly code. 
+</p>
+<pre>typedef struct {
+    short               flags;
+    ExtParamBlockRec    readPB;
+    DeferredTask        dt;
+    SoundHeaderPtr      header;
+} SampleBuffer, *SampleBufferPtr;</pre>
+<p>
+SampleBuffer contains all the information necessary for managing samples. The flags<br>
+field holds the current status of the buffer. The readPB field is the parameter block the<br>
+Device Manager uses to read the data from the source. Since it's possible that you'll<br>
+have more than one asynchronous read queued at a time, reusing parameter blocks is<br>
+inadvisable, hence the need for one associated with each buffer. The dt field is a<br>
+deferred task record that will be used to install the ProcessingProc. The header field is<br>
+a pointer to a sound header that the Sound Manager uses to play a sample. Note that the<br>
+sound header definition, found in Sound.h, contains a samplePtr that will have a<br>
+nonrelocatable block associated with it for holding the actual sample data. 
+</p>
+<pre>typedef struct {
+    OSType              signature;
+    long                refNum;
+    long                fileDataStart;
+    long                bytesToGo;
+    short               currentBuffer;
+    SampleBuffer        buffers[kNumBuffers];
+    SndCommand          bCmd;
+    SndCommand          cbCmd;
+    SndCallBackProcPtr  oldCallBack;
+    long                oldUserInfo;
+    long                a5ref;
+} PrivateDBInfo, *PrivateDBInfoPtr;</pre>
+<p>
+PrivateDBInfo is a private data structure that contains all the information<br>
+MultiBuffer requires to do its thing. The refNum field contains the reference number<br>
+of the file or device that contains the sound data we're going to play. As implemented<br>
+here, MultiBuffer reads information from a file on an HFS device, so refNum will<br>
+contain a File Manager file reference number. It's also possible to use a sound input<br>
+device or the network as the source for your sound data. In such cases refNum would<br>
+contain a sound input device reference number or an AppleTalk unit reference<br>
+number, respectively.&nbsp;&nbsp;&nbsp;The field fileDataStart contains the position in the file at<br>
+which the actual sound data starts; since AIFF files and resources can contain tens of<br>
+bytes of header information, it's important to be able to locate the start of our data.<br>
+The bytesToGo field keeps track of the number of bytes of sound data to be played. This<br>
+field may not be meaningful in the case of continuous sound sources, since the data<br>
+stream doesn't necessarily have a definite end. 
+</p>
+<p>
+The currentBuffer field contains the number of the buffer that's currently playing.<br>
+This field can actually be thought of as an index into the array of SampleBuffers. In<br>
+this array, buffers[kNumBuffers] contains the information needed for actually<br>
+playing the sound through the Sound Manager (and some other convenient goodies, too).
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+bCmd and cbCmd are sound commands that are used to send a frame off to be played by<br>
+the Sound Manager. bCmd contains the information necessary to issue a bufferCmd, and<br>
+cbCmd is used to issue a callBackCmd. Both of these structures are used frequently<br>
+with little modification; by having them preinitialized and easily accessible to the<br>
+routines that need them, we save a few instructions.&nbsp;&nbsp;oldCallBack and oldUserInfo are<br>
+holding spots for any userInfo and callBack data stored in the SndChannel data<br>
+structure before MultiBuffer was called. MultiBuffer places its own information in<br>
+the userInfo and callBack fields, so it's important to save and restore any values that<br>
+may have been lurking there previously. 
+</p>
+<p>
+a5Ref contains a reference to the application's A5 world, so that we can access the<br>
+global variables that MultiBuffer uses at times when A5 may be invalid, such as at<br>
+interrupt time. 
+</p>
+<p>
+<b>THE ROUTINES</b><br>
+This section describes support routines that make up MultiBuffer, many of which can<br>
+be used unchanged in your own code. 
+</p>
+<pre>short OpenAIFFFile (void)</pre>
+<p>
+Found in: AIFFGoodies.c<br>
+OpenAIFFFile is a pretty generic Standard File-based routine that filters out all file<br>
+types other than 'AIFF' files.&nbsp;&nbsp;After the user selects a file, this routine opens it and<br>
+returns the file reference number or an OSErr. 
+</p>
+<pre>long GetAIFFHeaderInfo (short frefNum, SoundHeaderPtr theHeader)</pre>
+<p>
+Found in: AIFFGoodies.c<br>
+GetAIFFHeaderInfo is an example of how to parse the header information out of an AIFF<br>
+file. The basic strategy is to read pieces of the header into a buffer, where a struct<br>
+template can be overlaid onto the data, making the values easy to access. Important<br>
+information from the AIFF file can then be put into a SoundHeader data structure,<br>
+which will be used later when data is passed to the Sound Manager for playing. The<br>
+routine provided in MultiBuffer extracts only the sound data parameters, such as the<br>
+length, sample rate, sample size, and number of channels. Other chunks are currently<br>
+ignored, although the code is there to support siphoning the information out of them.&nbsp;&nbsp;<br>
+GetAIFFHeaderInfo leaves the file mark at the beginning of the sound data and returns<br>
+the number of bytes of sound data in the file. 
+</p>
+<p>
+One limitation of the current implementation of this routine is that it deals only with<br>
+8-bit monophonic sounds.
+</p>
+<pre>OSErr RecordAIFFFile (OSType creator)</pre>
+<p>
+Found in: AIFFGoodies.c<br>
+RecordAIFFFile uses the sound input routine SndRecordToFile to record a sound to an<br>
+AIFF file. In preparation for this, it uses the Standard File Package to select a file to<br>
+record to and opens the file, creating it if it doesn't exist, clearing it if it does. One of<br>
+the great features of the sound input portion of the Sound Manager is that it provides<br>
+routines with standard user interfaces for recording. As this routine illustrates, all<br>
+you need to worry about is passing a valid file reference number and quality selector<br>
+to SndRecordToFile; the rest is taken care of.
+</p>
+<pre>OSErr DoubleBuffer (SndChannelPtr chan, unsigned long fileRefNum,
+            ProcPtr readproc, ProcPtr processproc,
+            SoundHeaderPtr generalHeader, unsigned long playSize,
+            long dataOffset, Ptr *privateData)</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Found in: DoubleBuffers.c<br>
+DoubleBuffer is the main application interface to the buffering routines. It takes care<br>
+of all the setup required as well as initiating the buffering "chain reaction." In the<br>
+spirit of a picture being worth a thousand words, the routine follows. 
+</p>
+<pre>OSErr DoubleBuffer (SndChannelPtr chan, unsigned long fileRefNum,
+            ProcPtr readproc, ProcPtr processproc,
+            SoundHeaderPtr generalHeader,
+            unsigned long playSize, long dataOffset)
+{
+    OSErr                   err     = noErr;          // error bucket
+    PrivateDBInfoPtr        dbInfo  = nil;
+    //  Clear the global stop flag.
+    gsStopFlag = false;
+   
+    //  We're going to use a PrivateDBInfo structure to hold all
+    //  the information we'll need later on to do our double
+    //  buffering. The next several lines of code deal with
+    //  allocating space for it and its members and initializing
+    // fields.
+    dbInfo = SetUpDBPrivateMem ();
+    if (dbInfo != nil) {
+        DebugMessage ("\p Allocated dbInfo successfully");
+
+        // Return a pointer to MultiBuffer's private data structure
+        // so the caller can dispose of it when the operation
+        // finishes.
+        *privateData = (Ptr)dbInfo;
+
+        //  Install the read procedure. This is mandatory.
+        if (readproc == nil) {
+            Assert (readproc == nil, "\pNo readproc specified");
+            FreeDBPrivateMem (dbInfo);           // say bye to memory
+        } else {
+            DebugMessage ("\p Have a valid readproc");
+            dbInfo-&gt;readProcPtr = readproc;
+   
+            //  Install the processing procedure (if any). Lack of a
+            //  processing procedure knocks one level of interrupt
+            //  processing out, so this is a good way to save time
+            //  and decrease the minimum buffer size.
+            dbInfo-&gt;processingProcPtr = processproc;
+       
+            dbInfo-&gt;refNum = fileRefNum;     // store file ref num
+            dbInfo-&gt;a5ref = SetCurrentA5 ();
+       
+            //  We're essentially going to take over the specified
+            //  sound channel to do double buffering with it; as a
+            //  result, we'll install our own callback and put
+            //  private data structures in the userInfo field. We're
+            //  going to save the values that were there when we
+            //  started, in case they shouldn't be stomped on.
+            if (chan-&gt;userInfo)                  // valid userInfo?
+                dbInfo-&gt;oldUserInfo = chan-&gt;userInfo; // save it
+            chan-&gt;userInfo = (long) dbInfo;  // pointer to our vars
+
+            DebugMessage ("\pAbout to prime buffers");
+            dbInfo-&gt;bytesToGo = playSize;        // set up play size
+            dbInfo-&gt;fileDataStart = dataOffset;   
+                                           // offset into data stream
+            err = PrimeBuffers (dbInfo, generalHeader);
+                                                      // fill buffers
+            if (err != noErr) {
+                //  If we got to here, we got one [censored] of an
+                //  error trying to read the buffers, so now we
+                //  commit programmatic  seppuku.
+                Assert (err != noErr,
+                           "\pHit an error trying to Fill buffers");
+                FreeDBPrivateMem (dbInfo);       // say bye to memory
+            } else {
+                DebugMessage ("\pSuccessfully primed buffers");
+                //  Presumably at least one of our buffers has been
+                //  filled, so let's set the chain reaction in
+                //  motion. Note that there is a possibility that we
+                //  got only one buffer half full. No worries: the
+                //  callback routine will handle that nicely!!
+           
+                dbInfo-&gt;bCmd.cmd = bufferCmd;
+                dbInfo-&gt;bCmd.param1 = nil;
+                dbInfo-&gt;bCmd.param2 =
+                    (long) dbInfo-&gt;buffers[0].header;
+           
+                dbInfo-&gt;cbCmd.cmd = callBackCmd;
+                dbInfo-&gt;cbCmd.param1 = nil;
+                dbInfo-&gt;cbCmd.param2 = nil;
+           
+                err = QueueFrame (chan, dbInfo);
+                DebugMessage
+                    ("\pJust finished queueing up the first frame");
+            }
+        }
+    }
+    return (err);
+}</pre>
+<pre>OSErr QueueFrame (SndChannelPtr chan, PrivateDBInfoPtr dbInfo)</pre>
+<p>
+Found in: DoubleBuffers.c<br>
+QueueFrame takes care of passing a bufferCmd containing the sound data to be played<br>
+followed by a callBackCmd to the Sound Manager, making sure that the data is valid.<br>
+QueueFrame also updates the pointer to the next buffer to be played. 
+</p>
+<pre>pascal void DBService (SndChannelPtr chan, SndCommand* acmd)</pre>
+<p>
+Found in: DoubleBuffers.c<br>
+When the Sound Manager receives a callBackCmd indicating that a buffer has finished<br>
+playing, DBService queues up the next buffer in line to be played and calls the<br>
+user-specified ReadProc to refill the exhausted buffer.
+</p>
+<pre>void CompleteRead (void)</pre>
+<p>
+Found in: DoubleBuffers.c<br>
+Upon completion of the asynchronous read queued by ReadProc, CompleteRead is called<br>
+to handle errors and queue up a deferred task to perform any processing necessary on<br>
+the freshly read data.&nbsp;&nbsp;&nbsp;Note that this routine uses the inline functions getErr and<br>
+getPB to retrieve the error value from register D0 and a pointer to the parameter<br>
+block from register A0, respectively. 
+</p>
+<pre>OSErr ReadProc (void *private, short bufNum, Boolean asynch)
+OSErr BackReadProc (void *private, short bufNum, Boolean asynch)</pre>
+<p>
+Found in: PlayFromFile.c<br>
+ReadProc is one of the few routines you may want to modify for your specific<br>
+application. It takes care of reading data from the input source--in this case an AIFF<br>
+file on a hard disk. 
+</p>
+<p>
+The three versions provided in the MultiBuffer application are ReadProc,<br>
+BackReadProc, and WaveReadProc. ReadProc reads data starting at the mark and<br>
+moving forward, BackReadProc starts at the end of the data and reads toward the start,<br>
+and WaveReadProc fakes a continuous stream of data from a wave snippet by filling the<br>
+buffer with copies. By replacing ReadProc, you can easily customize the behavior of<br>
+your application. 
+</p>
+<pre>void ProcessingProc (void)
+void BackProcessingProc (void)</pre>
+<p>
+Found in: PlayFromFile.c<br>
+The ProcessingProc routine does any processing needed on the freshly read buffer. The<br>
+amount of time you can spend in this routine depends directly on the size of your<br>
+buffers. This is one of the key areas in which latency problems can occur. 
+</p>
+<p>
+In the MultiBuffer code, ProcessingProc simply converts from 2's complement<br>
+notation to binary offset notation. BackProcessingProc reverses the buffer as well as<br>
+converts it. AIFF files are by definition in 2's complement notation, whereas the Sound<br>
+Manager understands only binary offset notation, making this conversion necessary.<br>
+Binary offset notation is a somewhat peculiar format; its zero point is at $80. $FF<br>
+corresponds to the maximum amplitude and $0 is the minimum amplitude of a wave.
+</p>
+<p>
+If you're planning on doing any processing on your data, it's strongly recommended<br>
+that you write the code in assembly language, since your code will likely execute far<br>
+faster. 
+</p>
+<pre>OSErr PrimeBuffers (PrivateDBInfoPtr dbInfo)</pre>
+<p>
+Found in: DoubleBuffers.c<br>
+PrimeBuffers fills each of the allocated buffers with data. This gives the buffering<br>
+routines some data to work with on the first trip through the buffering cycle.
+</p>
+<p>
+An interesting aspect of this routine is that it uses ReadProc to get the data from the<br>
+source and ProcessingProc to transform it to the desired state. 
+</p>
+<pre>PrivateDBInfoPtr SetUpDBPrivateMem (void)</pre>
+<p>
+Found in: DoubleBuffers.c<br>
+SetUpDBPrivateMem allocates memory for the PrivateDBInfo data structure and<br>
+initializes its fields. 
+</p>
+<pre>void FreeDBPrivateMem (void *freeSpace)</pre>
+<p>
+Found in: DoubleBuffers.c<br>
+FreeDBPrivateMem releases all the memory allocated by SetUpDBPrivateMem. Zowee.
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal long getPB ()</pre>
+<p>
+Found in: DoubleBuffer.h<br>
+When a completion routine is called, register A0 will contain a pointer to the<br>
+parameter block of the caller. Since MPW C doesn't have support for directly accessing<br>
+registers, the inline function getPB moves register A0 onto the stack, where the C<br>
+compiler can figure out how to assign it to a variable. 
+</p>
+<pre>pascal short getErr ()</pre>
+<p>
+Found in: DoubleBuffer.h<br>
+The getErr function does the same thing as getPB, except that it deals with the error<br>
+code (found in register D0) instead of the parameter block pointer. 
+</p>
+<pre>pascal SampleBufferPtr getDTParam ()</pre>
+<p>
+Found in: DoubleBuffer.h<br>
+The Deferred Task Manager places an optional argument to its service routine in<br>
+register A1. As was true with getPB and getErr, we need to use an inline assembly<br>
+function, getDTParam, to retrieve the argument.
+</p>
+<pre>pascal void CallDTWithParam (ProcPtr routine, SampleBufferPtr arg)</pre>
+<p>
+Found in: DoubleBuffer.h<br>
+So that we don't need to have two copies of ProcessingProc present, the inline function<br>
+CallDTWithParam allows you to call a deferred task service routine with an argument<br>
+directly. It takes the argument passed to it and puts it in register A1, then JSRs to the<br>
+service routine. 
+</p>
+<pre>pascal void QuickDTInstall (DeferredTaskPtr taskEl)</pre>
+<p>
+Found in: DoubleBuffer.h<br>
+The QuickDTInstall procedure saves us a few cycles by bypassing the trap dispatcher<br>
+when we install a deferred task service routine. The address of the service routine is<br>
+loaded into A0, then we jump directly to the installation procedure pointed to by the<br>
+low-memory global jDTInstall.
+</p>
+<p>
+This is one of the few legitimate reasons to access a low-memory global, but it can<br>
+potentially get you in trouble. It works fine under system software through version<br>
+7.0.1, but is certainly a future compatibility risk. The alternative is to call DTInstall<br>
+in the normal manner, but even the few milliseconds you spend in the trap dispatcher<br>
+will have an adverse effect on the amount of processing you can do on your sounds. 
+</p>
+<pre>pascal void Reverse (Ptr buffer, long length)</pre>
+<p>
+Found in: PlayFromFile.c<br>
+The Reverse routine does the real processing on the freshly read buffer. It reverses<br>
+the buffer passed to it as well as converting it from 2's complement notation to binary<br>
+offset format.
+</p>
+<pre>Ptr NewWaveForm (unsigned char amplitude, unsigned short frequency)</pre>
+<p>
+Found in: Oscillator.c<br>
+NewWaveForm generates a waveform based on the values most recently read from the<br>
+controls in the application window. Amplitude must be a value between 0 and $80,<br>
+while frequency can be anything within reason. This routine returns one cycle of the<br>
+waveform requested. 
+</p>
+<p>
+<b>TIPTOE THROUGH THE INTERRUPTS</b><br>
+As you've probably gathered from the descriptions of the routines, MultiBuffer is<br>
+essentially a maze of self-perpetuating interrupt routines. This makes keeping track<br>
+of what's happening at any given moment a real pain, not to mention that it severely<br>
+complicates debugging. In the interest of sparing you a headache or two trying to figure<br>
+out the flow of processing, let's walk through a bit of MultiBuffer's execution.
+</p>
+<p>
+<b>Initialization. </b>This particular phase of execution happens at normal run time and is<br>
+fairly uninteresting. The process is as follows:
+</p>
+<ol>
+<li>SetUpDBPrivateMem gets called to allocate our private memory. </li>
+<li>Fields of the PrivateDBInfo structure are initialized. This step includes<br>
+saving the current A5 world, putting pointers to ReadProc and ProcessingProc<br>
+into the appropriate fields, and saving copies of the sound channel's callBack<br>
+and userInfo values. </li>
+<li>PrimeBuffers is called to prefill each of the buffers with sound data. </li>
+</ol>
+<p>
+<b>The chain reaction. </b>The last thing that happens in the DoubleBuffer routine is a<br>
+call to QueueFrame, which places a bufferCmd followed by a callBackCmd in the<br>
+channel's queue. Since both these operations will be executed asynchronously, control<br>
+returns immediately to DoubleBuffer and subsequently to your application.
+</p>
+<p>
+Figure 2 illustrates how things unfold from here. The buffer flags are set to<br>
+kBufferPlaying, to indicate that the buffer is busy. As soon as the first buffer is<br>
+exhausted, its associated callBackCmd causes an interrupt that transfers control to<br>
+DBService, where the next frame is queued, assuming its flags indicate readiness<br>
+(kBufferReady). To keep things going smoothly, a read is issued to refill the recently<br>
+exhausted buffer, and its flags are set to kBufferFilling. At this point, control returns<br>
+to whatever process was going on when the callBackCmd generated the interrupt. 
+</p>
+<p>
+<img src="img/212.gif" width="357 px"></img>
+</p>
+<p>
+<b>Figure 2</b> The Illustrated Execution, or What Happens When
+</p>
+<p>
+&nbsp;The next phase starts as soon as the read queued in DBService completes, transferring<br>
+control (again, at interrupt time) to the completion routine CompleteRead. If a<br>
+processing procedure has been installed, a deferred task is initiated for the buffer, and<br>
+its flags are set to kBufferProcessing. Upon completion of the processing procedure,<br>
+the buffer's flags are reset to kBufferReady and control returns to the main stream of<br>
+execution. 
+</p>
+<p>
+&nbsp;The importance of using a deferred task may not be obvious, since it would seem to<br>
+make sense just to call ProcessingProc at the end of CompleteRead. Doing so, however,<br>
+would cause the program to spend too much time in the interrupt service routine,<br>
+shutting out other critical functions being performed at a lower interrupt priority.<br>
+Using a deferred task also means that the processing procedure executes after<br>
+interrupts have been reenabled, which allows us to spend a little more time processing<br>
+without causing the system to grind to a halt and die. Remember, though, that the total<br>
+amount of time required to read in a new chunk of data and process it cannot exceed the<br>
+time it takes to play a buffer, or you'll run into latency problems. 
+</p>
+<h2>THE CUSTOM SHOP</h2>
+<p>
+&nbsp;Customizing MultiBuffer simply involves replacing ReadProc and ProcessingProc<br>
+with your own routines. 
+</p>
+<p>
+&nbsp;ReadProc should take care of reading data from some source. It needs to fill the buffer<br>
+indicated by the argument bufNum with sound data. It should have the ability to behave<br>
+synchronously or asynchronously as indicated by the asynch argument. Remember to<br>
+specify CompleteRead as the completion routine; otherwise MultiBuffer won't work.<br>
+Depending on the device that you're reading from, you may have to use a different type<br>
+of parameter block. strippedDownReadPB is a minimal parameter block for use with<br>
+the File Manager; AppleTalk and the input portion of the Sound Manager will both<br>
+require substituting a different parameter block for the strippedDownReadPB. All you<br>
+need to modify is the definition of the data structure ExtParamBlockRec in<br>
+DoubleBuffer.h.&nbsp;&nbsp;&nbsp;ReadProc often executes at interrupt time, so the prohibitions<br>
+against anything like moving or purging memory apply. 
+</p>
+<p>
+&nbsp;You absolutely must have a ReadProc. The ProcessingProc, on the other hand, is<br>
+optional. If specified, this routine allows you to do some limited processing on the data<br>
+read from the source before it goes off to the Sound Manager to be played. Since this is<br>
+a deferred task service routine, the argument is placed in A1. MultiBuffer passes this<br>
+routine a pointer to the SampleBuffer to be processed. You can do anything you want to<br>
+this buffer, as long as it completes relatively quickly.&nbsp;&nbsp;&nbsp;Remember, this is the routine<br>
+that's often responsible for causing latency problems. 
+</p>
+<p>
+&nbsp;While this doesn't necessarily require writing additional code, DoubleBuffer expects a<br>
+generic sound header for the data you're interested in playing. The only information<br>
+you really need is the samplerate and the base note, since MultiBuffer sets up the<br>
+other fields in the sound header. In the case of AIFF files, this requires parsing the<br>
+header information in the file; for the wave-play operation, fudging a header with<br>
+constants that describe the type of wave is acceptable. 
+</p>
+<p>
+<b>IMPLEMENTATION EXAMPLES</b><br>
+To show how you might customize MultiBuffer, I've provided a couple of routines that<br>
+make use of the package. Both have examples of how to implement a ReadProc, and the<br>
+play-from-file example also takes advantage of a ProcessingProc.
+</p>
+<p>
+<b>PlayFromFile. </b>PlayFromFile.c contains routines that play an AIFF file. These are<br>
+good examples of how you can use alternate ReadProcs and ProcessingProcs to<br>
+customize the output of your data. 
+</p>
+<p>
+<b>PlayFromSynth. </b>PlayFromSynth.c and Oscillator.c contain the routines necessary to<br>
+implement a basic sine wave synthesizer. The only really notable feature of this<br>
+implementation is the use of the refNum field of the PrivateDBInfo structure as a<br>
+pointer to a single wave cycle. My thinking here was that refNum really points to the<br>
+data source, unlike a traditional refNum, so why not use it as such? 
+</p>
+<p>
+<b>FUN THINGS TO DO WITH MULTIBUFFER</b><br>
+Here are a couple of ideas for other processing options you might consider<br>
+implementing in MultiBuffer's ProcessingProc:
+</p>
+<ul>
+<li>Summation: Averaging the samples of two waveforms will produce a third<br>
+sample that sounds like both being played simultaneously. This technique can<br>
+be useful for spitting two input sources out of one sound channel. </li>
+<li>Reverb and delay: These commonly used studio effects are produced by<br>
+summing the sample points at<i>t</i>&nbsp;&nbsp;and<i> t+</i> &#8706;<i>t,</i> where &#8706;<i>t</i>&nbsp;&nbsp;is the desired intensity of<br>
+the effect. The reason I've lumped these two together is that reverb can be<br>
+considered a really short delay --generally less than 50 milliseconds.</li>
+</ul>
+<p>
+<b>A FEW WORDS ON DEBUGGING</b><br>
+<b>Conditional compilation flags. </b>If you take a look at BuildMultiBuffer, the<br>
+makefile for MultiBuffer, you'll see -Debug and -Verbose as possible compilation<br>
+options. These are triggers for Debug messages that can be compiled into the code to<br>
+help you figure out where the code is failing during development. The advantage of this<br>
+scheme is that when undefined, the Assert and DebugMessage macros evaluate to<br>
+(void), which the compiler happily optimizes out.
+</p>
+<p>
+The general form of this kind of macro is
+</p>
+<pre>#if _TRIGGER
+    #define SomeFunction(s) SomeFunctionOfS (s)
+#else
+    #define SomeFunction(s) ((void) 0)
+#endif</pre>
+<p>
+These can be really useful if you want to generate different types of executables<br>
+without resorting to multiple parallel source files. 
+</p>
+<p>
+<b>Why debugging interrupt routines is painful. </b> There are two significant<br>
+problems with debugging interrupt routines. Using a debugger that leaves interrupts<br>
+enabled (such as TMON) means that you may not be able to observe a "steady state" of<br>
+your code. Using a debugger that disables interrupts (such as MacsBug) allows you to<br>
+see a snapshot of the system, but you run the risk of killing the system if you stay in<br>
+the debugger for any length of time. 
+</p>
+<p>
+As you can imagine, this can make getting an accurate picture of what's really<br>
+happening nearly impossible. As a result, the approach used in MultiBuffer was to<br>
+leave a "bread crumb" in the debugger so that one could go back later and see what<br>
+happened. You'll notice that in routines that are going to be executed at interrupt time<br>
+the debugging statements have the form
+</p>
+<pre>Assert (err, "\p Some Message; g");
+DebugMessage ("\p Another Message; g");</pre>
+<p>
+This causes MacsBug to log a copy of "Some Message" in its window and return<br>
+immediately to the routine. This gets you out of MacsBug quickly enough to avoid<br>
+causing problems. From the log left in MacsBug, you can often narrow down the cause<br>
+of the problem. TMON, to the best of my knowledge, doesn't have a similar feature, so<br>
+MacsBug is really the tool of choice for debugging MultiBuffer. Be careful when<br>
+running debug versions of MultiBuffer with TMON installed, as Assert and<br>
+DebugMessage statements executed at interrupt level can leave you in the debugger. 
+</p>
+<p>
+The message you should be especially watchful for is "Tried to queue a buffer that<br>
+wasn't ready." This indicates that QueueFrame attempted to play a buffer that wasn't<br>
+marked kBufferReady, and usually indicates that you're taking too much time in your<br>
+ReadProc or ProcessingProc. The solution here is to either increase the size of your<br>
+buffers or reduce the amount of time you spend in your read and processing routines. 
+</p>
+<h2>ALL PLAYED OUT ("KBUFFEREMPTY")</h2>
+<p>
+MultiBuffer provides one example of how to play sounds that are too large to fit in<br>
+memory. Its theory of operation is very similar to that of the Sound Manager routine<br>
+SndPlayDoubleBuffer in that the buffer-refreshing mechanism keys off the play<br>
+completion routine; this class of buffering algorithm is appropriate for<br>
+play-from-disk and related applications. 
+</p>
+<p>
+Adding sound support to your application can greatly enhance your user's experience.<br>
+Once you have an understanding of a few simple principles, it's also fairly simple. To<br>
+that end, I hope that MultiBuffer is useful in enhancing your understanding of some of<br>
+these issues. 
+</p>
+<h2>SOUND: FROM PHYSICAL TO DIGITAL AND BACK</h2>
+<p>
+What you experience when you hear a sound is actually your ear picking up a series of<br>
+pressure changes, commonly thought of as waves, in the ambient air. Through a bunch<br>
+of physiological magic, the ear converts these pressure changes to a neural signal that<br>
+your brain can then recognize as your alarm clock or Chopin, depending on the<br>
+waveform. Both the waveform and its neural equivalent are analog, which is useless as<br>
+far as your computer is concerned. To get the analog phenomena into your machine, you<br>
+need to use some sort of transducer (a microphone, for instance) and an<br>
+analog-to-digital converter such as the sound input hardware found in most Macintosh<br>
+models.
+</p>
+<p>
+Like your ear, the microphone picks up minute pressure changes in the air, but it<br>
+produces an electrical signal that the analog-to-digital converter turns into a stream<br>
+of numbers corresponding to the voltage (amplitude) of the signal. Each of these<br>
+numbers is a discrete <i> sample point</i> , and the collection of sample points that define the<br>
+waveform are collectively known as a <i> sample</i> .
+</p>
+<p>
+In an ideal world your sample would be continuous, meaning that there would be an<br>
+infinite number of sample points for any given time period. The reality is that<br>
+analog-to-digital (and digital-to-analog) converters can handle only a finite number<br>
+of sample points per second, so the concept of <i> sample frequency</i>&nbsp;&nbsp;becomes important.<br>
+The higher the frequency, the better the sample approximates the original waveform.<br>
+The sample frequency is usually expressed in kilohertz, which gives the number of<br>
+sample points per microsecond. Common sample rates are 7 kHz, 11 kHz, and 22 kHz,<br>
+though the Sound Manager currently supports any sample rates between 1 kHz and 22<br>
+kHz. In practice, it's best to stick to an even divisor of 22 kHz, since it minimizes the<br>
+number of hoops the software needs to jump through to play your sound.
+</p>
+<p>
+Another factor that affects the fidelity of the sample is its <i> quantization</i> , which is<br>
+related to how many bits are used to describe each sample point. The Sound Manager<br>
+currently supports only 8-bit samples, which is sufficient for most applications.
+</p>
+<p>
+The digitized sound is stored either in memory or on a more permanent storage<br>
+medium such as a hard disk or CD-ROM. The important thing to take away from this<br>
+discussion is that in order to get high-quality samples, you need to have a high<br>
+sampling rate and a reasonable sample size (read: lots of memory).Converting samples<br>
+back into sound is exactly the reverse of the recording process. The data goes to a<br>
+digital-to-analog converter, which generates a specific voltage based on the digital<br>
+value handed to it. After some sort of amplification, these voltages cause a speaker to<br>
+emit an "image" of the originally sampled waveform.
+</p>
+<p>
+The following figure shows a 1-microsecond snapshot of a waveform sampled at a rate<br>
+of 22 kHz and digitized at sample sizes of 8 and 16 bits. The dots show how much the<br>
+digitized waveform can vary from the original waveform at each sample size. The<br>
+16-bit size gives a better approximation of the original waveform, but eats up a lot of<br>
+memory.
+</p>
+<p>
+<img src="img/213.gif" width="299 px"></img>
+</p>
+<p>
+<b>NEIL DAY</b> When Neil isn't glued to his Macintosh, working on one of his various<br>
+programmatic whatnots, you can usually find him strapped to a piece of sporting<br>
+equipment leaping off something. Neil's favorite jumping-off points are waves, cliffs,<br>
+and cornices, in that order.*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Rich Collyer, Leo Degen, Jim Mensch,<br>
+Jim Reekes *
+</p>
+</body>
+</html>

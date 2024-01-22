@@ -1,0 +1,491 @@
+<html>
+<head>
+<!-- Article ID: 5 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Winter 92 - MAKING YOUR MACINTOSH SOUND LIKE AN ECHO BOX</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MAKING YOUR MACINTOSH SOUND LIKE AN ECHO BOX</h2>
+<h1>RICH COLLYER</h1>
+<p>
+<img src="img/130.gif" width="369 px"></img>
+</p>
+<p>
+<i>&nbsp;Happy notes for sound buffs: As you'll see from the sample code provided on the</i><br>
+<i>Developer CD Series disc, you can make your Macintosh play and record sounds at the</i><br>
+<i>same time, simply by using double buffering to record into one buffer while playing a</i><br>
+<i>second buffer, and then flipping between the buffers. If you want to take things a few</i><br>
+<i>steps further, pull out elements of this code and tailor them to suit your own acoustic</i><br>
+<i>needs.</i>
+</p>
+<p>
+&nbsp;We all know that the Macintosh is a sound machine, so to speak, but with a little<br>
+clever programming you can turn it into an echo box as well. The sample<br>
+2BufRecordToBufCmd included on the<i>Developer CD Series</i> disc is just a small<br>
+application (sans interface) that demonstrates one way to record sounds at the same<br>
+time that you're playing them. There are other ways to achieve the same goal, but my<br>
+purpose is to educate you about the Sound Manager, not to lead you down the definitive<br>
+road to becoming your own recording studio. 
+</p>
+<p>
+&nbsp;In addition to the main routine, 2BufRecordToBufCmd includes various setup routines<br>
+and a completion routine. For easy reading, I've left out any unnecessary code out of<br>
+this article. 
+</p>
+<h2>CONSTANT COMMENTS</h2>
+<p>
+&nbsp;Before I get into the sample code itself, here are a few of the constants you'll run into<br>
+in the application. 
+</p>
+<p>
+<b>&nbsp;GETTING A HANDLE ON IT</b><br>
+The kMilliSecondsOfSound constant is used to declare how many milliseconds of sound<br>
+the application should record before it starts to play back. The smaller the number of<br>
+milliseconds, the more quickly the sound is played back. This constant is used to<br>
+calculate the size of the 'snd ' buffer handles (just the data). Depending on the sound<br>
+effect you're after, kMilliSecondsOfSound can range from 50 milliseconds to 400,000<br>
+or so. If you set it below 50, you risk problems: there may not be enough time for the<br>
+completion routine to finish executing before it's called again. On the high end of the<br>
+range, only the application's available memory limits the size. The smaller the value,<br>
+of course, the faster the buffers fill up and play back, and the faster an echo effect<br>
+you'll get. A millisecond value of 1000 provides a one-second delay between record and<br>
+echo, which I've found is good for general use. You'll want to experiment to find the<br>
+effect you like. (Beware of feedback, both from your machine and from anyone who's in<br>
+close enough proximity to "enjoy" the experimentation secondhand.)
+</p>
+<p>
+<b>&nbsp;YOUR HEAD SIZE, AND OTHER #DEFINES</b><br>
+The next three constants (kBaseHeaderSize, kSynthSize, and kCmdSize) are used to<br>
+parse the sound header buffers in the routine FindHeaderSize. kBaseHeaderSize is the<br>
+number of bytes at the top of all 'snd ' headers that aren't needed in the application<br>
+itself. While the number of bytes isn't really ofinterest here, you need to parse the<br>
+header in order to find the part of the sound header that you'll pass to the bufferCmd.<br>
+How much you parse off the top is determined by the format of the header and the type<br>
+of file; for the purposes of this code, however, all you need to be concerned with are<br>
+the 'snd ' resources. The second constant, kSynthSize, is the size of one 'snth'. In the<br>
+calculations of the header, I find out how many 'snth's there are, and multiply that<br>
+number by kSynthSize. The last constant, kCmdSize, is the size of one command, which<br>
+is used in the same way as kSynthSize.&nbsp;&nbsp;&nbsp;(These equations are derived from<i>Inside</i><br>
+<i>Macintosh</i> Volume VI, page 22-20.)
+</p>
+<p>
+<b>ERROR CHECKING WITH EXITWITHMESSAGE</b><br>
+2BufRecordToBufCmd includes error checking, but only as a placeholder for future<br>
+commercialization of the product. If the present code detects an error, it calls the<br>
+ExitWithMessage routine, which displays a dialog box that tells you more or less<br>
+where the error occurred and what the error was. Closing this dialog box quits the<br>
+application, at which point you have to start over again.&nbsp;&nbsp;&nbsp;Note that calling<br>
+ExitWithMessage at interrupt time could be fatal, since it uses routines that might<br>
+move memory. For errors that could occur at interrupt time, DebugStr is used instead.
+</p>
+<p class="spacer">&nbsp;</p>
+<h2>USING THE SOUND INPUT DRIVER</h2>
+<p>
+Use of the sound input driver is fairly well documented in<i>Inside Macintosh</i> Volume VI,<br>
+Chapter 22 (pages 22-58 through 22-68 and 22-92 through 22-99), but here's a<br>
+little overview of what 2BufRecordToBufCmd does at this point in the routine, and<br>
+why. When you use sound input calls at the low level (not using SndRecord or<br>
+SndRecordToFile), you need to open the sound input driver.&nbsp;&nbsp;&nbsp;This section of the code<br>
+just opens the driver, which the user selects via the sound cdev. 
+</p>
+<pre>gError = SPBOpenDevice (kDefaultDriver, siWritePermission,
+            &amp;gSoundRefNum);</pre>
+<p>
+To open the driver, you call SPBOpenDevice and pass in a couple of simple parameters.<br>
+The first parameter is a driver name. It doesn't really matter what the name of the<br>
+driver is; it simply needs to be the user-selected driver, so the code passes in nil<br>
+(which is what kDefaultDriver translates into).&nbsp;&nbsp;&nbsp;The constant siWritePermission<br>
+tells the driver you'd like read/write permission to the sound input driver. This will<br>
+enable the application to actually use the recording calls. The last parameter is the<br>
+gSoundRefNum. This parameter is needed later in the sample so that you can ask<br>
+specific questions about the driver that's open. The error checking is just to make sure<br>
+that nothing went wrong; if something did go wrong, the code goes to ExitWithMessage,<br>
+and then the sample quits. 
+</p>
+<pre>gError = SPBSetDeviceInfo (gSoundRefNum, siContinuous,
+           (Ptr) &amp;contOnOff);</pre>
+<p>
+Continuous recording is activated here to avoid a "feature" of the new Macintosh Quadra<br>
+700 and 900 that gives you a slowly increasing ramp of the sound input levels to their<br>
+normal levels each time you call SPBRecord. The result in 2BufRecordToBufCmd is a<br>
+pause and gradual increase in the sound volume between buffers as the buffers are<br>
+being played. Continuous recording gives you this ramp only on the first buffer, where<br>
+it's almost unnoticeable. 
+</p>
+<h2>BUILDING 'SND ' BUFFERS</h2>
+<p>
+Now that the sound input driver is open, the code can get the information it needs to<br>
+build the 'snd ' buffers. As its name implies, 2BufRecordToBufCmd uses two buffers.<br>
+The reason is sound (no pun intended): The code basically uses a double-buffer method<br>
+to record and play the buffers. The code doesn't tell the machine to start to play the<br>
+sound until the recording completion routine has been called, so you don't have to<br>
+worry about playing a buffer before it has been filled with recorded data.&nbsp;&nbsp;&nbsp;The code<br>
+also does not restart the recording until the previous buffer has started to play. 
+</p>
+<p>
+<b>INFORMATION, PLEASE</b><br>
+To build the sound headers, you need to get some information from the sound input<br>
+driver about how the sound data will be recorded and stored. That's the function of the<br>
+GetSoundDeviceInfo routine, which looks for information about the SampleRate (the<br>
+number of samples per second at which the sound is recorded), the SampleSize (the<br>
+sample size of the sound being recorded--8 bits per sample is normal), the<br>
+CompressionType (see "Putting on the Squeeze"), the NumberChannels(the number of<br>
+sound input channels, normally 1), and the DeviceBufferInfo (the size of the internal<br>
+buffers). 
+</p>
+<p>
+This code (minus the error checking) extracts these values from the sound input<br>
+driver. 
+</p>
+<pre>gError = SPBGetDeviceInfo (gSoundRefNum, siSampleRate,
+        (Ptr) &amp;gSampleRate);
+
+gError = SPBGetDeviceInfo (gSoundRefNum, siSampleSize,
+        (Ptr) &amp;gSampleSize);
+
+gError = SPBGetDeviceInfo (gSoundRefNum, siCompressionType,
+        (Ptr) &amp;gCompression);
+
+gError = SPBGetDeviceInfo (gSoundRefNum, siNumberChannels,
+        (Ptr) &amp;gNumberOfChannels);
+
+gError = SPBGetDeviceInfo (gSoundRefNum, siDeviceBufferInfo,
+        (Ptr) &amp;gInternalBuffer);
+
+value = kMilliSecondsOfSound;
+gError = SPBMillisecondsToBytes (gSoundRefNum, &amp;value);
+gSampleAreaSize = (value / gInternalBuffer) * gInternalBuffer;</pre>
+<p>
+Opening the sound input driver gives you the gSoundRefNum. The values siSampleRate,<br>
+siSampleSize, siCompressionType, siNumberChannels, and siDeviceBufferInfo are<br>
+constants defined in the SoundInput.h file; these constants tell the SPBGetDeviceInfo<br>
+call what information you want.&nbsp;&nbsp;&nbsp;The last parameter is a pointer to a global variable.<br>
+The SPBGetDeviceInfo call uses this parameter to return the requested information. 
+</p>
+<p>
+The last bit of work the code needs to do before it's ready to start building the 'snd '<br>
+headers is to convert the constant kMilliSecondsOfSound to the sample size of the<br>
+buffer. To do this, the routine needs to call SPBMillisecondsToBytes and then round<br>
+down the resulting value to a multiple of the size of the internal sound buffer. This is<br>
+to bypass a bug connected with the continuous recording feature of Apple's built-in<br>
+sound input device, which will collect garbage rather than audio data if the recording<br>
+buffer is not a multiple of the device's internal buffer. Creating a buffer of the right<br>
+size not only avoids this problem, but also enables the input device to more efficiently<br>
+record data into your buffer. 
+</p>
+<p>
+Now the code has the information it needs to build the sound buffers. To save code<br>
+space, I've made a short routine that builds the buffers and their headers. All the code<br>
+has to do is call this routine for each of the buffers it needs and pass in the appropriate<br>
+data. 
+</p>
+<p>
+<b>IT'S A SETUP</b><br>
+The first line of code in the SetupSounds routine is fairly obvious. It simply calls the<br>
+Memory Manager to allocate the requested handles, based on the known size of the data<br>
+buffer and an estimated maximum size for the header, and does some error checking<br>
+(see the code itself). Then, if the handle is good, the routine builds the 'snd ' header.<br>
+Setting up the sound buffer requires building the header by making a simple call,<br>
+SetupSndHeader, to the Sound Manager. There's a small problem with calling<br>
+SetupSndHeader only once, however: When you call it, you don't know how big the<br>
+sound header is, so you just give the call the buffer, along with a 0 value for the buffer<br>
+size.&nbsp;&nbsp;&nbsp;When the call returns with the header built, one of the values in the<br>
+header--the one that's the number of bytes in the sample--will be wrong. (The<br>
+header size will be correct, but the data in the header will not be.) To correct this, you<br>
+simply wait until your recording is complete and then put the correct number of bytes<br>
+directly into the header, at which time you'll know how much data there is to play<br>
+back. The misinformation in the header won't affect your recording, only the playback.<br>
+Once the header's built, the code resets the size of the handle, moves the handle high<br>
+(to avoid fragmentation of the heap), and locks it down. It's important to lock down the<br>
+handles in this way; otherwise the Sound Manager will move the sound buffers it's<br>
+working with out from under itself. 
+</p>
+<pre>*bufferHandle = NewHandle (gSampleAreaSize + kEstimatedHeaderSize);
+
+gError = SetupSndHeader (*bufferHandle, gNumberOfChannels,
+    gSampleRate, gSampleSize, gCompression, kMiddleC, 0, headerSize);
+
+SetHandleSize (*bufferHandle, (Size) *headerSize + gSampleAreaSize);
+MoveHHi (*bufferHandle);
+HLock (*bufferHandle);</pre>
+<h2>TELLING IT WHERE TO GO</h2>
+<p>
+The next part of the program allocates and initializes a sound input parameter block,<br>
+gRecordStruct.&nbsp;&nbsp;&nbsp;This structure tells the sound input call how to do what the code wants<br>
+it to do. 
+</p>
+<p>
+The first instruction is obvious: it simply creates a new pointer into which the<br>
+structure can be stored. 
+</p>
+<pre>gRecordStruct = (SPBPtr) NewPtr (sizeof (SPB));</pre>
+<p>
+The recording call will need to know where it can find the open sound input driver, so<br>
+next it needs the reference number to the driver (gSoundRefNum). The subsequent<br>
+three lines of code inform the recording call how much buffer space it has to record<br>
+into. Here, you could either give the call a count value, tell it how many milliseconds<br>
+are available for recording, or give it the size of the sound buffer. For this code, it's<br>
+easiest to just make the bufferLength the same as the count and ignore the milliseconds<br>
+value.&nbsp;&nbsp;The code then tells the recording call where to put the sound data as it's<br>
+recorded. 
+</p>
+<pre>gRecordStruct-&gt;inRefNum = gSoundRefNum;
+gRecordStruct-&gt;count = gSampleAreaSize;
+gRecordStruct-&gt;milliseconds = 0;
+gRecordStruct-&gt;bufferLength = gSampleAreaSize;
+gRecordStruct-&gt;bufferPtr = (Ptr) ((*bufferHandle) + gHeaderLength);
+gRecordStruct-&gt;completionRoutine = (ProcPtr) MyRecComp;
+gRecordStruct-&gt;interruptRoutine = nil;
+gRecordStruct-&gt;userLong = SetCurrentA5();
+gRecordStruct-&gt;error = 0;
+gRecordStruct-&gt;unused1 = 0;</pre>
+<p>
+The recording call also needs to know what to do when it's finished recording. Since the<br>
+call is done asynchronously, it needs a completion routine. (I'll talk more about this<br>
+routine later on.)&nbsp;&nbsp;You<i>could</i> leave out the completion routine and just poll the driver<br>
+periodically to see if it's finished recording.&nbsp;&nbsp;&nbsp;To do that, you'd repeatedly call the<br>
+routine SPBGetRecordStatus, and when the status routine informed you that recording<br>
+was finished, you'd restart the recording and play the buffer that had just been filled.<br>
+For this code, however, it's better to know as soon as possible when the recording is<br>
+done because the more quickly you can restart the recording, the more likely you are<br>
+to prevent pauses between recordings. 
+</p>
+<p>
+The userLong field is a good place to store 2BufRecordToBufCmd's A5 value, which<br>
+you'll need in order to have access to the application's global variables from the<br>
+completion routine. As you can see, the rest of the fields are set to 0. The code doesn't<br>
+need an interrupt routine. There's also no point in passing an error back or using the<br>
+unused1 field. 
+</p>
+<p>
+You'd need to use an interrupt routine if you wanted to change the recorded sound<br>
+before compression, or before the completion routine was called (see "Routine<br>
+Interruptions"). 
+</p>
+<p>
+<b>TIME TO CHANNEL</b><br>
+Just before the code jumps into the main loop, it needs to open a sound channel. This<br>
+generally is not a big deal, but for 2BufRecordToBufCmd, I initialized the channel to<br>
+use no interpolation. 
+</p>
+<pre>gError = SndNewChannel (&amp;gChannel, sampledSynth, initNoInterp, nil);</pre>
+<p>
+Interpolation causes clicks between the sound buffers when they're played back to<br>
+back, which can be a rather annoying addition to your recording (unless, of course,<br>
+you're going for that samba beat). 
+</p>
+<p>
+<b>JUST FOR THE RECORD</b><br>
+To start recording, all the code needs to do now is call the low-level recording routine,<br>
+pass in gRecordStruct, and tell it that it wants the recording to occur asynchronously. 
+</p>
+<pre>gError = SPBRecord (gRecordStruct, true);</pre>
+<h2>LOOP THE LOOP</h2>
+<p>
+The main loop of this code is a simple while loop that waits until the mouse button is<br>
+pressed or an error occurs in the recording, at which time the application quits. 
+</p>
+<pre>/* main loop of the app */
+while (!Button() || (gRecordStruct-&gt;error &lt; noErr));</pre>
+<p>
+<b>ROUTINE COMPLETION</b><br>
+You don't want a completion routine to do much, generally, since it's run at interrupt<br>
+time and keeps your system locked up while it's running. There are three parts to this<br>
+completion routine, one of which has four parts to itself. 
+</p>
+<p>
+The first part of the completion routine sets its A5 value to be the same as the A5 value<br>
+of the application. This gives you access to the application's global variables from the<br>
+completion routine. 
+</p>
+<pre>storeA5 = SetA5 (inParamPtr-&gt;userLong);</pre>
+<p>
+If the completion routine weren't broken into two parts here, the MPW C compiler<br>
+optimization scheme would cause a problem at this point: access to global arrays would<br>
+be pointed to in an address register as an offset of A5 before you had a chance to set A5<br>
+to your application's A5 value, and you'd get garbage information. Therefore, it's<br>
+necessary to restore your A5 value (part 1 of the completion routine) and then call<br>
+the secondary completion routine to actually do all the work. 
+</p>
+<p>
+Before the routine does any work, it needs to make sure that there have not been any<br>
+problems with the recording. If there were errors, the code drops out of the<br>
+completion routine without doing anything.
+</p>
+<pre>if (gRecordStruct-&gt;error &lt; 0)
+    return;</pre>
+<p>
+Next the routine prepares the header of the buffer, which has just been filled, by<br>
+correcting the header's length field. This field needs to be set to the count field of<br>
+gRecordStruct, which now contains the actual number of bytes recorded. 
+</p>
+<pre>header = (SoundHeaderPtr)(*(gBufferHandle[gWhichRecordBuffer]) +
+    gHeaderSize);
+header-&gt;length = gRecordStruct-&gt;count;</pre>
+<p>
+Once the header's been fixed, the code just sends the buffer handle off to the play<br>
+routine to play the sound. (See "Play Time" for a full explanation of the play routine.)
+</p>
+<pre>PlayBuffer (gBufferHandle[gWhichRecordBuffer]);</pre>
+<p>
+The last part of the real completion routine prepares gRecordStruct to start the next<br>
+recording. To do this, the code needs to select the correct buffer to record to and<br>
+rebuild gRecordStruct to reflect any changes. The macro NextBuffer performs an XOR<br>
+on the variable gWhichRecordBuffer to make it either 1 or 0. The changes include<br>
+setting the correct buffer to record to and checking to see that the bufferLength is<br>
+correct. Once the structure is reset, the code makes the next call to SPBRecord to<br>
+restart the recording. 
+</p>
+<pre>#define NextBuffer(x) (x ^= 1)
+
+gWhichRecordBuffer = NextBuffer (gWhichRecordBuffer);
+gRecordStruct-&gt;bufferPtr = (*(gBufferHandle[gWhichRecordBuffer]) +
+    gDataStart);
+gRecordStruct-&gt;milliseconds = 0;
+gRecordStruct-&gt;count = gSampleAreaSize;
+gRecordStruct-&gt;bufferLength = gSampleAreaSize;
+
+err = SPBRecord (gRecordStruct, true);</pre>
+<p>
+The last piece of the completion routine resets A5 to what its value was when the<br>
+routine started. 
+</p>
+<pre>storeA5 = SetA5 (storeA5);</pre>
+<p>
+<b>PLAY TIME</b><br>
+The code in the PlayBuffer routine is very simple Sound Manager code. All it does is set<br>
+up the command parameters and call SndDoCommand. The routine needs to know what<br>
+channel to play into and what buffer to play, so the code sets up the local sound<br>
+structure by telling it which buffer to play, and sends that local structure to<br>
+SndDoCommand along with the necessary channel information (gChannel). <br>
+SndDoCommand then plays the sound. The last parameter in the SndDoCommand call,<br>
+false, basically tells the Sound Manager to always insert the command in the channel's<br>
+queue: if the queue is full, SndDoCommand will wait until there's space to insert the<br>
+command before returning. 
+</p>
+<pre>localSndCmd.cmd = bufferCmd;
+localSndCmd.param1 = 0;
+localSndCmd.param2 = (long) ((*bufferHandle) + gHeaderSize);
+gError = SndDoCommand (gChannel, &amp;localSndCmd, false);</pre>
+<p>
+If you wanted to send the sounds to a different machine to be played, you could simply<br>
+replace the code in the the PlayBuffer routine with IPC or Communications Toolbox<br>
+calls telling a second machine to play the buffers. 
+</p>
+<h2>CLEANING UP AFTER THE SHOW</h2>
+<p>
+Once the code finds the mouse button down or discovers that an error occurred in the<br>
+recording and exits the main loop, there's only one last thing to do: clean up. The first<br>
+part of cleaning up is to close the sound input driver. Before you can close the driver,<br>
+you need to make sure it's not in use; the routine SPBStopRecording stops the<br>
+recording. 
+</p>
+<pre>gError = SPBStopRecording (gSoundRefNum);
+SPBCloseDevice (gSoundRefNum);</pre>
+<p>
+Next you need to dispose of the handles and pointers you've been using. Before sending<br>
+them on their way, however, you have to make sure that they have been allocated, so<br>
+the code checks to see whether or not the handles and pointer are nil. 
+</p>
+<pre>for (index = 0; index &lt; kNumberOfBuffers; ++index)
+    DisposeHandle (gBufferHandle[index]);
+DisposePtr ((Ptr) gRecordStruct);</pre>
+<p>
+Last but not least, the code disposes of the sound channel for you. Setting the quitNow<br>
+flag clears the sound queue before the channel is closed. 
+</p>
+<pre>gError = SndDisposeChannel (gChannel, true);</pre>
+<h2>COMPOSE YOURSELF</h2>
+<p>
+So now you know a little bit more about doing basic sound input at a low level.&nbsp;&nbsp;I've<br>
+fielded many questions about clicks, pauses between buffers, and so on, which I've<br>
+resolved and built into 2BufRecordToBufCmd. The specific techniques I've outlined<br>
+here may not apply to what you're interested in doing right now, but if you're using<br>
+the sound input driver or are interested in continuous recording, parts of this sample<br>
+may be useful to you in some other application. You've heard the saying "take what you<br>
+like and leave the rest"? Sound advice (so to speak). 
+</p>
+<h2>GESTALT YOUR MACHINE</h2>
+<p>
+You do need to check two rather critical sound attributes for 2BufRecordToBufCmd.<br>
+First of all, your machine must have a sound input driver. There's very little point in<br>
+trying to record sounds if the sample is being run on a machine that doesn't have sound<br>
+input capabilities. Checking bit 5 of the returned feature variable with the Gestalt<br>
+Manager will give you this handy bit of information.
+</p>
+<p>
+Second, your hardware needs to support stereo sound, since you need one channel for<br>
+sound input and one for sound output. Check for this attribute by checking bit 0 of the<br>
+returned feature variable.
+</p>
+<p>
+The following code shows how you can test all of the bits returned in the feature<br>
+variable. (I didn't use this code in my sample.)
+</p>
+<pre>err = Gestalt (gestaltSoundAttr, &amp;feature);
+if (!err) {
+    if (feature &amp; (1 << gestaltStereoCapability))
+        //This Macintosh Supports Stereo (test bit 0)
+    if (feature &amp; (1 << gestaltStereoMixing))
+        //This Macintosh Supports Stereo Mixing (test bit 1)
+    if (feature &amp; (1 << gestaltSoundIOMgrPresent))
+        //This Macintosh Has the New Sound Manager (test bit 3)
+    if (feature &amp; (1 << gestaltBuiltInSoundInput))
+        //This Macintosh Has Built-in Sound Input (test bit 4)
+    if (feature &amp; (1 << gestaltHasSoundInputDevice))
+        //This Macintosh Supports Sound Input (test bit 5)
+    }</pre>
+<h2>PUTTING ON THE SQUEEZE</h2>
+<p>
+If you want to use compression for 2BufRecordToBufCmd, keep in mind that the Sound<br>
+Manager basically supports three types of sound compression: none at all, which is<br>
+what I'm using, and MAC3 and MAC6, which are Mace compression types for 3:1 and<br>
+6:1 compression, respectively.
+</p>
+<p>
+If you set the compression, the sound data is compressed after the interrupt routine is<br>
+called (if you have one) and before the Sound Manager internal buffers are moved to<br>
+the application's sound buffers.
+</p>
+<p>
+You have a couple of options for playing back a compressed sound. Either the bufferCmd<br>
+or SndPlay will decompress the sounds on the fly. If you need to decompress a sound<br>
+yourself, you'll want to call the Sound Manager routine Exp1to3 or Exp1to6<br>
+(depending on the compression you were using).
+</p>
+<h2>ROUTINE INTERRUPTIONS</h2>
+<p>
+The interrupt routine gives you a chance to manipulate the sound data before any sound<br>
+compression is done. For some of the operations that you may want to carry out inside<br>
+the interrupt routine, you'll need access to the A5 world of the application, which is<br>
+why I stored 2BufRecordToBufCmd's A5 value in the userLong field of<br>
+gRecordStruct.For more information about sound interrupt routines, take a look at <br>
+<i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI, page 22-63.
+</p>
+<p>
+<i>Warning:</i>&nbsp;&nbsp;Don't try to accomplish too much in an interrupt routine. In general, you'll<br>
+want interrupts to be minimal, and possibly written in assembly language, to avoid<br>
+unnecessary compiler-generated code.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>RICH COLLYER </b>is just your run-of-the-mill three-year Developer Technical<br>
+Support veteran: He's often heard screaming at his computer to the soothing<br>
+accompaniment of Blazy and Bob on KOME radio, he's honed his archery skills to a fine<br>
+point dodging (and casting) the slings and arrows at Apple, and he actually admits to a<br>
+degree from Cal Poly with a specialty in computational fluid dynamics. We let you in<br>
+on his outdoor adventures last time he wrote for us and he claims most of his indoor<br>
+adventures aren't appropriate <i>develop</i>&nbsp;&nbsp;material, but we have it on good authority that<br>
+he lives with carnivorous animals, if that's any clue. He's also a confirmed laserdisc<br>
+and CD addict; he keeps promising to start a recovery program for those of us with the<br>
+same affliction just as soon as he finishes writing that next sample . . . *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Neil Day, Kip Olson, and Jim Reekes,<br>
+who burned the midnight oil ripping this code to shreds and putting it back together<br>
+again.*
+</p>
+</body>
+</html>

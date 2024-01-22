@@ -1,0 +1,382 @@
+<html>
+<head>
+<!-- Article ID: 39 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>December 92 - PRINT HINTS</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>PRINT HINTS</h2>
+<h2>TOP 10 PRINTING MISDEMEANORS</h2>
+<h1>PETE ("LUKE") ALEXANDER</h1>
+<p>
+<img src="img/229.gif" width="180 px"></img>
+</p>
+<p>
+In my last column (in<i>develop</i> Issue 10), I talked about the "Top 10 Printing Crimes"<br>
+that would cause you and your application serious headaches during print time. Here<br>
+I'll list the "Top 10 Printing Misdemeanors." A printing misdemeanor will cause<br>
+minor to major printing problems on different devices. Usually, you'll be able to get<br>
+output onto a page, but it won't necessarily be what you want or where you want it. 
+</p>
+<p>
+Here's the list:<br><ol start="10" reversed="true">
+<li>Using CopyMask and CopyDeepMask with the LaserWriter.<br>
+</li><li>Using the obsolete spool-a-page, print-a-page method. <br>
+</li><li>Not being very careful when using SetOrigin with the LaserWriter. <br>
+</li><li>Creating pictures while the Printing Manager is open. <br>
+</li><li>Not having all your data ready for the Printing Manager when you open it. <br>
+</li><li>Making assumptions about the imageable area. <br>
+</li><li>Using variables from Laser Prep (that is,<b>md</b>). <br>
+</li><li>Checking wDev for the wrong reasons. <br>
+</li><li>Accessing print record fields that are used internally. <br>
+</li><li>Adding printing to your application four weeks before going final. 
+</li></ol></p>
+<p class="spacer">&nbsp;</p>
+<p>
+Most of these misdemeanors are easily avoided if you plan ahead. Let's take a look at the<br>
+problems and the solution to each one.
+</p>
+<p>
+<b>SOLUTIONS TO THE MISDEMEANORS</b><br>
+<b><i>10.&nbsp;&nbsp;Using CopyMask and CopyDeepMask with the LaserWriter. </i></b>
+</p>
+<p>
+It's not possible to directly print to a LaserWriter an image that was created with<br>
+CopyMask or CopyDeepMask, because these calls aren't saved in pictures and they don't<br>
+go through the stdBits QuickDraw bottleneck. The image's data must be recorded in the<br>
+picture or go through the stdBits bottleneck in order for the LaserWriter driver to be<br>
+able to image the data on the printer. 
+</p>
+<p>
+<i>Solution:</i> You can create your image in an off-screen world using CopyMask and<br>
+CopyDeepMask to your heart's content. When you're ready to print your image,<br>
+CopyBits it directly to the LaserWriter's grafPort using srcCopy. 
+</p>
+<p>
+<b><i>9.&nbsp;&nbsp;Using the obsolete spool-a-page, print-a-page method. </i></b>
+</p>
+<p>
+There are still a few applications using the spool-a-page, print-a-page method of<br>
+printing a document. This approach is no longer required unless you're printing from<br>
+a Macintosh that doesn't have a hard drive. Otherwise, it's a bad idea; it has major<br>
+drawbacks in the areas of speed and user happiness.
+</p>
+<p>
+The idea of this method was to print each page of a document as a separate job. This was<br>
+required in the early Macintosh days because disk space was at a premium. It<br>
+prevented a document from filling up the entire disk and never printing a page. But in<br>
+this age of hard disks, it's no longer needed. 
+</p>
+<p>
+Opening and closing the Printing Manager for each page could result in a serious speed<br>
+penalty. And it could make your users very unhappy when printing to a shared<br>
+printer; it's possible to have another user grab the printer before you do, thereby<br>
+intermixing your pages with theirs. 
+</p>
+<p>
+<i>Solution:</i> Don't use the spool-a-page, print-a-page technique. Instead, use the method<br>
+described in the Technical Note "A Printing Loop That Cares . . .". 
+</p>
+<p>
+<b><i>8.&nbsp;&nbsp;Not being very careful when using SetOrigin with the LaserWriter. </i></b>
+</p>
+<p>
+If you're using SetOrigin to change the coordinate system when sending direct<br>
+PostScriptTMcode to the LaserWriter, you'll run into trouble when printing in the<br>
+foreground versus the background. 
+</p>
+<p>
+The PostScript LaserWriter drivers 4.0 through 5.2 handle SetOrigin differently<br>
+when background printing is enabled.
+</p>
+<ul>
+<li>When background printing is disabled and the application calls SetOrigin,<br>
+QuickDraw responds by adjusting the portRect of the printer driver's<br>
+grafPort. Since SetOrigin doesn't cause any grafProcs to run (because no<br>
+drawing occurs), the printer driver doesn't see the effect of this call until the<br>
+next QuickDraw call is made (for example, DrawString or LineTo). At this<br>
+point, the driver notices the change in the portRect and updates its internal<br>
+origin. From then on, all QuickDraw and PostScript graphics are localized to<br>
+the new origin. </li>
+<li>When background printing is enabled, QuickDraw is playing back a<br>
+picture that was spooled earlier. When SetOrigin is encountered while<br>
+DrawPicture is playing the picture, the grafPort's portRect isn't updated.<br>
+Instead, QuickDraw keeps the current origin cached and offsets each graphic on<br>
+the fly. Since the portRect wasn't modified, the printer driver doesn't see the<br>
+SetOrigin call. Although all QuickDraw objects are still localized correctly<br>
+(by QuickDraw), PostScript graphics don't move to the new origin. </li>
+</ul>
+<p>
+In LaserWriter drivers 6.0 and later, the call to SetOrigin is a problem only on the<br>
+first page that's spooled. After the first page, the driver looks at the grafPort's<br>
+coordinates and then records the SetOrigin information correctly by inserting a<br>
+picture comment into the spool file. This enables PrintMonitor to realize when the<br>
+origin changes. Unfortunately, the driver never records the changes produced by a<br>
+SetOrigin call when it's in the stdBits QuickDraw bottleneck. 
+</p>
+<p>
+<i>Solution:</i> In general, using SetOrigin doesn't buy you much, and it can get you in a lot of<br>
+trouble.&nbsp;&nbsp;&nbsp;There are still a few printer drivers that don't handle the call correctly.<br>
+Avoid using SetOrigin if possible.
+</p>
+<p>
+If you use SetOrigin when sending direct PostScript code, use the techniques described<br>
+in the Technical Note "Position-Independent PostScript" to ensure that all the<br>
+PostScript code your application creates is position independent. To get the<br>
+LaserWriter driver to realize as soon as possible that you've changed the coordinate<br>
+system, you can send the following code:
+</p>
+<pre>PicComment (PostScriptBegin, 0, nil);
+PicComment (PostScriptEnd, 0, nil);</pre>
+<p>
+This is a little weird, but it works because the two PicComment calls go through the<br>
+stdBits QuickDraw bottleneck, which is where the driver checks and updates the<br>
+coordinate system as required. 
+</p>
+<p>
+<b><i>7.&nbsp;&nbsp;Creating pictures while the Printing Manager is open. </i></b>
+</p>
+<p>
+Some applications use a picture to collect all their QuickDraw objects before sending<br>
+them on to the printer. This approach is OK unless the Printing Manager has already<br>
+been opened by a call to PrOpen. The most noticeable problems are memory use and<br>
+floating picture comments. 
+</p>
+<p>
+The memory problem can be very evident if you're printing to a printer driver that<br>
+requires a lot of memory. Between your memory use and the printer driver's, there<br>
+might not be enough memory available to meet everyone's appetite. Remember, there<br>
+isn't a magical amount of memory that will guarantee that your application will print<br>
+successfully. 
+</p>
+<p>
+The other significant problem you might encounter is floating picture comments. When<br>
+this occurs, the picture comments sent by your application will be recorded out of<br>
+order, which will usually cause your image to print its objects out of order.
+</p>
+<p>
+<i>Solution:</i> Read the Technical Note "Pictures and the Printing Manager" before you start<br>
+to use pictures at print time. Better yet, don't create a picture when the Printing<br>
+Manager is open. 
+</p>
+<p>
+<b><i>6.&nbsp;&nbsp;Not having all your data ready for the Printing Manager when you</i></b><br>
+<b><i>open it. </i></b>
+</p>
+<p>There aren't too many things you can do to speed up printing, but having data ready for<br>
+the Printing Manager when you open it is one of them. If you open the Printing<br>
+Manager and then go off to collect data you want to print, your printing time could<br>
+increase dramatically. You also run the risk of timing out the print job because you<br>
+don't send data to a networked printer fast enough or your print job takes too long to<br>
+complete. </p>
+<p>
+<i>Solution:</i> When you open the Printing Manager, have all your data collected and ready<br>
+to send to the printer. Make sure the data is formatted for the current printer (see the<br>
+next misdemeanor for additional details). 
+</p>
+<p>
+If your application needs to perform a lot of data collection or preparation (as would a<br>
+database application), consider spooling all your information to disk as pictures. This<br>
+is especially useful when you don't know how long it will take to gather the data for a<br>
+particular page. To use this approach, you would open up a file and write out each page<br>
+as a picture (as the Printing Manager does), spool everything to disk, and then send<br>
+the pictures to the printer driver. Printing will be really fast! But be sure not to<br>
+commit misdemeanor 7 above, and note that this should not be the only way your<br>
+application prints; since you may not have enough disk space, you should make it an<br>
+option in a Preferences or Print dialog. 
+</p>
+<p>
+Having your data ready to go when you open the Printing Manager ensures that you'll<br>
+print as fast as possible and avoid timeout problems. And it will make your application<br>
+a friendly networked printer user, compared to grabbing the printer on the network<br>
+and hogging it while your application collects data.
+</p>
+<p>
+<b><i>5.&nbsp;&nbsp;Making assumptions about the imageable area. </i></b>
+</p>
+<p>Some applications make assumptions about the imageable area (the page rectangle) at<br>
+print time.&nbsp;&nbsp;&nbsp;This can cause some serious speed and clipping problems. If any<br>
+part of your image (which may contain text, QuickDraw objects, bitmaps, or<br>
+pixMaps) falls outside the page rectangle, the printer driver will need to clip it.<br>
+This will slow down the printing process and you won't get the output you want.<br>
+The imageable area for each printer is slightly different; this is actually a good thing,<br>
+since it allows the printer driver to take full advantage of the printer's<br>
+capabilities. </p>
+<p>
+About half of the printing game is reformatting your image to work for the currently<br>
+selected printer.&nbsp;&nbsp;&nbsp;This problem is most noticeable when you print to a film recorder<br>
+an image that was set up for a LaserWriter. If you don't reformat the image, you won't<br>
+get the results you want; because of the higher resolution of the film recorder (1500<br>
+versus 300 dpi), you'll get a micro-image and you'll waste film. Also, most film<br>
+recorders print only in landscape orientation. 
+</p>
+<p>
+<i>Solution:</i> Since each printer has a slightly different imageable area, you should format<br>
+your image to this area. Before sending your data to the printer, you should format it<br>
+to rPage, the page rectangle for the current printer. rPage lives in the TPrInfo record<br>
+within the print record. However, becareful; as mentioned in the previous<br>
+misdemeanor, you should have all your data ready to send (including all formatting)<br>
+before opening the Printing Manager. Open the Printing Manager, get the dimension<br>
+for rPage, close the Printing Manager, format your data, open the Printing Manager<br>
+again, and print.
+</p>
+<p>
+One approach for saving your data within your application to help you format it at<br>
+print time is to specify the location of each object on the page as a percentage of<br>
+distance (as opposed to pixels). For example, you could specify an object to be 10%<br>
+from the top and left margins. You would then always be able to place the object in the<br>
+correct position for all printers no matter what the resolution. 
+</p>
+<p>
+<b><i>4.&nbsp;&nbsp;Using variables from Laser Prep (that is, md). </i></b>
+</p>
+<p>Using operators from the LaserWriter driver's dictionary<b>md</b> is a classic way of<br>
+causing your application compatibility problems when a new LaserWriter<br>
+driver is released. Some developers do this to achieve additional PostScript<br>
+functionality at print time. The problem is that when Apple releases a new<br>
+LaserWriter driver it usually changes a few of the operators in<b>md</b>. This will then<br>
+break code that depends on<b>md</b>. It's an even bigger problem if you save this<br>
+information in pictures.&nbsp;&nbsp;&nbsp;When a new LaserWriter driver is released, none of these<br>
+pictures created by your users will be able to be printed. </p>
+<p>
+<i>Solution:</i> Don't use any of the operators defined within<b>md</b> in your printing code. This<br>
+has been around for a long time as a compatibility issue; take a look at the Technical<br>
+Note "Using Laser Prep Routines" for the historical data.
+</p>
+<p>
+If you decide to jump off the cliff and use operators in<b>md</b>, you owe it to your users to<br>
+check the existence of an operator before you use it. This piece of PostScript code will<br>
+do the trick:
+</p>
+<pre>userdict /md known
+{
+    md /bu known {myBU} if
+} if</pre>
+<p>
+In this example, we're checking for the existence of<b>bu</b> before we replace it with our<br>
+newly defined operator,<b>myBU</b>. If the<b>bu</b> operator didn't exist, we'd do the right thing<br>
+(that is, we'd still be able to print). 
+</p>
+<p>
+<b><i>3.&nbsp;&nbsp;Checking wDev for the wrong reasons. </i></b>
+</p>
+<p>The printer type (such as LaserWriter or StyleWriter) is stored as an unsigned char<br>
+in the high byte of the print record's wDev field (in the TPrStl record). Each<br>
+printer driver has a unique wDev, and there are now over 142 wDevs in the world.<br>
+That's quite a few printers available for your application to print to.</p>
+<p>
+If you're checking wDev to see which type of printer you're talking to, you could end<br>
+up very disappointed. Relying on wDev to make decisions at print time makes your<br>
+application completely device dependent. What do you do when you get a wDev you don't<br>
+know about? You have to make assumptions about the printer, and if you make a bad<br>
+decision, you won't get the output you expect.&nbsp;&nbsp;&nbsp;This isn't fair to your users; they<br>
+should be able to print to any printer that's connected to the Macintosh.
+</p>
+<p>
+When we were developing the StyleWriter printer, we had some serious compatibility<br>
+problems with a few of the major applications. They assumed that any device with a<br>
+resolution greater than 300 dpi must be a PostScript printer. They sent only<br>
+PostScript code to the StyleWriter, which didn't work out too well, since of course the<br>
+StyleWriter doesn't understand PostScript.
+</p>
+<p>
+<i>Solution:</i> Don't check wDev, with a couple of exceptions. One exception is that you<br>
+should check wDev and the printer driver version if you need to work around a bug in<br>
+the printer driver. This is the only method available to determine whether you're<br>
+dealing with a particular printer driver.&nbsp;&nbsp;&nbsp;Checking the driver version by calling<br>
+PrDrvrVers is important, because when the bug is fixed, you can remove your fix and<br>
+let the driver do the work. Another exception is that you can check wDev after you've<br>
+created a valid print handle (by calling PrintDefault) to see if the user has changed the<br>
+printer type (for example, a LaserWriter to a StyleWriter) via the Chooser. In any<br>
+case, be sure that when you do check wDev, you check it as an unsigned char value. 
+</p>
+<p>
+<b><i>2.&nbsp;&nbsp;Accessing print record fields that are used internally. </i></b>
+</p>
+<p>You may notice that this is similar to the number 2 printing crime in the Print Hints<br>
+column in Issue 10. There I emphasized the crime of accessing private ("PT")<br>
+fields that you may come across when prowling around in the print record. Also<br>
+likely to cause inconsistent results is the misdemeanor of accessing other fields<br>
+in the print record that are used internally (or unused). To make this even<br>
+clearer, I'll tell you just what print record fields you<i>can</i> read and write. </p>
+<p>
+The print record is chock full of information. It's an application's playground during<br>
+printing. It's also used by printer drivers to hold information about the current print<br>
+job. Since each printer has slightly different needs, each one uses these fields<br>
+differently. The public API documented in<i>Inside Macintosh</i> is the same, but the rest of<br>
+the print record is free domain for the printer driver to use as it sees fit.
+</p>
+<p>
+Setting a field that the printer driver doesn't expect you to touch can cause big<br>
+problems for your application. This is one of the reasons why printer drivers have<br>
+compatibility problems when they're being developed, and why they take so long to<br>
+create. 
+</p>
+<p>
+<i>Solution:</i> Don't set any fields in the print record besides iLstPage, iFstPage, pIdleProc,<br>
+pFileName, and iFileVol. If you do, you're running a serious compatibility risk with<br>
+new printer drivers and printers you don't have access to during your test cycle. See<br>
+the Technical Note "A Printing Loop That Cares . . ." for details about setting and using<br>
+iLstPage and iFstPage, and the Technical Note "Me and My pIdle Proc (or how to let<br>
+users know what's going on during print time . . .)" for details about setting pIdleProc.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Don't read any fields in the print record besides the ones you can set and the fields<br>
+rPage, rPaper, iCopies, iVRes, iHRes, bjDocLoop, and bFileVers. (You can also read<br>
+the TPrStatus record returned by prPicFile.)
+</p>
+<p>
+<b><i>1.&nbsp;&nbsp;Adding printing to your application four weeks before going final. </i></b>
+</p>
+<p>This too is similar to a printing crime in Print Hints in Issue 10 -- but there has<br>
+been a change, to four weeks instead of two. I can't emphasize this enough. Since my<br>
+last column, a couple of developers have come to us with major printing problems<br>
+and a shipping deadline only a few weeks away. They had just started to add printing<br>
+to their applications. </p>
+<p>
+<i>Solution:</i> Designing printing at the beginning -- not the end! -- of your application's<br>
+development cycle is the solution to most of your printing headaches. Printing<br>
+performance can make or break an application. You should convince the right people in<br>
+your organization that printing is just as important as any other feature. There are a<br>
+few pitfalls in the current printing architecture, but most of these problems can be<br>
+avoided without a lot of work -- if you design printing into your application from the<br>
+start.
+</p>
+<p>
+So please, stay out of trouble and avoid the printing crimes and misdemeanors. You'll<br>
+be a happy printing developer and your users will also be delighted. 
+</p>
+<h2>REFERENCES</h2>
+<ul>
+<li><i>Inside Macintosh</i>  Volume II (Addison-Wesley, 1985), Chapter 5, "The<br>
+Printing Manager," pages 150-151.</li>
+<li>"Print Hints: Top 10 Printing Crimes" by Pete ("Luke") Alexander, <br>
+<i>develop</i>&nbsp;&nbsp;Issue 10.</li>
+<li>"Print Hints From Luke &amp; Zz: CopyMask, CopyDeepMask, and<br>
+LaserWriter Driver 7.0" by Pete ("Luke") Alexander, <i>develop</i>&nbsp;&nbsp;Issue 8.</li>
+<li>Macintosh Technical Notes "The Effect of  Spool-a-page/Print-a-page on<br>
+Shared Printers" (formerly #125), "Using Laser Prep Routines" (formerly<br>
+#152), "A Printing Loop That Cares . . ." (formerly #161),<br>
+"Position-Independent PostScript" (formerly #183), "Me and My pIdle Proc<br>
+(or how to let users know what's going on during print time . . .)" (formerly<br>
+#294), and "Pictures and the Printing Manager" (formerly #297).</li>
+</ul>
+<p>
+<b>PETE ("LUKE") ALEXANDER</b>Luke's latest adventure was landing his sailplane close<br>
+to the edge of the earth (there's an actual sign, near Gerlach, north of Reno, that reads<br>
+"The Edge of the Earth, 8 miles -- Planet X"). Not only is this in the middle of<br>
+nowhere, but rumor has it that Gerlach is the home of the best ravioli in Nevada. Luke<br>
+and his friends didn't locate the ravioli, but as a consolation prize they stumbled onto<br>
+Planet X instead (and Planets Y and Z, all art galleries, run by a slow-motion hippie<br>
+who will reluctantly take MasterCard, if you have all year). The edge of the earth did<br>
+deliver some great camping under the stars, and real cool satellite watching. *
+</p>
+<p>
+<b>Thanks</b> to Hugo Ayala, Dave Hersey, and Scott ("Zz") Zimmerman for reviewing this<br>
+column, and to Ana Wilczynski for the column idea.*
+</p>
+</body>
+</html>

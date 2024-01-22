@@ -1,0 +1,887 @@
+<html>
+<head>
+<!-- Article ID: 13 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Winter 92 - MAKING THE MOST OF COLOR ON 1-BIT DEVICES</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MAKING THE MOST OF COLOR ON 1-BIT DEVICES</h2>
+<h1>KONSTANTIN OTHMER AND DANIEL LIPTON</h1>
+<p>
+<img src="img/141.gif" width="360 px"></img>
+</p>
+<p>
+<i>Macintosh developers faced with the dilemma of which platform to develop software</i><br>
+<i>for--machines with the original QuickDraw or those with Color QuickDraw--can</i><br>
+<i>always choose to write code that runs adequately on the lower-end machines and gives</i><br>
+<i>additional functionality when running on the higher-end machines. While this sounds</i><br>
+<i>like a simple and elegant solution, it generally requires a great deal of development and</i><br>
+<i>testing effort. To make this effort easier and the outcome more satisfying, we offer</i><br>
+<i>techniques to save color images and process them for display on 1- bit</i><br>
+<i>(black-and-white) devices.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Suppose you're writing a program that controls a 24-bit color scanner and you'd like<br>
+it to work on all Macintosh computers. The problem you'll run into is that machines<br>
+with the original QuickDraw (those based on the 68000 microprocessor) only have<br>
+support for bitmaps, thus severely crippling the potential of your scanner. But don't<br>
+despair. In our continuing quest to add Color QuickDraw functionality to machines with<br>
+original QuickDraw, we've worked out techniques to save color images and process<br>
+them for display, albeit in black and white, on the latter machines. We've also come up<br>
+with a technique to address the problem of a laser printer's inability to resolve single<br>
+pixels, which results in distorted image output. This article and the accompanying<br>
+sample code&nbsp;&nbsp;(on the<i>Developer CD Series</i> disc) share these techniques with you. 
+</p>
+<h2>SAVING COLOR IMAGES</h2>
+<p>
+The key to saving color images is using pictures. Recall that a picture (or PICT) in<br>
+QuickDraw is a transcript of calls to routines that draw something--anything. A PICT<br>
+created on one Macintosh can be displayed on any other Macintosh (provided the<br>
+version of system software on the machine doing the displaying is the same as or later<br>
+than the version on the machine that created the picture). For example, on a Macintosh<br>
+Plus you can draw a PICT containing an 8-bit image that was created on a Macintosh II.<br>
+With System 7, you can even display PICTs containing 16-bit and 32-bit pixMaps on<br>
+machines with original QuickDraw. (Of course, they will only be displayed as 1-bit<br>
+images there.)
+</p>
+<p>
+Creating a picture normally requires three steps:
+</p>
+<ol>
+<li>Call OpenPicture to begin picture recording. </li>
+<li>Perform the drawing commands you want to record. </li>
+<li>Call ClosePicture to end picture recording.</li>
+</ol>
+<p>
+The catch is that the only drawing commands that can be recorded into a picture are<br>
+those available on the Macintosh on which your application is running. Thus, using<br>
+this procedure on a machine with original QuickDraw provides no way to save color<br>
+pixMaps into a picture, since there's no call to draw a pixMap. In other words, you<br>
+can't create an 8-bit PICT on a Macintosh Plus and see it in color on a Macintosh II.<br>
+But that's exactly what would make a developer's life easier--the ability to create a<br>
+PICT containing deep pixMap information on a machine without Color QuickDraw. With<br>
+this ability, you could capture a color image in its full glory for someone with a Color<br>
+QuickDraw machine to see, while still being able to display a 1-bit version on a<br>
+machine with original QuickDraw. 
+</p>
+<p>
+To get around the limitations of the normal procedure, we came up with a routine<br>
+called CreatePICT2 to manually create a PICT containing color information. Your<br>
+application can display the picture using DrawPicture. Now, you may be wondering<br>
+whether creating your own pictures is advisable. After all, Apple frowns on developers<br>
+who directly modify private data structures, and isn't that what's going on here? To<br>
+ease your mind, see "But Don't I Need a License to Do This?"
+</p>
+<p>
+The parameters to CreatePICT2 are similar to those for the QuickDraw bottleneck<br>
+procedure stdBits. The difference is that CreatePICT2 returns a PicHandle and does not<br>
+use a maskRgn. 
+</p>
+<p>
+The first thing the routine does is calculate a worst-case memory scenario and allocate<br>
+that amount of storage. If the memory isn't available, the routine aborts, returning a<br>
+NIL PicHandle. You could easily extend this routine to spool the picture to disk if the<br>
+memory is not available, but that's left as an exercise for you. (<i>Hint</i> : Rather than<br>
+writing out the data inline as is done here, call a function that saves a specified<br>
+number of bytes in the picture. Have that routine write the data to disk. Essentially,<br>
+you need an equivalent to the putPicData bottleneck.)
+</p>
+<p>
+At this point the size of the picture is not known (since there's no way to know how<br>
+well the pixMap will compress) so we simply skip the picSize field and put out the<br>
+picture frame. Next is the picHeader. CreatePICT2 creates version $02FF pictures,<br>
+with a header that has version $FFFF. This version of the header tells QuickDraw to<br>
+ignore the header data. (OpenCPicture, available originally in 32-Bit QuickDraw<br>
+version 1.2 and in Color QuickDraw in System 7, still creates version $02FF<br>
+pictures, but the header version is now $FFFE and contains picture resolution<br>
+information.)
+</p>
+<p>
+In addition, the bounds of the clipping region of the current port are put in the picture.<br>
+Without this, the default clipping region is wide open, and some versions of QuickDraw<br>
+have trouble drawing pictures with wide-open clipping regions. 
+</p>
+<p>
+Next we put out an opcode--either $98 (PackBitsRect) or $9A (DirectBitsRect),<br>
+depending on whether the pixMap is indexed or direct. Then the pixMap, srcRect,<br>
+dstRect, and mode are put in the picture using the (are you ready for this?)<br>
+PutOutPixMapSrcRectDstRectAndMode routine. Finally, either<br>
+PutOutPackedDirectPixData or PutOutPackedIndexedPixData is called to put out the<br>
+pixel data. 
+</p>
+<p>
+There's an important difference between indexed and direct pixMaps here. The<br>
+baseAddr field is skipped when putting out indexed pixMaps and is set to $000000FF<br>
+for direct pixMaps. This is done because machines without support for direct pixMaps<br>
+(opcode $9A) read a word from the picture, skip that many bytes, and continue<br>
+picture parsing. When such a machine encounters the $000000FF baseAddr, the<br>
+number of bytes skipped is $0000 and the next opcode is $00FF, which ends the<br>
+picture playback. A graceful exit from a tough situation. 
+</p>
+<p>
+An interesting fact buried in the PutOutPixMapSrcRectDstRectAndMode routine is the<br>
+value of packType. All in-memory pixMaps (that aren't in a picture) are assumed to<br>
+be unpacked. Thus, you can set the packType field to specify the type of packing the<br>
+pixMap should get when put in a picture. "The Low-Down on Image Compression"<br>
+(<i>develop</i> Issue 6, page 43) gives details of the different pixMap compression schemes<br>
+used by QuickDraw. Note that all of QuickDraw's existing packing schemes lose no<br>
+image quality. QuickTime (the new INIT described in detail in the lead article in<i>develop</i><br>
+Issue 7) adds many new packing methods, most of which sacrifice some image quality<br>
+to achieve much higher compression.&nbsp;&nbsp;Anyway, these routines support only the default<br>
+packing formats: 1 (or unpacked) for any pixMap with rowBytes less than 8, 0 for all<br>
+other indexed pixMaps, and 4 for 32-bit direct pixMaps with rowBytes greater than<br>
+8. Note that these routines do not support 16-bit pixMaps. 
+</p>
+<p>
+Finally, the end-of-picture opcode is put out and the handle is resized to the amount<br>
+actually used. 
+</p>
+<pre>PicHandle CreatePICT2(PixMap *srcBits, Rect *srcRect, Rect *dstRect,
+    short mode)
+{
+PicHandle   myPic;
+short           myRowBytes;
+short           *picPtr;
+short           iii;
+long            handleSize;
+
+#define CLIPSIZE 12
+#define PIXMAPRECSIZE 50
+#define HEADERSIZE 40
+#define MAXCOLORTABLESIZE 256*8+8
+#define OPCODEMISCSIZE 2+8+8+2  /* opcode+srcRect+dstRect+mode */
+#define ENDOFPICTSIZE 2
+#define PICSIZE PIXMAPRECSIZE + HEADERSIZE + MAXCOLORTABLESIZE + \
+    ENDOFPICTSIZE + OPCODEMISCSIZE + CLIPSIZE
+
+    myRowBytes = srcBits-&gt;rowBytes &amp; 0x3fff;
+/* Allocate worst-case memory scenario using PackBits packing. */
+    myPic = (PicHandle) NewHandle(PICSIZE + (long)
+        ((myRowBytes/127)+2+myRowBytes)*(long)(srcBits-&gt;bounds.bottom
+        - srcBits-&gt;bounds.top));
+    if(!myPic)
+        return(0);
+
+/* Skip picSize and put out picFrame (10 bytes). */
+    picPtr = (short *) (((long)*myPic) + 2);
+    *picPtr++ = dstRect-&gt;top;
+    *picPtr++ = dstRect-&gt;left;
+    *picPtr++ = dstRect-&gt;bottom;
+    *picPtr++ = dstRect-&gt;right;
+
+/* Put out header (30 bytes). This could be done from a resource or
+    taken from an existing picture. */
+    *picPtr++ = 0x11;       /* Version opcode. */
+    *picPtr++ = 0x2ff;      /* Version number. */
+    *picPtr++ = 0xC00;      /* Header opcode. */
+    *picPtr++ = 0xFFFF;     /* Put out PICT header version. */
+    *picPtr++ = 0xFFFF;
+/* The rest of the header is ignored--0 it out. */
+    for(iii = 10; iii &gt; 0; iii--)
+        *picPtr++ = 0;      /* Write out 20 bytes of 0. */
+
+/* Put out current port's clipping region. */
+    *picPtr++ = 0x01;       /* Clipping opcode. */
+    *picPtr++ = 0x0A;       /* Clipping region only has */
+                            /* bounds rectangle. */
+    *picPtr++ = (**thePort-&gt;clipRgn).rgnBBox.top;
+    *picPtr++ = (**thePort-&gt;clipRgn).rgnBBox.left;
+    *picPtr++ = (**thePort-&gt;clipRgn).rgnBBox.bottom;
+    *picPtr++ = (**thePort-&gt;clipRgn).rgnBBox.right;
+   
+    HLock(myPic);
+    if(srcBits-&gt;pixelType == RGBDirect)
+    {           /* Must be 32-bits/pixel */
+    /* Put out opcode $9A, DirectBitsRect. */
+        *picPtr++ = 0x9A;
+        *picPtr++ = 0;  /* BaseAddr for direct pixMaps is 0x000000FF.
+*/
+        *picPtr++ = 0xFF;
+        PutOutPixMapSrcRectDstRectAndMode(srcBits, &amp;picPtr, srcRect,
+            dstRect, mode);
+        if(PutOutPackedDirectPixData(srcBits, &amp;picPtr))
+            goto errorExit;     /* Nonzero indicates an error. */
+    }
+    else
+    {
+    /* Put out opcode $98, PackBitsRect. */
+        *picPtr++ = 0x98;
+        PutOutPixMapSrcRectDstRectAndMode(srcBits, &amp;picPtr, srcRect,
+            dstRect, mode);
+        if(PutOutPackedIndexedPixData(srcBits, &amp;picPtr))
+            /* Nonzero indicates an error. */
+            goto errorExit;
+                           
+    }
+    HUnlock(myPic);
+   
+/* All done! Put out end-of-picture opcode, $00FF. */
+    *picPtr++ = 0x00FF;
+
+/* Size handle down to the amount actually used. */
+    handleSize = (long) picPtr - (long) *myPic;
+    SetHandleSize(myPic, handleSize);
+    /* Write out picture size. */
+    *((short *) *myPic) = (short) handleSize;
+    return(myPic);
+
+errorExit:
+    DisposHandle(myPic);
+    return(0);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Just remember that it's not advisable to pass a pixMap you create yourself to a trap.<br>
+The reason is that although it's unlikely, the format of a pixMap could change (since<br>
+it's not a persistent data structure, as a picture is); this would then break your<br>
+application. 
+</p>
+<p>
+The subroutines the CreatePICT2 routine calls as well as some sample code that uses<br>
+CreatePICT2 are on the<i>Developer CD Series</i> disc. 
+</p>
+<h2>PROCESSING COLOR IMAGES FOR DISPLAY</h2>
+<p>
+The remainder of this article focuses on processing color images for display on 1-bit<br>
+(black-and- white) devices, both monitors and laser printers. 
+</p>
+<p>
+There are many techniques for representing a full-color image on a monitor when<br>
+color resources are limited. The Picture Utilities Package (new in System 7) offers<br>
+routines for determining optimal colors to use when displaying a pixMap in a limited<br>
+color space. For example, if you want to display a 32-bit image on an 8-bit monitor,<br>
+Picture Utilities can tell you the 256 best colors to use to display the image. The<br>
+CreatePICT2 routine just described creates a picture that you can legally analyze using<br>
+the Picture Utilities. 
+</p>
+<p>
+You can also use the techniques of thresholding and of dithering, of which there are<br>
+three varieties: error diffusion, ordered, and random. Ordered dithering, also known<br>
+as halftoning, is particularly useful for producing images to be printed on a laser<br>
+printer. We'll examine each of these techniques in turn.
+</p>
+<p>
+<b>&nbsp;USING A 50% THRESHOLD</b><br>
+The first technique that leaps to mind when one is faced with displaying a color picture<br>
+on a 1-bit screen is to convert each color to a luminance and then use a threshold value<br>
+to determine whether or not to set the corresponding pixel. It turns out that green<br>
+contributes the most to the luminance and blue contributes the least. Red, green, and<br>
+blue contribute approximately 30%, 59%, and 11%, respectively, to the luminance.<br>
+Thus, our formula to convert an RGB value to a luminance becomes
+</p>
+<p>
+&nbsp;Luminance = (30*RED + 59*GREEN + 11*BLUE)/100
+</p>
+<p>
+&nbsp;If the resulting luminance is 128 (50% of 256) or greater, the pixel is set to white;<br>
+otherwise it's set to black. This technique produces the results shown in Figure 1 for<br>
+gray gradations and a lovely picture of one of the authors. Note that thresholding<br>
+occurs at the source pixel resolution. Thus, even though the output device used to<br>
+produce Konenna is 300 dpi, the thresholded picture appears to be 72 dpi. In contrast,<br>
+the techniques of error-diffusion dithering and halftoning discussed on the following<br>
+pages occur at the destination device resolution. 
+</p>
+<p>
+&nbsp;The results shown in Figure 1 are far from ideal. The gray gradations end up as a<br>
+black rectangle beside a white rectangle, and the picture of Konenna, while still cute,<br>
+is completely devoid of detail. 
+</p>
+<p>
+<img src="img/142.gif" width="338 px"></img>
+</p>
+<p>
+<b>Figure 1 </b> Gray Gradations and Konenna Pictured Using 50% Threshold
+</p>
+<p>
+<b>USING ERROR-DIFFUSION DITHERING</b><br>
+The major problem with the threshold algorithm is that a great deal of information is<br>
+thrown away.&nbsp;&nbsp;&nbsp;The luminance is calculated as a value between 0 and 255, but the only<br>
+information we use is whether it's 128 or greater. 
+</p>
+<p>
+&nbsp;An easy fix is to preserve the overall image lightness by maintaining an error term<br>
+and then passing the error onto neighboring pixels. Both original and Color QuickDraw<br>
+have dithering algorithms built in for precisely this purpose. (Yes, it's true--while a<br>
+dither flag cannot be passed explicitly to any original QuickDraw trap, a picture<br>
+containing a color bit image created using dither mode on a Color QuickDraw machine<br>
+will dither when drawn with original QuickDraw.) The error is calculated as
+</p>
+<p>
+&nbsp;Error = Requested Intensity - Closest Available Intensity
+</p>
+<p>
+&nbsp;For a black-and-white destination, the closest available intensity is either 0 (black)<br>
+or 255 (white).&nbsp;&nbsp;&nbsp;The requested intensity is the luminance of the current pixel plus<br>
+some part of the error term of surrounding pixels. Ideally, the error term is spread<br>
+evenly among all surrounding pixels. But to maintain acceptable performance,<br>
+QuickDraw uses a shortcut. In original QuickDraw, the error term is pushed to the<br>
+right on even scan lines and to the left on odd scan lines. Color QuickDraw uses the<br>
+same technique, except it pushes only half the error to the left or right, and the other<br>
+half to the pixel immediately below. The result of using this technique in Color<br>
+QuickDraw at monitor resolution for the two test images is shown in Figure 2. 
+</p>
+<p>
+&nbsp;This form of dithering is normally referred to as error diffusion. That is to say that<br>
+each pixel is thresholded at 50%, but the error incurred in that process is distributed<br>
+across the image in some manner, thus minimizing information loss. Error diffusion<br>
+produces very pleasing results when the device being drawn onto is capable of<br>
+accurately rendering a single dot at the image resolution.&nbsp;&nbsp;&nbsp;Monitors are quite good at<br>
+this; laser printers are not. If you want your application's output to look good on a<br>
+laser printer, a different technique is called for. 
+</p>
+<p>
+<b>USING ORDERED DITHERING (HALFTONING)</b><br>
+There are two kinds of laser printers: write-white and write-black. A write-white<br>
+printer (such as some of the high-end Linotronic printers that use a photographic<br>
+process) starts the image out black and uses the laser to turn off pixels. A write-black<br>
+printer (such as Apple's LaserWriter) starts the image out white and turns on pixels<br>
+with the laser. Since the pixels are thought of as being square and the laser beam is<br>
+round,
+</p>
+<p>
+<img src="img/143.gif" width="317 px"></img>
+</p>
+<p>
+<img src="img/144.gif" width="335 px"></img>
+</p>
+<p>
+<b>Figure 2</b> Gray Gradations and Konenna Dithered at Monitor Resolution neither<br>
+process can accurately turn on or off single pixels.
+</p>
+<p>
+&nbsp;Generally, the circle generated by the laser beam is slightly bigger than the pixel as<br>
+the computer "sees" it, to guarantee that all space is covered (see Figure 3). The effect<br>
+of this with a write-black printer is that the black dots tend to be bigger than the<br>
+individual pixels, causing any 1-bit image drawn at device resolution to appear too<br>
+dark. The effect with a write-white printer is that the black dots tend to be smaller<br>
+than the individual pixels, causing any 1-bit image drawn at device resolution to<br>
+appear too light. If the area of the circle is 20% greater than the individual pixel, the<br>
+percentage of unwanted toner, or error, for a single pixel is 20%. 
+</p>
+<p>
+<img src="img/145.gif" width="300 px"></img>
+</p>
+<p>
+<b>Figure 3</b> A Laser's Idea of a Square Pixel
+</p>
+<p>
+&nbsp;Because the error is introduced only at the black/white boundaries, it's reduced when<br>
+two or more pixels are drawn next to each other. Then the percentage of error is<br>
+reduced to the perimeter of the pixel group. So in the case where the error for a single<br>
+pixel is 20%, two pixels drawn next to each other would have only a 15.5% error, and<br>
+four pixels in a square would have only a 10.25% error in the area covered. 
+</p>
+<p>
+&nbsp;Ordered dithering, or halftoning, minimizes the dot-to-pixel error just described by<br>
+clumping pixels.&nbsp;&nbsp;&nbsp;Pixels are turned on and off in a specific order in relation to each<br>
+other and the luminance of the source image. The order can be specified in such a way<br>
+that clumps of pixels next to each other are turned on as the luminance decreases. This<br>
+allows us to minimize the effects of the laser printer's dot-to-pixel error. The order<br>
+is determined by what's known as a dither matrix. (<i>Warning:</i> From here on out, things<br>
+get deep, so put on your waders. You don't really need to understand all the following to<br>
+use the sample code we provide.)
+</p>
+<p>
+<b>&nbsp;About the dither matrix. </b>With a dither matrix, to render intermediate shades of<br>
+gray or primary colors, we sacrifice spatial resolution for shading--that is, we<br>
+effectively lower the device's dots-per-inch rating while increasing the number of<br>
+shades that we can print. For example, if we use a 2x2 cell of 300-dpi dots for every<br>
+pixel on the page, we've lowered the spatial resolution of the device to 150 dpi but we<br>
+now have 24 or 16 different patterns to choose from for each one of the pixels. Each<br>
+pattern has anywhere from 0 to 4 of the 300-dpi dots blackened, or a density between<br>
+0 and 100%. In fact, for the 16 possible patterns there are only five possible<br>
+densities: 0%, 25%, 50%, 75%, and 100%, corresponding to 0, 1, 2, 3, and 4 dots<br>
+blackened in the cell. The dither matrix determines which five of the possible patterns<br>
+to use to represent the five possible densities. It's left to you as an exercise to generate<br>
+these matrixes using the algorithm we provide below. (The sample code on<br>
+the<i>Developer CD Series</i> disc has a commonly useful example.)
+</p>
+<p>
+&nbsp;If we construct a matrix with the same dimensions as the dot cell that we're going to<br>
+use (2x2 for the described case) so that the matrix contains the values 25, 50, 75,<br>
+and 100, we can use this matrix to determine each of the five possible patterns. Each<br>
+dot in the pattern corresponds to a position in the matrix. To generate a pattern for<br>
+50% gray, we turn on all the dots in the pattern with corresponding matrix values<br>
+less than or equal to 50. The position of the values in the matrix determines the shape<br>
+of the pattern, as shown in Figure 4. 
+</p>
+<p>
+&nbsp;The dither matrix is used to render an image in much the same way as the 50%<br>
+threshold described earlier. In fact, that process uses a 1x1 dither matrix whose<br>
+single element has a value of 50%. The dither matrix is sampled with (<i>x</i>&nbsp;&nbsp;mod<i> m, y</i><br>
+mod<i> n</i> ), where (<i>x, y</i> ) is the device pixel location and (<i>m, n</i> ) is the width and height<br>
+of the dither matrix. 
+</p>
+<p>
+<img src="img/146.gif" width="315 px"></img>
+</p>
+<p>
+<b>Figure 4</b> A 2x2 Dither Matrix
+</p>
+<p>
+&nbsp;It turns out that the spatial resolution of the device isn't really reduced by the size of<br>
+the dither matrix. For regions that are all black, for example, the resolution remains<br>
+the device resolution. Each pixel in the device is still sampled back to a pixel in the<br>
+source image. 
+</p>
+<p>
+&nbsp;The basic algorithm for doing an ordered dither of an image onto a page becomes the<br>
+following:
+</p>
+<p>
+For all device pixels <i>x, y:</i>
+</p>
+<ul>
+<li><i> sx, sy</i>  = transform(<i>x, y</i> ) where transform maps device pixel<br>
+coordinates to source pixel coordinates</li>
+<li>If sourceLuminance(<i>sx, sy</i> ) &gt; ditherMatrix[<i>x</i>  mod<i> m, y</i>  mod<i> n</i> ],<br>
+device-dot(<i>x, y</i> ) = black</li>
+</ul>
+<p>
+&nbsp;The code on the<i>Developer CD Series</i> disc is an elaboration on this basic algorithm. 
+</p>
+<p>
+&nbsp;As stated before, the position of the various values in the dither matrix determines<br>
+the patterns that various luminances generate. A general way to specify this order is to<br>
+use a spot function, as the PostScript interpreter does. If the rectangle of the dither<br>
+matrix is thought to be a continuous space whose domain is 0-1 in the<i>x</i>&nbsp;&nbsp;and<i> y</i> <br>
+directions,<i>spot-function</i> (<i>x, y</i> ) will return some value that ultimately can be<br>
+converted into a luminance threshold in the matrix. If the desired pattern is a dot that<br>
+grows from the center as the luminance decreases (known as a clustered-dot<br>
+halftone),<i>spot-function</i> (<i>x, y</i> ) is simply the distance from (<i>x, y</i> ) to the center of the<br>
+cell (0.5, 0.5). The dither matrix would be generated from the spot function as<br>
+follows:
+</p>
+<p>
+&nbsp;for<i> i</i>&nbsp;&nbsp;= 1 to<i>m x</i>&nbsp;&nbsp;=<i>i</i> /<i>m</i>&nbsp;&nbsp;for<i> j</i>&nbsp;&nbsp;= 1 to<i>n y</i>&nbsp;&nbsp;=<i>j</i> /<i>n</i>&nbsp;&nbsp;matrix[<i>i, j</i> ] =<i>spot-function</i> (<i>x, y</i> )
+</p>
+<p>
+&nbsp;The result of this process is that the matrix contains the spot function's results. What<br>
+we really want in the matrix are threshold values for the luminance. The spot function<br>
+result is converted as follows: Treating the dither matrix as a one-dimensional array<i>A</i><br>
+, generate a sort vector<i>V</i>&nbsp;&nbsp;such that<i>A</i> [<i>V</i> [<i>i</i> ]] is sorted as<i> i</i>&nbsp;&nbsp;goes from 1 to<i>m</i> *<i>n</i> . Then,<br>
+replacing all of the values in<i>A</i>&nbsp;&nbsp;with<i>V</i> [<i>i</i> ] * 100/(<i>m</i> *<i>n</i> ) will yield the desired<br>
+threshold matrix, with each value being a percentage of luminance. (The code uses<br>
+numbers that are more computer-friendly than percentages.) These percentages<br>
+assume that the device is capable of accurately rendering a single pixel. The values can<br>
+be modified by a gamma function to more accurately produce a linear relationship<br>
+between image luminance and pixel density. 
+</p>
+<p>
+&nbsp;Ordered dithering is generally done at a specific angle and frequency. The frequency is<br>
+the number of cells (or dither matrixes) per inch and the angle refers to how the<br>
+produced patterns are oriented with respect to the device grid. In the preceding<br>
+example, the frequency (if printing on a 300-dpi device) is 150 cells per inch and<br>
+the angle is 0&amp;ordm;.
+</p>
+<p>
+&nbsp;Because of the way our brains work (our eyes tend to pick up patterns at 90&amp;ordm;<br>
+angles but not at 45&amp;ordm; angles), it's desirable to orient these patterns at<br>
+arbitrary angles. Since the dither matrix itself is never rotated with respect to the<br>
+device, we must generate the dither matrix in such a way that it contains enough<br>
+repetitions of the rotated cell to achieve the effect of being rotated itself. In other<br>
+words, because a square device requires us to "tile" an area with 0&amp;ordm; rectangles,<br>
+we need to find a 0&amp;ordm; rectangle enclosing a part of the rotated pattern that forms a<br>
+repeatable tile. For some angles of rotation, this rectangle may be much larger than<br>
+the pattern itself. 
+</p>
+<p>
+&nbsp;Suppose we want to halftone to a 300-dpi device at a frequency of 60 cells per inch<br>
+and an angle of 45&amp;ordm;. At 0&amp;ordm;, the dither matrix would be 5x5 (300/60),<br>
+yielding 26 possible shades of gray. However, as Figure 5 illustrates, we need an 8x8<br>
+matrix to approximate the desired angle. These dimensions are
+</p>
+<p>
+<img src="img/147.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 5</b> Approximating the Desired Angle
+</p>
+<p>
+&nbsp;found by rotating the vectors (0, 5) and (5, 0) by 45&amp;ordm; and pinning them to<br>
+integers, yielding the vectors (4, 4) and (-4, 4). Since the magnitude of the vector<br>
+(4, 4) is 4*sqrt(2), the actual halftone frequency achieved will be<br>
+300/(4*sqrt(2)), around 53. The error in frequency and angle is due to the need to<br>
+pin the vectors to integer space. 
+</p>
+<p>
+&nbsp;Here's the basic algorithm for computing the dither matrix:
+</p>
+<ol>
+<li>The halftone cell is specified by the parallelogram composed of the vectors<br>
+(<i>x</i> 1,<i> y</i> 1) and (<i>x</i> 2,<i> y</i> 2) and based at (0, 0). </li>
+<li><i>A,</i>  the area of the modified halftone cell, is (<i>x</i> 1*<i>y</i> 2) - (<i>x</i> 2*<i>y</i> 1). For<br>
+the required dither matrix, the horizontal dimension is<i>A</i> /<i>P</i>&nbsp;&nbsp;and the vertical<br>
+dimension is<i>A</i> /<i>Q</i> , where<i> P</i>&nbsp;&nbsp;=<i>GCD</i> (<i> y</i> 2,<i> y</i> 1) and<i> Q</i>&nbsp;&nbsp;=<i>GCD</i> (<i>x</i> 2,<i> x</i> 1). </li>
+<li>For every point in the matrix, which is in (<i>x, y</i> ) orthogonal space, we<br>
+want to find its relative position in the space of one of the repeated halftone<br>
+cells, defined by the vectors (<i>x</i> 1,<i> y</i> 1) and (<i>x</i> 2,<i> y</i> 2). (See Figure 6.) Call<br>
+this point (<i>u, v</i> ). The transformation is<i> u</i>&nbsp;&nbsp;=<i>A</i> *<i>x</i>&nbsp;&nbsp;+<i> B</i> *<i>y, v</i> =<i>C</i> *<i>x</i>&nbsp;&nbsp;+<i> D</i> *<i>y</i> .<br>
+Since the point (<i>x</i> 2,<i> y</i> 2) in (<i>x, y</i> ) space is the point (1, 0) in halftone cell<br>
+space and the point (<i>x</i> 1,<i> y</i> 1) is the point (0, 1) in halftone cell space, the<br>
+coefficients<i>A, B, C,</i> and<i> D</i>&nbsp;&nbsp;are found by solving the following simultaneous<br>
+linear equations:<br>
+<i>&nbsp;A</i> *<i>x</i> 1 +<i> B</i> *<i>y</i> 1 = 0<br>
+<i>&nbsp;C</i> *<i>x</i> 1 +<i> D</i> *<i>y</i> 1 = 1<br>
+<i>&nbsp;A</i> *<i>x</i> 2 +<i> B</i> *<i>y</i> 2 = 1<br>
+<i>&nbsp;C</i> *<i>x</i> 2 +<i> D</i> *<i>y</i> 2 = 0</li>
+</ol>
+<p>
+We compute the dither matrix in the rotated case as follows: For each position in the<br>
+matrix (<i>i, j</i> ):
+</p>
+<ul>
+<li>Get (<i>x, y</i> ) the center of the matrix point (<i>i, j</i> )<i>x</i>  =<i>i</i>  + 0.5<i> y</i>  =<i>j</i>  + 0.5</li>
+<li>Transform (<i>x, y</i> ) to a point in halftone cell space (<i>u, v</i> )<i> u</i>  =<i>A</i> *<i>x</i>  +<i> B</i><br>
+*<i>y v</i>&nbsp;&nbsp;=<i>C</i> *<i>x</i>&nbsp;&nbsp;+<i> D</i> *<i>y u</i>&nbsp;&nbsp;and<i> v</i>&nbsp;&nbsp;now express the point (<i>x, y</i> ) as multiples of the<br>
+two cell vectors. Therefore, the fractional parts of<i>u</i>&nbsp;&nbsp;and<i> v</i>&nbsp;&nbsp;represent the<br>
+position as if the particular halftone cell at the point (<i>x, y</i> ) were the (0, 0)<br>
+cell. </li>
+<li><i> Z</i>  =<i>spot-function</i> (<i>u</i>  - floor(<i>u</i> ),<i>v</i>  - floor(<i>v</i> ))</li>
+<li>Find the index of the record (containing field<i>s x, y,</i> and<i> Z</i> ) such that<i>u</i> <br>
+=<i>x, v</i>&nbsp;&nbsp;=<i>y.&nbsp;&nbsp;</i> If the record doesn't exist, enter<i>u, v, Z</i> into the table. (Note that<br>
+the equality between [<i>u, v</i> ] and [<i>x, y</i> ] requires an allowable epsilon<br>
+difference to account for fixed-point round-off error.)</li>
+<li>matrix[<i>i, j</i> ] = index</li>
+</ul>
+<p>
+Find the order of records sorted by values of<i>Z;</i>&nbsp;&nbsp;store order in sort vector (described<br>
+earlier in connection with converting the spot function result). Reassign values of<br>
+matrix based upon sort vector. 
+</p>
+<p>
+<img src="img/148.gif" width="575 px"></img>
+</p>
+<p>
+<b>Figure 6 </b>Transforming a Halftone Cell
+</p>
+<p>
+Figure 7 shows our example matrix with values from 0 through 255, representing<br>
+luminances, filled in. A luminance from an image with this range could be sampled<br>
+directly against the matrix. The values in this matrix are those that would actually be<br>
+used for a 300-dpi, 60-line-per-inch, 45&amp;ordm; halftone. As in Figure 5, the<br>
+matrix is repeated four times for the sake of clarity, with the 45&amp;ordm; halftone cells<br>
+overlaid. The position of any particular number in the matrix relative to the<br>
+45&amp;ordm; cell it falls in corresponds exactly to the relative position of that same<br>
+number in any of the other 45&amp;ordm; cells. Thus, the effect of having a rotated<br>
+halftone cell is created with an unrotated dither matrix. 
+</p>
+<p>
+<img src="img/149.gif" width="474 px"></img>
+</p>
+<p>
+<b>Figure 7</b> Our Example Matrix With Luminance Values Filled In
+</p>
+<p>
+&nbsp;This particular example leads us to some other interesting possibilities. It turns out<br>
+that QuickDraw patterns are 8x8 matrixes, just like our example. This means that we<br>
+can halftone other QuickDraw primitives besides pixMaps when drawing to a 300-dpi<br>
+non-PostScript device (provided that pattern stretching is disabled, by setting the<br>
+bPatScale field in the print record to 0) and achieve a look similar to what a<br>
+PostScript device would give us.
+</p>
+<p>
+&nbsp;Here's how. Suppose we want to paint a region with a luminance of 150 on the scale<br>
+from 0 to 255.&nbsp;&nbsp;&nbsp;We simply create a QuickDraw pattern in which all of the 1 bits<br>
+correspond to the cells in the 8x8 matrix that are greater than or equal to 150. This<br>
+pattern (shown in Figure 8) can then be used to paint any region or other QuickDraw<br>
+primitive to get the halftone effect. Furthermore, because QuickDraw patterns are<br>
+aligned to the origin of the grafPort, separate objects drawn touching one another will<br>
+not generate undesirable seams, even when drawn with different shades. The nature of<br>
+the clustered dot pattern is such that gradations appear continuous to the extent<br>
+possible at the resolution of the device. 
+</p>
+<p>
+<img src="img/150.gif" width="458 px"></img>
+</p>
+<p>
+<b>Figure 8 </b> Pattern for an Image With a Luminance of 150 Gray gradations dither Gray<br>
+gradations halftone
+</p>
+<p>
+Figure 9 shows the gray gradations and Konenna printed on a laser printer using<br>
+error-diffusion dithering compared with halftoning using the 8x8 matrix. The<br>
+difference in print quality is radical.&nbsp;&nbsp;&nbsp;For more commentary on this difference, see<br>
+"Printing: Ideal Versus Real."
+</p>
+<p>
+<img src="img/151.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 9 </b>Gray Gradations and Konenna Dithered and Halftoned at Laser Printer<br>
+Resolution
+</p>
+<p>
+<b>About the code. </b>And now, about the code. To illustrate the principle of dithering, our<br>
+sample code is pixel-based--that is, the calculations are done on a pixel basis. Thus,<br>
+the perfomance is sluggish. A real-world commercial application would use an<br>
+optimized version of this code. One way to do this is to make the routines work on a<br>
+scan-line rather than a pixel basis. Also note that the routine that does the halftoning<br>
+only supports input pixMaps of 8 or 32 bits. It would be easy to extend the routine to<br>
+accept pixMaps of other depths.
+</p>
+<p>
+<img src="img/152.gif" width="563 px"></img>
+</p>
+<p>
+<b>Figure 10 </b>TRC Curves for the LaserWriter
+</p>
+<p>
+&nbsp;&nbsp;The first routine we need is one that calculates the luminance given a pointer to the<br>
+current pixel.&nbsp;&nbsp;&nbsp;The LUMVAL routine returns a long luminance in the range of 0 to 255<br>
+using the 30%-59%-11% formula described previously. 
+</p>
+<pre>long LUMVAL(Ptr pPixel, PixMapPtr pMap)
+    {
+        long        red, green, blue;
+       
+        if (pMap-&gt;pixelSize == 32) {
+            red = (long)(unsigned char)*(++pPixel);    /* Skip alpha,
+                                                          get red. */
+            green = (long)(unsigned char)*(++pPixel);/* Get green. */
+            blue = (long)(unsigned char)*(++pPixel);  /* Get blue. */
+            return((30 * red + 59 * green + 11 * blue)/100);
+        } else if (pMap-&gt;pixelSize == 8) {
+            RGBColor*           theColor;
+            theColor = &amp;((*(pMap-&gt;pmTable))-&gt;ctTable[ (unsigned
+                char)*pPixel ].rgb);
+            return( (30 * (theColor-&gt;red >> 8) +
+                     59 * (theColor-&gt;green >>8) +
+                     11 * (theColor-&gt;blue >> 8))/100);
+        }   /* End if */
+    }   /* LUMVAL */</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The routine that actually does the halftoning is the HalftonePixMap routine. Rather<br>
+than taking a PixMapPtr as the CreatePICT2 routine did, this routine takes a<br>
+PixMapHandle. This enables us to pass in either a pixMap we create manually (as we<br>
+did when we called CreatePICT2) or a PixMapHandle that QuickDraw creates (for<br>
+example, from a GWorld). We must distinguish which one we pass in so that the<br>
+routine knows whether it can access the fields of the pixMap directly (which it can if<br>
+we created it) or if it must use QuickDraw to access the fields. This is relevant only<br>
+for the LockPixels and GetPixBaseAddr routines. 
+</p>
+<p>
+Furthermore, the HalftonePixMap routine assumes the resolution of the source<br>
+pixMap is 72 dpi (screen resolution) and only supports devices with square pixels<br>
+(same hRes and vRes). You can pass in the resolution of the destination device in the<br>
+Resolution parameter, but it must be greater than or equal to 72 dpi. 
+</p>
+<p>
+Like the CreatePICT2 routine, HalftonePixMap returns a PicHandle. In this case, the<br>
+picture contains a 1-bit/pixel pixMap. You can display it using DrawPicture.
+</p>
+<p>
+The prototype for the HalftonePixMap routine is
+</p>
+<pre>PicHandle HalftonePixMap(PixMapHandle hSource, Boolean qdPixMap,
+short Resolution);</pre>
+<p>
+The source code for the complete routine can be found on the<i>Developer CD Series</i> disc. 
+</p>
+<p>
+<b>USING RANDOM DITHERING</b><br>
+Random dithering is yet another kind of dither useful for drawing images. It's<br>
+discussed last, however, because of its inherent limitations.
+</p>
+<p>
+The method is simple. It's much the same as the 50% threshold method described<br>
+earlier. The only difference is that instead of being compared to 50%, the luminance<br>
+values are compared to a random number between 0 and 100%. The effect of this is<br>
+that the probability of any dot in the device image being turned on is directly<br>
+proportional to the luminance of the pixel in the source image at the corresponding<br>
+point.
+</p>
+<p>
+This method has three limitations. First, calculating a random number is an expensive<br>
+operation that we would not want to do for every device pixel. Second, except at very<br>
+high resolutions, images dithered in this manner appear very noisy, like bad reception<br>
+on a black-and-white TV.&nbsp;&nbsp;And third, this method requires a random number generator<br>
+that's very good at producing a uniform distribution. 
+</p>
+<p>
+Ironically, this least frequently used method of dithering most accurately models the<br>
+physical process of photography. Photographic film is like laser printing in that it's<br>
+composed of pixels. However, the pixels are grains of silver rather than toner.<br>
+Additionally, there are tens of thousands of grains per inch rather than the 300 dots<br>
+per inch we're used to with laser printers. The lower the ASA rating of the film, the<br>
+higher the grain density. 
+</p>
+<p>
+&nbsp;The place on a film where a photon strikes one of these silver grains turns black when<br>
+the film is developed (which is why you get negatives). Since photons are really,<br>
+really, really small, the likelihood of a single photon striking one of the grains of<br>
+silver is very low. However, the brighter the light, the more photons there are; so the<br>
+probability of striking one of those silver grains increases in proportion to the<br>
+luminance. Thus, we see how random dithering simulates photography. 
+</p>
+<p>
+&nbsp;Figure 11 shows the image of a frog's head produced using halftoning with an 8x8<br>
+matrix as compared with using a 72-dpi random dither. You can see that the randomly<br>
+dithered image looks like a really grainy photograph. 
+</p>
+<p>
+<img src="img/153.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 11</b> Frog's Head, Halftoned and Randomly Dithered
+</p>
+<h2>HASTA LA VISTA, BABY</h2>
+<p>
+&nbsp;This article has addressed several issues. First, the problem of saving deep pixMaps<br>
+on machines with original QuickDraw was overcome by showing you how to manually<br>
+create a PICT, which can then be rendered by calling DrawPicture. Such a PICT can be<br>
+exported by an application so that it can be viewed in color on a Color QuickDraw<br>
+machine. 
+</p>
+<p>
+&nbsp;Second, several solutions to the problem of displaying and printing color images on<br>
+black-and-white devices were discussed. Images can be displayed on screen using a<br>
+50% threshold or error-diffusion dithering. Ordered dithering (halftoning) provides<br>
+a way to get around the problem of the laser printer's inability to resolve single<br>
+pixels. Random dithering has practical limitations but represents yet another<br>
+alternative for producing color images on black-and-white devices. 
+</p>
+<p>
+&nbsp;Thanks to these techniques, the market for applications that deal with color images<br>
+need not be limited to Color QuickDraw machines and PostScript printers. The<br>
+necessary code is small&nbsp;&nbsp;(and already written for you) and the gain in functionality is<br>
+very high. Now get to work on those applications! 
+</p>
+<h2>BUT DON'T I NEED A LICENSE TO DO THIS?</h2>
+<p>
+The reason Apple doesn't want developers modifying data structures is that it makes it<br>
+hard to change them in the future. For example, early Macintosh programs locked<br>
+handles by manually setting the high bit of the handle rather than calling HLock. This<br>
+caused numerous compatibility problems when the 32-bit-clean Memory Manager<br>
+was introduced.
+</p>
+<p>
+So what gives? What if Apple changes OpenPicture so that it creates a totally different<br>
+data format--won't the manually created pictures break?
+</p>
+<p>
+Calm down, because the answer is no. The difference between creating your own<br>
+pictures and directly modifying other data structures is that Apple can't make the<br>
+current picture data format obsolete without invalidating users' data that exists on<br>
+disk. Just as you can still call DrawPicture on version 1 pictures and everything<br>
+works, you will always be able to call DrawPicture on existing version 2 pictures,<br>
+regardless of the format of pictures created in the future.
+</p>
+<p>
+One possible pitfall is that you might create a picture with subtle compatibility risks<br>
+that draws on the existing system software but breaks at some future date. To<br>
+minimize the chances of such an occurrence, you should compare the pictures you<br>
+generate with those that QuickDraw generates in identical circumstances. You must be<br>
+able to account for any and all differences.
+</p>
+<p>
+Creating your own pixMaps (as our example code does) is definitely in the gray area<br>
+between risky and outright disastrous behavior, and you shouldn't do it. Then why<br>
+would an article written by two upstanding citizens do such a thing? The answer is that<br>
+the pixMaps used by this code are kept private; they're never passed as arguments to a<br>
+trap. We could just as easily have called them something else, but pixMaps work for<br>
+what we're doing, so we used them. If you want to pass a pixMap to a trap, you can<br>
+generate it using the NewPixMap call (not available on machines with original<br>
+QuickDraw) or let other parts of Color QuickDraw, like OpenCPort, generate it.
+</p>
+<h2>PRINTING: IDEAL VERSUS REAL</h2>
+<p>
+We've already talked about the error introduced in printing by the fact that the laser<br>
+beam is round while the pixel is square. Many other factors also can make the transfer<br>
+of toner to paper deviate from the ideal. Sources of error include differences in inks,<br>
+papers, printer drums, and even humidity. Additionally, a printer's behavior changes<br>
+over time as the drum wears. Compensating for all these factors to achieve ideal<br>
+images would require constant calibration and recalibration of the printer.
+</p>
+<p>
+An error appears most pronounced in the final print when imaging directly at device<br>
+resolution, as Figure 9 shows. Halftoning hides much of this error and produces<br>
+reasonably uniform results among printers with varying degrees of error.
+</p>
+<p>
+The tonal reproduction curves (known as TRC or gamma curves) shown in Figure 10<br>
+indicate the gray levels produced by the Apple LaserWriter when dithering and<br>
+halftoning. Note that with dithering, the measured luminance of an image remains dark<br>
+much longer than with halftoning as requested luminance increases, due to the error<br>
+when each pixel is printed. Of particular interest is the point on the dither curve right<br>
+at 50% luminance. The measured luminance is actually darker than when 44%<br>
+luminance is requested. The reason is that with a 50% dither, every other pixel is<br>
+drawn, maximizing the effect of the laser error.
+</p>
+<p>
+While the TRC curve for the halftone print doesn't match the ideal curve, it's much<br>
+closer to the ideal than is the dither curve. To get the halftone even closer to ideal, you<br>
+could adjust the luminance calculation by the amount indicated by the halftone TRC to<br>
+compensate. Indeed, most image-processing applications perform this TRC adjustment<br>
+to compensate for the nonlinearities of the output device. See <i> Designing Cards and</i><br>
+<i>Drivers for the Macintosh Family, </i> Second Edition (Addison-Wesley, 1990) for more<br>
+information about how gamma correction works on the Macintosh II family for<br>
+monitors.
+</p>
+<h2>WANT TO READ MORE?</h2>
+<p>
+If you'd like to delve more deeply into the mysteries of processing color images for<br>
+display, check out the following:
+</p>
+<ul>
+<li>"An Optimum Algorithm for Halftone Generation for Displays and Hard<br>
+Copies" by Thomas M. Holladay, in the <i>Proceedings of the Society for</i><br>
+<i>Information Display, </i> Vol. 21, No. 2, 1980.</li>
+<li><i>Digital Halftoning</i>  by Robert Ulichney (MIT Press, 1987). This book,<br>
+based on a Ph.D. thesis done at MIT, is devoted entirely to discussing halftoning<br>
+algorithms; it's extremely thorough and includes many example images<br>
+halftoned in different ways.</li>
+<li><i>Fundamentals of Interactive Computer Graphics</i>  by J. D. Foley and A. Van<br>
+Dam (Addison-Wesley, 1982). The standard text on computer graphics. Not<br>
+nearly as thorough as Ulichney, but has a solid discussion of the basics.</li>
+</ul>
+<p>
+And then, of course, the two books all Macintosh programmers should own:
+</p>
+<ul>
+<li><i>Programming with QuickDraw</i>  by Dave Surovell, Frederick Hall, and<br>
+Konstantin Othmer (Addison-Wesley, 1992). Everything you need to know<br>
+about graphics on the Macintosh.</li>
+<li><i>Debugging Macintosh Software with MacsBug</i>  by Konstantin Othmer and<br>
+Jim Straus (Addison-Wesley, 1991). Everything you need for debugging<br>
+Macintosh software, including in-depth discussions of a number of the<br>
+Macintosh managers.</li>
+</ul>
+<p>
+<b>KONSTANTIN OTHMER </b>has wanted his photograph to appear in <i> Sports Illustrated</i> <br>
+for as long as he can remember. Unfortunately, his college was in the NCAA's Division<br>
+III, which is often overlooked by SI's editors, and somehow they've missed his<br>
+virtuosity on the ski slopes at Tahoe, Vail, and Red Lodge. So Kon's had to scale down his<br>
+dream, setting his sights on making the pages of <i>develop</i>&nbsp;&nbsp;instead. Here he's gotten to<br>
+try on various alter egos. To come up with his latest persona, he spent a few late nights<br>
+in a secret Apple lab with skilled pixel surgeon Jim Batson. *
+</p>
+<p>
+<b>DANIEL LIPTON </b>(a.k.a. "The PostScript Kid") is a two-and-a-half-year veteran of<br>
+Apple's System Software Imaging Group, where he's working on the next generation of<br>
+printing software for the Macintosh. When he's not thinking backward, he enjoys<br>
+taking in a good flick, spending time with his iguana, "Iggy" (who's never quite<br>
+forgiven Dan for the time she nearly froze to death in the cargo compartment of a<br>
+747), and writing zany new lyrics to classic tunes (his "Working in the Print Shop<br>
+Blues" is well known to his coworkers). Most of all, Dan enjoys building and flying<br>
+model airplanes, and he's recently joined the competition circuit. In fact, when asked<br>
+what he'd really like to do with his life, Dan replies:
+</p>
+<p>
+sunny { { { { hours 8 { flying } for } rather_be } dayforall } } if&nbsp;&nbsp;*
+</p>
+<p>
+<b>The source of step 2 </b> in the above algorithm is "An Optimum Algorithm for<br>
+Halftone Generation for Displays and Hard Copies" by Thomas M. Holladay, from the<br>
+<i>Proceedings of the Society for Information Display</i>&nbsp;&nbsp;, Vol. 21, No. 2, 1980.*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS</b>Sean Parent, Forrest Tanaka, Dave<br>
+Williams*
+</p>
+</body>
+</html>

@@ -1,0 +1,591 @@
+<html>
+<head>
+<!-- Article ID: 12 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Winter 92 - TRACKS: A NEW TOOL FOR DEBUGGING DRIVERS</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>TRACKS: A NEW TOOL FOR DEBUGGING DRIVERS</h2>
+<h1>BRAD LOWE</h1>
+<p>
+<img src="img/137.gif" width="365 px"></img>
+</p>
+<p>
+<i>&nbsp;Here's a tool that gives you access to what you really need to know while debugging a</i><br>
+<i>driver. With Tracks, you decide what kind of information you want to track-- variable</i><br>
+<i>contents, who called the current function, timing information, and more--all while</i><br>
+<i>your driver's running. When a problem arises, you can easily tell where your</i><br>
+<i>driver's been and what it's been doing, so you can find out just what went wrong.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;If you've ever written a device driver, you know how hard it is to keep track of what's<br>
+going on.&nbsp;&nbsp;&nbsp;Learning the value of variables and other data as the driver runs usually<br>
+requires a lot of time in a debugger. 
+</p>
+<p>
+&nbsp;When a driver crashes, trashing the stack in the process, it's often impossible to<br>
+determine the last routine that was executed. Finding the bug can take many hours,<br>
+especially if the crash appears only periodically. Even after you've found the bug, each<br>
+crash requires recompiling, building, restarting, and retesting. Anything to help<br>
+locate bugs more quickly and accurately could save a lot of time and frustration. 
+</p>
+<p>
+&nbsp;That's why Tracks was written.&nbsp;&nbsp;Whether you're writing your first or your fiftieth<br>
+driver, it can help you track down those nasty bugs that always show up. The simple<br>
+macros in Tracks make it easy to log all kinds of information from a driver written in<br>
+C or C++. You can record strings, data blocks, longs, and even formatted data types.<br>
+Tracks can write debugging information directly to disk as it comes in, or it can keep<br>
+the information in a circular buffer and dump it to disk on command--a MacsBug dcmd<br>
+(debugger command) lets you do this even after a crash. 
+</p>
+<p>
+&nbsp;You can completely control what information is logged, and your driver won't even<br>
+know it. If you know a routine works, you can turn off calls from it at any time--<br>
+including while your driver's running. 
+</p>
+<p>
+&nbsp;On the<i>Developer CD Series</i> disc, you'll find TestDrvr, a sample driver that<br>
+demonstrates how to implement Tracks functionality in a simple (and useless) driver.<br>
+Also enclosed is the complete source for the Tracks utilities, as well as all the<br>
+necessary support tools.&nbsp;&nbsp;In the following sections, you'll find out about how Tracks<br>
+works, what kind of information the Tracks macros log, and what the code does. You'll<br>
+also get some pointers on installing and using Tracks. If you're eager to start using<br>
+Tracks, take a look at "Tracks in Action."
+</p>
+<h2>HOW TRACKS WORKS</h2>
+<p>
+Tracks works somewhat like a message service that can accept telephone calls on 128<br>
+different lines from the target driver. You decide where to install the lines and what<br>
+kinds of messages each line will deliver. You can control which lines to listen to (or<br>
+not) and where to save incoming messages. 
+</p>
+<p>
+The invocations of macros--or calls--that send information to Tracks are<br>
+called<i>tracepoints. </i> You assign each tracepoint a number between 0 and 127, called<br>
+a<i>diagnostic ID (diagID),</i> and a name. The diagID represents one bit in a 128-bit flag<br>
+that can be set or cleared from the Tracks control panel device (cdev). When a<br>
+tracepoint is encountered, data is logged only if the corresponding bit has been set. 
+</p>
+<p>
+Being able to set or clear tracepoints on the fly allows you to tailor the type of<br>
+information being traced. By assigning a meaningful name to each tracepoint, you'll<br>
+know which ones to set or clear, and the name of the tracepoint will be recorded with<br>
+any Tracks output. Tracks<i>breakpoints</i>&nbsp;&nbsp;are tracepoints that will drop you into your<br>
+debugger. 
+</p>
+<p>
+<b>GROUPING INFORMATION</b><br>
+Because the diagID doesn't have to be unique, a tracepoint can represent a single Tracks<br>
+call, a type of Tracks call, or a grouping of Tracks calls. A type of Tracks call, for<br>
+instance, might be all error- reporting calls. A grouping might be all tracepoints in a<br>
+particular routine. 
+</p>
+<p>
+This kind of flexibility allows you to group your information into logical and<br>
+functional units. It's up to you to create as many or as few tracepoints as you need. For<br>
+instance, if you're working on a new routine, you may set a whole bunch of Tracks<br>
+calls all to the same diagID. When you test the routine, you can set some or all of the<br>
+other switches to off and focus on the messages from that routine. Later, when you<br>
+know the function works, you can keep that switch off. 
+</p>
+<p>
+<b>Numbering for ease of use. </b>There aren't any limits on how you group your<br>
+diagIDs.&nbsp;&nbsp;You might assign all messages to one tracepoint or simply start at 0 and<br>
+increment by 1 from there. The key is that once you know something works, you want<br>
+to be able to turn off tracing in that area. By assigning unique diagIDs to groups of<br>
+Tracks calls, you can quickly tailor your tracing. 
+</p>
+<p>
+For convenience, there are four groups of 32 tracepoints each (0-31, 32-63,<br>
+64-95, and 96-127) that you can turn on or off with a click. (The Tracks cdev<br>
+contains buttons for levels 1 through 4, which correspond to these four groups.) Most<br>
+new users start out tracing all information. But as more and more Tracks output is<br>
+added, information overload can be a problem, and it's great to be able to limit Tracks<br>
+information easily. 
+</p>
+<p>
+<i>PartCodes</i> are used to identify consecutive Tracks calls that have the same diagID.<br>
+PartCodes should start at 0 and increment by 1 for each additional Tracks call with the<br>
+same diagID. For example, say you wanted to dump the contents of all three parameters<br>
+you receive on entry to a function. You'd probably want all these to have the same<br>
+diagID. The first Tracks call should have a partCode of 0, the next call a partCode of 1,<br>
+and so on. The partCode makes it more evident if some Tracks information is lost. Data<br>
+can be lost if the circular buffer fills before writing to a file, and data can be locked<br>
+out if Tracks is already in use. 
+</p>
+<h2>THE TRACKS MACROS</h2>
+<p>
+To log data from your driver, you call one of five simple macros from your driver<br>
+code. Each macro logs a different kind of information. All the calls must have access to<br>
+your driver's global storage and follow the numbering conventions just described for<br>
+the diagID and partCode. 
+</p>
+<pre>T_STACK(diagID);</pre>
+<p>
+T_STACK, one of the most useful calls, records the current function and who called it.<br>
+If the driver is written in C++, a special unmangler automatically prints out the<br>
+arguments that were passed to the function. If called from every major routine,<br>
+T_STACK will leave the proverbial trail of bread crumbs. T_STACK's partCode is<br>
+always 0. 
+</p>
+<pre>T_DATA(diagID, partCode, &amp;dataBlock, sizeof(dataBlock));</pre>
+<p>
+T_DATA is used to dump a block of memory, formatted in hexadecimal and ASCII. 
+</p>
+<pre>T_TYPE(diagID, partCode, recordPtr, sizeof(Record), "\pRecord");</pre>
+<p>
+T_TYPE records a data structure. The address, size, and a Pascal string with the name<br>
+of the structure must be passed to the macro. The format of the data structure must be<br>
+defined in an 'mxwt' resource, stored in your driver or in your MacsBug Debugger<br>
+Prefs file. If the resource to define the structure isn't found, the data will be treated as<br>
+a T_DATA call. Since the templates are used only to format data, you don't need to use<br>
+MacsBug. 
+</p>
+<pre>T_PSTR(diagID, partCode, "\pA string you'd like to see");</pre>
+<p>
+T_PSTR simply records a Pascal string. 
+</p>
+<pre>T_PSTRLONG(diagID, partCode, "\ptheLong = ", theLong);</pre>
+<p>
+T_PSTRLONG records a Pascal string and a long. Usually the string is used to tell you<br>
+what follows. Feel free to cast whatever you can get away with to the long. 
+</p>
+<h2>TRACKS IN ACTION</h2>
+<p>
+TestDrvr is a simple driver skeleton that checks the status of the keyboard. If the<br>
+Option key is down, it logs one type of data, and if the Command key is down, it logs<br>
+another type of data.
+</p>
+<p>
+To see Tracks in action, follow these condensed instructions:
+</p>
+<ol>
+<li>Put DumpTracks into your MPW Tools folder and TestDrvr into your<br>
+System Folder or Extensions folder.</li>
+<li>Put Tracks into your System Folder or, in System 7, into your Control<br>
+Panels folder.</li>
+<li>Restart your Macintosh.</li>
+<li>Open the Tracks cdev, click the Driver Name button, and locate the file<br>
+TestDrvr.</li>
+<li>Turn on Tracks and click the Level 1 button to turn on tracepoints 0-31<br>
+(only 0-3 are used).</li>
+<li>Press the Command key or the Option key to begin to log data. The Bytes<br>
+Buffered field should change.</li>
+<li>Click Write Buffer to send TestDrvr output to disk. Only data written to<br>
+disk can be examined.</li>
+<li>Start up MPW and type "DumpTracks" to see what was just traced.</li>
+</ol>
+<p>
+Look over the TestDrvr source code if you haven't already done so. Don't forget to<br>
+remove TestDrvr when you're done. For information about the output from the<br>
+example, see the section "Examining Tracks Output" under "Using Tracks."
+</p>
+<h2>A LOOK AT THE TRACKS CODE</h2>
+<p>
+This section is for folks who are really wide awake and ready for the gritty details. (If<br>
+you're not one of those folks, you may want to jump ahead to the "Installing Tracks"<br>
+section.) The Tracks file contains a cdev, an INIT, and the Tracks driver. The Tracks<br>
+driver has three key responsibilities: maintaining the cdev, sending messages to the<br>
+target driver, and accepting data from the target driver via the trace procedure<br>
+(TraceProc). Figure 1 shows the flow of data between Tracks and the target driver. 
+</p>
+<p>
+<b>MAINTAINING THE CDEV</b><br>
+The Tracks driver's first responsibility includes sending status information to the<br>
+cdev and responding to cdev commands like "clear buffer" and "write file." Because the<br>
+cdev displays the status of fields that can change at any time, the cdev monitors the<br>
+driver and updates fields as they change. 
+</p>
+<p>
+The Tracks driver doesn't always need periodic (accRun) messages. When the driver<br>
+gets a message to turn its periodic write-to-file flag on or off, the driver sets or<br>
+clears its dNeedTime bit in the dCtlFlags. (Recall that BitClr, BitSet, and BitTst test<br>
+bits starting at the high-order bit.)
+</p>
+<pre>BitClr(&amp;dCtl-&gt;dCtlFlags, 2L);/* Clear bit 5 = dNeedTime bit. */
+BitSet(&amp;dCtl-&gt;dCtlFlags, 2L);/* Set bit 5 = dNeedTime bit. */</pre>
+<p>
+<b>SENDING MESSAGES TO THE TARGET DRIVER</b><br>
+The Tracks driver can send one of two messages to the target driver: "enable tracing"<br>
+or "disable tracing." The enable message passes the target driver a function pointer<br>
+that points to an address within the Tracks driver code as well as a pointer that points<br>
+to the Tracks driver's own globals. The target driver needs to save both of these<br>
+because they're needed by the Tracks macros. The macros use the function pointer to<br>
+call the Tracks driver directly, passing it the globals pointer along with tracing data. 
+</p>
+<p>
+When the target driver gets the disable message, the saved function pointer is set to<br>
+nil. (For the code to handle enable and disable messages, see the "Installing Tracks"<br>
+section.) The Tracks macros in the target driver check to see if the function pointer is<br>
+nil, and if it isn't, the target driver calls the function pointer within Tracks with<br>
+arguments that correspond to the particular Tracks function.&nbsp;&nbsp;The macro that checks<br>
+and invokes a non-nil function pointer is defined in the following code. The macros<br>
+used in the target driver's code reference this macro. Notice that for a Tracks call to<br>
+compile, it needs to access your globals by the same name, in this case by the name<br>
+<b>globals</b>. Macros are used so that they can easily be compiled out of the final product. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Figure 1</b>How Tracks Interacts With the Target Driver 
+</p>
+<p>
+<img src="img/138.gif" width="600 px"></img>
+</p>
+<pre>#define TRACE(diagID, partCode, formatID, data1, data2, data3) \
+{ register ProcPtr func; \
+func = globals-&gt;fTraceProcPtr; \
+if ( func != nil ) \
+(*((pascal void (*)(long, unsigned char, unsigned char, \
+unsigned char, long, long, long))func)) \
+(globals-&gt;fTraceArg, diagID, partCode, formatID, \
+data1, data2, data3); }</pre>
+<p>
+<b>ACCEPTING DATA FROM THE TARGET DRIVER</b><br>
+The actual routine the macro executes, located in the Tracks driver, is shown below.<br>
+The address of this routine was passed to the target driver in the enable message, and<br>
+the first argument (long refcon) is actually the pointer to the Tracks driver's globals,<br>
+which the Tracks driver expects the target driver to pass back to it each time. The<br>
+macro calls right into the Tracks driver code. 
+</p>
+<pre>pascal void TraceProc(long refcon, unsigned char diagID,
+    unsigned char partCode, unsigned char formatID, long data1,
+    long data2, long data3)
+{
+register TraceGlobals       *globals;
+register Boolean            okLocked;
+register Boolean            breakOnExit = false;   
+
+    globals = (TraceGlobals *)refcon;   // Set up driver globals.
+
+    if (diagID &lt; 128)        // Valid diagIDs range from 0 to 127.
+    {  
+        // Check the need for a break on exit (breakpoint was set).
+        breakOnExit = BitTst((Ptr)globals-&gt;fBreakMask, (long)diagID);
+               
+        // Check to see if the information passed should be logged.
+        if (BitTst((Ptr)globals-&gt;fTraceMask, (long)diagID))
+        {
+            // The tracepoint was set--check that the buffer is ready.
+            if (globals-&gt;fBufferEnabled)     // Is the buffer ready?
+            { 
+                // Test and set "locked-out" flag.
+                okLocked = UTLock(&amp;globals-&gt;fTraceLock);
+
+                // If trace request was locked out, set locked-out
+                // flag.
+                if (okLocked)
+                    // Log incoming data to circular buffer.
+                    HandleTraceData(globals, diagID, partCode,
+                        formatID, data1, data2, data3);
+                else
+                    globals-&gt;fLockedOutFlag = true; // Locked out!
+            }
+        }
+    }
+       
+// Handle a breakpoint, if any.
+    if (breakOnExit)
+    {
+        // We can assume there's a debugger installed.
+        if (globals-&gt;fBreakOnceThenClear)
+        {
+            BitClr((Ptr)globals-&gt;fBreakMask,(long)diagID);
+            // Signal cdev that debug mark was turned off.
+            globals-&gt;fDebugMarkUnset = true;
+            DebugStr("\pTrace User Breakpoint (Once)");
+        }
+        else
+            DebugStr("\pTrace User Breakpoint");
+    }
+    return;
+}</pre>
+<p>
+The above routine checks to see if the diagID specified is enabled (checked in the cdev).<br>
+If it is, HandleTraceData handles the data passed in the way indicated by the formatID.<br>
+The formatID specifies what type of data is being passed--a Pascal string, a Pascal<br>
+string and a long, a data block, a stack peek request, or a formatted type dump.<br>
+Adventurous programmers<i>could</i> add their own formats (for instance, to record<br>
+floating-point numbers) by modifying the HandleTraceData routine and DumpTracks<br>
+and then creating a new macro. Adding a new format isn't trivial, though. Usually, it's<br>
+easier to make an existing format do the job.&nbsp;&nbsp;Since this routine can be called at<br>
+interrupt time, it needs to test and set a "locked-out" flag, which it does with an<br>
+assembly language routine called UTLock that uses the 68000's BSET instruction.&nbsp;&nbsp;<br>
+BSET helps ensure that the routine won't get into trouble by executing more than one<br>
+instance of itself. If the routine gets locked out, DumpTracks will notify you that some<br>
+data was lost. 
+</p>
+<p>
+The routine also checks to see if a breakpoint has been set for that diagID. If it has,<br>
+just before the routine exits, it invokes the debugger. Two kinds of breakpoints are<br>
+supported--"once-only" and "immortal." The once-only kind of breakpoint flag is<br>
+cleared after being tripped. Tracks breakpoints can be cleared or set only through the<br>
+Tracks cdev--not from your debugger. 
+</p>
+<p>
+An interesting routine in drvr.c is StackPeek, which is called by T_STACK macros.<br>
+StackPeek examines the stack frame to find what the current procedure is and who<br>
+called it. StackPeek searches backward until it finds the return address of the function<br>
+that called T_STACK. From there, it searches the actual code, looking for the last<br>
+instruction (an RTS, a JMP(A0), or an RTD), which is followed by the name of the<br>
+function. It then finds the length of the function name and repeats the process for the<br>
+caller, which is just one stack frame deeper. 
+</p>
+<h2>INSTALLING TRACKS</h2>
+<p>
+The following are instructions for adding Tracks capabilities to a driver written in C<br>
+or C++.&nbsp;&nbsp;&nbsp;Currently the only way to view Tracks output is through the DumpTracks<br>
+MPW tool.
+</p>
+<ol>
+<li> Install the Tracks files on your hard drive. Put a copy of Tracks into your<br>
+System Folder or, in System 7, into your Control Panels folder. Put<br>
+DumpTracks into your MPW Tools folder and add the 'dcmd' resource in<br>
+Tracks.dcmd to your Debugger Prefs. Finally, make a copy of TracksInfo.h and<br>
+put it with your driver code. </li>
+<li> Add two variables to your driver's global storage area. These must be<br>
+accessible from every place you want to trace from. You may need to redo your<br>
+globals so that these variables are always able to be accessed in the same way.<br>
+The globals should look like this:
+
+<pre> typedef struct
+{
+   </pre>
+<p>
+<i>&nbsp;your stuff</i>
+</p>
+<pre> ProcPtr fTraceProcPtr;
+Ptr fTraceArg;
+} Globals, *GlobalsPtr;</pre>
+</li>
+<li>In your initialization routine, you'll need to set the fTraceProcPtr to nil. 
+
+<pre> globals-&gt;fTraceProcPtr = nil;</pre>
+<p>
+&nbsp;Tracks calls attempted before this is done will result in fireworks. If your<br>
+driver's global storage isn't referenced by a parameter called<b>globals</b>, you can<br>
+change the word "globals" in the file TracksInfo.h to whatever the global<br>
+storage is referenced by. The Tracks macros require you to be consistent in<br>
+your global storage references. 
+</p>
+</li>
+<li>Include TracksInfo.h in the header file where you define your global<br>
+storage block. </li>
+<li>Add two csCodes to your driver's code. They need to look like this:
+
+<pre>case kInstallTrace:
+globals-&gt;fTraceProcPtr = ((TraceDataPtr)paramPtr)-&gt;TraceProc;
+globals-&gt;fTraceArg = ((TraceDataPtr)paramPtr)-&gt;TraceGlobals;
+break;
+
+case kRemoveTrace: globals-&gt;fTraceProcPtr = nil;
+globals-&gt;fTraceArg = nil;
+break;</pre>
+</li>
+<li>Add two resources to your driver's .r or .rsrc file: 'DrvN' and 'STR#'.
+
+<p>
+&nbsp;Resource 'DrvN' ID 128 contains a Pascal string with the name of your driver<br>
+(which starts with a period). The 'DrvN' resource lets the cdev know which<br>
+driver to send the "turn on" and "turn off" messages to. 
+</p>
+<p>
+&nbsp;Resource 'STR#' ID 777 is a string list that should contain the names of<br>
+tracepoints you create. It's for the tracepoint names in the cdev and for<br>
+DumpTracks output--not for use by your driver. The 'STR#' resource can be<br>
+partially filled, blank, or even missing. 
+</p>
+<p>
+&nbsp;When you add a Tracks call with a new diagID, you'll want to give it a name<br>
+and add it to the string list. Changes show up the next time the cdev is opened<br>
+or DumpTracks is used. If the 'STR#' resource is missing, the tracepoint name<br>
+will show up in the cdev as a number--the diagID. DumpTracks will warn you<br>
+when there's no name associated with the diagID. 
+</p>
+<p>
+<i>&nbsp;Warning:</i> The diagIDs range from 0 to 127, and in ResEdit the string list is<br>
+set up to start at 1. This means that if you add a Tracks call with a new diagID<br>
+of 5, you need to change entry number 6 in the string list. </li></ol>
+</p>
+<p>
+&nbsp;Add a few Tracks macros to your code, rebuild your driver, and you're set to start<br>
+using Tracks.&nbsp;&nbsp;&nbsp;When you're ready to ship your driver, simply #define GOLD in<br>
+TracksInfo.h and remove the two Tracks resources and any 'mxwt' resources from<br>
+your driver. 
+</p>
+<h2>USING TRACKS</h2>
+<p>
+&nbsp;Tracks can be controlled via dcmd or cdev. The dcmd lets you turn tracing on and off<br>
+and write the circular buffer to disk. The Tracks cdev, shown in Figure 2, lets you<br>
+control all the Tracks functions. 
+</p>
+<p>
+<img src="img/139.gif" width="369 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> A Look at the Tracks cdev
+</p>
+<p>
+<b>TRACING AND SETTING TRACEPOINTS</b><br>
+To begin tracing data, open the cdev, click the Driver Name button, and select a driver<br>
+that has Tracks code installed at the Standard File prompt. If the target driver is set up<br>
+properly, you'll see the name of the driver next to the button. To turn on tracing, click<br>
+the On button and check the tracepoints you want traced. Tracepoints are represented<br>
+by the list of 128 checkboxes. As soon as information is retrieved, the number in the<br>
+Bytes Buffered field will change. To stop sending data to Tracks, click the Off button. 
+</p>
+<p>
+<b>SETTING BREAKPOINTS</b><br>
+To set breakpoints from Tracks, either click in the Tracks cdev just to the left of the<br>
+scroll bar, opposite the desired tracepoint, or Option-click a checkbox. A tiny bug will<br>
+appear, indicating a breakpoint. When a breakpoint is hit, you'll need to step a few<br>
+times to return from the Tracks code to your driver. Since the default type of<br>
+breakpoint is once-only, a breakpoint must be reset each time after it's encountered. 
+</p>
+<p>
+<b>SETTING THE BUFFER</b><br>
+Like all good circular buffers, the Tracks buffer will hold the most current data. The<br>
+default (and minimum) setting is 4K. If you want to change this size, you need to turn<br>
+off Tracks and clear the contents of the buffer before clicking the arrows button.<br>
+Generally, it's better to have a large buffer if you can afford it. But if you aren't<br>
+logging a lot of data, and periodic write-to-file is turned on, you can have a small<br>
+buffer and not lose any information. 
+</p>
+<p>
+An excellent use of the circular buffer is to catch sporadic bugs that might not occur<br>
+for hours (or days). For example, set up a test to run continuously until the problem<br>
+is detected. Plan to let the test run over the weekend with write-to-file turned off.<br>
+When you come in on Monday, the circular buffer will have the last 4K of data--or<br>
+whatever size buffer you used--leading up to and including the occurrence of the<br>
+problem. 
+</p>
+<p>
+<b>WRITING THE BUFFER</b><br>
+Before you can examine any Tracks data, you need to send it to a file by clicking the<br>
+Write Buffer button. To clear the file, click the Reset EOF button. The data is always<br>
+written to the Tracks Prefs file, which hangs out in your System Folder or, in System<br>
+7, in your Preferences folder. Use the Reset EOF button instead of throwing the Tracks<br>
+Prefs file away, since settings information is also stored there. 
+</p>
+<p>
+If you check the Periodic Write-To-File box, data will be written to the disk<br>
+approximately every second (60 ticks), assuming there's data to send. Be forewarned<br>
+that data can come out at an alarming clip--in minutes you can create a multimegabyte<br>
+file. The periodic writes-to-file occur even when the cdev is closed, until you turn it<br>
+off or your hard drive becomes full. 
+</p>
+<p>
+If your driver crashes, you can write the circular buffer to disk via the Tracks dcmd.<br>
+Just type "Tracks write" from your dcmd-supporting debugger. 
+</p>
+<p>
+<b>EXAMINING TRACKS OUTPUT</b><br>
+Once data has been written to your Tracks Prefs file, you can examine it using<br>
+DumpTracks. Figure 3 shows a sample (from the TestDrvr example) of a couple of<br>
+simple Tracks calls and the type of output you'll get. Notice that each routine that<br>
+wants to use a Tracks macro needs to have a pointer to the globals passed as an<br>
+argument with the same name--in this case,<b>globals</b>. 
+</p>
+<p>
+The first line of a record holds a time stamp. Because other calls with the same diagID<br>
+will follow immediately, it's shown only when the partCode is 0. 
+</p>
+<p>
+The second line shows the diagID and the name of the corresponding tracepoint, shown<br>
+in parentheses. 
+</p>
+<p>
+The "(diagID - partCode) TYPE_OF_TRACE" line (the third line) is followed by the<br>
+data for that Tracks call.&nbsp;&nbsp;<b>Figure 3</b>Comparing Tracks Output With the Calls 
+</p>
+<p>
+<img src="img/140.gif" width="600 px"></img>
+</p>
+<p>
+Notice that the T_TYPE call formats the contents of the driver's DCtlEntry. To be able<br>
+to display formatted types, DumpTracks needs to read the 'mxwt' format from<br>
+Debugger Prefs. Also notice that the DCtlEntry has a QHdr structure inside it, which<br>
+was also displayed. 
+</p>
+<h2>ON YOUR OWN</h2>
+<p>
+Debugging a device driver can be time consuming and difficult. Tracks provides you<br>
+with a tool to help keep your drivers under control. How you set up tracing really<br>
+depends on what kinds of things you'd like to monitor--error conditions, your own<br>
+driver statistics, or whatever. If you suspect bugs will be, or are, a major source of<br>
+headaches, you'll save time by adding lots of Tracks calls. 
+</p>
+<p>
+Take a look at the TestDrvr sample source code. Once you get Tracks going in your own<br>
+code, you should find that you're debugging your drivers in a fraction of the time it<br>
+used to take. 
+</p>
+<h2>SOME HELP WITH TERMS</h2>
+<p>
+<b><i>breakpoint</i></b><b> </b> A tracepoint that enters your debugger.
+</p>
+<p>
+<b><i>diagnostic ID (diagID)</i></b><b> </b> A number between 0 and 127 that represents one bit in a<br>
+128-bit flag. In Tracks, a diagID is assigned to a tracepoint. The flag determines<br>
+whether trace data will be logged or not. A diagID can represent a single Tracks call or<br>
+a grouping of calls.
+</p>
+<p>
+<b><i>DumpTracks</i></b><b> </b> An MPW tool that lets you see Tracks output.
+</p>
+<p>
+<b><i>partCode</i></b><b> </b> A number used to identify consecutive Tracks calls that have the same<br>
+diagID.
+</p>
+<p>
+<b><i>tracepoint</i></b><b> </b> An invocation of a macro in your driver code that sends out information<br>
+to the Tracks driver.
+</p>
+<p>
+<b><i>Tracks</i></b><b> </b> A programming utility--containing the Tracks cdev, INIT, and driver--used<br>
+to debug drivers in development.
+</p>
+<h2>RECOMMENDED READING</h2>
+<ul>
+<li><i>Inside Macintosh</i>  Volume II, Device Manager chapter (Addison-Wesley,<br>
+1985).</li>
+<li><i>Designing Cards and Drivers for the Macintosh Family</i> , Second Edition<br>
+(Addison-Wesley, 1990).</li>
+<li>"Using Object-Oriented Languages for Building Non-Applications in<br>
+MPW" by Allan Foster and David Newman (MacHack '91 proceedings, available<br>
+on CompuServe).</li>
+<li>"Writing a Device Driver in C++ (What? In C++?)" by Tim Enwall, <br>
+<i>develop</i>&nbsp;&nbsp;Issue 4, October 1990. (One caveat if you want to build the sample<br>
+driver: Be sure to use to MPW 3.1 and System 6.)</li>
+<li><i>Black Holes and Warped Spacetime</i>  by William J. Kaufmann (W. H.<br>
+Freeman and Co., 1979).</li>
+<li><i>The Pleasantries of the Incredible Mulla Nasrudin</i>  by Idries Shah (E. P.<br>
+Dutton &amp; Co., 1968).</li>
+</ul>
+<p>
+<b>BRAD LOWE </b>attends Chico State, where he claims to be majoring in fashion<br>
+merchandising, although informed sources say he's been sighted frequently in<br>
+computer science classes. An Eagle Scout, he enjoys hiking, skiing, mountain biking,<br>
+and scuba diving. His newest toy is a paraglider, which he flies--on his free<br>
+weekends--over obscure regions of Northern California.&nbsp;&nbsp;*
+</p>
+<p>
+<b>Tracks was written by</b> Jim Flood and Brad Lowe for Orion Network Systems, Inc.,<br>
+a subsidiary of Apple Computer, to help develop and debug Orion's SNA*ps Access<br>
+driver, part of the SNA*ps product family. SNA*ps allows you to connect your<br>
+Macintosh to an IBM SNA (System Network Architecture) network and communicate<br>
+with SNA-based hosts, midrange systems (such as AS/400), and even personal<br>
+computers. *
+</p>
+<p>
+<b>For more information </b>on the 'mxwt' templates, see the MacsBug documentation. *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS</b> Neil Day, Jim Flood, Craig Hotchkiss,<br>
+Gordon Sheridan*
+</p>
+</body>
+</html>

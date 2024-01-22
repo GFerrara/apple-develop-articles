@@ -1,0 +1,901 @@
+<html>
+<head>
+<!-- Article ID: 24 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>May 92 - POSTSCRIPT ENHANCEMENTS FOR THE LASERWRITER FONT UTILITY</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>POSTSCRIPT ENHANCEMENTS FOR THE LASERWRITER FONT<br>
+UTILITY</h2>
+<h1>BRYAN K. ("BEAKER") RESSLER</h1>
+<p>
+<img src="img/194.gif" width="216 px"></img>
+</p>
+<p>
+<i>For System 7, the LaserWriter Font Utility was given the ability to handle drop-in</i><br>
+<i>enhancements, called UTILs. These hybrid Macintosh-and-PostScript utilities are</i><br>
+<i>provided with a rich parameter block and many useful callbacks. They offer a</i><br>
+<i>straightforward method for putting useful tidbits of PostScript code to work--with a</i><br>
+<i>real user interface.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The LaserWriter Font Utility is an obscure system software application that isn't even<br>
+installed by the System 7 Installer. Its main mission is to facilitate the downloading of<br>
+TrueType, PostScript Type 1, and PostScript Type 3 fonts to PostScript (and<br>
+PostScript-compatible) printers and printer hard disks. With System 7, however,<br>
+the innocuous LaserWriter Font Utility has been endowed with an extensible Utilities<br>
+menu and the ability to handle drop-in enhancements, called<i>UTILs.&nbsp;&nbsp;</i> UTILs can be used<br>
+for a variety of interesting applications. For example:
+</p>
+<ul>
+<li>downloading a PostScript language file or restarting a PostScript printer<br>
+with special-purpose PostScript utilities</li>
+<li>setting the resolution or printing an alignment page on a particular model<br>
+of typesetter with device-specific applications</li>
+<li>putting little snippets of PostScript code to work</li>
+</ul>
+<h2>INTRODUCING UTILS</h2>
+<p>
+UTILs are resources that are stored in the LaserWriter Font Utility's application<br>
+resource file.&nbsp;&nbsp;&nbsp;When the Font Utility is run, UTILs are collected into the Utilities<br>
+menu, listed by their resource name. 
+</p>
+<p>
+UTILs are generally modal and very task-specific. For example, one of the UTILs that<br>
+are distributed as part of the Font Utility, Start Page Options, allows users of<br>
+PostScript printers to decide whether or not the printer produces a "start page" when<br>
+turned on. When the user chooses this UTIL from the menu, the dialog box shown in<br>
+Figure 1 appears. 
+</p>
+<p>
+<img src="img/195.gif" width="465 px"></img>
+</p>
+<p>
+<b>Figure 1 </b>Example of a UTIL Dialog Box
+</p>
+<p>
+A UTIL performs its task via PostScript code embedded in the UTIL or in its owned<br>
+resources.&nbsp;&nbsp;&nbsp;Therefore, UTILs are provided with routines that ease two-way<br>
+communication with the PostScript printer. 
+</p>
+<p>
+UTILs may own resources and allocate a block of private "global" memory. UTILs get<br>
+printer configuration information from the Font Utility and may also query the<br>
+printer directly for configuration information. This allows for device-specific UTILs.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Since most UTILs are expected to be implemented similarly, many application<br>
+facilities are provided to UTILs so that common code, like the bold outline for the<br>
+default button in Figure 1, is not duplicated in every UTIL. As a result, most UTILs are<br>
+very small (under 2K). 
+</p>
+<p>
+<b>UTIL RESOURCES</b><br>
+UTILs are stored as resources of type 'UTIL'. Their IDs start at 128. However, the<br>
+range 128 through 149 is reserved by Apple, so you should use an ID of 150 or higher<br>
+for the UTILs you write.&nbsp;&nbsp;&nbsp;The UTIL's resource name defines the text of the menu item<br>
+that's appended to the Utilities menu. 
+</p>
+<p>
+The UTIL resource format is shown in Figure 2. 
+</p>
+<p>
+The first two bytes of the resource specify the version of the UTIL resource format,<br>
+which is currently $0001. Next comes resSpace, the first ID in the UTIL's resource<br>
+space<i>.&nbsp;&nbsp;</i> A UTIL's<i>resource space</i> is the range of IDs that the UTIL may use for its owned<br>
+resources. The UTIL has 100 consecutive IDs, starting with resSpace. In general, to<br>
+calculate a given UTIL's resource space ID, use the formula
+</p>
+<p>
+resSpace = 16000 + (UTILID - 128)* 100
+</p>
+<p>
+where UTILID is the resource ID of the UTIL resource itself. For example, if your UTIL<br>
+resource were numbered 158, your UTIL's resource space would be calculated as<br>
+follows:
+</p>
+<p>
+resSpace = 16000 + (158 -128)* 100 = 19000
+</p>
+<p>
+<img src="img/196.gif" width="545 px"></img>
+</p>
+<p>
+<b>Figure 2 </b> UTIL Resource Format
+</p>
+<p>
+In your UTIL's code, it's important to use<i>relative</i> resource IDs, in case your UTIL is<br>
+renumbered at installation time. There are several examples of relative resource IDs<br>
+in the code we'll be examining. 
+</p>
+<p>
+Following the version and resSpace, the UTIL resource contains offsets to the four UTIL<br>
+entry points (described in the next section). These offsets are from the beginning of<br>
+the UTIL resource.&nbsp;&nbsp;&nbsp;The beginning and order of entry points is flexible (see<br>
+"Variations on UTIL Entry Points" for details). 
+</p>
+<p>
+<b>UTIL ENTRY POINTS</b><br>
+Let's take a quick look at the four UTIL entry points. Later, in the section "The Script:<br>
+NamerUTIL.c Code," we go into more detail. 
+</p>
+<p>
+<b>Utility_Open. </b>This routine is called by the Font Utility at startup, right after the<br>
+UTIL is loaded into memory. Utility_Open initializes the UTIL and allocates any<br>
+memory it requires. Utility_Open needs to return a Boolean result which, if true,<br>
+tells the Font Utility to install the UTIL in the Utilities menu. A false result from<br>
+Utility_Open, which might occur if there were insufficient memory, tells the Font<br>
+Utility not to install this UTIL. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>VARIATIONS ON UTIL ENTRY POINTS</b><br>
+There's no requirement that the Utility_Open routine start at offset 20, nor is there<br>
+any specification of the order in which the routines are stored within the resource.<br>
+This allows noncode data to be stored in the UTIL resource along with the code. Figure 3<br>
+shows an example of PostScript code stored inside a UTIL resource, and the four<br>
+routines rearranged as desired.
+</p>
+<p>
+While this method of storage works well for embedded PostScript code, remember that<br>
+other textual data (that's <i>not</i>&nbsp;&nbsp;PostScript code) should be stored in resources to<br>
+facilitate localization.
+</p>
+<p>
+<img src="img/197.gif" width="548 px"></img>
+</p>
+<p>
+<b>Figure 3 </b> Arranging UTIL Routines
+</p>
+<p>
+<b>&nbsp;Utility_Delta. </b>This routine is called by the Font Utility once after Utility_Open and<br>
+subsequently any time the user selects a different printer with the Chooser.<br>
+Utility_Delta is the means by which a UTIL informs the Font Utility whether the<br>
+UTIL's menu item should be dimmed or not (usually based on the characteristics of the<br>
+currently selected printer). The Font Utility provides a host of useful printer<br>
+configuration information, but should your UTIL require different or more specific<br>
+information, it may download PostScript code at this point and parse the response from<br>
+the printer.&nbsp;&nbsp;&nbsp;Utility_Delta needs to return true if the UTIL's menu item is to be<br>
+available, or false if it's to be dimmed. 
+</p>
+<p>
+<b>&nbsp;Utility_Prime. </b>This routine is called by the Font Utility to carry out the basic<br>
+function of the UTIL.&nbsp;&nbsp;&nbsp;It's called when the user chooses your UTIL's menu item from<br>
+the Utilities menu. The Start Page Options UTIL described earlier downloads some<br>
+PostScript code to determine the current state of the<b>dostartpage</b>flag in the printer,<br>
+puts up a dialog box, and then downloads more PostScript code to set the flag to the new<br>
+setting. The Utility_Prime routine needs to return a long word composed of (possibly<br>
+multiple) return codes. These codes tell the Font Utility of any special behavior it<br>
+should take upon return, such as refreshing its font lists. 
+</p>
+<p>
+<b>&nbsp;Utility_Close. </b>This routine is called by the Font Utility at quit time. Normally, at<br>
+this point your UTIL releases any memory it has allocated. 
+</p>
+<p>
+<b>&nbsp;GOODIES IN THE LWFUPARMBLK STRUCTURE</b><br>
+When the LaserWriter Font Utility is starting up, it allocates one LWFUParmBlk for<br>
+each installed UTIL. That means that each UTIL's parameter block is unique, and the<br>
+same block is always passed to it. Each of the entry points described above takes as a<br>
+parameter a pointer to an LWFUParmBlk structure. This structure is discussed in<br>
+detail in the section "The Script: NamerUTIL.c Code," but here are the high points. 
+</p>
+<p>
+<b>&nbsp;General information. </b>This part of the structure includes the version of the<br>
+LWFUParmBlk structure, the base resource ID for this UTIL's resource space, and a<br>
+storage field into which the UTIL may place a handle to some global storage space. 
+</p>
+<p>
+<b>&nbsp;Driver information. </b>You're provided with an FSSpec pointing to the currently<br>
+selected printer driver.&nbsp;&nbsp;&nbsp;Tempting as this might be, you should use this only to<br>
+retrieve the driver's version, allowing your UTIL to put the driver version in a dialog<br>
+box. 
+</p>
+<p>
+<b>Printer information. </b>This includes the name of the current printer and a host of<br>
+printer configuration information. Also included is a handle to the Font Utility's own<br>
+standard Macintosh print record, which allows you to print via the Printing Manager<br>
+if you wish. 
+</p>
+<p>
+<b>Callback information. </b>This is a rich set of callbacks into the Font Utility. There's<br>
+also a pointer to the Font Utility's QuickDraw globals and pointers to two large I/O<br>
+buffers you can use for printer communication. The callback routines can be grouped<br>
+into three major categories:
+</p>
+<ul>
+<li>3 PAP routines that assist in printer communication</li>
+<li>18 dialog utility routines, many of which you would have probably had to<br>
+include anyway</li>
+<li>4 Pascal-string utility routines that aid in the construction of PostScript<br>
+language strings</li>
+</ul>
+<h2>ON STAGE: NAMERUTIL</h2>
+<p>
+Now that we've got an overview of how UTILs fit into the LaserWriter Font Utility,<br>
+let's take a closer look at a specific example, NamerUTIL, provided on the<i>Developer CD</i><br>
+<i>Series</i> disc.&nbsp;&nbsp;&nbsp;NamerUTIL, which appears in the Utilities menu as Rename Printer,<br>
+allows the user to rename the currently selected printer.
+</p>
+<p>
+Figure 4 shows part of the Utilities menu, including the Rename Printer UTIL. 
+</p>
+<p>
+<img src="img/198.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 4 </b>UTILs in the Utilities Menu
+</p>
+<p>
+Rename Printer's Utility_Prime routine presents the user with the dialog box shown<br>
+at the top of Figure 5. The dialog is smart enough to limit the length of the new name to<br>
+30 characters and disallow various illegal characters. If the user clicks Rename, the<br>
+UTIL transmits a PostScript program to rename the printer as specified. The UTIL<br>
+then puts up one of the two alerts shown in Figure 5, depending on whether the printer<br>
+was successfully renamed or not. 
+</p>
+<p>
+That's the basic user interface design for the Rename Printer UTIL. So how do we make<br>
+it work?&nbsp;&nbsp;&nbsp;First, let's take a look at how you rename a printer in PostScript. 
+</p>
+<p>
+<b>RENAMING A PRINTER IN POSTSCRIPT</b><br>
+The PostScript code to rename a printer is trivial. 
+</p>
+<pre>serverdict begin 0 exitserver
+    statusdict begin
+        (NewPrinterName) setprintername
+end</pre>
+<p>
+The first line enters<b>serverdict</b>, a dictionary of operators for controlling the<br>
+PostScript server, then exits the server loop with the<b>exitserver</b>operator. The 0 is<br>
+the system administrator password, which is almost universally 0. (In fact, the<br>
+LaserWriter driver won't work correctly if the password has been changed, so it's OK<br>
+for us to assume it's 0 and hard-code the password.) The net effect of exiting the<br>
+server loop is to allow us to change persistent parameters, like the printer name. 
+</p>
+<p>
+<img src="img/199.gif" width="600 px"></img>
+</p>
+<p>
+<img src="img/200.gif" width="471 px"></img>
+</p>
+<p>
+<img src="img/201.gif" width="384 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 5</b> Rename Printer Dialog Box and Alerts
+</p>
+<p>
+The next line enters<b>statusdict</b>, a dictionary containing machine- and<br>
+configuration-dependent operators. The printer is renamed with<br>
+the<b>setprintername</b>PostScript operator. The UTIL replaces<i>NewPrinterName</i> with the<br>
+new name provided by the user. 
+</p>
+<p>
+<b>NAMERUTIL AND ITS SOURCE FILES</b><br>
+NamerUTIL, the Rename Printer UTIL, is made up of five source files. Two of them,<br>
+UTIL.h and UTILHead.a, are provided on the CD as general interface files and are the<br>
+same for all UTILs.&nbsp;&nbsp;&nbsp;Figure 6 gives an overview of the source files and their<br>
+relationships. We'll look at the source files whose names begin with "Namer" and at<br>
+the makefile.
+</p>
+<p>
+<img src="img/202.gif" width="311 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 6</b> Source File Relationships
+</p>
+<p>
+<b>&nbsp;NamerUTIL.c. </b>This C language source file is the bulk of the code for NamerUTIL. It<br>
+contains the four entry points, and three other routines that carry out NamerUTIL's<br>
+job. Thanks to all the Font Utility's callbacks, it's fairly straightforward. 
+</p>
+<p>
+<b>&nbsp;NamerUTIL.r. </b>This Rez input file contains descriptions of all the NamerUTIL's<br>
+owned resources.&nbsp;&nbsp;&nbsp;Since the owned resources' IDs depend on the ID of the UTIL<br>
+resource itself, the resource IDs are specified<i>relatively</i> , that is, by an offset from a<br>
+variable named ResSpace, which is defined in the makefile. 
+</p>
+<p>
+<b>&nbsp;NamerResIDs.h. </b>This file contains #define statements for all the resource IDs. It's<br>
+included by both NamerUTIL.c and NamerUTIL.r. 
+</p>
+<p>
+<b>&nbsp;MakeFile. </b>MakeFile ties all the pieces together. For development, it's easiest to use<br>
+Rez to place NamerUTIL's resources into a copy of the Font Utility. Use Rez's<b>- a</b>option<br>
+to append the resources to those already present in the LaserWriter Font Utility<br>
+application file. Then link NamerUTIL's UTIL resource directly into the Font Utility as<br>
+well. Finally, by launching the Font Utility, you can test your UTIL. That's the<br>
+approach of the makefile we'll be looking at. The CD contains an alternate makefile that<br>
+generates a standalone file and an application called UTILInstall for installing UTILs<br>
+into the Font Utility. 
+</p>
+<p>
+&nbsp;Let's dive right into NamerUTIL.c. 
+</p>
+<h2>THE SCRIPT: NAMERUTIL.C CODE</h2>
+<p>
+&nbsp;Here's the first part of NamerUTIL.c in MPW 3.2 C. 
+</p>
+<pre>/* NamerUTIL.c - a UTIL that allows the LaserWriter Font Utility to
+   rename PostScript printers. */
+
+/* --- Includes --------------------------------------------------*/
+#include &lt;Types.h&gt;                    /* Macintosh includes */
+#include &lt;Memory.h&gt;
+#include &lt;Resources.h&gt;
+#include &lt;QuickDraw.h&gt;
+#include &lt;Dialogs.h&gt;
+#include &lt;Printing.h&gt;
+#include &lt;ToolUtils.h&gt;
+#include &lt;Errors.h&gt;
+
+#include "UTIL.h"         /* Standard UTIL constants and */
+                                        /* structures */
+#include "NamerResIDs.h"     /* "Relative" resource IDs */
+
+/* --- Defines ------------------------------------------------ */
+#define kMinVersion         1      /* Minimum version we'll run */
+
+#define kPSErrStr           1      /* Strings in 'STR#' kNamerStrs */
+#define kExitVerStr         2
+#define kRenameStartStr 3
+#define kRenameEndStr       4
+
+#define kNDDummy            0      /* Item #s in Namer dialog box */
+#define kNDRename           1
+#define kNDCancel           2
+#define kNDNewName          6
+#define kNDBoldOutline      7
+
+#define kReturnKey          0x0d   /* Key and char code constants */
+#define kEnterKey           0x03
+#define kBackspaceKey       0x08
+#define kAtChar             '@'
+#define kColonChar          ':'
+#define kLowASCII           0x7f
+
+#define kMaxNameLength      30     /* Maximum printer name length */
+#define kNameBufLen         40     /* Size of printer name buffers */
+#define kCompStrLen         80     /* Size of parse string buffers */
+
+/* --- Prototypes --------------------------------------------- */
+pascal Boolean          Utility_Open(LWFUParmBlk *pb);
+pascal Boolean          Utility_Delta(LWFUParmBlk *pb);
+pascal unsigned long    Utility_Prime(LWFUParmBlk *pb);
+pascal void             Utility_Close(LWFUParmBlk *pb);
+pascal short            ExitBufferRtn(short length, LWFUParmBlk *pb);
+pascal Boolean          NamerFilter(DialogPtr TheDialog,
+                        EventRecord *TheEvent, short *ItemHit);
+short                   RenamePrinter(LWFUParmBlk *pb);</pre>
+<p>
+At the beginning are the includes. Besides the usual Macintosh Toolbox and OS includes,<br>
+we include UTIL.h, a header file used by all UTILs, and NamerResIDs.h. The latter, as<br>
+mentioned earlier, contains constants that we'll add to the resSpace field of the<br>
+LWFUParmBlk to form valid resource IDs. Sharing this file with NamerUTIL.r makes<br>
+maintenance easier. 
+</p>
+<p>
+The #defines are for indices into NamerUTIL's owned STR# resource, item numbers<br>
+for the dialog box, various keyboard and character constants, and buffer sizes. 
+</p>
+<p>
+Below the constant definitions are prototypes for NamerUTIL's routines. You can see<br>
+the standard four entry points, Utility_Open, Utility_Delta, Utility_Prime, and<br>
+Utility_Close, plus three other routines, which will be called from the Prime routine.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>THE SUPPORTING CAST: UTILITY_OPEN, UTILITY_DELTA, AND</b><br>
+<b>UTILITY_CLOSE</b><br>
+The Utility_Open routine is exceedingly simple. It checks that the parameter block<br>
+passed in pb is equal to or newer than the minimum version. In the future, the<br>
+LWFUParmBlk structure may be extended--for instance, to add new fields or<br>
+callbacks. Since subsequent versions of the UTIL parameter block are defined to<br>
+be<i>extensions</i> , a UTIL can function with any version of the LWFUParmBlk greater than<br>
+or equal to the version provided when the UTIL was written. Thecurrent version is<br>
+$0001. If the parameter block is new enough, Utility_Open returns true and we're on<br>
+our way. 
+</p>
+<pre>pascal Boolean Utility_Open(LWFUParmBlk *pb)
+{
+    return(pb-&gt;version &gt;= kMinVersion);
+}</pre>
+<p>
+Some UTILs might want to allocate memory in their Utility_Open routine and store a<br>
+handle to the storage in pb-&gt;uStorage. If the allocation failed, Utility_Open could<br>
+return false, indicating that it should not be installed into the Utilities menu. 
+</p>
+<p>
+If you thought NamerUTIL's Utility_Open was trivial, take a look at Utility_Delta. This<br>
+entry point is called for each UTIL, once at startup and subsequently every time the<br>
+user chooses a different printer with the Chooser. Since NamerUTIL can rename any<br>
+PostScript printer, its Utility_Delta always returns true, indicating to the Font<br>
+Utility that the Rename Printer menu item should always be available (as opposed to<br>
+dimmed). Utility_Delta is provided to facilitate device-specific UTILs that might, for<br>
+instance, want to send out PostScript code to determine the printer's specific make and<br>
+dim the menu item if the UTIL isn't applicable to the chosen printer. 
+</p>
+<pre>pascal Boolean Utility_Delta(LWFUParmBlk *pb)
+{
+#pragma unused(pb)
+
+    return(true);
+}</pre>
+<p>
+The #pragma keeps the C compiler from barking at us about not using the pb<br>
+parameter. 
+</p>
+<p>
+Let's save the best for last and dispatch with Utility_Close, so we can get on with the<br>
+meat of the UTIL, Utility_Prime. Since Utility_Open didn't allocate any storage, the<br>
+Utility_Close routine can simply return without doing anything. Even though the<br>
+routine may do nothing,<i>it must be included</i> , and<i> will</i> be called at quit time. 
+</p>
+<pre>pascal void Utility_Close(LWFUParmBlk *pb)
+{
+#pragma unused(pb)
+}</pre>
+<p>
+<b>THE STAR OF THE SHOW: UTILITY_PRIME</b><br>
+All the work NamerUTIL performs is handled by the Utility_Prime routine, shown<br>
+here:
+</p>
+<pre>pascal unsigned long Utility_Prime(LWFUParmBlk *pb)
+{
+    if (RenamePrinter(pb))
+        return(urCheckPrinter | urCheckFeatures | urEraseLists);
+    else return(urNoAction);
+}</pre>
+<p>
+Utility_Prime calls RenamePrinter to do most of its work. RenamePrinter returns a<br>
+Boolean result that indicates, if true, that the printer was successfully renamed or, if<br>
+false, that there was an error or the user canceled the process. If RenamePrinter<br>
+returns true, Utility_Prime returns a conglomerate return code that indicates to the<br>
+Font Utility that it should recheck its connection with the chosen printer, recheck the<br>
+printer's features, and forget any font lists it might have for the printer. If the user<br>
+canceled or there was an error, Utility_Prime tells the Font Utility to take no special<br>
+action. 
+</p>
+<p>
+Let's look at the beginning of RenamePrinter:
+</p>
+<pre>short RenamePrinter(LWFUParmBlk *pb)
+{
+  DialogPtr          nameDlg;            /* The Rename dialog */
+  short              itemHit;            /* From ModalDialog */
+  char               psBuffer[150];      /* Buffer for PostScript */
+  char               newName[kNameBufLen]; /* New printer name */
+  char               blankStr[1];        /* Handy empty string */
+  short              status;             /* ExitBufferRtn's status */
+  Point              where;              /* For positioning dialog */
+  LWFUCallBackInfo   *cb;                /* Pointer to callbacks */
+  Boolean            doneFlag = false;   /* Flags to dismiss */
+  Boolean            renameFlag = false; /* Flags to rename */
+  Boolean            retVal = false;     /* True/false on success */
+
+  *blankStr = 0;
+  cb = pb-&gt;callBacks;</pre>
+<p>
+Here we declare the local variables. The most important locals are nameDlg, the dialog<br>
+pointer; status, which tests the success of the rename operation; and cb, a cached<br>
+pointer to the callback array.&nbsp;&nbsp;&nbsp;We set blankStr to be an empty string (for use in<br>
+ParamText calls and such) and initialize cb's value. 
+</p>
+<p>
+<b>Creating the set. </b>Now, we set up our Namer dialog box. 
+</p>
+<pre>nameDlg = GetNewDialog(pb-&gt;resSpace + kNamerDlg, nil, (WindowPtr)-1);
+cb-&gt;CenterDialog(nameDlg, &amp;where);
+MoveWindow(nameDlg, where.h, where.v, true);
+
+ParamText(pb-&gt;printerInfo-&gt;currentPrinterName, blankStr, blankStr,
+    blankStr);
+
+cb-&gt;SetPText(nameDlg, kNDNewName, blankStr);
+cb-&gt;UserItem(nameDlg, kNDBoldOutline, cb-&gt;BoldOutlineItem);
+
+(LWFUParmBlk *)((DialogPeek)nameDlg)-&gt;window.refCon = pb;
+ShowWindow((WindowPtr)nameDlg);</pre>
+<p>
+RenamePrinter gets the Namer dialog box from the resource file with a call to<br>
+GetNewDialog.&nbsp;&nbsp;&nbsp;Notice the way the resource ID is specified as pb-&gt;resSpace +<i>constant</i><br>
+. This relative resource ID convention makes the code flexible in case the UTIL was<br>
+renumbered for some reason. You'll see this convention throughout NamerUTIL. 
+</p>
+<p>
+The design for the Font Utility tried to encompass the most common types of operations<br>
+UTIL writers would be performing and provided those routines as callbacks. One<br>
+example is centering a dialog box. The CenterDialog callback returns a point--the top<br>
+left coordinates for a MoveWindow call. 
+</p>
+<p>
+RenamePrinter then installs the current printer name as parameter ^0, so the user<br>
+can see the current printer name in the dialog box. RenamePrinter presets the new<br>
+printer name to blank and installs a userItem to put the bold outline around the dialog<br>
+box's default button. Again, notice the handy callbacks. 
+</p>
+<p>
+The dialog filter, NamerFilter, needs access to the LWFUParmBlk. To allow this,<br>
+RenamePrinter installs a pointer to the block in the dialog window's refCon field. 
+</p>
+<p>
+The dialog template resource for the Namer dialog box specifies a hidden window, so all<br>
+the fuss we've just gone through hasn't been disturbing the poor user. Once finished,<br>
+RenamePrinter puts the dialog box on the screen with ShowWindow. 
+</p>
+<p>
+<b>Behind the scenes. </b>Next comes the ModalDialog loop. 
+</p>
+<pre>do {
+    ModalDialog(NamerFilter, &amp;itemHit);
+    switch(itemHit) {
+        case kNDRename:     /* Rename */
+            renameFlag = doneFlag = true;
+            break;
+        case kNDCancel:     /* Cancel */
+            doneFlag = true;
+            break;
+    }
+} while (!doneFlag);
+
+HideWindow((WindowPtr)nameDlg);</pre>
+<p>
+This is your average modal dialog hit-loop. RenamePrinter waits for the user to<br>
+dismiss the dialog box, setting the renameFlag appropriately, then hiding the dialog<br>
+window (but not disposing of it yet). RenamePrinter filters the dialog events with<br>
+NamerFilter, shown here:
+</p>
+<pre>pascal Boolean NamerFilter(DialogPtr TheDialog,
+    EventRecord *TheEvent, short *ItemHit)
+{
+    unsigned char theKey;                 /* From the event record */
+    short         retVal = false;         /* The return value */
+    char          newName[kNameBufLen];   /* The new name */
+    LWFUParmBlk   *pb;                    /* The parameter block */
+   
+    /* Retrieve a pointer to the parameter block. */
+    pb = (LWFUParmBlk *)((WindowPeek)TheDialog)-&gt;refCon;
+   
+    /* Trap keyDown and autoKey events. */
+    if (TheEvent-&gt;what == keyDown || TheEvent-&gt;what == autoKey) {
+   
+        /* Grab the ASCII character code from the event record. */
+        theKey = TheEvent-&gt;message &amp; charCodeMask;
+       
+        if (theKey == kReturnKey || theKey == kEnterKey) {
+            /* Return or Enter? Hit the default button. */
+            retVal = true;
+            *ItemHit = kNDRename;
+        } else if (theKey == kAtChar || theKey == kColonChar ||
+                theKey &gt; kLowASCII) {
+            /* "@", ":", or a high ASCII char? Beep and tell */
+            /* ModalDialog to ignore the event. */
+            SysBeep(5);
+            retVal = true;
+            *ItemHit = kNDDummy;
+        } else if (theKey != kBackspaceKey) {
+            /* Key other than Backspace? Check length to decide. */
+            pb-&gt;callBacks-&gt;GetPText(TheDialog, kNDNewName, newName);
+            if (*newName &gt;= kMaxNameLength) {
+                SysBeep(5);
+                retVal = true;
+                *ItemHit = kNDDummy;
+            } else retVal = false;
+        }
+    } else retVal = false;
+
+    return(retVal);
+}</pre>
+<p>
+This filter keeps users from entering an illegal printer name. Specifically, it<br>
+disallows ampersand (@) and colon (:) characters (reserved for forming NBP<br>
+network names) and high ASCII characters (because PostScript is technically 7-bit<br>
+ASCII), and it limits the length of the name to kMaxNameLength (30). The filter can<br>
+make use of callbacks, because we put a pointer to our LWFUParmBlk into the<br>
+window's refCon field. 
+</p>
+<p>
+<b>Performance time. </b>If renameFlag is true, RenamePrinter performs the rename<br>
+operation.
+</p>
+<p>
+Here's the code:
+</p>
+<pre>if (renameFlag) {
+    GetIndString(psBuffer, pb-&gt;resSpace + kNamerStrs,
+        kRenameStartStr);
+    cb-&gt;GetPText(nameDlg, kNDNewName, newName);
+    cb-&gt;Pstrcat(psBuffer, newName);
+    cb-&gt;GetAndAppend(psBuffer, pb-&gt;resSpace + kNamerStrs,
+       kRenameEndStr);</pre>
+<p>
+In constructing an appropriate PostScript program to rename the printer, we get the<br>
+first part of the PostScript code from our STR# resource, append the new name the<br>
+user provided, and finally tack on the end of the PostScript code. The handy<br>
+Pascal-string utility callbacks were included for just this situation. We end up with<br>
+our little PostScript renamer program in psBuffer, as a Pascal string. 
+</p>
+<p>
+Now things start getting a little more interesting. The code that actually downloads<br>
+psBuffer to the printer and checks the results is as follows:
+</p>
+<pre>    if ((status = cb-&gt;OpenPrinter()) == noErr) {
+        status = cb-&gt;DoWrite(psBuffer + 1, (short)*psBuffer,
+            sendEOF, pb, ExitBufferRtn);
+        cb-&gt;ClosePrinter();
+    }</pre>
+<p>
+RenamePrinter opens a connection to the printer with the callback OpenPrinter. If<br>
+there's no error, RenamePrinter uses DoWrite to write psBuffer to the printer. The<br>
+sendEOF argument tells DoWrite to send an end-of-file indication to the printer after<br>
+writing the specified text to the printer.&nbsp;&nbsp;&nbsp;Notice that ExitBufferRtn, the "output<br>
+parser," is included as a parameter to DoWrite.
+</p>
+<p>
+Here's the code for ExitBufferRtn:
+</p>
+<pre>pascal short ExitBufferRtn(short length, LWFUParmBlk *pb)
+{
+    Handle  dataHandle;               /* "Handlized" response */
+    short   status;                   /* The return code */
+    char    psErrorText[kCompStrLen]; /* Buffer for "fail" test */
+    char    exitText[kCompStrLen];    /* Buffer for "success" test */
+    GetIndString(psErrorText, pb-&gt;resSpace + kNamerStrs, kPSErrStr);
+    GetIndString(exitText, pb-&gt;resSpace + kNamerStrs, kExitVerStr);
+
+    PtrToHand(pb-&gt;callBacks-&gt;PAPReadBuffer, &amp;dataHandle, length);
+   
+    if (Munger(dataHandle, 0, psErrorText + 1, *psErrorText,
+            nil, 0) &gt;= 0)
+        status = printerError;
+    else if (Munger(dataHandle, 0, exitText + 1, *exitText,
+            nil, 0) &gt;= 0)
+        status = noErr;
+    else status = printerError;
+   
+    DisposHandle(dataHandle);
+    return(status);
+}</pre>
+<p>
+DoWrite constantly polls the printer for some response. If anything comes back from<br>
+the printer (like an error, or some verification that the operation was completed),<br>
+it's sent to ExitBufferRtn. The return value from ExitBufferRtn is passed back to<br>
+DoWrite, and subsequently returned as DoWrite's return value. This allows<br>
+ExitBufferRtn to essentially "post" an error. The only predefined error is<br>
+printerError, which is defined in UTIL.h. You may define your own error codes as<br>
+well. 
+</p>
+<p>
+In order to return an error code, ExitBufferRtn needs to look for some sign of success<br>
+or failure from the printer. To determine failure, it looks for "%%[ Error: ", which<br>
+is the beginning of all error strings that are returned by PostScript printers. We<br>
+don't care about parsing the rest, since<i>any</i> error is enough for us to return<br>
+printerError. 
+</p>
+<p>
+To detect success, ExitBufferRtn searches for the string "%%[ exitserver:<br>
+permanent", which is the beginning of "%%[ exitserver: permanent state may be<br>
+changed ]%%". This string tells us that the<b>exitserver</b>password was correct. We<br>
+should always see this response from the printer. These two search strings are stored<br>
+in the resource file. Observe the relative resource IDs. 
+</p>
+<p>
+You may have noticed that a characteristic of UTILs seems to be avoiding work by using<br>
+all those handy callbacks. But now we have to search for a string. Yuck! Well, let's<br>
+cheat. We'll take the momentary memory hit and use PtrToHand to create a handle to a<br>
+copy of the response from the printer. Then we'll search with every hacker's dream<br>
+routine, Munger. After ExitBufferRtn sets status, it disposes of the temporary handle<br>
+and returns. 
+</p>
+<p>
+Back in RenamePrinter, we set our local variable status from the DoWrite call. Since<br>
+status was passed through from ExitBufferRtn, RenamePrinter can tell whether or not<br>
+the rename operation was successful. Either way, it's really important to remember to<br>
+close the connection. The rule is,<i>if the OpenPrinter call succeeded, do a ClosePrinter</i><br>
+<i>call, even if the code in between failed</i> . 
+</p>
+<p>
+<b>Posting the reviews. </b>Now that the ugly transmission-reception stuff is finished,<br>
+let's tell the user what's going on. 
+</p>
+<pre>     cb-&gt;UseCursor(0);
+    if (status == noErr) {
+        retVal = true;
+        ParamText(newName, blankStr, blankStr, blankStr);
+        cb-&gt;PositionAlert(pb-&gt;resSpace + kVerifyAlrt);
+        CautionAlert(pb-&gt;resSpace + kVerifyAlrt, nil);
+    } else {
+        retVal = false;
+        cb-&gt;PositionAlert(pb-&gt;resSpace + kFailAlrt);
+        StopAlert(pb-&gt;resSpace + kFailAlrt, nil);
+    }
+}</pre>
+<p>
+Since the user needs to go out and choose the newly renamed printer with the Chooser,<br>
+RenamePrinter puts up an alert if the rename operation is successful, half as a<br>
+reminder to choose the printer, and half as a reminder of the new printer name. (See<br>
+"Where'd That Printer Go?") If status, the local variable, was nonzero,<br>
+RenamePrinter puts up a general error alert. In any case, RenamePrinter sets the<br>
+return value appropriately, since Utility_Prime needs to know whether the printer is<br>
+renamed, so that it can return the appropriate flags to the Font Utility. 
+</p>
+<p>
+Finally, RenamePrinter disposes of the (currently hidden) Namer dialog and returns. 
+</p>
+<pre> DisposDialog(nameDlg);
+return(retVal);
+}</pre>
+<p>
+That's basically it! Now let's glance at the resource file, NamerUTIL.r. 
+</p>
+<h2>NAMERUTIL'S RESOURCES: NAMERUTIL.R</h2>
+<p>
+The only remarkable feature of NamerUTIL's resource file, NamerUTIL.r, is its use of<br>
+relative resource IDs. For example, here's NamerUTIL's main dialog box DLOG<br>
+resource:
+</p>
+<pre>resource 'DLOG' (ResSpace + kNamerDlg, "Namer", purgeable) {
+    {40, 20, 162, 412},
+    dBoxProc, invisible, noGoAway, 0x0,
+    ResSpace + kNamerDlg,
+    ""
+};</pre>
+<p>
+Note that both the resource ID of the DLOG resource itself and the ID of the associated<br>
+DITL resource are specified relatively. NamerUTIL.r also contains the following<br>
+resource definition:
+</p>
+<pre>resource 'uvrs' (ResSpace + kVersion) {
+    0x01, 0x00, final, 0x00,
+    verUS,
+    "1.0",
+    "1.0, &#169; 1991 Apple Computer, Inc."
+};</pre>
+<p>
+The 'uvrs' resource is encouraged but not required. A 'uvrs' resource is structured<br>
+exactly like a 'vers' resource. It stands for<b>U</b>TIL<b> v</b>e<b>rs</b>ion<i>,</i>&nbsp;&nbsp;and should have the same ID<br>
+as the UTIL resource. The 'uvrs' resource provides a handy way to attach your<br>
+copyright information to the UTIL. 
+</p>
+<h2>BUILDING NAMERUTIL: MAKEFILE</h2>
+<p>
+Here's NamerUTIL's makefile:
+</p>
+<pre># makefile - make rules for NamerUTIL
+
+# Set up vars that describe UTIL's ID and resource space base
+ID UTILID = 150
+ResSpace = 18200
+UTILName = "Rename Printer..."
+
+COptions = -b -mbg full -sym off -r
+AOptions = -d ResSpace={ResSpace}
+LOptions = -sym off
+ROptions = -a -d ResSpace={ResSpace}
+Objects = UTILHead.a.o NamerUTIL.c.o "{Libraries}Interface.o"
+
+LWFU &#402; LWFU.bak {Objects} NamerResources.rsrc MakeFile
+    Duplicate -y LWFU.bak LWFU
+    Rez {ROptions} -o LWFU NamerUTIL.r
+    Link {LOptions} &#8706;
+        -rt UTIL={UTILID} &#8706;
+        -sn Main={UTILName} &#8706;
+        -o LWFU {Objects}
+    Beep 1c,5 1e,5 1g,5 2c,5 2c,5,0 1g,5 2c,10</pre>
+<p>
+This makefile assumes you have a copy of the LaserWriter Font Utility named<br>
+LWFU.bak in your target directory. It makes a copy, called LWFU, and Rezzes and links<br>
+your UTIL directly into LWFU. Naturally, you can't distribute a modified version of the<br>
+LaserWriter Font Utility (see "Distribution of UTILs"), but for development, this is a<br>
+really handy way to test your UTILs. The Beep command to play "CHARGE!" at the end is<br>
+optional. I put it there to remind me that I'd rather be at the ball game. 
+</p>
+<h2>BUT WAIT! THERE'S MORE!</h2>
+<p>
+Our little NamerUTIL is a useful example of what you might do with a LaserWriter<br>
+Font Utility UTIL. It does not, however, use every callback and exercise every option<br>
+available to it. The CD contains a UTIL specification that lists prototypes for all the<br>
+callbacks and more detailed descriptions of the fields of the LWFUParmBlk. There's<br>
+also a version of the NamerUTIL sources that's set up for use with the UTILInstall<br>
+application, for those who are hoping to write the first modal-word-<br>
+processor-spreadsheet-communications-package UTIL. 
+</p>
+<h2>SO GO FOR IT!</h2>
+<p>
+A great aspect of UTILs is their hybrid nature--a unique combination of Macintosh<br>
+code and PostScript code. So where you would have had to analyze a text file that came<br>
+back from your PostScript code, you can write a UTIL that actually does something<br>
+useful with the output. UTILs are also a great chance for hardware manufacturers to<br>
+make those device-specific test and calibration pages accessible to common users. 
+</p>
+<p>
+So go for it! If you've got a collection of really cool PostScript hacks sitting around,<br>
+here's your chance to give them a shiny faceplate and loose them on the unsuspecting<br>
+world! 
+</p>
+<h2>DISTRIBUTION OF UTILS</h2>
+<p>
+Since you can't distribute modified Apple system software, how can you distribute<br>
+UTILs? The answer is to distribute them as UTIL files along with the UTILInstall<br>
+application. UTILInstall (included with the source code on the<i> Developer CD Series</i> <br>
+disc) is specifically designed for installing UTILs into the LaserWriter Font Utility. It<br>
+requires that you generate a file, containing the UTIL and all its owned resources, that<br>
+has a creator of 'UtIn' and a type of 'UTIL'. Also, you must supply a resource of type<br>
+'USPC' (<b> U</b>TIL <b>sp</b>e<b>c</b>ification) that tells the UTILInstall program what resources you<br>
+own. This is the Rez format of the USPC resource:
+</p>
+<pre>type 'USPC' {
+    integer = $$Countof(ResourceList);
+    array ResourceList {
+        unsigned longint;/* Resource type */
+        integer; /* Resource ID */
+    };
+};</pre>
+<p>
+You provide a USPC resource with the same ID as your UTIL. The USPC resource lists<br>
+the resource type and ID for every resource your UTIL owns. This tells the UTILInstall<br>
+program exactly what resources to move, plus it facilitates the renumbering of your<br>
+owned resources should there be an ID conflict.
+</p>
+<p>
+For instance, suppose you've built your UTIL with UTIL ID 150 and ResSpace 18200.<br>
+If the user attempts to install your UTIL into a copy of the Font Utility that already<br>
+contains a UTIL with the ID 150, UTILInstall renumbers your UTIL and all its owned<br>
+resources as specified in the USPC list.
+</p>
+<p>
+Given a little thought, you might wonder what happens to resources that refer to other<br>
+resources by ID, like DLOG and ALRT resources. Unfortunately, UTILInstall doesn't<br>
+provide a comprehensive renumbering facility. It does, however, have special cases<br>
+for renumbering DLOG and ALRT resources. Other resource types that refer to other<br>
+resources by ID should be avoided if you plan to distribute your UTIL with UTILInstall.
+</p>
+<p>
+For a complete example of the use of USPC resources, see the alternate NamerUTIL<br>
+sources and the UTILInstall source code on the CD.
+</p>
+<h2>WHERE'D THAT PRINTER GO?</h2>
+<p>
+We rename the printer behind the Font Utility's back (and the Chooser's, for that<br>
+matter). The name and zone information for the currently chosen printer is stored in<br>
+some string resources in the System file. After we rename the printer, the strings in<br>
+the System file still contain the old printer name.
+</p>
+<p>
+The return value urCheckPrinter causes the Font Utility to attempt to open a PAP<br>
+connection with the "currently chosen printer." Since the name of the currently<br>
+chosen printer has not been updated, the PAPOpen call fails, and the user gets the alert<br>
+shown in Figure 7. This is an unfortunate side effect of renaming the printer.
+</p>
+<p>
+The solution is to tell the Chooser that we have chosen a printer in the same zone with<br>
+our new name, but there's no officially sanctioned way to do this. Future versions of<br>
+system software will remedy this situation.
+</p>
+<p>
+<img src="img/203.gif" width="413 px"></img>
+</p>
+<p>
+<b>Figure 7</b>A NamerUTIL Side Effect
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>BRYAN K. RESSLER</b>, a.k.a. "Beaker," is a bloodstained "binary vivisectionists" who<br>
+regularly cuts into live code just to see what happens. He terrorized the University of<br>
+California, Irvine for four years, and just to get rid of him, they gave him a B.S. in<br>
+computer science. Beaker did the System 7 revision of the LaserWriter Font Utility.<br>
+Now, when the medication wears off and he's allowed out of his cell, he writes sound<br>
+and MIDI applications, composes marginal music, and sharpens his "binary scalpel."*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Richard Hu, Dave Johnson, Scott "Zz"<br>
+Zimmerman*
+</p>
+</body>
+</html>

@@ -1,0 +1,1044 @@
+<html>
+<head>
+<!-- Article ID: 20 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>May 92 - APPLE EVENT OBJECTS AND YOU</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>APPLE EVENT OBJECTS AND YOU</h2>
+<h1>RICHARD CLARK</h1>
+<p>
+<img src="img/163.gif" width="180 px"></img>
+</p>
+<p>
+<i>With Apple events, Apple has opened the door for applications to control each other and</i><br>
+<i>work collaboratively. However, before applications can communicate, they have to</i><br>
+<i>agree on the commands and data they'll support. Apple event objects form the basis of</i><br>
+<i>such a protocol--the Apple event object model. The object model is powerful, but still</i><br>
+<i>a source of confusion for many developers. This article provides an overview of the</i><br>
+<i>object model and answers several commonly asked questions, including "What is the</i><br>
+<i>Apple event object model?" and "How do I support it?"</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+One of the greatest strengths of the Macintosh--its graphical user interface--is also<br>
+the basis of one of its greatest weaknesses--the difficulty of automating routine or<br>
+repetitive tasks. "Give us batch files!" many users cried. The developers responded<br>
+with macro programs such as QuicKeys and Tempo, which handle many of the routine<br>
+tasks but can't always make a program do<i>exactly</i> what the user wants. 
+</p>
+<p>
+The problem is that macro programs are generally limited to manipulating an<br>
+application's human interface and have limited information about the state of the<br>
+application. This means that if some setting has been changed or something has been<br>
+moved, running a particular macro might not have the desired effect. In other words,<br>
+one Macintosh application cannot control another application reliably through the<br>
+target application's human interface. 
+</p>
+<p>
+For one application to control another application reliably, all of the following must<br>
+happen:
+</p>
+<ul>
+<li>The two applications must agree on a protocol for sending commands and<br>
+data and agree on the specific information to be sent across this connection. </li>
+<li>The controlled application needs to provide a rich enough set of commands<br>
+and sufficient access to its data so that meaningful work can be done. </li>
+<li>The protocols and command sets should be standardized so that many<br>
+different applications can work together. </li>
+</ul>
+<p>
+On the Macintosh, Apple events and the<i>Apple Event Registry</i> provide the standards that<br>
+allow applications to control each other reliably. The Apple event, a standard protocol<br>
+for sending commands and data between applications, was introduced as part of System<br>
+7. The<i>Apple EventRegistry</i>&nbsp;&nbsp;defines standard Apple event commands and two standard<br>
+data types--<i>Apple event object</i> and<i>primitive.&nbsp;&nbsp;</i> Apple event objects describe an<br>
+application's internal data, and primitive types describe the data that can be sent<br>
+between applications. In essence, the Registry forms the basis for a standard language<br>
+that applications can use when sending or receiving Apple events. 
+</p>
+<p>
+One of the challenges in creating the<i>Apple Event Registry</i> was to keep the set of<br>
+commands small while providing an adequate level of control between applications. The<br>
+Registry does this by allowing the same command to apply to different Apple event<br>
+objects within an application. The application of Apple events to Apple event objects is<br>
+commonly referred to as the<i>Apple event object model. </i>
+</p>
+<p>
+This article provides an overview of the object model and then discusses how you can<br>
+add object model support to your application. The fundamentals of Apple events are<br>
+given in<i>Inside Macintosh</i> Volume VI. 
+</p>
+<h2>OBJECT MODEL BASICS</h2>
+<p>
+The<i> Apple Event Registry</i> defines an application's programmatic interface as a series<br>
+of Apple event objects, where each object belongs to a particular object class. Each<br>
+Apple event object is comprised of some data and a set of Apple event commands that<br>
+operate on that data. In a traditional object- oriented fashion, new classes are defined<br>
+by taking an existing class and adding new data and/or commands. Related classes are<br>
+grouped together into<i>suites. </i>
+</p>
+<p>
+The most commonly used objects (and their associated commands) are grouped together<br>
+into the Apple event<i>core suite.&nbsp;&nbsp;</i> The commands in the core suite, which include Create<br>
+Element, Delete, Get Data, and Set Data, cover the basic operations for any given<br>
+object. The Apple event objects defined within the core suite include documents,<br>
+windows, and the application itself. The core suite also includes some primitive classes<br>
+such as long and short integers, Boolean values, and text. Every object model-aware<br>
+application should support the core suite, and all Apple event objects defined within<br>
+your application should support the core suite events. 
+</p>
+<p>
+The data portion of an Apple event object is broken into two parts: the<br>
+object's<i>properties</i>&nbsp;&nbsp;and its<i>elements:</i> 
+</p>
+<ul>
+<li>The<i>properties</i>  of an object contain the attributes of the object--for<br>
+example, its name and a 4-byte code designating its class. </li>
+<li>The<i> elements</i> of an object are the other objects (in other words, data) that<br>
+it contains. For example, a drawing application contains one or more<br>
+documents, and each document may contain several rectangles and a picture or<br>
+two. When the Registry describes an object, it lists all the element classes of<br>
+an object, but a particular object may contain only some (or no) elements of<br>
+each class at run time.&nbsp;&nbsp;&nbsp;(The number of elements can change during run time.<br>
+For example, the number of words in a window could increase due to user<br>
+typing or an incoming Apple event.)</li>
+</ul>
+<p>
+For more detail on the difference between a property and an element, see "Properties<br>
+and Elements."
+</p>
+<p>
+Figure 1 shows three object classes that we'll use throughout the article; they've been<br>
+derived from the<i>Apple Event Registry</i> and simplified for the purpose of illustration.
+</p>
+<p>
+<img src="img/164.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1</b> Some Hypothetical Apple Event Object Classes
+</p>
+<h2>PROPERTIES AND ELEMENTS</h2>
+<p>
+Each Apple event object contains exactly one of each of its properties (each of which<br>
+has a name), so you might ask for the "Bounds of the frontmost Window" and receive<br>
+back the pBounds property of the specified window. An object can contain zero or more<br>
+of each of its element classes (each of which has a name), so you could ask for "every<br>
+Paragraph in Document 1," where Paragraph is a valid element class for the document.
+</p>
+<p>
+Many developers want to know when you should&nbsp;&nbsp;declare something as a property and<br>
+when you should declare it as an element. You should make something (call it <i>x</i> ) a<br>
+property of an object when <i> x </i> describes something about that object. You should make<br>
+something else (call it <i>y</i> ) an element of an object if <i> y</i>&nbsp;&nbsp;is contained within the object.
+</p>
+<p>
+Some developers use the rule "If there's only going to be one <i> y </i> in the object, make it a<br>
+property." Alas, this rule isn't always correct. Let's assume that an application could<br>
+display only one document window at a time. Should that document be an element or a<br>
+property? According to the Registry's definition of an element, since the document is<br>
+contained within the application, you should make it an element. If you make something<br>
+an element based simply on the Registry's definition, your new classes will be<br>
+consistent with the existing classes.
+</p>
+<p>
+Another useful test is to ask "Can I delete this item?" If you can, it's not a property.<br>
+(You can delete a window from within an application, so a window is an element of that<br>
+application, not a property. But since you cannot delete the bounds of the window, the<br>
+bounds is a property.)
+</p>
+<h2>OBJECT SPECIFIERS</h2>
+<p>
+&nbsp;Most of the Apple events defined in the<i>Apple Event Registry</i> contain one or more<i>object</i><br>
+<i>specifiers</i> as parameters. An object specifier is similar to the instructions you might<br>
+give someone who's looking for a particular house: turn left at the first signal, then<br>
+look for Jones Street and turn right, then travel down to the third house on the right.<br>
+Object specifiers can also be used to specify a group of objects--for example, every<br>
+green house on Jones Street.
+</p>
+<p>
+&nbsp;Or imagine you send an Apple event-aware word processor the object specifier "every<br>
+Paragraph in the current Document that contains the Word 'Apple'." The application<br>
+would search in stages, first finding the current document and then searching through<br>
+the paragraphs one at a time to see if they contained the word "Apple." Object<br>
+specifiers provide a powerful general mechanism for locating a particular object in an<br>
+application. 
+</p>
+<p>
+&nbsp;The Apple event's direct parameter typically contains the object specifier, yielding<br>
+such commands as "Close Document 3" and "Delete Word 3 of Document 'fred'." Passing<br>
+an object specifier as part of a command allows the same command to be reused for<br>
+different objects (New<i>window</i> , New<i>document</i> , or New<i>rectangle</i> ) instead of inventing<br>
+a unique command for each action-object pair (NewWindow, NewDocument, or<br>
+NewRectangle).
+</p>
+<p>
+&nbsp;Internally, an object specifier consists of a series of recursive "get a particular<br>
+element of class<i>x</i>&nbsp;&nbsp;from object<i>y</i> " commands. For example, in the command "Close<br>
+Document 1," the object specifier (Document 1) is represented as "the first object of<br>
+class Document contained within the Application." Another way of looking at this is<br>
+"(the first object of class Document in (the Application))" where the parentheses<br>
+represent one object specifier embedded within another. In addition to specifying a<br>
+single element, an object specifier can refer to a property of some object or to a set of<br>
+objects. For example, your application may receive the object specifier for "the<br>
+Bounds of Window 1" or "every Icon contained within Rectangle 1 of Window 5."
+</p>
+<p>
+&nbsp;Figure 2 shows a simplified representation of two object specifiers. Object specifiers<br>
+are stored as Apple event records, with one field each for the object class and the<br>
+object's container (stored as a handle) and two fields for the<i>element identifier</i> . The<br>
+two fields of the element identifier together represent the specific element to be<br>
+selected. In part A of Figure 2, the desired object class is cDocument, the container is<br>
+'null' (in other words, a descriptor that has type typeNull and a nil handle), and the<br>
+element identifier is 1. The null container typically represents the application. In<br>
+part B, the desired object class is cWord, the container is a handle to the object<br>
+specifier from part A, and the element identifier is 5.
+</p>
+<p>
+<img src="img/165.gif" width="581 px"></img>
+</p>
+<p>
+<b>Figure 2</b> Simplified Representation of Object Specifiers
+</p>
+<p>
+&nbsp;An actual object specifier is slightly more complicated than the ones shown in Figure<br>
+2. In the examples given above, we've consistently referred to elements by number.<br>
+However, you might want to refer to some object, such as a document, by name. In that<br>
+case you would need to know that the two fields of the element identifier contain a<i>key</i><br>
+<i>form</i> and some<i> key data. </i>
+</p>
+<p>
+&nbsp;Each different way you can refer to an element uses a different key form. When we<br>
+refer to an element by number, we're using the "absolute position" key form. We could<br>
+also specify a "name" key form, a "property" key form (to get a property of an object<br>
+instead of one of its elements), and so on. A complete object specifier is shown in<br>
+Figure 3. A list of all standard key forms is given in the<i> Apple Event Registry</i>&nbsp;&nbsp;and in<br>
+the Apple Event Manager chapter of the new, improved<i>Inside Macintosh</i>&nbsp;&nbsp;(preliminary<br>
+draft) on the<i>Developer CD Series</i> disc. 
+</p>
+<p>
+<img src="img/166.gif" width="512 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 3</b> The Four Fields of an Object Specifier
+</p>
+<h2>&nbsp;HOW DO I DISPATCH AN APPLE EVENT CONTAINING OBJECT<br>
+SPECIFIERS?</h2>
+<p>
+One of the side effects of the object model is that the same command will be executed<br>
+differently depending on the type of object involved. Therefore the object class, event<br>
+class, and event ID are required before you can dispatch an Apple event. Since the<br>
+Apple Event Manager uses only two of these values when dispatching an Apple event<br>
+(the event class and event ID), you'll need to write some additional dispatching logic.
+</p>
+<p>
+&nbsp;We'll discuss three major ways of dispatching object-model Apple events: an<br>
+event-first approach, an object-first approach, and a method that uses a lookup table<br>
+to dispatch the events. These approaches all serve the same function--extracting an<br>
+object specifier and using the combined object class, event class, and event ID to select<br>
+one of the application's routines. They differ only in the way you structure your code. 
+</p>
+<p>
+<b>AN EVENT-FIRST APPROACH</b><br>
+The event-first approach allows the Apple Event Manager to do most of the work. The<br>
+Apple Event Manager calls a different handler for each event--for example, Get Data<br>
+and Set Data--and that handler calls different routines depending on the object class<br>
+given by the object specifier. Figure 4 and the following sample code illustrate this<br>
+approach. 
+</p>
+<pre>pascal OSErr AESetDataHandler (AppleEvent *message,
+    AppleEvent *reply, long refCon)
+{
+    OSErr       err;
+    AEDesc      theObject, theToken;
+
+    err = AEGetKeyDesc(message, keyDirectObject, typeObjectSpecifier,
+        &amp;theObject);
+    if (err != noErr) return err;
+   
+    err = AEResolve(&amp;theObject, kAEIDoMinimum, &amp;theToken);
+    AEDisposeDesc(&amp;theObject);
+    if (err != noErr) return err;
+   
+    /* The token is an Apple event descriptor. For now, we can */
+    /* assume that the token's descriptor type is the class of the */
+    /* object that should handle this event. */
+    switch (theToken.descriptorType) {
+       
+        case cWindow: case cDocument:
+            err = Win_SetData(&amp;theToken, message, reply);
+        break;
+       
+        case cRectangle:
+            err = Rect_SetData(&amp;theToken, message, reply);
+        break;
+
+        case cWord:
+            err = Word_SetData(&amp;theToken, message, reply);
+        break;
+
+        default:
+            err = errAEEventNotHandled;
+    }
+    AEDisposeDesc(&amp;theToken);
+    return err;
+}</pre>
+<p>
+An application that processes events using the event-first approach goes through the<br>
+following steps after it receives an Apple event and calls AEProcessAppleEvent (the<br>
+numbers correspond to the numbers in Figure 4):
+</p>
+<ol>
+<li>The Apple Event Manager locates the event in its dispatch table.</li>
+<li>The appropriate handler routine is called by the Apple Event<br>
+Manager--in this example, it's Set Data. This handler routine needs to<br>
+determine the object class before it can perform the appropriate action, so it<br>
+calls AEResolve to convert the object specifier into a reference to a particular<br>
+object.</li>
+<li>AEResolve takes an object specifier as input, and calls one or more<br>
+accessor routines to convert this object specifier into a token that refers to<br>
+some object.&nbsp;&nbsp;&nbsp;(See the section "How Do I Resolve an Object Specifier?" for<br>
+more information.)</li>
+<li>The token is returned to the handler. </li>
+<li>Once the handler knows the object class, it can call the appropriate<br>
+object-specific routine. This routine typically accepts the token as one of its<br>
+parameters.</li>
+</ol>
+<p>
+<img src="img/167.gif" width="341 px"></img>
+</p>
+<p>
+<b>Figure 4</b> Event-First Approach to Dispatching Apple Events
+</p>
+<p>
+&nbsp;Since many of the things you can do with a token fall into a few basic operations, such<br>
+as reading, writing, inserting, or deleting the information represented by a token, you<br>
+can choose to write a set of token-handling routines for each token type that you define.<br>
+Token-handling routines are not required, but they are useful. (See the section "What<br>
+Are Token-Handling Routines?" for more information.)
+</p>
+<p>
+&nbsp;Due to its simplicity, the event-first approach is recommended for all applications<br>
+written in a procedural programming style (as is typically done in C or Pascal). Its<br>
+only real drawback is that if you add a new object class to your application, you have to<br>
+modify a number of Apple event handlers to recognize the new class (one handler per<br>
+event that the new object class supports).
+</p>
+<p>
+&nbsp;If you have code spread across several source files, consider whether this could<br>
+present a code maintenance problem. If so, the object-first approach might work<br>
+better for your application. 
+</p>
+<p>
+<b>AN OBJECT-FIRST APPROACH</b><br>
+&nbsp;You can limit the amount of work required when adding a new object class by making<br>
+each object class a self-contained unit. In this approach, an individual file (or group<br>
+of files) contains all the code required to implement a single object class, including the<br>
+event-dispatching code, object accessors, and token handlers. (For more information<br>
+on token handlers, see the section "What Are Token- Handling Routines?")
+</p>
+<p>
+&nbsp;Since the object includes its own event-dispatching code, you don't usually install a<br>
+separate handler for each individual Apple event. Instead, you install one or more<br>
+wild-card handlers that route the event to the appropriate object using the following<br>
+algorithm:
+</p>
+<ol>
+<li>Extract the parameter containing the object specifier. </li>
+<li>Call AEResolve to convert this object specifier into a token. </li>
+<li>Extract the object class from the token. </li>
+<li>Call the event dispatcher within the appropriate object. </li>
+</ol>
+<p>
+Since most Apple events carry their object specifiers in the direct parameter, a single<br>
+wild-card handler works for all of these Apple events. However, there are some events<br>
+that carry their object specifiers in different places, so you need to install specific<br>
+handlers for these events. (For example, the Create Element event carries its object<br>
+specifier inside an insertionLoc structure.) Using a single handler that uses the first<br>
+object specifier it finds is inadequate, since some events use multiple object specifiers<br>
+and an object specifier can appear anywhere another parameter can. 
+</p>
+<p>
+The handler that extracted the object specifier passes the token, the message, and the<br>
+reply event to the object's central event dispatcher. This dispatcher then calls the<br>
+appropriate routine, which typically calls one or more token-handling routines. This<br>
+approach is illustrated in Figure 5 and in the following sample code. 
+</p>
+<pre>/* This is a typical Apple event handler that you install using */
+/* a wild card (in this case, the class = 'core', and the event */
+/* ID = '****'). This would go in a "common area" file, */
+/* separate from the individual object implementation files. */
+pascal OSErr AECoreSuiteHandler (AppleEvent *message,
+    AppleEvent *reply, long refcon)
+{
+    OSErr       err;
+    AEDesc      directParam, theToken;
+
+    /* The following code works for all core Apple events except */
+    /* Create Element. Either this routine would need to be */
+    /* modified for Create Element, or a specific handler */
+    /* installed. */
+    err = AEGetKeyDesc(message, keyDirectObject, typeWildCard,
+        &amp;directParam);
+    if (err != noErr) return err;
+
+    if (directParam.descriptorType == 'null') {
+    /* AEResolve doesn't like null descriptors, so skip it. */
+        theToken = directParam;
+    }
+    else {
+        err = AEResolve(&amp;directParam, kAEIDoMinimum, &amp;theToken);
+        AEDisposeDesc(&amp;directParam);
+        if (err != noErr) return err;
+    }
+    /* We assume the token's type is the class that handles this */
+    /* event. */
+    switch (theToken.descriptorType) {
+        /* Include one entry for each object class. */
+
+        case 'null':
+            /* This is the application object's token class. */
+            err = AppEventDispatcher(&amp;theToken, message, reply);
+        break;
+
+        case cDocument:
+            /* See the example of this routine below.*/
+            err = DocumentEventDispatcher(&amp;theToken, message, reply);
+        break;
+
+        /* And so on for cRectangle, cWord, etc. */
+
+        default:
+            err = errAEEventNotHandled;
+    }
+    AEDisposeDesc(&amp;theToken);
+    return err;
+} /* AECoreSuiteHandler */
+
+/* ===In the Document Object file...=== */
+
+OSErr DocumentEventDispatcher (AEDesc *theToken,
+    const AppleEvent *message, AppleEvent *reply)
+{
+    OSErr           err = noErr;
+    AEEventID   eventID;
+    OSType      typeCode;
+    Size            actualSize;
+
+    /* Get the event ID. */
+    err = AEGetAttributePtr(message, keyEventIDAttr, typeType,
+        &amp;typeCode, (Ptr)&amp;eventID, sizeof(eventID), &amp;actualSize);
+    if (err != noErr) return err;
+
+    switch (eventID) {
+
+        case kAECreateElement:
+            err = Doc_CreateElement(theToken, message, reply);
+        break;
+
+        case kAEGetData:
+            err = Doc_GetData(theToken, message, reply);
+        break;
+
+        /* And so on for Set Data, Delete, Open, Close, Print, */
+        /* etc. */
+
+        default:
+            err = errAEEventNotHandled;
+    }
+    return err;
+} /* DocumentEventDispatcher */</pre>
+<p>
+When an event is processed using the object-first technique, the application takes the<br>
+following steps after it receives an Apple event and calls AEProcessAppleEvent (the<br>
+numbers correspond to the numbers in Figure 5):
+</p>
+<ol>
+<li>The Apple Event Manager locates a handler routine in its dispatch table.<br>
+The handler is usually installed with a wild-card value so that it's passed all<br>
+(or most) events. </li>
+<li>The appropriate handler routine is called. This routine acts as an object<br>
+dispatcher--it determines the type of object involved and calls the code in the<br>
+appropriate object's source file. This handler routine needs to determine the<br>
+object class, so it calls AEResolve to convert the object specifier into a<br>
+reference to a particular object.</li>
+<li>AEResolve takes an object specifier as input, and calls one or more<br>
+accessor routines to convert this object specifier into a token that refers to<br>
+some object.&nbsp;&nbsp;&nbsp;(See the section "How Do I Resolve an Object Specifier?" for<br>
+more information.)</li>
+<li>The token is returned to the handler. </li>
+<li>Once the handler knows the object class, it can call the appropriate<br>
+object's event dispatcher. The dispatcher looks at the event's class and ID and<br>
+calls the appropriate routine. </li>
+<li>The called routine performs a task specific to the event class, event ID,<br>
+and object class. It typically accepts the token as one of its parameters. </li>
+</ol>
+<p>
+This approach, or some variant of it, could be implemented using object-oriented<br>
+programming and is recommended for object-oriented applications.
+</p>
+<p>
+<img src="img/168.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 5</b> Object-First Method for Dispatching Apple Events
+</p>
+<p>
+If you use the object-first approach in a procedural application, you can still get some<br>
+of the benefits of object-oriented programming, since this technique can be used to<br>
+implement a simple form of inheritance for Apple event objects. If a particular<br>
+object's event dispatcher doesn't recognize an event, it can pass the event to its<br>
+superclass's event dispatcher. If that dispatcher doesn't recognize the event, the<br>
+request can be passed up the chain until the topmost dispatcher is reached (typically<br>
+cObject). This minimizes the code required for adding a new object, since an object<br>
+only needs to implement its unique events (and any standard events that it handles<br>
+differently) and can pass all other events to its superclass. 
+</p>
+<p>
+One drawback to this approach is the overhead involved in dispatching the event. Each<br>
+event goes through the Apple Event Manager, AEResolve, a pair of switch statements<br>
+(one in the top-level Apple event handler, and another in the object's dispatch<br>
+routine), and possibly a couple of superclassevent dispatchers. Still, each of our<br>
+approaches requires the initial use of the Apple Event Manager and a call to AEResolve,<br>
+so the added overhead lies primarily in the switch statements. 
+</p>
+<p>
+Another drawback is that each Apple event typically has several parameters, and each<br>
+Apple event handler needs to extract the set of Apple event-dependent parameters for<br>
+that Apple event. This can lead to redundant code. 
+</p>
+<p>
+<b>TABLE-BASED DISPATCHING</b><br>
+One way to lower the overhead associated with dispatching object-model Apple events<br>
+involves building a dispatch table of your own to replace the Apple Event Manager's.<br>
+The Apple Event Manager constructs a two-way hash table based on the event class and<br>
+event ID. Since this isn't enough information to properly dispatch an object-model<br>
+Apple event (you also need to know which object class will be responsible for handling<br>
+the event), the solution is to construct your own table using a three-part index (event<br>
+class, event ID, and object class) that contains the addresses of the appropriate<br>
+routines. 
+</p>
+<p>
+As in the object-first example, this dispatcher should be "attached" to the Apple Event<br>
+Manager through a wild-card handler in the Manager's regular dispatch table. (This is<br>
+necessary since there's no other robust way to "unpack" an Apple event when it<br>
+arrives from the outside world.) This handler would extract the event class and event<br>
+ID attributes and would get the object specifier from the direct parameter. The handler<br>
+would then call AEResolve and pass the object class (along with the event class and<br>
+event ID) to your table lookup routine.
+</p>
+<p>
+The only real problem occurs when the object specifier isn't contained in the direct<br>
+parameter. The solution here is to install handlers for any events that don't contain<br>
+their object specifiers in their direct parameters, and have these handlers call<br>
+AEResolve and then jump directly into your table lookup routine. 
+</p>
+<p>
+The implementation of such a table-based dispatcher is left to you. 
+</p>
+<h2>HOW DO I RESOLVE AN OBJECT SPECIFIER?</h2>
+<p>
+When an object-model Apple event is received, such as "Close Document 1," the object<br>
+specifier (Document 1) is usually contained in the direct parameter of the event.<br>
+Before the event can be processed, the object specifier needs to be<i>resolved. </i> Resolving<br>
+an object specifier involves locating the specified information in memory so that the<br>
+Apple event can act on this information. 
+</p>
+<p>
+While it's possible to parse an object specifier directly, object specifiers can be much<br>
+more complicated than the simple examples shown here. The Apple event Object<br>
+Support Library (OSL) helps you resolve an object specifier through a set of<i>object</i><br>
+<i>accessor routines,</i> which you write and then install. One type of accessor routine<br>
+extracts one or more types of element from a given object, while other accessor<br>
+routines extract a property from an object. When you ask the OSL to resolve an object<br>
+specifier, it calls the appropriate accessor routines in the necessary order. 
+</p>
+<p>
+Figure 6 shows how the OSL resolves the object specifier "Word 5 of Window 1."<br>
+First, the accessor for the innermost specifier (Window 1) is called. This accessor<br>
+returns a token, which is an Apple event descriptor (AEDesc) referring to some data<br>
+in your application. The returned token and the next part of the object specifier to be<br>
+processed are then passed to the appropriate accessor. This process is repeated until<br>
+the object specifier has been fully resolved, and the final result is returned to your<br>
+application. 
+</p>
+<p>
+<img src="img/169.gif" width="518 px"></img>
+</p>
+<p>
+<b>Figure 6</b> Object-First Method for Dispatching Apple Events
+</p>
+<h2>HOW DO I IMPLEMENT AN OBJECT ACCESSOR?</h2>
+<p>
+Each accessor routine should accept one part of an object specifier and return a token.<br>
+An accessor routine has the form
+</p>
+<pre>pascal OSErr MyAccessor (DescType desiredClass,
+    const AEDesc *container, DescType containerClass,
+    DescType keyForm, const AEDesc *keyData,
+    AEDesc *value, long refCon);</pre>
+<p>
+and is passed the desiredClass, containerClass, keyForm, and keyData fields directly<br>
+from the part of the object specifier being resolved. The container is either the token<br>
+returned from the last accessor called or an AEDesc of type 'null' containing a null<br>
+handle (if this is the first accessor in the series to be called).
+</p>
+<p>
+All accessors have to perform essentially the same functions:
+</p>
+<p>
+Check that the specified key form is valid. 
+</p>
+<ol>
+<li>Locate the requested information. </li>
+<li>Construct a return token.</li>
+</ol>
+<p>
+The following code illustrates this process using a simple "extract a Window from a<br>
+null container" accessor. (In most applications, this accessor extracts both windows<br>
+and documents from the null container since most applications maintain a one-to-one<br>
+correspondence between documents and windows.)
+</p>
+<pre>pascal OSErr WindowFromNull (DescType desiredClass,
+    const AEDesc *containerToken, DescType containerClass,
+    DescType keyForm, const AEDesc *keyData, AEDesc *theToken,
+    long theRefcon)
+{
+    WindowPtr       wp;
+    long            count;
+
+    /* 1. Make sure we can handle this request. We only handle */
+    /* object specifiers of the form "Window 1", "Window 2", etc. */
+    if ((keyForm != formAbsolutePosition) return errAEBadKeyForm;
+   
+    /* 2. Extract the window number and find the window. */
+    count = **(long**)(keyData-&gt;dataHandle);
+    wp = FrontWindow();
+    while (count &gt; 1) {
+        if (wp == 0L) return errAENoSuchObject;
+        wp = (WindowPtr)((WindowPeek)wp)-&gt;nextWindow;
+        --count;    /* Count down by 1. */
+    };
+
+    /* 3. Create the token. */
+    /* The token is an AE descriptor of type 'cwin' (window). */
+    /* The AEDesc contains a handle to a WindowPtr. */
+    return AECreateDesc(desiredClass, (Ptr)&amp;wp, sizeof(wp),
+               theToken);
+} /* WindowFromNull */</pre>
+<p>
+While the above code contains many of the features of an object accessor, it's far from<br>
+complete. For example, it doesn't handle formName, which is one of the more common<br>
+key forms. It also assumes that the value for a formAbsolutePosition parameter will be<br>
+a positive integer. In fact, the value could be a negative number (with -1 signifying<br>
+the last element of the container, -2 signifying the next to the last element, and so<br>
+on), or one of the special constants representing the first, last, middle, any, or every<br>
+element of the container. 
+</p>
+<p>
+To make the formAbsolutePosition code complete, you need to add a routine that looks at<br>
+the key data for one of the special values and converts the key data into a positive<br>
+integer or returns a flag indicating that every element should be returned. Such a<br>
+routine would look something like this:
+</p>
+<pre>OSErr GetWindowIndex (const AEDesc *keyData, long *index,
+    Boolean *getAll)
+{
+    long        numWindows;
+    long        rawIndex;
+   
+    /* There are three flavors of formAbsolutePosition key: */
+    /* typeLongInteger/typeIndexDescriptor, */
+    /* typeRelativeDescriptor, and typeAbsoluteOrdinal. */
+
+    /* 1. Initialize some values. */
+    *getAll = false; *index = 1;
+    numWindows = CountUserWindows(); /* A private routine */
+
+    /* 2. Get the number out of the key. If it's not an absolute */
+    /* value, convert it to one. */
+    rawIndex = **(long**)(keyData-&gt;dataHandle);
+    switch (keyData-&gt;descriptorType) {
+       
+        case typeLongInteger:
+            if (rawIndex &lt; 0)
+            /* A negative value means "the Nth object from the */
+            /* end," */
+            /* i.e., -1 = the last object. */
+                rawIndex = numWindows + rawIndex + 1;
+            /* A positive value is an absolute value, so do */
+            /* nothing. */
+        break;
+
+        case typeAbsoluteOrdinal:
+            /* kAEFirst, etc. are special 4-byte constants. */
+            if (rawIndex == kAEFirst)       rawIndex = 1;
+            else if (rawIndex == kAELast)   rawIndex = numWindows;
+            else if (rawIndex == kAEMiddle)
+                rawIndex = numWindows / 2;
+            else if (rawIndex == kAEAll)        *getAll = true;
+            else if (rawIndex == kAEAny) {
+                /* Select a random window. */
+                if (numWindows &lt;= 1)     /* 0 or 1 */
+                    rawIndex = numWindows;
+                else
+                /* Get a random number between 1 and numWindows. */
+                    rawIndex =
+                        1 + ((unsigned long)Random() % numWindows);
+            }
+            else return errAEBadKeyForm;
+        break;
+    }
+    return noErr;
+} /* GetWindowIndex */</pre>
+<p>
+To install an accessor, use the AEInstallObjectAccessor routine:
+</p>
+<pre>pascal OSErr AEInstallObjectAccessor (DescType desiredClass,
+DescType containerType, accessorProcPtr theAccessor,
+long accessorRefcon, Boolean isSysHandler)</pre>
+<p>
+In the "extract a Window from a null container" example, the call to the<br>
+AEInstallObjectAccessor routine would look like this:
+</p>
+<pre>err = AEInstallObjectAccessor(cWindow, 'null',
+    (accessorProcPtr)WindowFromNull, 0, false);</pre>
+<p>
+You can also install accessor routines to get one of the properties of an object (use the<br>
+special constant 'prop' in specifying the desired type), or you can supply a wild card<br>
+for either the container or the desired type. Most developers install one accessor<br>
+routine for each of the element types supported by a particular object, and one<br>
+accessor routine to handle all of the properties of that object. 
+</p>
+<h2>WHAT SHOULD I PUT INTO A TOKEN?</h2>
+<p>
+As noted earlier, accessors communicate with each other and with the application using<br>
+application- specific<i>tokens</i> . Most Apple events that contain an object specifier end up<br>
+resolving the object specifier into a token and then manipulating the data represented<br>
+by that token. Since the format of each object class is different, you'll typically write<br>
+Read Token Data and Write Token Data routines for each object class that your<br>
+application supports. (You might also choose to write Create Token Data (Create<br>
+Element) and Delete Token Data routines if more than one Apple event in a given object<br>
+needs to create or delete information.) What you put into these token-handling<br>
+routines depends completely on the contents of your tokens. 
+</p>
+<p>
+Each token is stored in an Apple event descriptor--a data structure containing a<br>
+4-byte type code and a handle to some data, where the contents of the handle are<br>
+completely up to you. While this raises the question of what should go into the handle,<br>
+many developers decide to invent a different token data type for each object class or set<br>
+of related object classes. 
+</p>
+<p>
+In this approach, a window token would contain a WindowPtr, a text token would<br>
+contain a handle to some text, and so on. Since tokens are used for both elements and<br>
+properties, each token might also contain a 4-byte property code.
+</p>
+<p>
+Here's how the tokens might look for the object classes defined in Figure 1:
+</p>
+<pre>struct DocumentTokenBody {
+    WindowPtr   theWindow;
+    Boolean     useProperty;
+    DescType        propertyCode;
+};
+
+struct RectTokenBody {
+    Rect          *theRect;        /* Use a pointer so we can read */
+                                   /* and write the rectangle. */
+    long          elementNumber;   /* See token-handling examples */
+                                   /* below. */
+    Boolean       useProperty;
+    DescType      propertyCode;
+    WindowPtr     parentWindow;    /* The window that holds this */
+                                   /* rectangle. */
+};
+
+struct WordTokenBody {
+    Handle        theText;
+    long          startingOffset;  /* How many bytes in does the */
+                                   /* text start? */
+    long          textLength;      /* How many bytes long? */
+    Boolean       useProperty;
+    DescType      propertyCode;
+    TEHandle      parent;          /* The location from which we */
+                                   /* took this text. */
+};</pre>
+<p>
+These three sample tokens demonstrate several things you should keep in mind when<br>
+designing your own tokens:
+</p>
+<ul>
+<li>Each token contains a reference to the data--not a copy of the data itself.<br>
+This allows the same token to be used for both reading and writing the data. </li>
+<li>Each token contains a field for the property code. If the application<br>
+received the object specifier "the Name of Document 1," the returned token<br>
+would contain a pointer to the document's window and the Name property<br>
+code--'pnam'. The token-handling routines have to include code to support<br>
+property tokens. </li>
+<li>Since each token format is different, you'll need to write the<br>
+token-handling routines (Read/Write and, optionally, Insert/Delete) for each<br>
+token type. </li>
+<li>The Word and Rectangle tokens contain references to the objects that<br>
+contain them. This is important, since changing the text or the rectangle could<br>
+affect the document containing the information and there's no way to get either<br>
+a partially resolved object specifier or the intermediate products of the<br>
+resolution. <i>Therefore, if you need to know the parent of a particular token,</i><br>
+<i>you must store a copy of that information in the child token yourself, since the</i><br>
+<i>OSL may dispose of the original parent token.&nbsp;&nbsp;</i> (You may need to supply a<br>
+custom DisposeToken callback if your tokens contain handles or pointers to<br>
+other data.)</li>
+</ul>
+<p>
+The guidelines given above cover the contents of the token's handle, but they don't say<br>
+anything about the descriptorType field. When you return a token from an accessor<br>
+routine, you must put the proper type code into the descriptorType field of the AEDesc.<br>
+This is required because the OSL uses the returned token type from one step of the<br>
+resolution process to guide the next step. Having the accessor routines control the<br>
+resolution process actually insulates outside Apple event sources from having to know<br>
+about your specific implementation details. 
+</p>
+<p>
+Throughout the article, we've assumed that the token type in the token is the same as<br>
+the external data type specified by the object specifier. However, your code can put<br>
+anything in the token type field as long as you write the matching object accessors for<br>
+those token types. 
+</p>
+<p>
+For example, let's say that you've written a word-processing program, and another<br>
+application sends the request "Get Data<i>Word 2 of Paragraph 2 of Window 1</i> " where the<br>
+italicized part is an object specifier. The returned type would probably be some styled<br>
+text. However, if the requester had sent "Get Data<i>Word 1 of the Name of Window 1</i> ,"<br>
+your application would have to access a completely different form of text (a simple<br>
+Str255) and might return some nonstyled text. 
+</p>
+<p>
+&nbsp;Internally, the data type that represents text within a document can be different from<br>
+the data type representing a simple string. Instead of forcing the user to use two<br>
+different terms for the same thing (documentWord and plainTextWord, perhaps), the<br>
+application can make this determination at run time. Figure 7 shows how an<br>
+application might resolve the two examples given above.
+</p>
+<h2>WHAT ARE TOKEN-HANDLING ROUTINES?</h2>
+<p>
+&nbsp;Token-handling routines are optional routines (in other words, routines not<br>
+explicitly required by the object model or OSL) that perform common editing<br>
+operations on the data referred to by a token.&nbsp;&nbsp;&nbsp;Generally, when you have a token, you<br>
+want to read, write, insert, or delete the data the token refers to. Here are Read Token<br>
+Data and Write Token Data handlers for the cRectangle object class:
+</p>
+<p>
+<img src="img/170.gif" width="516 px"></img>
+</p>
+<p>
+<b>Figure 7</b> Controlling Object Specifier Resolution with Returned Tokens
+</p>
+<pre>struct RectTokenBody {
+    Rect          *theRect;       /* Use a pointer so we can read */
+                                  /* and write the rectangle. */
+    long          elementNumber;
+    Boolean       useProperty;
+    DescType      propertyCode;
+    WindowPtr     parentWindow; 
+                          /* The window that holds this rectangle. */
+};
+
+typedef struct RectTokenBody RectTokenBody;
+typedef RectTokenBody *RectTokenPtr, **RectTokenHandle;
+
+OSErr ReadRectToken (const AEDesc *theToken, AEDesc *result)
+{
+/* This routine gets called by the Get Data Apple event handler */
+/* (or any other handler that needs to read some data and possibly */
+/* return it to the user). If the useProperty flag is true, we */
+/* return the requested property, otherwise we return the default */
+/* representation for this class (we'll use the cQDRect primitive */
+/* type for this). */
+    RectTokenPtr  tokenPtr;
+    DescType      descCode;
+    OSErr         err;
+   
+    HLock(theToken-&gt;dataHandle);
+    tokenPtr = (RectTokenPtr)*theToken-&gt;dataHandle;
+    if (tokenPtr-&gt;useProperty) {
+        switch (tokenPtr-&gt;propertyCode) {
+
+            case pClass:
+                /* Tell the world that this is a rectangle. */
+                descCode = cRectangle;
+                err = AECreateDesc(typeType, (Ptr)&amp;descCode,
+                     sizeof(descCode), result);
+            break;
+
+            case pBounds:
+                /* Return the bounds of this rectangle, as a */
+                /* QuickDraw rectangle. */
+                err = AECreateDesc(typeQDRectangle,
+                    (Ptr)&amp;tokenPtr-&gt;theRect, sizeof(Rect),
+                     result);
+            break;
+
+            /* More property codes go here... */
+
+            default:
+                err = errAENoSuchObject;
+        }
+    }
+    else {
+        /* Return the default representation. In this simple */
+        /* example, it's a QuickDraw rectangle. */
+        err = AECreateDesc(typeQDRectangle, (Ptr)&amp;tokenPtr-&gt;theRect,
+            sizeof(Rect), result);
+    }
+    return err;
+}
+
+OSErr WriteRectToken (const AEDesc *theToken, const AEDesc *theData)
+{
+/* This routine gets called by the Set Data Apple event handler */
+/* (or any other handler that needs to change a property or some */
+/* value of the object). If the useProperty flag is true, we */
+/* check to see if the property is writable and modify it, */
+/* otherwise we change the contents of this object. */
+
+    RectTokenPtr        tokenPtr;
+    AEDesc              thisRectDesc;
+    OSErr               err;
+
+    HLock(theToken-&gt;dataHandle);
+    tokenPtr = (RectTokenPtr)*theToken-&gt;dataHandle;
+    if (tokenPtr-&gt;useProperty) {
+        switch (tokenPtr-&gt;propertyCode) {
+            case pClass: /* This is a read-only property. */
+                err = errAEWriteDenied;
+            break;
+            case pBounds: /* Set the bounds of this rectangle. */
+                /* Make sure we have a QuickDraw Rectangle. */
+                err = AECoerceDesc(theToken, typeQDRectangle,
+                    &amp;thisRectDesc);
+                if (err != noErr) return err;
+                /* Copy the data into our rectangle. */
+                BlockMove(*thisRectDesc.dataHandle,
+                    &amp;tokenPtr-&gt;theRect, sizeof(Rect));
+                AEDisposeDesc(&amp;thisRectDesc);
+            break;
+
+            /* More property codes go here... */
+
+            default:
+                err = errAENoSuchObject;
+        }
+    }
+    else {
+        /* Change the default representation (the bounds of this */
+        /* rectangle). */
+        err = AECoerceDesc(theToken, typeQDRectangle, &amp;thisRectDesc);
+        if (err != noErr) return err;
+        /* Copy the data into our rectangle. */
+        BlockMove(*thisRectDesc.dataHandle, &amp;tokenPtr-&gt;theRect,
+            sizeof(Rect));
+        AEDisposeDesc(&amp;thisRectDesc);
+    }
+    return err;
+}</pre>
+<p>
+The contents of the Create Element and Delete Token Data routines are completely<br>
+application- specific and are not illustrated here. Typically, the Create Element<br>
+routine takes a token for the element's container and an index position within that<br>
+container, and returns an object specifier describing the new element. (This object<br>
+specifier may be returned as the result of a Create Element Apple event, or may be<br>
+resolved so that you can insert some data into the newly created element.)
+</p>
+<h2>COMBINING OBJECTS AND EVENTS</h2>
+<p>
+Once you've created the object event dispatcher code, the object accessor routines, the<br>
+token formats, and the token handlers, your last task is to write the actual<br>
+event-handling routines. (These are different from the routines that you install into<br>
+the Apple Event Manager's dispatch table; event-handling routines do the work for a<br>
+specific event as handled by a specific object class.) While the exact content of these<br>
+routines is application dependent, they do have some features in common:
+</p>
+<ul>
+<li>Routines that need to return something to the outside world can use a Read<br>
+Token Data handler to convert an internal token into an externally usable<br>
+form, and can use the other token manipulation routines as needed. </li>
+<li>Each routine should accept both the event and the reply record as<br>
+parameters.&nbsp;&nbsp;&nbsp;The results from an event are typically placed into the direct<br>
+parameter of the reply record. When your event has finished execution, the<br>
+Apple Event Manager will send the reply back to the client application. </li>
+</ul>
+<h2>MOVING ON</h2>
+<p>
+Writing an object model application isn't difficult; once you've implemented an object<br>
+or two (including the accessors and tokens) and a couple of events, you should have a<br>
+good understanding of the issues. I hope that this article has given you a good idea of<br>
+where and how to begin adding the object model to your application. If you still need<br>
+help there are several options: reading the related documentation (see the box below);<br>
+looking at the sample code on the<i>Developer CD Series</i> disc (the samples Quill and<br>
+AEObject-Edition Sample in the Apple Events and Scripting Development Kit and the<br>
+sample code provided with this article); talking with other programmers; training<br>
+through Apple's Developer University; and using the on-line support available<br>
+through AppleLink, CompuServe, and other means. 
+</p>
+<p>
+Good luck! We all look forward to seeing the exciting things that can be done when<br>
+applications can work both cooperatively and under the control of scripting<br>
+environments. 
+</p>
+<h2>RELATED READING</h2>
+<ul>
+<li><i>Inside Macintosh</i>  Volume VI (Addison-Wesley, 1991) provides<br>
+fundamental information about Apple events. Chapter 1 gives an overview of<br>
+interapplication communication and explains the relationship of the Apple<br>
+Event Manager to other parts of System 7. Chapter 6 provides a complete<br>
+description of Apple events, explains how to send and receive Apple events, and<br>
+includes reference information for all Apple Event Manager routines.</li>
+<li>The Apple Event Manager chapter of the new, improved<i>Inside Macintosh</i><br>
+(preliminary draft) on the<i>Developer CD Series</i>&nbsp;&nbsp;disc provides information<br>
+about Apple event objects and object classes.</li>
+<li><i>Apple Event Registry: Standard Suites,</i>  on the <i>Developer CD Series</i>  disc<i>,</i> <br>
+describes standard Apple events, Apple event data types, and Apple event<br>
+object classes. A printed version of the <i> Apple Event Registry</i>&nbsp;&nbsp;is available<br>
+from APDA (#R0130LL/A).</li>
+</ul>
+<p>
+<b>RICHARD CLARK</b>, an instructor and course designer in Apple's Developer<br>
+University, is no stranger to projects both large and small. (He claims that both of his<br>
+recent projects--the new Advanced System 7 class and Daniel Guy Clark--took around<br>
+nine months and developed a life of their own.) When he's not playing with his new<br>
+son, you can find him dancing in local Renaissance Faires, stunt kite flying, searching<br>
+for the ultimate chocolate recipe, and dreaming up horrible new puns.*
+</p>
+<p>
+<b>Concepts from object-oriented programming </b>(notably inheritance--the<br>
+process of defining new classes in terms of other classes) are used in defining the<br>
+Apple event object model, but supporting Apple event objects does not require the use<br>
+of an object-oriented language or class library. You can use any language or<br>
+implementation technique you want, as long as your application can understand the<br>
+Apple events sent to it. *
+</p>
+<p>
+<b>In addition to the core suite, </b> the <i>Apple Event Registry </i> includes other<br>
+specialized suites for text processing, database manipulation, manipulating QuickDraw<br>
+graphics, and the like. Application developers can define their own custom Apple event<br>
+object classes and suites and submit them to the Apple Events Developer Association<br>
+for standardization. *
+</p>
+<p>
+<b>For source-code samples</b> that use the event-first technique, see the samples Quill<br>
+and AEObject-Edition Sample in the Apple Events and Scripting Development Kit on the<br>
+<i>&nbsp;Developer CD Series</i>&nbsp;&nbsp;disc.*
+</p>
+<p>
+<b>The cRectangle class </b>used in this code is simplified. Remember that if you're<br>
+implementing the real cRectangle class from the <i>Apple Event Registry</i> , you'll need to<br>
+support many more properties and a more complex default representation. *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS</b>Kevin Calhoun, Donn Denman, C. K.<br>
+Haun, Eric House, Bennet Marks&nbsp;&nbsp;*
+</p>
+</body>
+</html>

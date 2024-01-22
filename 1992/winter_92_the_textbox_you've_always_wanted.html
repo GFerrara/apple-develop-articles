@@ -1,0 +1,776 @@
+<html>
+<head>
+<!-- Article ID: 14 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Winter 92 - THE TEXTBOX YOU'VE ALWAYS WANTED</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>THE TEXTBOX YOU'VE ALWAYS WANTED</h2>
+<h1>BRYAN K. ("BEAKER") RESSLER</h1>
+<p>
+<img src="img/154.gif" width="371 px"></img>
+</p>
+<p>
+<i>&nbsp;NeoTextBox is an alternative to the TextEdit utility routine TextBox. NeoTextBox</i><br>
+<i>provides full-justification capability and the option to use TrueType features while</i><br>
+<i>retaining all the advantages of TextBox. The three routines that comprise NeoTextBox</i><br>
+<i>compile to fewer than 900 bytes yet offer a 40% performance increase over TextBox</i><br>
+<i>in common cases.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;In the deepest, darkest corner of the TextEdit chapter in<i>Inside Macintosh</i> Volume I,<br>
+there's an extremely useful routine called TextBox<i>. </i>
+</p>
+<pre>pascal void TextBox(void *text, long length, Rect *box, short just)</pre>
+<p>
+&nbsp;Given a rectangle and some text, TextBox word wraps the text inside the rectangle,<br>
+drawing in the font, style, and size specified in the current grafPort. 
+</p>
+<p>
+&nbsp;Anyone who's tried to word wrap text knows that it's not as easy as it first appears.<br>
+Perhaps that's why TextBox takes the approach it does: to perform its task, TextBox<br>
+creates a new TERec with TENew, sets up the rectangles in the record, and calls<br>
+TESetText to create a temporary handle to a copy of the text you provided to TextBox.<br>
+TextBox then calls TEUpdate to wrap and draw the text, and finally TEDispose to<br>
+dispose of the TERec. By calling TextEdit to do the text wrapping and drawing, TextBox<br>
+avoids doing any hard work. Unfortunately, it also incurs quite a bit of overhead. 
+</p>
+<p>
+&nbsp;Despite its pass-the-buck implementation, TextBox's use of TextEdit has several<br>
+advantages. Perhaps most important, TextBox works correctly with non-Roman script<br>
+systems like Japanese and Arabic without the need for any extra programming.<br>
+Another handy side effect is that updates in TextEdit degenerate into calls to DrawText,<br>
+and can therefore be recorded into QuickDraw pictures. TextBox was designed<br>
+specifically for drawing static text items in dialog boxes and performs this function<br>
+well.
+</p>
+<p>
+&nbsp;So TextBox is great--if you're drawing dialog boxes. But you want more. You want<br>
+better performance. You want more flexibility. You want to control line height. You<br>
+want full justification (instead of only left, center, and right alignment). You want to<br>
+use whizzy TrueType calls when they're available. You want to control the text drawing<br>
+mode. You can't stand the way TextBox always erases (and therefore isn't too useful<br>
+when you're drawing to printers--it slows printing way down). Yeah, and you don't<br>
+like that 32K text limitation either. You want to word wrap<i>War and Peace</i> in a single<br>
+call to TextBox. And you'd like some useful information back, too, like the line height it<br>
+used, and where the last line of text was drawn, so that you can draw something below<br>
+the text. And, of course, you want to retain the advantages of TextBox. 
+</p>
+<p>
+&nbsp;Well, this is your lucky day. 
+</p>
+<h2>ENTER NEOTEXTBOX</h2>
+<p>
+NeoTextBox is the TextBox you've always wanted (and didn't even have to ask for).<br>
+NeoTextBox is on the average 33% faster than an equivalent call to TextBox. Plus, it's<br>
+considerably more flexible:
+</p>
+<ul>
+<li>NeoTextBox allows a line height specification. You can ask for the default<br>
+(same behavior as TextBox); use variable line height, which adjusts for<br>
+characters that extend beyond the font's standard ascent or descent line; or<br>
+specify a line height in points. </li>
+<li>NeoTextBox provides left, center, and right alignment and full<br>
+justification. </li>
+<li>NeoTextBox never erases the rectangle it's drawing into. It lets you erase<br>
+or, if you wish, draw a colored background. </li>
+<li>NeoTextBox returns the total number of lines in the wrapped text. </li>
+<li>NeoTextBox can return, via VAR parameters, the vertical pen position of<br>
+the last line of text and the line height that was used to draw the text. </li>
+</ul>
+<p>
+NeoTextBox gives you all this extra functionality, yet retains the advantages of<br>
+TextBox. It is completely language independent and uses the Script Manager heavily<br>
+(just like TextEdit). It's easy to call, and if you don't want all the spiffy new features,<br>
+it's easy to get TextBox-like behavior with a free performance increase. 
+</p>
+<p>
+Let's take a look at the parameters for NeoTextBox. 
+</p>
+<pre>short NeoTextBox(unsigned char *theText, unsigned long textLen,
+            Rect *wrapBox, short align, short lhCode, short *endY,
+            short *lhUsed)</pre>
+<p>
+The first two parameters, theText and textLen, are analogous to TextBox's text and<br>
+length parameters: they specify the text to be wrapped. Note that theText isn't a Pascal<br>
+string--it's a pointer to the first printable character. 
+</p>
+<p>
+The third and fourth parameters, wrapBox (box in TextBox) and align, also hearken<br>
+back to NeoTextBox's ancestor. Just as in TextBox, wrapBox specifies the rectangle<br>
+within which you're wrapping text, and the align parameter specifies the alignment. In<br>
+addition to the standard TextEdit alignments teFlushLeft, teCenter, and teFlushRight<br>
+(see "Text Alignment Constants for System 7"), a new alignment is<br>
+defined--ntbJustFull. It performs full justification in whatever manner is<br>
+appropriate for the current script. 
+</p>
+<p>
+The fifth parameter, lhCode, specifies how the line height is derived. If lhCode is 0, the<br>
+default line height is derived via a call to GetFontInfo. This gives the same behavior as<br>
+TextBox. If lhCode is less than 0, the line height is derived by determining which<br>
+characters in the text that's being drawn extend the most above and below the baseline<br>
+(see "SetPreserveGlyph With TrueType Fonts").&nbsp;&nbsp;&nbsp;Finally, if lhCode is greater than 0,<br>
+the value of lhCode itself specifies the line height. For instance, you can draw<br>
+12-point text in 16-point lines. 
+</p>
+<p>
+&nbsp;The last two parameters, endY and lhUsed, are reference parameters that allow you to<br>
+retrieve the vertical position of the last line of text and the line height that was used to<br>
+draw the text, respectively.&nbsp;&nbsp;&nbsp;The endY parameter can be very useful if you intend to<br>
+draw anything below the text, since it tells you exactly where the last line of text was<br>
+drawn. To find out what the actual derived line height was if you used a negative lhCode,<br>
+use the lhUsed parameter. Pass nil for either or both of these last two parameters if<br>
+you don't want this extra information. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;NeoTextBox returns the<i>total</i>&nbsp;&nbsp;number of lines in the text. That includes lines clipped<br>
+off because they were below the bottom of wrapBox. You can tell whether the text<br>
+overflowed wrapBox by whether the value returned in endY is greater than<br>
+wrapBox.bottom. If you want to know how many lines fit in wrapBox, simply divide the<br>
+height of wrapBox by the value returned in lhUsed. 
+</p>
+<h2>TEXT ALIGNMENT CONSTANTS FOR SYSTEM 7</h2>
+<p>
+Before System 7, there was a conflict between the names of the text alignment<br>
+constants and their actual behavior. To help make applications compatible with<br>
+non-Roman scripts, teJustLeft was interpreted as the default text alignment<br>
+appropriate for the current script rather than forcing text to be aligned on the left as<br>
+specified. For example, on a Hebrew system, a TextBox call with a just parameter of<br>
+teJustLeft would actually use the default justification for Hebrew, which is<br>
+teJustRight.
+</p>
+<p>
+To overcome this conflict, new constants were introduced in System 7, as shown in<br>
+Table 1.<br>
+<b>&nbsp;Table 1</b> Text Alignment Constants
+</p>
+<p><table border="0"><tr><td><b>New Constant</b></td><td><b></b><b>Old Constant</b></td><td><b></b><b>Value</b></td><td><b></b><b>Meaning</b></td></tr>
+<tr><td>teFlushLeft</td><td>teForceLeft</td><td>-2</td><td>Align text on the left for all scripts</td></tr>
+<tr><td>teFlushRight</td><td>teJustRight</td><td>-1</td><td>Align text on the right for all scripts</td></tr>
+<tr><td>teFlushDefault</td><td>teJustLeft</td><td>0</td><td>Use conventional alignment for script</td></tr>
+<tr><td>teCenter</td><td>teJustCenter</td><td>1</td><td>Center text for all scripts</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<h2>&nbsp;SETPRESERVEGLYPH WITH TRUETYPE FONTS</h2>
+<p>
+&nbsp;Before TrueType, all characters in all fonts fit beneath the font's ascent line and above<br>
+the descent line, like the default characters shown in Figure 1. Bitmapped fonts were<br>
+drawn so that diacriticals, like the angstrom over the <i>A </i> in &amp;Aring;ngstr&amp;ouml;m,<br>
+would fit beneath the ascent line. To do this, the letterform had to be distorted. With<br>
+the advent of TrueType, this "feature" can be controlled, because TrueType fonts carry<br>
+outline data that's true to the original design (hence the name TrueType).
+</p>
+<p>
+&nbsp;Since most applications expect characters to fit beneath the ascent line and above the<br>
+descent line, QuickDraw transforms characters in TrueType fonts to force them within<br>
+those bounds. To override this transformation and preserve the original glyph shape,<br>
+use the Font Manager call SetPreserveGlyph(TRUE). After this call, TrueType fonts<br>
+will be drawn as shown to the right in Figure 1. Preserving the glyph shape makes it<br>
+possible to take advantage of NeoTextBox's variable line height feature.
+</p>
+<p>
+<img src="img/155.gif" width="569 px"></img>
+</p>
+<p>
+<b>Figure 1</b> How SetPreserveGlyph Affects Line Height
+</p>
+<h2>REQUIREMENTS</h2>
+<p>
+NeoTextBox uses some advanced Script Manager routines that are available only in<br>
+System 6 or later. NeoTextBox assumes they're available, so make sure your main<br>
+program checks that it's running on System 6 or later via a Gestalt or SysEnvirons<br>
+call. 
+</p>
+<p>
+NeoTextBox requires one global variable, a Boolean named gHasTrueType. It should be<br>
+set to TRUE if the TrueType trap ($A854) is available, or FALSE if not. If your<br>
+development environment provides glue for Gestalt, you can use the following lines to<br>
+set up gHasTrueType:
+</p>
+<pre>#define kTrueTypeTrap 0x54  /* The TrueType trap number */
+#define kUnimplTrap 0x9f    /* The "unimplemented" trap number */
+long gResponse;
+
+if (Gestalt(gestaltFontMgrAttr,&amp;gResponse) == noErr)
+    gHasTrueType = BitTst(&amp;gResponse,31-gestaltOutlineFonts);
+else {
+    gHasTrueType = (NGetTrapAddress(kTrueTypeTrap,ToolTrap) !=
+        NGetTrapAddress(kUnimplTrap,ToolTrap));
+}</pre>
+<h2>THE BASIC ALGORITHM</h2>
+<p>
+NeoTextBox does a lot. But, in order to appease the programmer's natural desire to<br>
+avoid work, we allow the Script Manager to do the hard parts. (Do you know how to do<br>
+full justification in Arabic?) In short, here's how NeoTextBox gets its job done:
+</p>
+<ol>
+<li>It saves the current grafPort's clipping region and clips to the box we're<br>
+drawing into. </li>
+<li>It calculates the appropriate line height with the function NTBLineHeight.</li>
+<li>It calls the Script Manager routine StyledLineBreak to find each<br>
+line-break point in the input text. </li>
+<li>It draws each line with the function NTBDraw. </li>
+<li>It advances the pen down one line. </li>
+<li>When there's no more text, it restores the clipping region and returns the<br>
+appropriate values. </li>
+</ol>
+<p>
+It sounds simple, doesn't it? That's because StyledLineBreak does all the work. It<br>
+knows how to find word breaks in whatever script we're using. StyledLineBreak is<br>
+smart, too. For instance, in English, it knows that it's OK to break a hyphenated word<br>
+if necessary. It uses rules that are provided by the installed script systems, so it<br>
+always takes the appropriate actions. Let's take a closer look at the code. 
+</p>
+<h2>THE NEOTEXTBOX FUNCTION</h2>
+<p>
+The source code for NeoTextBox that's shown here is written in MPW C 3.2. We'll start<br>
+in the NeoTextBox function and break out to a couple of utility functions when we come<br>
+upon them. 
+</p>
+<p>
+Here's the NeoTextBox declaration and local variables:
+</p>
+<pre>short NeoTextBox(unsigned char *theText, unsigned long textLen,
+    Rect *wrapBox, short align, short lhCode, short *endY,
+    short *lhUsed)
+{
+  RgnHandle           oldClip;        /* Saved clipping region */
+  StyledLineBreakCode breakCode;      /* From StyledLineBreak */
+  Fixed               fixedMax;       /* boxWidth in fixed point */
+  Fixed               wrapWid;        /* Width to wrap within */
+  short               boxWidth;       /* Width of box */
+  long                lineBytes;    /* Number of bytes in one line */
+  unsigned short      lineHeight;     /* Calculated line height */
+  short               curY;           /* Current vert pen location */
+  unsigned short      lineCount;    /* Number of lines we've drawn */
+  long                textRemaining; 
+                                   /* Number of bytes of text left */
+  unsigned char       *lineStart;    /* Pointer to start of a line */
+  unsigned char       *textEnd;    /* Pointer to end of input text */</pre>
+<p>
+Many of these variables are used in the call to StyledLineBreak, which is explained in<br>
+detail later.&nbsp;&nbsp;&nbsp;The most important variables to know about here are breakCode, which<br>
+contains the line break code returned by each call to StyledLineBreak; lineStart and<br>
+lineBytes, which are returned by StyledLineBreak to specify a single line; and curY,<br>
+the current vertical pen location.
+</p>
+<p>
+<b>GET READY</b><br>
+NeoTextBox, like TextBox, clips to wrapBox. Since this is a general-purpose routine,<br>
+it's safest to save the clipping region, then restore it at the end. We calculate the width<br>
+of wrapBox, because it's used a lot, and convert it to fixed point as fixedMax, which is<br>
+used in calls to StyledLineBreak as a VAR parameter. Also, we retrieve the appropriate<br>
+text alignment if the user has requested default alignment. 
+</p>
+<pre>GetClip((oldClip = NewRgn()));
+ClipRect(wrapBox);
+boxWidth = wrapBox-&gt;right - wrapBox-&gt;left;
+fixedMax = Long2Fix((long)boxWidth);
+if (align == teFlushDefault)
+    align = GetSysJust();</pre>
+<p>
+<b>DETERMINE THE LINE HEIGHT</b><br>
+Now we need to determine the appropriate line height. NeoTextBox calls NTBLineHeight<br>
+to perform this function, passing the text pointer, the text length, the wrap rectangle,<br>
+the caller- specified line height code, and the address of curY, the current vertical pen<br>
+location.&nbsp;&nbsp;&nbsp;NTBLineHeight calculates and returns the line height and calculates the<br>
+correct starting pen location. Here's the NTBLineHeight function:
+</p>
+<pre>unsigned short NTBLineHeight(unsigned char *theText,
+   unsigned long textLen, Rect *wrapBox, short lhCode, short *startY)
+{
+    short                   asc, desc;
+    FontInfo                fInfo;
+    Point                   frac;
+    unsigned short      lineHeight;
+
+    GetFontInfo(&amp;fInfo);
+    if (lhCode &lt; 0) {
+       /* lhCode &lt; 0 means "variable line height", so if it's a */
+       /* TrueType font use OutlineMetrics, otherwise use default. */
+        frac.h = frac.v = 1;
+        if (gHasTrueType &amp;&amp; IsOutline(frac, frac)) {
+            OutlineMetrics((short)textLen, theText, frac, frac, &amp;asc,
+                &amp;desc, nil, nil, nil);
+            lineHeight = MAXOF(fInfo.ascent, asc)
+                + MAXOF(fInfo.descent, -desc) + fInfo.leading;
+            *startY = wrapBox-&gt;top + MAXOF(fInfo.ascent, asc)
+                + fInfo.leading;
+        } else {
+            /* Punt to "default" if we can't use TrueType. */
+            lineHeight = fInfo.ascent + fInfo.descent + fInfo.leading;
+            *startY = wrapBox-&gt;top + fInfo.ascent + fInfo.leading;
+        }
+    } else if (lhCode == 0) {
+        /* lhCode == 0 means "default line height." */
+        lineHeight = fInfo.ascent + fInfo.descent + fInfo.leading;
+        *startY = wrapBox-&gt;top + fInfo.ascent + fInfo.leading;
+    } else {
+        /* lhCode &gt; 0 means "use this line height" so we */
+        /* trust 'em. */
+        lineHeight = lhCode;
+        *startY = wrapBox-&gt;top + lhCode + fInfo.leading;
+    }
+    return(lineHeight);
+}</pre>
+<p>
+Remember, there are three possible line height codes:
+</p>
+<ul>
+<li>Variable line height (specified by an lhCode less than 0) is handled first.<br>
+If the TrueType trap is available and this particular font is a TrueType font,<br>
+OutlineMetrics is called to determine the line height (see "Descent Into Hell").<br>
+OutlineMetrics can return a variety of information, but we really only want<br>
+the highest ascent and the lowest descent, which are returned in the local<br>
+variables asc and desc. Then we choose whichever is higher, the default ascent<br>
+or asc, and whichever is lower, the default descent or desc. If TrueType isn't<br>
+available or the particular font isn't a TrueType font, we punt to the default<br>
+line height. </li>
+<li>If lhCode is 0, the default line height is used. This is defined as the sum of<br>
+the ascent, descent, and line gap (leading) derived by a GetFontInfo call. </li>
+<li>Finally, if lhCode is greater than 0, the caller is providing a specific line<br>
+height. In this case, NTBLineHeight returns lhCode as the line height.</li>
+</ul>
+<p>
+Each of the three line height calculation methods also figures the correct startY based<br>
+on the line height and wrapBox-&gt;top. 
+</p>
+<p>
+Back in NeoTextBox, we call NTBLineHeight to set up our local variables lineHeight and<br>
+curY:
+</p>
+<pre>lineHeight = NTBLineHeight(theText, textLen, wrapBox, lhCode, &amp;curY);
+lineCount = 0;
+lineStart = theText;
+textEnd = theText + textLen;
+textRemaining = textLen;</pre>
+<p>
+Here we also set up some other local variables. The variable lineCount records the<br>
+number of lines we've drawn. The pointer lineStart points to the beginning of the<br>
+current line, which initially is the beginning of the text. The variable textEnd is a<br>
+pointer to just beyond the end of the input text and is used for testing when the text is<br>
+all used up. Finally, the variable textRemaining keeps track of how many bytes of<br>
+input text remain to be processed. 
+</p>
+<p>
+<b>THE BREAK-DRAW LOOP</b><br>
+Now NeoTextBox is ready to break lines and draw the text. This task is performed by<br>
+the following do-while loop:
+</p>
+<pre>do {
+    lineBytes = 1;
+    wrapWid = fixedMax;
+
+    breakCode = StyledLineBreak(lineStart, textRemaining, 0,
+        textRemaining, 0, &amp;wrapWid, &amp;lineBytes);
+
+    NTBDraw(breakCode, lineStart, lineBytes, wrapBox, align, curY,
+        boxWidth);
+
+    curY += lineHeight;
+    lineStart += lineBytes;
+    textRemaining -= lineBytes;
+    lineCount++;
+} while (lineStart &lt; textEnd);</pre>
+<p>
+If this looks simple, that's because it is. Anyone who's tried to write code to wrap text<br>
+knows that it's a difficult task. Making the algorithm compatible with different script<br>
+systems complicates the matter even more. Fortunately, we have the Script Manager,<br>
+which in this case makes our lives a<i>lot</i>&nbsp;&nbsp;easier. 
+</p>
+<p>
+<b>The workhorse: StyledLineBreak. </b>First we set lineBytes to 1, signaling to<br>
+StyledLineBreak that this is the first "script run" on this line. Since we have only one<br>
+script run, we always reset lineBytes at the top of the loop. Also, we reset wrapWid to<br>
+be fixedMax (which was previously initialized to the fixed- point width of the wrap<br>
+rectangle). WrapWid tells StyledLineBreak the width within which to wrap the text<br>
+and returns how much of the line is left (if any) after wrapping (that's why we have<br>
+to reset it at the top of the loop each time). 
+</p>
+<p>
+Now we call StyledLineBreak. We provide a pointer to the beginning of the text for this<br>
+line, the number of bytes of text remaining, the wrap width, and the address of a<br>
+variable where StyledLineBreak puts the number of bytes in this line.<br>
+StyledLineBreak does the hard work of finding word boundaries, adding up character<br>
+widths, and handling special cases, all in an internationally compatible way. 
+</p>
+<p>
+After StyledLineBreak returns, lineBytes tells us the length of the current line<br>
+beginning at lineStart, and breakCode has a line break code that tells us the<br>
+circumstances of the line break, as shown in Figure 2. 
+</p>
+<p>
+<img src="img/156.gif" width="498 px"></img>
+</p>
+<p>
+<b>Figure 2</b> Line Break Codes
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Usually, StyledLineBreak returns smBreakWord, indicating that it broke the line on a<br>
+word boundary. The break code smBreakChar says that it encountered a word that was<br>
+too long to fit on a single line and was forced to break in the middle of a word.<br>
+StyledLineBreak returns smBreakOverflow if you run out of text before filling the<br>
+given width. These line break codes help determine how to draw the text. 
+</p>
+<p>
+<b>Draw the text with NTBDraw. </b>After StyledLineBreak figures the length of the<br>
+line, NeoTextBox calls NTBDraw to draw the line. NeoTextBox passes a pointer to the<br>
+line of text, the length of the line in bytes, the wrap rectangle, the alignment, the<br>
+current vertical pen location, and the width of the wrap rectangle. Let's take a look at<br>
+NTBDraw:
+</p>
+<pre>#define kReturnChar     0x0d
+
+void NTBDraw(StyledLineBreakCode breakCode, unsigned char *lineStart,
+    long lineBytes, Rect *wrapBox, short align, short curY,
+    short boxWidth)
+{
+    unsigned long   blackLen;    /* Length of non-white characters */
+    short           slop;        /* Number of pixels of slop for */
+                                 /* full justification */
+    blackLen = VisibleLength(lineStart, lineBytes);
+   
+    if (align == ntbJustFull) {
+        slop = boxWidth - TextWidth(lineStart, 0, blackLen);
+        MoveTo(wrapBox-&gt;left, curY);
+        if (breakCode == smBreakOverflow ||
+                *(lineStart + (lineBytes - 1)) == kReturnChar)
+            align = GetSysJust();
+        else DrawJust(lineStart, blackLen, slop);
+    }
+    switch(align) {
+        case teFlushLeft:
+        case teFlushDefault:
+            MoveTo(wrapBox-&gt;left, curY);
+            break;
+        case teFlushRight:
+            MoveTo(wrapBox-&gt;right - TextWidth(lineStart, 0,
+                blackLen), curY);
+            break;
+        case teCenter:
+            MoveTo(wrapBox-&gt;left + (boxWidth - TextWidth(lineStart,
+                0, blackLen)) / 2, curY);
+            break;
+    }
+    if (align != ntbJustFull)
+        DrawText(lineStart, 0, lineBytes);
+}</pre>
+<p>
+NTBDraw's job is to move the pen and draw the text as indicated by the alignment<br>
+parameter, align, and the line break code, breakCode. NTBDraw first calculates the<br>
+visible length of the line with a call to the Script Manager routine VisibleLength. This<br>
+excludes white-space characters at the end of the line. What exactly are white-space<br>
+characters? Well, that depends on the script. VisibleLength knows which characters<br>
+are visible and which are not for the current script, and returns an appropriate<br>
+length in bytes, which is stored in the local variable blackLen. 
+</p>
+<p>
+When align is ntbJustFull, we need to determine whether the current line has a<br>
+carriage return character ($0D) at the end, because a line with a carriage return<br>
+(for example, the last line in a paragraph) should always be drawn with the default<br>
+system alignment, rather than fully justified. 
+</p>
+<p>
+Looking back at the break codes for different types of lines shown in Figure 2, notice<br>
+that the line that ends with the carriage return (denoted graphically in the<br>
+illustration) returns a line break code of smBreakWord, where you might expect it to<br>
+return smBreakOverflow. As you can see, StyledLineBreak expects the caller to know<br>
+when a line is the last line of a paragraph. Therefore, every line whose break code is<br>
+smBreakWord must be checked for a carriage return. 
+</p>
+<p>
+NTBDraw looks at the last byte in the line it's drawing to see if it's a carriage return.<br>
+Since the carriage return character ($0D) falls into the control-code range, it's<br>
+guaranteed never to occur as the low byte of a two-byte character. This frees us from<br>
+having to test whether the last character in the line is two-byte and allows us to<br>
+proceed directly to the last byte. 
+</p>
+<p>
+We now know whether the current line has a carriage return or not. If not, we<br>
+calculate the amount of white-space slop remaining in the line, then call the Script<br>
+Manager routine DrawJust to draw the text fully justified--whatever that means for<br>
+this script. (In Arabic, for instance, full justification is performed completely<br>
+differently than for Roman text.) If the current line<i>does</i> end in a carriage return, we<br>
+override the align parameter with the default system alignment and fall through.&nbsp;&nbsp;For<br>
+the left, right, and center alignments, the switch statement moves the pen<br>
+appropriately, and a DrawText call is made to draw the text. The visible length (in<br>
+blackLen) helps correctly calculate the pen position for right and center alignment and<br>
+full justification. 
+</p>
+<p>
+<b>Update the variables. </b>After NTBDraw returns, we need to update a bunch of local<br>
+variables and loop around again. 
+</p>
+<pre>    curY += lineHeight;
+    lineStart += lineBytes;
+    textRemaining -= lineBytes;
+    lineCount++;
+} while (lineStart &lt; textEnd);</pre>
+<p>
+First, we add lineHeight to curY, setting us up for the next line. LineStart, the pointer<br>
+to the beginning of a line, gets updated to the character after the end of the current<br>
+line. TextRemaining gets reduced by the number of bytes consumed by the current<br>
+line, and lineCount gets incremented.&nbsp;&nbsp;&nbsp;If lineStart still hasn't run off the end of the<br>
+text, the whole break-draw process is repeated. 
+</p>
+<p>
+<b>RETURN SOME VALUES</b><br>
+Now that NeoTextBox has done such a fine job wrapping the text, it's time to return<br>
+some useful values to the caller. 
+</p>
+<pre> if (endY)
+    *endY = curY - lineHeight;
+if (lhUsed)
+    *lhUsed = lineHeight;</pre>
+<p>
+NeoTextBox returns these values only if the caller wants them. This makes it easy to<br>
+get TextBox- like behavior from NeoTextBox without having to do any work: if you<br>
+don't want a return value, just pass nil instead of providing the address of a variable. 
+</p>
+<p>
+<b>CLEAN UP AND WE'RE DONE</b><br>
+The only thing left to do is a little cleanup, and we're outa here. 
+</p>
+<pre>    SetClip(oldClip);
+    DisposeRgn(oldClip);
+
+    return(lineCount);
+}</pre>
+<p>
+We restore the clipping region, dispose of our saved region, and return lineCount. 
+</p>
+<h2>CALLS TO NEOTEXTBOX</h2>
+<p>
+One of the best features of NeoTextBox is that you can easily substitute it for calls<br>
+you're currently making to TextBox. If that's all you want to do, replace every<br>
+occurrence that looks like this
+</p>
+<pre>TextBox(textPtr, textLen, &amp;wrapBox, justify);</pre>
+<p>
+with this
+</p>
+<pre>{
+    EraseRect(&amp;wrapBox);
+    NeoTextBox(textPtr, textLen, &amp;wrapBox, justify, 0, nil, nil);
+}</pre>
+<p>
+To use NeoTextBox in place of TextBox, you pass 0 for lhCode (default line height) and<br>
+nil for endY and lhUsed, and ignore the return value. If you add NeoTextBox to your<br>
+program and just do thesubstitution above, every NeoTextBox call will be on the<br>
+average 33% faster than the old TextBox call. If you use TextBox a lot, that can mean a<br>
+real performance increase. 
+</p>
+<p>
+You can use NeoTextBox in more ways than just as direct substitution to improve<br>
+performance. It does, after all, have whizzy new features that TextBox never had. Let's<br>
+take a look at a more sophisticated call to NeoTextBox that uses some of its unique<br>
+features:
+</p>
+<pre>short UseNTB(void)
+{
+    Rect            wrapBox;
+    RGBColor        ltBlue;
+    Handle          textHdl;
+    long            textLen;
+    short           numLines = 0;
+    short           endY, lineHt;
+    /* Set up our RGBColor and wrapBox. */
+    SetRect(&amp;wrapBox, 10, 10, 110, 110);
+    ltBlue.red = 39321;
+    ltBlue.green = 52428;
+    ltBlue.blue = 65535;
+   
+    /* Paint the background, then set up the port text parameters. */
+    PenNormal();
+    RGBForeColor(&amp;ltBlue);
+    PaintRect(&amp;wrapBox);
+    ForeColor(blackColor);
+    TextFont(helvetica); TextSize(12);
+    TextFace(0); TextMode(srcOr);
+
+    /* Retrieve some text for us to draw. */
+    textHdl = GetResource('TEXT', 128);
+    if (textHdl) {
+        textLen = GetHandleSize(textHdl);
+        /* Be sure to lock the handle. NeoTextBox can move memory! */
+        HLock(textHdl);
+       
+        /* Wrap text and set numLines, endY, and lineHt. */
+        numLines = NeoTextBox(*textHdl, textLen, &amp;wrapBox,
+            ntbJustFull, 18, &amp;endY, &amp;lineHt);
+        HUnlock(textHdl);
+
+        /* Beep if text overflows wrapBox. */
+        if (endY &gt; wrapBox.bottom)
+            SysBeep(1);
+
+        /* Prove we know where the text ended by drawing a line. */
+        MoveTo(wrapBox.left, endY + lineHt);
+        Line(20, 0);
+    }
+    return(numLines);
+}</pre>
+<p>
+This sample function draws a 100-by-100-pixel box in light blue, then wraps text<br>
+from a TEXT resource into the rectangle, ORing the text over the blue background. The<br>
+text is fully justified 12- point Helvetica&#174;, with 18-point line spacing. If the text<br>
+overflows the box, a beep sounds. A small line is drawn at the baseline where<br>
+subsequent text might be drawn.
+</p>
+<p>
+Here's an example using NeoTextBox with variable line height and TrueType fonts:
+</p>
+<pre>void UseVariableLineHeight(Rect *wrapBox, short align)
+{
+    Boolean oldPreferred, oldPreserve;
+    Handle      textHdl;
+    long        textLen;
+
+    if (gHasTrueType) {
+        oldPreferred = GetOutlinePreferred();
+        oldPreserve = GetPreserveGlyph();
+        SetOutlinePreferred(TRUE);
+        SetPreserveGlyph(TRUE);
+    }
+
+    textHdl = GetResource('TEXT', 128);
+    textLen = GetHandleSize(textHdl);
+    HLock(textHdl);
+    NeoTextBox(*textHdl, textLen, wrapBox, align, -1, nil, nil);
+    HUnlock(textHdl);
+
+    if (gHasTrueType) {
+        SetOutlinePreferred(oldPreferred);
+        SetPreserveGlyph(oldPreserve);
+    }
+}</pre>
+<p>
+<img src="img/157.gif" width="573 px"></img>
+</p>
+<p>
+<b>Figure 3 </b> Using Variable Line Height
+</p>
+<p>
+&nbsp;Notice that we save the current settings of the Font Manager's OutlinePreferred and<br>
+PreserveGlyph flags. This allows us to be transparent to the caller. By setting<br>
+OutlinePreferred to TRUE, we are ensured of using TrueType fonts, even if bitmapped<br>
+fonts are available. By setting PreserveGlyph to TRUE, we get the accurate glyph<br>
+shapes and measurements (see "SetPreserveGlyph With TrueType Fonts" on page 34).<br>
+Calling NeoTextBox with -1 as its lhCode parameter causes it to use variable line<br>
+height, which results in the difference shown in Figure 3. 
+</p>
+<h2>LIMITATIONS AND POSSIBLE ENHANCEMENTS</h2>
+<p>
+NeoTextBox is a nice alternative to TextBox, but it has its limitations and areas that<br>
+could benefit from improvement. Following are some suggestions for overcoming the<br>
+limitations and adding useful features. 
+</p>
+<p>
+<b>32K TEXT SIZE LIMIT</b><br>
+All you<i> War and Peace</i> fans out there need to do a little work. NeoTextBox shares the<br>
+32K text limitation that TextBox has, but not for the same reason. TextBox can wrap<br>
+only 32K of text in one call because it uses TextEdit. In NeoTextBox, the limitation<br>
+arises from the OutlineMetrics call, which is used in deriving variable line height and<br>
+can only handle 32K of text. Heavy-duty Tolstoy types could remove the code that<br>
+implements variable line height and subsequently word wrap most novels in a single<br>
+NeoTextBox call (knock yourselves out). 
+</p>
+<p>
+<b>DON'T FORGET TO ERASE</b>Perhaps this isn't really a limitation, but you can't<br>
+simply replace a TextBox call with a NeoTextBox call. You need to call EraseRect<br>
+explicitly if you want TextBox behavior, as shown earlier in the section "Calls to<br>
+NeoTextBox."
+</p>
+<p>
+<b>SCREEN-ONLY OPTIMIZATIONS</b><br>
+If you know you'll be using NeoTextBox only for screen applications (that is, you won't<br>
+be using it to draw into a printer port), you can make a few optimizations. If you don't<br>
+care about the return values, you can use RectInRgn to check whether the wrap<br>
+rectangle intersects with the current port's visRgn; if it doesn't, you can simply<br>
+return. 
+</p>
+<p>
+If you don't need the return value giving the number of total lines, you can make the<br>
+break-draw loop terminate when curY exceeds wrapBox-&gt;bottom + lineHeight. 
+</p>
+<p>
+<b>SPECIAL ONE-LINE CASE</b><br>
+In Macintosh computers with 256K ROMs, TextBox has a feature that might be a<br>
+worthwhile addition to NeoTextBox. If the TextWidth of the input text is less than<br>
+boxWidth, simply use DrawText to draw the text and don't bother with any of the<br>
+wrapping code. TextBox has this feature because it's used for dialog box statText items,<br>
+which are often one line. 
+</p>
+<p>
+<b>DON'T DRAW OFF THE END OF WRAPBOX</b><br>
+It might make NeoTextBox faster if NTBDraw isn't called when curY is greater than<br>
+wrapBox- &gt;bottom + lineHeight. You'd still have to wrap all the text (to determine the<br>
+total number of lines), but you wouldn't be drawing text that you know will be clipped.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>MAKE SAVING/RESTORING THE CLIPPING REGION OPTIONAL</b><br>
+It might be useful to be able to set up some complex clipping region and have<br>
+NeoTextBox wrap as usual but clip its text to whatever the clipping region is set to at<br>
+invocation. You could add a Boolean swapClip parameter to control this. 
+</p>
+<p>
+<b>STYLED NEOTEXTBOX</b><br>
+With considerable effort, NeoTextBox could be extended to handle styled and<br>
+multiscript text. Since StyledLineBreak, the workhorse of NeoTextBox, is designed to<br>
+be used with styled text, such an enhancement is possible. 
+</p>
+<h2>CONCLUSION</h2>
+<p>
+Once you start using NeoTextBox, you'll find it ending up in all your applications. In<br>
+tests on a Macintosh IIfx running System 7, NeoTextBox was between 25% and 50%<br>
+faster than TextBox, 33% faster on the average. Performance varies depending on<br>
+font, screen depth, and the ratio of wrapping to drawing. For left-aligned Geneva text<br>
+on an 8-bit screen, NeoTextBox is 40% faster than TextBox. That alone is a good<br>
+reason to use it. Plus, it has features you can't get out of TextBox at all. 
+</p>
+<p>
+Perhaps the moral of this article is if you don't like some feature of the Toolbox or OS<br>
+go ahead and write your own. But you'll be doing yourself a favor--and you'll be a lot<br>
+more compatible in the future--if you can find lower-level system, Toolbox, or OS<br>
+facilities to aid you in your task, rather than recoding the entire feature yourself. 
+</p>
+<p>
+So go ahead and whip NeoTextBox into your application. Enjoy the improved<br>
+performance and new features. And if there's something you don't like, go right in<br>
+there and change it. Make NeoTextBox the TextBox<i>you've</i> always wanted! 
+</p>
+<h2>DESCENT INTO HELL</h2>
+<p>
+<i>Descent</i>&nbsp;&nbsp;is the amount of space that should be allocated for a font below the text<br>
+baseline. When you call GetFontInfo, the value returned for descent is a positive<br>
+number of points below the baseline. Although this is convenient, in the typographic<br>
+industry it's more common to represent descent values as <i> negative</i>&nbsp;&nbsp;numbers.
+</p>
+<p>
+In an attempt to be more typographically useful, TrueType's OutlineMetrics call<br>
+returns its descent values as negative numbers. So, to avoid a descent into hell,<br>
+remember to note the sign of descent values when mixing calls to GetFontInfo and<br>
+OutlineMetrics.
+</p>
+<p>
+<b>BRYAN K. RESSLER, </b>or "Beaker" as he's known at Apple, is one of our twisted<br>
+software engineers who seems to be convinced that anything is possible on a Macintosh,<br>
+and if it's already been done, it can be done better. He got his BSCS from the University<br>
+of California, Irvine, and wrote commercial MIDI applications before coming to Apple.<br>
+Beaker wrote many of the programs used for testing TrueType fonts. When he's not on<br>
+a coding frenzy, he writes <i> noncommercial</i>&nbsp;&nbsp;MIDI applications, tries to have a life, and<br>
+keeps a consistent blood-caffeine level so high you need scientific notation to express<br>
+it.*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS</b>Sue Bartalo, John Harvey, Joe<br>
+Ternasky*
+</p>
+</body>
+</html>

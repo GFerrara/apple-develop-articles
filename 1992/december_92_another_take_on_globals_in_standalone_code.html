@@ -1,0 +1,1226 @@
+<html>
+<head>
+<!-- Article ID: 46 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>December 92 - ANOTHER TAKE ON GLOBALS IN STANDALONE CODE</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>ANOTHER TAKE ON GLOBALS IN STANDALONE CODE</h2>
+<h1>KEITH ROLLIN</h1>
+<p>
+<img src="img/246.gif" width="180 px"></img>
+</p>
+<p>
+<i>&nbsp;While MPW is great for developing applications, it provides little support for</i><br>
+<i>creating standalone code resources such as XCMDs, drivers, and custom window,</i><br>
+<i>control, and menu definition procedures, especially if you have nonstandard needs. Two</i><br>
+<i>roadblocks developers immediately notice are the inability to create more than 32K of</i><br>
+<i>object code and the lack of access to global variables. This article addresses the latter</i><br>
+<i>issue.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;The Macintosh Technical Note "Stand-Alone Code,<i>ad nauseam</i> " (formerly #256) does<br>
+an admirable job of explaining what standalone code is and discussing the issues<br>
+involved in accessing global variables from within it. I'll describe the solution<br>
+proposed in that Tech Note later in this article, but you may also want to look over the<br>
+Note before reading further.
+</p>
+<p>
+&nbsp;It's important to realize that the Tech Note discusses just one possible solution to the<br>
+problem of using global variables in standalone code. This article presents another<br>
+solution, in the form of the StART package included on the<i>Developer CD Series</i> disc.<br>
+Along the way, I'll talk a bit about what the issues are, describe how users of<br>
+Symantec's THINK environments address the problem, recap the solution presented in<br>
+the Tech Note, and show how to use MPW to implement a THINK-style solution. I'll also<br>
+take a look at the advantages and disadvantages of each approach, allowing you to choose<br>
+the right solution for your needs.
+</p>
+<p>
+&nbsp;Note that the StART package is a solution for MPW users and that it assumes a lot<br>
+about how MPW currently works. It's possible that you may not be able to use the<br>
+StART package to develop standalone code that uses globals with future versions of<br>
+MPW, although code already created with StART will, of course, continue to work. 
+</p>
+<h2>&nbsp;WHAT IS STANDALONE CODE?</h2>
+<p>
+Standalone code is merely executable code that receives little to no runtime support<br>
+from the Macintosh Operating System. The advantage of standalone code resources is<br>
+that they can be quickly loaded into memory, executed, and dismissed without the<br>
+overhead of setting up a full-fledged runtime environment for them. In addition,<br>
+standalone code can execute without affecting the currently running application or<br>
+relying on it for any services. This makes such resources ideal for easily extending the<br>
+system's or your application's functionality. By creating the right kinds of standalone<br>
+code resources, you can change how controls or windows appear, or you can<br>
+dynamically extend the capabilities of your application. 
+</p>
+<p>
+&nbsp;Table 1 shows a list of the most common system- and application-defined standalone<br>
+code resources. <br>
+<b>Table 1</b>Kinds of Standalone Code Resources
+</p>
+<p><table border="0"><tr><td><b>Resource Type</b></td><td><b></b><b>Resource Function</b></td></tr>
+<tr><td><code> ADBS*</td><td></code>ADB device driver</td></tr>
+<tr><td><code> adev*</td><td></code>AppleTalk link access protocol</td></tr>
+<tr><td><code> boot</td><td></code>Boot blocks</td></tr>
+<tr><td><code> CACH</td><td></code>System RAM cache code</td></tr>
+<tr><td><code> CDEF*</td><td></code>Custom control definition</td></tr>
+<tr><td><code> cdev*</td><td></code>Control panel device</td></tr>
+<tr><td><code> dcmd*</td><td></code>Debugger extension</td></tr>
+<tr><td><code> dcmp</td><td></code>Resource decompressor</td></tr>
+<tr><td><code> DRVR*</td><td></code>Device driver</td></tr>
+<tr><td><code> FKEY*</td><td></code>Function key</td></tr>
+<tr><td><code> FMTR</td><td></code>3.5-inch disk formatting</td></tr>
+<tr><td><code> INIT*</td><td></code>System extension</td></tr>
+<tr><td><code> itl2</td><td></code>Localized sorting routines</td></tr>
+<tr><td><code> itl4</td><td></code>Localized time/date routines</td></tr>
+<tr><td><code> LDEF*</td><td></code>Custom list display definition</td></tr>
+<tr><td><code> MBDF*</td><td></code>Custom menu bar definition</td></tr>
+<tr><td><code> MDEF*</td><td></code>Custom menu definition</td></tr>
+<tr><td><code> mntr*</td><td></code>Monitors control panel extension</td></tr>
+<tr><td><code> PACK</td><td></code>System package</td></tr>
+<tr><td><code> PDEF*</td><td></code>Printer driver</td></tr>
+<tr><td><code> PTCH</td><td></code>System patches</td></tr>
+<tr><td><code> ptch</td><td></code>System patches</td></tr>
+<tr><td><code> rdev*</td><td></code>Chooser device</td></tr>
+<tr><td><code> ROvr</td><td></code>ROM resource override</td></tr>
+<tr><td><code> RSSC*</td><td></code>Resource editor for ResEdit</td></tr>
+<tr><td><code> SERD</td><td></code>Serial driver</td></tr>
+<tr><td><code> snth*</td><td></code>Sound Manager synthesizer</td></tr>
+<tr><td><code> WDEF*</td><td></code>Custom window definition</td></tr>
+<tr><td><code> XCMD*</td><td></code>HyperCard external command</td></tr>
+<tr><td><code> XFCN*</td><td></code>HyperCard external function</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Note:</b> Items marked with an asterisk are ones that you might create for your own<br>
+application, extension, driver, or whatever. The rest are reserved for the system.
+</p>
+<p>
+Standalone code differs from the executable code that makes up an application, which<br>
+has a rich environment set up for it by the Segment Loader. Let's take a look at an<br>
+application's runtime environment so that we can better understand the limitations we<br>
+must overcome to implement standalone code. 
+</p>
+<p>
+An application runs in a section of memory referred to as its partition. Figure 1 shows<br>
+the layout of an application partition. A partition consists of three major sections. At<br>
+the top of the partition is the application's<i>A5 world</i> , consisting of the application's<br>
+global variables, the jump table used for intersegment function calls, and 32 bytes of<br>
+application parameters (see "Application Parameters").&nbsp;&nbsp;&nbsp;This area of memory is<br>
+called the A5 world because the microprocessor's A5 register points into this data and<br>
+is used for all access to it. Immediately below the A5 world is the<i>stack</i> , the area of<br>
+memory used to contain local variables and return addresses. The stack grows<br>
+downward toward the<i>heap</i> , which occupies the rest of the partition. The heap is used<br>
+for all dynamic memory allocation, such as blocks created by NewHandle and NewPtr.<br>
+Everything we see in Figure 1 -- the heap (with a valid zone header and trailer), the<br>
+stack, and the filled-out global variables and initialized jump table -- is created by<br>
+the Segment Loader when an application is launched. 
+</p>
+<p>
+<img src="img/247.gif" width="401 px"></img>
+</p>
+<p>
+<b>Figure 1</b> An Application Partition
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+This is the application's domain, and none shall trespass against it. And therein lies the<br>
+conflict between applications and standalone code: Executing code needs to use the A5<br>
+register to access its global variables, but an application's use of A5 prevents any<br>
+standalone code from using it with impunity. Additionally, the A5 world is created by<br>
+the Segment Loader when an application is launched. Since standalone code is not<br>
+"launched" (instead, it's usually just loaded into memory and JSRed to), it doesn't get<br>
+an A5 world, even if A5 were available. We must solve these two problems
+</p>
+<p>
+-- the contention for A5 and the need to set up some sort of global variable space -- in<br>
+order to use globals in standalone code. 
+</p>
+<p>
+<b>APPLICATION PARAMETERS</b><br>
+Not much is known about the mysterious 32 bytes directly above A5 known as<br>
+application parameters. Figures 9 and 10 on pages 19 and 21 of <i> Inside Macintosh</i> <br>
+Volume II indicate their existence, but the description simply says that "they're<br>
+reserved for use by the system." We know that the first four bytes contain a pointer<br>
+into the QuickDraw globals, but that's about it. Some MPW glue routines use some of<br>
+the other bytes, but that use is undocumented. In any case, the application parameters<br>
+seem pretty important. As you'll see later, we make sure our standalone code<br>
+resources support them.
+</p>
+<h2>THE THINK SOLUTION</h2>
+<p>
+For years, users of THINK C and THINK Pascal have been able to use global variables in<br>
+their CDEFs, LDEFs, drivers, and other types of standalone code. THINK has solved the<br>
+problem of A5 contention by compiling standalone code to use the A4 register for<br>
+accessing globals, leaving A5 untouched. Their solution to the need to set up global<br>
+variable space is simply to attach the globals to the end of the standalone code, again<br>
+leaving the application's A5 world untouched.
+</p>
+<p>
+Figure 2 shows how standalone code created by a THINK compiler looks, both on disk<br>
+and in memory. If the code was created with the C compiler, which allows<br>
+preinitialized global variables, the global variable section contains the initial values.<br>
+If the code was generated by the Pascal compiler, which sets all global variables to<br>
+zero, the entire global section simply consists of a bunch of zeros (kind of like some<br>
+guys I used to know in high school). 
+</p>
+<p>
+This is in contrast to the way globals are stored on disk for applications. MPW, for<br>
+instance, uses a compressed data format to represent an application's globals on disk.<br>
+When the application is launched, a small bit of initialization code is executed to read<br>
+the globals from disk, expand them, and write them into the application global variable<br>
+space in its A5 world. 
+</p>
+<p>
+Standalone code created by a THINK compiler accesses global variables by using<br>
+A4-relative instructions. Because the use of the A4 register is ungoverned, such<br>
+standalone code must manually set up A4 so that it can be used to reference its global<br>
+variables. This setup is done by some macros provided by the THINK headers:<br>
+RememberA0 and SetupA4. (It's called RememberA0, and not RememberA4, because<br>
+the macro has to store the value in the A0 register temporarily.) When the standalone<br>
+code is finished and is about to return to its caller, it must call RestoreA4 to restore<br>
+the value that was in A4 before the standalone code was called. 
+</p>
+<p>
+<img src="img/248.gif" width="165 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> Format of a Standalone Code Resource Created by a THINK Compiler
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;The solution provided by THINK offers many advantages:
+</p>
+<ul>
+<li>It's simple to use. Making sure you surround the entry point of your<br>
+standalone code with the appropriate macros is easy, and the macros don't<br>
+require any tricky parameters. Just type them in and you're done.</li>
+<li>The THINK development systems automatically insert a little bit of magic<br>
+code at the beginning of standalone code resources that make the setting up of<br>
+A4 as transparent as possible.</li>
+<li>THINK's use of A4 means that A5 is totally undisturbed, and hence A5<br>
+continues to point to a valid A5 world with, presumably, an initialized set of<br>
+QuickDraw globals. This means that standalone code can make Toolbox calls<br>
+without a second thought (or even much of a first thought, for that matter).</li>
+<li>Because the globals are attached to the standalone code, when the memory<br>
+allocated to the standalone code resource is disposed of (for example, when the<br>
+process that loaded it calls ReleaseResource on the segment), the globals are<br>
+removed as well. </li>
+</ul>
+<p>
+&nbsp;There are at least three disadvantages to THINK's approach, however:
+</p>
+<ul>
+<li>Since A4 is now pulling duty as the global variable reference base, fewer<br>
+registers are available for calculating expressions, caching pointers, and so<br>
+on. This means that the code generated is less efficient than if A5 were used for<br>
+referencing globals.</li>
+<li>The globals are stored on disk in an uncompressed format, a fact you<br>
+should be aware of before cavalierly declaring those empty 20K arrays.</li>
+<li>The resources holding the standalone code must not be marked as<br>
+purgeable, or the global variables will be set back to their original values<br>
+when the resource is reloaded.</li>
+</ul>
+<p>
+&nbsp;A fourth disadvantage could be that the combined size of the executable code and the<br>
+global variables must be less than 32K. However, this is somewhat ameliorated by<br>
+THINK's support of multisegmented standalone code. 
+</p>
+<h2>THE TECH NOTE SOLUTION</h2>
+<p>
+&nbsp;Users of THINK development systems have their solution for accessing global<br>
+variables in standalone code. MPW users, however, don't have an immediately obvious<br>
+solution. First, MPW's compilers don't have the option of specifying that A4 should be<br>
+used to access global variables.&nbsp;&nbsp;&nbsp;Second, the MPW linker is written to create a<br>
+compressed block of data representing the global variables and to place that block of<br>
+data off in its own segment. Because A4 can't be used to access globals, and because the<br>
+globals aren't attached to the end of the standalone code resource, MPW users don't<br>
+have the slick solution that THINK users do. 
+</p>
+<p>
+&nbsp;A possible alternative was presented to MPW users a couple of years ago with the<br>
+publication of the Technical Note "Stand-Alone Code,<i>ad nauseam</i> ." Let's take a quick<br>
+look at that approach, and then compare it with THINK's solution. 
+</p>
+<p>
+&nbsp;Let's start by examining the format of a simple application, shown in Figure 3. This is<br>
+the format that MPW is designed to create, with any deviance from the standard<br>
+formula being cumbersome to handle. 
+</p>
+<p>
+&nbsp;This application has three segments. CODE 0 contains the information used by the<br>
+Segment Loader to create the jump table, the upper part of an application's A5 world.<br>
+CODE 1 contains executable code, and usually contains the application's entry point.<br>
+CODE 2 contains the compressed data used to initialize the global variable section of the<br>
+application's A5 world, along with a little bit of&nbsp;&nbsp;executable code that does the actual<br>
+decompressing. This decompression code is automatically called by some runtime setup<br>
+routines linked in with the application. The purpose of the call to<br>
+UnloadSeg(@_DataInit) in MPW programs is to unload the decompression code along<br>
+with the compressed data that's no longer needed. 
+</p>
+<p>
+&nbsp;The solution proposed in the Tech Note is to use a linker option that combines<br>
+segments 1 and 2. At the same time, the Note provides a couple of utility routines that<br>
+create a buffer to hold the global variables and that decompress the variables into the<br>
+buffer. Figure 4 shows what standalone code looks like when it's running in memory. 
+</p>
+<p>
+<img src="img/249.gif" width="479 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 3</b> Format of a Simple Application Created by MPW
+</p>
+<p>
+<img src="img/250.gif" width="474 px"></img>
+</p>
+<p>
+<b>Figure 4</b> Format of Standalone Code Using the Tech Note Method
+</p>
+<p>
+&nbsp;When the standalone code is called, it's responsible for creating and initializing its<br>
+own A5 world. It does this by calling OpenA5World, which is directly analogous to<br>
+THINK's SetupA4 macro.&nbsp;&nbsp;&nbsp;OpenA5World creates the buffer shown on the right in<br>
+Figure 4, sets A5 to point to it, and calls the decompression routines to fill in the<br>
+buffer. When the standalone code is ready to exit, it must call CloseA5World to<br>
+deallocate the buffer and restore the original value of A5. 
+</p>
+<p>
+&nbsp;Note that this approach has an immediate disadvantage compared to the THINK<br>
+approach. Because the global variables buffer is deallocated when the code exits back to<br>
+the caller, all values that were calculated and stored in global variables are lost. This<br>
+makes the OpenA5World/CloseA5World solution good if you simply want to use global<br>
+variables in lieu of passing parameters, but lousy if you're trying to maintain any<br>
+persistent data. 
+</p>
+<p>
+&nbsp;Fortunately, the Tech Note also presents a slight variation on the above solution that<br>
+doesn't require that the global variables buffer be deallocated when the standalone code<br>
+exits. However, the solution requires a little help from the host application. When the<br>
+standalone code exits, it has two problems to consider. The first is that it must find<br>
+some way to maintain a reference (usually a handle) to the buffer holding the global<br>
+variables. After all, where can the standalone code store this reference itself? It can't<br>
+store it in a global variable, because this reference will later be used to recover our<br>
+global variables buffer. It can't store the reference in a local variable, because local<br>
+variables are destroyed once the function that declares them exits. 
+</p>
+<p>
+&nbsp;The second problem that must be solved when creating a solution that doesn't require<br>
+flushing the global variables is that of knowing when it actually is time to dispose of<br>
+them. Globals accessed by THINK code resources are attached to the segments<br>
+themselves, which means that they're disposed of at the same time as the code resource<br>
+itself. What happens if the caller of a standalone code resource created using the<br>
+OpenA5World technique decides that it no longer needs that resource? If it simply calls<br>
+ReleaseResource on the resource, the global variables used by the standalone code will<br>
+be stranded in the heap. This is known as a memory leak, and it is very bad. The block<br>
+of memory holding the global variables is no longer referenced by any code, and there's<br>
+no way to recover a reference to them. That block of memory will never be disposed of<br>
+and will waste memory in the heap. 
+</p>
+<p>
+&nbsp;The approach that the Tech Note takes to solving both of these problems is to require<br>
+the help of the caller (usually the host application). First, the caller must agree to<br>
+maintain the reference to the standalone code's global variables buffer. After the<br>
+buffer is created, the reference to it is passed back to the caller. The next time the<br>
+standalone code is called, and all subsequent times, the caller passes that reference<br>
+back to the standalone code, which then uses that reference to recover its<br>
+globalvariables and reset A5 the way it likes it. Additionally, the caller must agree to<br>
+notify the standalone code when it's about to go away. When the standalone code receives<br>
+that notification, it takes the opportunity to dispose of the global variables buffer. 
+</p>
+<p>
+Our brief recap of the Tech Note outlines a workable approach that provides a few<br>
+advantages over the solution provided by THINK:
+</p>
+<ul>
+<li>The on-disk representation of the standalone code is usually smaller,<br>
+because the combination of the compressed data and decompression routines of<br>
+MPW is often smaller than the raw data generated by THINK.</li>
+<li>Because the executable code and global variables are allocated in their own<br>
+buffers, each of which can be 32K in length, you can create larger code<br>
+resources and define more global variables. (This does not take into account<br>
+the partial advantages provided by THINK's multisegmented standalone code.)</li>
+<li>Because MPW doesn't use it to access the globals, the A4 register can be<br>
+used to generate more efficient object code.</li>
+<li>Since the globals are stored separately from the standalone code, the<br>
+resource holding the standalone code can be marked as purgeable.</li>
+<li>The two blocks of memory holding standalone code and global variables can<br>
+be locked or unlocked separately from each other, providing greater memory<br>
+management flexibility. </li>
+</ul>
+<p>
+There are, however, some disadvantages to the OpenA5World approach. The major<br>
+disadvantage concerns the persistence of the global variables buffer. Either this buffer<br>
+must be deallocated every time the code resource is exited, or the help of the caller<br>
+must be elicited to maintain the reference to the buffer and to tell the standalone code<br>
+when the buffer must be deallocated. If you're not in a position to define the<br>
+responsibilities of the caller (for instance, if you're writing a WDEF), this<br>
+disadvantage could be quite serious.
+</p>
+<p>
+The second disadvantage concerns the reuse of the A5 register. Once the standalone code<br>
+changes A5 from pointing to the caller's A5 world to pointing to the standalone code's<br>
+globals, A5 no longer points to a valid set of QuickDraw globals. This can easily be<br>
+solved by calling InitGraf early in the standalone code, but some problems may still<br>
+exist. For instance, what if the standalone code needed to draw something in the current<br>
+port (as an LDEF would need to do)? The GrafPtr of the port to be used is back in the<br>
+caller's A5 world. Once we switch over to the standalone code's A5 world, we no longer<br>
+know what port to draw into. This problem is briefly alluded to in the Tech Note, but<br>
+it's not directly addressed. 
+</p>
+<h2>THE START SOLUTION</h2>
+<p>
+It's possible to combine the advantages of the two approaches we've seen so far, while<br>
+at the same time eliminating some of the disadvantages. The idea behind the hybrid<br>
+approach I'll now present is to con MPW into creating a standalone code resource that<br>
+has the same layout as one created by THINK. Specifically, instead of being stored in a<br>
+separate buffer, the globals will be tacked onto the end of the code resource. This<br>
+eliminates much of the reliance the standalone code has on the caller, and, as you'll see<br>
+later, still allows us to create 32K worth of object code and 32K of global data. 
+</p>
+<p>
+As we saw when discussing the Tech Note approach, we need to get MPW to take the<br>
+stuff it normally puts in an application and convert it to a standalone code resource.<br>
+The OpenA5World solution used a linker option to accomplish this. My solution uses a<br>
+custom MPW tool instead. 
+</p>
+<p>
+Let's begin by taking a look at what we'll end up with, and then determine what it will<br>
+take to get there. First, the standalone code will access its global variables by using the<br>
+A5 register; there's no way around that. Even if we were to pass the object code<br>
+through a postcompilation tool that converted all A5 references into A4 references,<br>
+there's no way we could take care of the cases where the compiler generates code that<br>
+uses A4 for other purposes. Therefore, this solution still uses A5 for accessing<br>
+globals.&nbsp;&nbsp;&nbsp;Second, the globals will be tacked onto the end of the standalone code<br>
+resource, just as they are with THINK's solution. This means that the globals will be in<br>
+a known and easily determined location at all times, relieving us from having to rely<br>
+on the caller to maintain our globals. When doing this, we inherit the problem THINK<br>
+code has with not being purgeable, but that's a small price to pay for the ease of use we<br>
+get in return. 
+</p>
+<p>
+&nbsp;Third, the globals will be in expanded format. The approach taken in the Tech Note<br>
+requires that our standalone code carry around the baggage of the decompression<br>
+routines, as well as the compressed data, long after they're no longer needed. Using<br>
+pre-expanded data means a larger on- disk footprint, but again, this is a small price<br>
+to pay, especially if the in-memory footprint is more of an issue (and it usually is). 
+</p>
+<p>
+&nbsp;Finally, we'll need routines that calculate and set our A5 value when we enter our<br>
+standalone code, and that restore A5 when we leave. These routines are analogous to the<br>
+macros THINK uses and to the OpenA5World and CloseA5World routines of the Tech<br>
+Note solution. Figure 5 shows how our standalone code resource will end up looking,<br>
+both on disk and in memory. 
+</p>
+<p>
+&nbsp;My system is called StART, for StandAlone RunTime. It consists of two parts: an MPW<br>
+tool called MakeStandAlone that converts a simple program like the one shown in<br>
+Figure 3 into a standalone code resource, and a small library file with accompanying<br>
+header files for Pascal and C. 
+</p>
+<p>
+<img src="img/251.gif" width="503 px"></img>
+</p>
+<p>
+<b>Figure 5</b> Format of Standalone Code Using StART Techniques
+</p>
+<p>
+&nbsp;To show how these pieces work together, let's take a small sample that uses a global<br>
+variable, and build it using the StART tools. The sample we'll use is the Persist.p<br>
+program included in the Tech Note. Following is a version of the file, modified to make<br>
+calls to the StART library. 
+</p>
+<pre> UNIT Persist;
+{ This is a standalone module that maintains a running total of the }
+{ squares of the parameters it receives.                            }
+
+INTERFACE
+    USES Types, StART;
+    FUNCTION Main(parm: LONGINT): LONGINT;
+IMPLEMENTATION
+    { Define global storage to retain a running total over multiple }
+    { calls to the module.  }
+    VAR
+        accumulation: LONGINT;
+    FUNCTION Main(parm: LONGINT): LONGINT;
+        VAR
+            saved:      SaveA5Rec;
+    BEGIN
+        UseGlobals(saved);
+        accumulation := accumulation + (parm * parm);
+        Main := accumulation;
+        DoneWithGlobals(saved);
+    END;
+END.</pre>
+<p>
+This very simple sample performs the useless function of taking the number you pass<br>
+it, squaring it, adding the result to a running total, and returning that total. UseGlobals<br>
+is the StART routine that enables us to access our global variables (in this case, the<br>
+lone variable named accumulation), returning the value of the caller's A5. After we've<br>
+performed our mathematical wizardry, we close up shop by calling a second StART<br>
+routine, DoneWithGlobals, to restore the previous A5 value. 
+</p>
+<p>
+Following is the makefile for Persist.p. 
+</p>
+<pre>Persist     &#402;&#402; Persist.p.o Persist.make StARTGlue.a.o
+    Link StARTGlue.a.o &#8706;
+        Persist.p.o &#8706;
+        "{Libraries}Runtime.o" &#8706;
+        "{PLibraries}PasLib.o" &#8706;
+        -sn PASLIB=Main &#8706;
+        -o Persist
+    MakeStandAlone Persist -restype CUST -resnum 129 -o Persist.rsrc
+
+Persist.p.o &#402; Persist.p Persist.make
+    Pascal Persist.p</pre>
+<p>
+This makefile contains a couple of interesting things that are worth examining. The<br>
+first point to note is that we link with a file called StARTGlue.a.o. This file contains a<br>
+few useful routines, including UseGlobals and DoneWithGlobals. It also contains a<br>
+special header routine that performs some crucial setup. This setup needs to be<br>
+performed before any of our custom code can be executed, so StARTGlue.a.o should be<br>
+the first file in the link list. 
+</p>
+<p>
+The second interesting thing about the makefile is the statement -sn PASLIB=Main.<br>
+Recall that MakeStandAlone requires a file that contains the resources shown in Figure<br>
+3 in order to perform its magic. Specifically, MakeStandAlone demands that there be<br>
+only three segments with a single entry point each into CODE 1 and CODE 2. However,<br>
+when we link with PasLib.o, we create a fourth segment called PASLIB. We therefore<br>
+get rid of this segment by merging it with the rest of our executable code in CODE 1,<br>
+the Main segment. 
+</p>
+<p>
+After linking and running the resulting file through the MakeStandAlone tool, we're<br>
+left with a resource containing standalone code that sets up and uses its own set of<br>
+global variables. Following are highlights from the Persist sample shown above. Some<br>
+routines have been removed, since we'll be examining them in depth later.
+</p>
+<pre>Entry
++0000   00000   BRA.S       Entry+$0014
++0002   00002   DC.B        $0000           ; flags
++0004   00004   DC.B        $43555354       ; resource type (CUST)
++0008   00008   DC.B        $0081           ; resource ID (129)
++000A   0000A   DC.B        $0000           ; version
++000C   0000C   DC.B        $00000000       ; refCon
++0010   00010   DC.B        $00000000      ; cached offset to globals
++0014   00014   BRA     MAIN
+
+[ UseGlobals, DoneWithGlobals, GetSAA5, and CalculateOffset removed ]
+
+MAIN                                        ; from Persist.p
++0000   000076  LINK    A6,#$FFF8
++0004   00007A  PEA     -$0008(A6)          ; UseGlobals(save);
++0008   00007E  JSR     UseGlobals
++000C   000082  MOVE.L  $0008(A6),-(A7)     ; parm * parm
++0010   000086  MOVE.L  $0008(A6),-(A7)
++0014   00008A  JSR     %I_MUL4
++0018   00008E  MOVE.L  (A7)+,D0
++001A   000090  ADD.L   D0,-$0004(A5)       ; add to accumulation
++001E   000094  MOVE.L  -$0004(A5),$000C(A6)
+                                          ; return as function result
++0024   00009A  PEA     -$0008(A6)          ; DoneWithGlobals(save);
++0028   00009E  JSR     DoneWithGlobals
++002C   0000A2  UNLK    A6
++002E   0000A4  MOVE.L  (A7)+,(A7)
++0030   0000A6  RTS
+
+[ %I_MUL4 removed ]
+
+Globals
++0000   000E4   DC.W        $0000, $0000   ; global var accumulation
++0004   000E8   DC.W        $0000, $0000   ; 32 bytes of app parms
++0008   000EC   DC.W        $0000, $0000
++000C   000F0   DC.W        $0000, $0000
++0010   000F4   DC.W        $0000, $0000
++0014   000F8   DC.W        $0000, $0000
++0018   000FC   DC.W        $0000, $0000
++001C   00100   DC.W        $0000, $0000
++0020   00104   DC.W        $0000, $0000</pre>
+<p>
+Entry, UseGlobals, DoneWithGlobals, GetSAA5, and CalculateOffset are all routines<br>
+linked in from the StARTGlue.a.o file; MAIN is from the Persist.p source file; and<br>
+%I_MUL4 is a library routine from PasLib.o. Following these routines are 36 bytes of<br>
+data. The first 4 bytes are for our global variable, accumulation. The final 32 bytes<br>
+are the application parameters above A5 that the system occasionally uses. 
+</p>
+<p>
+Let's take a look at the MAIN function, which shows us accessing our global variable.<br>
+First, we call UseGlobals to determine what A5 should be and to set A5 to that value. In<br>
+this case, UseGlobals will set A5 to point to Globals+$0004, placing our single 4-byte<br>
+global below A5, and the 32 bytes of system data above A5. Next, we push the value we<br>
+want to square onto the stack twice and call %I_MUL4 to multiply the two 4-byte<br>
+values. 
+</p>
+<p>
+Finally, we get to the fun part, where we add the result of %I_MUL4 to our global<br>
+variable. This is done by the instruction at MAIN+$001A: ADD.L D0,-$0004(A5).<br>
+This instruction says to take the value in register D0 and add it to the number stored<br>
+four bytes below A5. Because A5 points to Globals+$0004, this instruction adds D0 to<br>
+the value starting at Globals. 
+</p>
+<p>
+<b>THE MAKESTANDALONE TOOL</b><br>
+The code above was created by the MakeStandAlone tool. Let's look now at the workhorse<br>
+function of that tool, ConvertAppToStandAloneCode. It's this function that takes an<br>
+application conforming to the format shown in Figure 3 and converts it to the<br>
+standalone resource shown in Figure 5. 
+</p>
+<p>
+ConvertAppToStandAloneCode starts by declaring a ton of variables, all of which are<br>
+actually used.&nbsp;&nbsp;&nbsp;It then opens the file containing the segments shown in Figure 3 by<br>
+calling OpenResFile on gInputFile, a string variable set up before calling this routine.<br>
+If we can't open the file, we blow out by calling ErrorExit, a routine that prints the<br>
+string passed to it and then aborts back to the MPW Shell. 
+</p>
+<pre>PROCEDURE ConvertAppToStandAloneCode;
+
+    VAR
+        refNum:             INTEGER;
+        code0:              Code0Handle;
+        code1:              CodeHandle;
+        code2:              CodeHandle;
+        sizeOfGlobals:      LONGINT;
+        expandedGlobals:    Handle;
+        myA5:               LONGINT;
+        codeSize:           LONGINT;
+        address:            CStrPtr;
+        err:                OSErr;
+        fndrInfo:           FInfo;
+        existingResource:   Handle;
+
+    BEGIN
+        refNum := OpenResFile(gInputFile);
+        IF (refNum = - 1) | (ResError = resFNotFound) THEN
+            ErrorExit('Error trying to open the source file.',
+                ResError);</pre>
+<p>
+<b>Loading the segments. </b>ConvertAppToStandAloneCode then scopes out the contents of<br>
+the file it has just opened.
+</p>
+<p>
+The first thing it looks at is CODE 0, which contains the application's jump table. If<br>
+CODE 0 exists and we can load it, we mark it nonpurgeable and call a utility routine,<br>
+ValidateCode0, to make sure that CODE 0 contains what we expect. Here's what the code<br>
+looks like:
+</p>
+<pre>code0 := Code0Handle(Get1Resource('CODE', 0));
+IF (code0 = NIL) | (ResError &lt;&gt; noErr) THEN
+    ErrorExit('Couldn't load CODE 0 resource.', ResError);
+HNoPurge(Handle(code0));
+ValidateCode0(code0);</pre>
+<p>
+MakeStandAlone requires that the input file conform strictly to the format shown in<br>
+Figure 3.&nbsp;&nbsp;&nbsp;Among other things, this means that there should be only two entries in the<br>
+jump table, one for CODE 1 and one for CODE 2. ValidateCode0 checks for this condition<br>
+and makes a few other sanity checks to make sure that CODE 0 doesn't contain any other<br>
+information that we'd otherwise have to deal with. If there are any problems,<br>
+ValidateCode0 calls ErrorExit with an appropriate message. Thus, if ValidateCode0<br>
+returns, everything appears to be OK with CODE 0. 
+</p>
+<p>
+At times it might be tricky or impossible to create a CODE 1 resource with only one<br>
+entry point. In some cases, you can bludgeon your code into a single segment by<br>
+passing<b>-sn</b>to the Link tool, as was done earlier. Unfortunately, this won't always<br>
+work. For instance, some MPW routines are compiled to require jump table entries.<br>
+(Examples of such routines are sprintf and its subroutines.) If you try to use any of<br>
+these routines, you'll get more than one entry point in CODE 1. The only way to avoid<br>
+this problem is to keep away from library routines that require jump table entries. If<br>
+you're in doubt, simply attempt to use the routine in question; the compiler, the<br>
+linker, or MakeStandAlone will tell you if anything is wrong. 
+</p>
+<p>
+ConvertAppToStandAloneCode next checks the remaining resources, CODE 1 and CODE<br>
+2.&nbsp;&nbsp;&nbsp;CODE 1 contains the executable code that will make up the bulk of the standalone<br>
+code resource, and CODE 2 contains the compressed data holding the global variables'<br>
+initial values, as well as the routines that decompress that data. Each segment is loaded<br>
+and passed to ValidateCode to make sure that the resource looks OK.
+</p>
+<pre>code1 := CodeHandle(Get1Resource('CODE', 1));
+IF (code1 = NIL) | (ResError &lt;&gt; noErr) THEN
+    ErrorExit('Couldn&#8217;t load CODE 1 resource.', ResError);
+HNoPurge(Handle(code1));
+ValidateCode(code1, 1, 0);
+
+code2 := CodeHandle(Get1Resource('CODE', 2));
+IF (code2 = NIL) | (ResError &lt;&gt; noErr) THEN
+    ErrorExit('Couldn&#8217;t load CODE 2 resource.', ResError);
+HNoPurge(Handle(code2));
+ValidateCode(code2, 2, 8);</pre>
+<p>
+ValidateCode takes a handle to the segment, along with a couple of values used in the<br>
+sanity check.&nbsp;&nbsp;&nbsp;The first number is actually the resource ID of the segment and is used<br>
+when reporting any errors.&nbsp;&nbsp;&nbsp;The second value is the jump table offset of the entry<br>
+point for this segment and is checked against the segment header (see<i>Inside Macintosh</i><br>
+Volume II, page 61, for a description of this header). Again, if any problems are<br>
+discovered or any unexpected values encountered (such as more than one entry point<br>
+per segment), ValidateCode aborts by calling ErrorExit. 
+</p>
+<p>
+<b>Converting to a standalone resource. </b>Once the three segments have been loaded<br>
+into memory and validated, we're ready to convert these resources into a single<br>
+standalone resource. We begin by decompressing the data that represents the<br>
+preinitialized values for our global data. The first part of accomplishing this is getting<br>
+a temporary buffer to hold the expanded values. We find the size of this buffer by<br>
+looking at the belowA5 field in CODE 0. We then create a buffer this size by calling<br>
+NewHandle. 
+</p>
+<pre>sizeOfGlobals := code0^^.belowA5;
+expandedGlobals := NewHandle(sizeOfGlobals);
+IF expandedGlobals = NIL THEN
+    ErrorExit('Couldn't allocate memory to expand A5 data.',
+        MemError);</pre>
+<p>
+We next perform the magic that expands the global variables into the buffer. CODE 2<br>
+contains the decompression routines, so all we do is call them. The function that<br>
+performs this decompression is called _DATAINIT, which our validation routines have<br>
+already confirmed is the entry point to CODE 2. _DATAINIT needs to have A5 already<br>
+pointing to the top of the globals area, which in our case is the end of the handle we<br>
+just created. After calling SetA5 to do this, we use CallProcPtr, a little inline<br>
+assembly routine, to call _DATAINIT in CODE 2. _DATAINIT fills in our handle with the<br>
+initial values for our global variables and then kindly returns to us. We quickly<br>
+restore the previous value of A5 so that we can access our own global variables again,<br>
+and then prepare to finish with the input file. We'll need CODE 1 later, so we detach it<br>
+from the input file, and then close the input file. 
+</p>
+<pre>myA5 := SetA5(ord4(expandedGlobals^) + sizeOfGlobals);
+CallProcPtr(ProcPtr(ord4(code2^) + SizeOf(CodeRecord)));
+myA5 := SetA5(myA5);
+DetachResource(Handle(code1));
+CloseResFile(refNum);</pre>
+<p>
+At this point, we're done with the input file, and we have in our possession two<br>
+handles. The code1 handle contains the executable code for the standalone resource, and<br>
+the expandedGlobals handle contains the global data. Our task at this point is to combine<br>
+these two pieces of data. 
+</p>
+<p>
+We start by getting the size of the actual object code in CODE 1. This is the size of the<br>
+entire handle, less the size of the CODE resource header. The handle is then grown<br>
+large enough to hold the object code, the global data, and the 32 bytes of application<br>
+parameters. If we can't grow the handle, we exit. Game over. 
+</p>
+<pre>codeSize := GetHandleSize(Handle(code1)) - SizeOf(CodeRecord);
+SetHandleSize(Handle(code1),
+    codeSize + sizeOfGlobals + kAppParmsSize);
+IF MemError &lt;&gt; noErr THEN
+    ErrorExit('Couldn't expand CODE 1 handle.', MemError);</pre>
+<p>
+Once the handle containing the code is large enough, we call BlockMove twice to put<br>
+everything in place. The first call to BlockMove moves the object code down in the<br>
+handle, effectively removing the segment header. This header is useful only for<br>
+segments and jump table patching; we don't need it for our standalone resource. The<br>
+second call to BlockMove copies the global data stored inexpandedGlobals to the end of<br>
+the handle holding the object code. We finish up by calling FillChar, a built-in Pascal<br>
+routine, to clear out the 32 bytes of application parameters. 
+</p>
+<pre>BlockMove(Ptr(ord4(code1^) + SizeOf(CodeRecord)), Ptr(code1^),
+    codeSize);
+BlockMove(expandedGlobals^, Ptr(ord4(code1^) + codeSize),
+    sizeOfGlobals);
+address := CStrPtr(ord4(code1^) + codeSize + sizeOfGlobals);
+FillChar(address^, 32, CHAR(0));</pre>
+<p>
+<b>Filling out the header. </b>Our standalone code resource is now almost complete. All<br>
+that remains is to fill out the fields of the standard header that seems to begin most<br>
+standalone code resources.
+</p>
+<p>
+The header consists of a word for a set of flags, the type and ID of the resource, and a<br>
+word for a version number. These fields were written to our original CODE 1 when we<br>
+linked with StARTGlue.a.o, but they were uninitialized. We take the opportunity here<br>
+to fill in these fields.
+</p>
+<p>
+As an additional goodie, our standard header contains a 4-byte refCon that can be used<br>
+for anything the standalone code wants (for example, holding some data that the calling<br>
+application can access). 
+</p>
+<p>
+Once the global data has been appended to the object code handle, we no longer need the<br>
+expandedGlobals handle, so we dispose of it and prepare to write out our<i>objet d'art. </i>
+</p>
+<pre>WITH StdHeaderHandle(code1)^^ DO BEGIN
+    flags := gHdrFlags;
+    itsType := gResType;
+    itsID := gResID;
+    version := gHdrVersion;
+    refCon := 0;
+END;
+
+DisposeHandle(expandedGlobals);</pre>
+<p>
+<b>Writing the standalone resource. </b>The first step to writing out our standalone<br>
+code resource is to open the file that will hold it. We do this by calling OpenResFile. If<br>
+OpenResFile reports failure, it's probably because the file doesn't exist. Therefore, we<br>
+try to create the file by calling CreateResFile.&nbsp;&nbsp;&nbsp;If that succeeds, we set the Finder<br>
+information of the output file so that we can easily open it with ResEdit, and then<br>
+attempt to open the file again. If that second attempt fails, we give up by calling<br>
+ErrorExit. 
+</p>
+<pre>refNum := OpenResFile(gOutputFile);
+IF (refNum = - 1) | (ResError = resFNotFound) THEN BEGIN
+    CreateResFile(gOutputFile);
+    IF (ResError &lt;&gt; noErr) THEN
+        ErrorExit('Error trying to create the output file.',
+            ResError);
+
+    err := GetFInfo(gOutputFile, 0, fndrInfo);
+    IF err &lt;&gt; noErr THEN
+        ErrorExit('Error getting finder information.', err);
+
+    fndrInfo.fdType := 'rsrc';
+    fndrInfo.fdCreator := 'RSED';
+    err := SetFInfo(gOutputFile, 0, fndrInfo);
+    IF err &lt;&gt; noErr THEN
+        ErrorExit('Error setting finder information.', err);
+
+    refNum := OpenResFile(gOutputFile);
+    IF (refNum = - 1) | (ResError = resFNotFound) THEN
+        ErrorExit('Error trying to open the output file.', ResError);
+END</pre>
+<p>
+If our first call to OpenResFile succeeded (skipping to the ELSE clause shown below),<br>
+the file already exists and may need to be cleaned up a little. If the output file already<br>
+contains a resource with the same type and ID of the resource we want to write, we<br>
+need to get rid of it. Calls to RmveResource and DisposeHandle accomplish that grisly<br>
+task. 
+</p>
+<pre>ELSE BEGIN
+    SetResLoad(FALSE);
+    existingResource := Get1Resource(gResType, gResID);
+    SetResLoad(TRUE);
+
+    IF existingResource &lt;&gt; NIL THEN BEGIN
+        RmveResource(existingResource);
+        DisposeHandle(existingResource);
+    END;
+END;</pre>
+<p>
+At this point, we have a handle that needs to be added to a file as a resource, and an open<br>
+file waiting for it. Three quick calls to the AddResource, WriteResource, and<br>
+SetResAttrs routines take care of the rest of our duties, and the standalone code<br>
+resource is written to the designated file. We then close the file and leave<br>
+ConvertAppToStandAloneCode with the knowledge of a job well done. 
+</p>
+<pre>AddResource(Handle(code1), gResType, gResID, gResName);
+IF ResError &lt;&gt; noErr THEN
+    ErrorExit('Error adding the standalone resource.', ResError);
+
+WriteResource(Handle(code1));
+IF ResError &lt;&gt; noErr THEN
+    ErrorExit('Error writing the standalone resource.', ResError);
+
+SetResAttrs(Handle(code1), gResFlags);
+IF ResError &lt;&gt; noErr THEN
+    ErrorExit('Error setting the resource attributes.', ResError);
+
+CloseResFile(refNum);
+END;</pre>
+<p>
+<b>UP CLOSE AND PERSONAL WITH STARTGLUE.A.O</b><br>
+Converting our application into a standalone code resource is only part of the process.<br>
+The other part involves the routines that allow our code to execute on its own. These<br>
+routines preserve the A5 world of the host application, set up the standalone code's A5<br>
+world, and restore the host application's A5 world when the standalone code is finished.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+These routines are provided by StARTGlue.a.o. StARTGlue.a.o includes four client<br>
+(external) routines (UseGlobals, CopyHostQD, DoneWithGlobals, and GetSAA5), an<br>
+internal routine (CalculateOffset), and a block of public and private data. Because of<br>
+this embedded block of data, the library is written in assembly language. Let's take a<br>
+look at the source file, StARTGlue.a.
+</p>
+<pre>                 CASE        OFF
+
+                 INCLUDE     'Traps.a'
+                 INCLUDE     'QuickEqu.a'
+                 INCLUDE     'SysEqu.a'
+FirstByte        MAIN
+                 IMPORT      Main, _DATAINIT
+                 ENTRY       gGlobalsOffset
+                 bra.s       Island
+
+                 dc.w        0                   ; flags
+                 dc.l        0                   ; resType
+                 dc.w        0                   ; ID
+                 dc.w        0                   ; version
+                 dc.l        0                   ; refCon
+
+gGlobalsOffset   dc.l        0                   ; offset to globals</pre>
+<p>
+By convention, standalone code resources start with a standard header having the<br>
+format shown in Table 2. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Table 2</b>Standard Header for Standalone Code Resources
+</p>
+<p><table border="0"><tr><td><b>Field</b></td><td><b></b><b>Size</b></td><td><b></b><b>Contents</b></td></tr>
+<tr><td>entry</td><td>2 bytes</td><td>Branch instruction to first byte of executable code.</td></tr>
+<tr><td></td><td></td><td>flags 2 bytes User-defined flags. You can set and</td></tr>
+<tr><td></td><td></td><td>define this field any way you want.</td></tr>
+<tr><td>resType</td><td>4 bytes</td><td>Resource type.</td></tr>
+<tr><td>resID</td><td>2 bytes</td><td>Resource ID.</td></tr>
+<tr><td>version 2</td><td>bytes</td><td>Version number. The values for this field are</td></tr>
+<tr><td></td><td></td><td>unregulated,&nbsp;&nbsp;but usually follow the same format as</td></tr>
+<tr><td></td><td></td><td>the version numbers&nbsp;&nbsp;in 'vers' resources.</td></tr>
+<tr><td>refCon</td><td>4 bytes</td><td>User-defined reference constant. Use this field for</td></tr>
+<tr><td></td><td></td><td>anything you want, including communicating with</td></tr>
+<tr><td></td><td></td><td>the host.</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Nothing requires standalone code to include this header. However, it's nice to follow<br>
+convention, and including the resource type and ID makes identifying blocks in the<br>
+heap easier. 
+</p>
+<p>
+When you compile and link with StARTGlue.a.o, these fields are empty (set to zero).<br>
+However, the MakeStandAlone tool automatically fills in these fields based on<br>
+command-line options when it converts your code.
+</p>
+<p>
+StARTGlue.a.o's entry point branches to the following code, which then branches to a<br>
+function called Main. The reason for this double jump is to maintain the standard<br>
+header for a standalone code resource. The first two bytes are used to jump to the<br>
+code's entry point. However, we can jump only 128 bytes with the 68000's 2-byte<br>
+relative branch instruction. If Main happens to be further than 128 bytes from the<br>
+start of the code resource, we would need to use the 4-byte branch instruction. To<br>
+provide for this contingency, we have our 2-byte branch instruction jump to the<br>
+4-byte branch instruction, which can then jump to anywhere that it wants with<br>
+impunity. 
+</p>
+<pre>Island
+        bra     Main
+        lea     _DATAINIT,A0    ; dummy line to reference   _DATAINIT</pre>
+<p>
+The LEA instruction that follows the branch is a dummy statement. Its sole purpose is<br>
+to trick the linker into including _DATAINIT, the routine that the MakeStandAlone tool<br>
+calls to decompress the global data. Because the LEA instruction immediately follows an<br>
+unconditional branch, and because it doesn't have a label that can be jumped to, it's<br>
+never actually executed. 
+</p>
+<p>
+<b>UseGlobals. </b>The UseGlobals function is used to set up the standalone code's A5 world.<br>
+An example of this is shown earlier in the Persist program.
+</p>
+<p>
+UseGlobals performs three functions:
+</p>
+<ul>
+<li>It sets the A5 register and the low-memory location CurrentA5 to the<br>
+correct value for the standalone code. It determines the standalone code's A5<br>
+value by calling the GetSAA5 function, described later. </li>
+<li>It copies the host application's QuickDraw globals pointer to the<br>
+standalone code's QuickDraw globals pointer (this pointer is the 4-byte value<br>
+to which A5 normally points). By copying this pointer, the standalone code can<br>
+call Toolbox routines knowing that A5 references a valid set of QuickDraw<br>
+globals. </li>
+<li>It returns the host application's A5 and CurrentA5 values so that they can<br>
+later be restored. </li>
+</ul>
+<pre>;
+; PROCEDURE UseGlobals(VAR save: SavedA5Rec);
+; { Balance with DoneWithGlobals. }
+;
+UseGlobals   PROC        EXPORT
+             IMPORT      GetSAA5
+
+             move.l      4(sp),A0         ; get ptr to save record
+             move.l      A5,(A0)          ; save A5
+             move.l      CurrentA5,4(A0)  ; save low-memory value
+             clr.l       -(sp)            ; make room for function
+                                          ;   result
+             bsr.s       GetSAA5          ; get our own A5
+             move.l      (sp)+,A5         ; make it real
+             move.l      A5,CurrentA5     ; make it really real
+             move.l      4(sp),A0         ; get ptr to save record
+             move.l      (A0),A0          ; get host&#8217;s A5
+             move.l      (A0),(A5)        ; copy his QD globals ptr
+             move.l      (sp)+,(sp)       ; remove parameters
+             rts                          ; return to caller</pre>
+<p>
+<b>CopyHostQD. </b>The CopyHostQD routine is an optional utility routine. You don't need to<br>
+call it unless you have to ensure that the host's QuickDraw globals remain undisturbed.<br>
+By default, your standalone code shares the same set of QuickDraw globals as the host<br>
+application. However, if you have unusual requirements, you may need to establish<br>
+your own set of QuickDraw globals. 
+</p>
+<p>
+A simple way to set up your own QuickDraw globals would be to call<br>
+InitGraf(@thePort) after you called UseGlobals. This would create a valid set of<br>
+QuickDraw globals. However, some standalone code resources initially need to work<br>
+with information provided by the host application. For instance, a custom MDEF<br>
+normally draws in the currently set port. To inherit such information, you can call<br>
+CopyHostQD just after you call UseGlobals. 
+</p>
+<pre>; PROCEDURE CopyHostQD(thePort: Ptr; oldA5: Ptr);
+;       { Balance with DoneWithGlobals. }
+;   assumes that A5 has already been set up to our globals
+;
+CopyHostQD      PROC            EXPORT
+
+returnAddress   EQU         0
+oldA5                   EQU         returnAddress+4
+thePortPtr      EQU     oldA5+4
+parameterSize   EQU     thePortPtr-oldA5+4
+
+                move.l  oldA5(sp),A0        ; get oldA5
+                move.l  (A0),(A5)           ; make (A5) point to
+                                                ;   thePort
+
+                move.l  (A0),A0             ; get host&#8217;s thePort
+                                                ;   pointer
+                move.l  thePortPtr(sp),A1   ; get our thePort pointer
+                move.l  #grafSize,D0        ; copy whole grafPort
+                move.l  D0,D1               ; since the pointers
+                subq.l  #4,D1               ;   point near the end of
+                sub.l   D1,A0               ;   the QD globals, move
+                sub.l   D1,A2               ;   them down to point
+                                                ;   to the beginning
+                _BlockMove
+
+                move.l  (sp)+,A0            ; pop return address
+                add     #parameterSize,sp   ; pop parameters
+                jmp     (A0)                ; return to caller</pre>
+<p>
+<b>DoneWithGlobals. </b>The DoneWithGlobals routine reverses the effects of UseGlobals.<br>
+It simply restores the values of the A5 register and low-memory global CurrentA5 to<br>
+the values saved by UseGlobals. 
+</p>
+<pre>;
+; PROCEDURE DoneWithGlobals(restore: SaveA5Rec);
+;
+DoneWithGlobals PROC            EXPORT
+
+                move.l  (sp)+,A0        ; pull off return address
+                move.l  (sp)+,A1        ; address of record
+                                        ;   holding info
+                move.l  (A1),A5         ; first restore A5
+                move.l  4(A1),CurrentA5 ; then restore low-memory
+                                        ;   value
+                jmp     (A0)            ; return to caller</pre>
+<p>
+<b>GetSAA5. </b>You probably won't need to call GetSAA5. This function is called by<br>
+UseGlobals to return the value that's used to refer to the standalone code's A5 world.<br>
+The first time this function is called, this value needs to be calculated. After that, the<br>
+offset from the beginning of the code to the global data is cached and is used in<br>
+subsequent calls to GetSAA5. Once the offset has been determined, it's added to the<br>
+address of the start of the standalone code and returned to the caller. 
+</p>
+<pre>;; FUNCTION GetSAA5: LONGINT;
+;
+GetSAA5 PROC        EXPORT
+        IMPORT      CalculateOffset
+
+        move.l      gGlobalsOffset,D0   ; have we done this
+                                        ;   before?
+        bne.s       @1                  ; yes, so use cached
+                                        ;   value
+        bsr.s       CalculateOffset     ; nope, so calculate it
+@1
+        lea         FirstByte,A0        ; get base address
+        add.l       A0,D0               ; add offset to top of
+                                        ;   globals
+        move.l      D0,4(sp)            ; set function result
+
+       rts                              ; return to caller</pre>
+<p>
+<b>CalculateOffset. </b>CalculateOffset determines the offset from the beginning of the code<br>
+resource to the location that A5 should point to. We see from Figure 5 that A5 should<br>
+point to the location 32 bytes before the end of the resource. Therefore, we get a handle<br>
+to the code resource, get the code resource's size, subtract 32 from it, and return the<br>
+result as the needed offset. 
+</p>
+<pre>CalculateOffset PROC
+
+                lea         FirstByte,A0    ; get pointer to us
+                _RecoverHandle              ; get handle to us
+                _GetHandleSize              ; find our size (= offset
+                                            ;   to end of globals)
+                sub.l       #32,D0          ; account for 32 bytes of
+                                            ;   appParms
+                lea         gGlobalsOffset,a0   ; get address to save
+                                            ;   result
+                move.l      D0,(A0)         ; save this offset for
+                                            ;   later
+                rts</pre>
+<h2>SUMMARY OF THE THREE SOLUTIONS</h2>
+<p>
+This article has explored three ways to access global variables in standalone code: the<br>
+THINK method, the OpenA5World method, and the StART method. 
+</p>
+<p>
+The THINK method uses the A4 register to access the global variables. The A4 register<br>
+is managed by the RememberA0, SetUpA4, and RestoreA4 functions. The advantages of<br>
+the THINK method are as follows:
+</p>
+<ul>
+<li>The host's A5 register is untouched. </li>
+<li>The storage for globals is coupled with the storage for the code itself,<br>
+meaning that no additional storage needs to be allocated or disposed of. </li>
+</ul>
+<p>
+The disadvantages of the THINK method are:
+</p>
+<ul>
+<li>The A4 register cannot be used for code optimization. </li>
+<li>Standalone code resources cannot be marked purgeable without the risk of<br>
+losing any values stored in global variables. </li>
+<li>Unless you use the multisegmented standalone code features of the THINK<br>
+environments, you're limited to a combined total of 32K of code and data. </li>
+<li>The global data is stored in an uncompressed format on disk. </li>
+</ul>
+<p>
+Because MPW doesn't provide the compiler support that THINK does, the approach<br>
+described in the Tech Note reuses register A5 to access global variables. Support is<br>
+provided by the functions MakeA5World, SetA5World, RestoreA5World,<br>
+DisposeA5World, OpenA5World, and CloseA5World. The advantages of this method are<br>
+as follows:
+</p>
+<ul>
+<li>It has a compact on-disk format (global data is compressed). </li>
+<li>A4 is free for code optimization. </li>
+<li>The code resource can be marked purgeable. </li>
+<li>You can access 32K of code and 32K of data. </li>
+</ul>
+<p>
+The disadvantages of the Tech Note method are:
+</p>
+<ul>
+<li>It requires support from the host application for persistence of globals. </li>
+<li>Care must be taken to restore the host's A5 when control is returned to<br>
+the host (which can include callbacks, a la HyperCard). </li>
+</ul>
+<p>
+The StART solution tries to incorporate the best of both worlds. StART's use of the A5<br>
+register is managed by calls to UseGlobals, DoneWithGlobals, and (optionally)<br>
+CopyHostQD. Its advantages are as follows:
+</p>
+<ul>
+<li>A4 is free for code optimization. </li>
+<li>You can access 32K of code and 32K of data. </li>
+<li>The storage for globals is coupled with the storage for the code itself,<br>
+meaning that no additional storage needs to be allocated or disposed of. </li>
+</ul>
+<p>
+The disadvantages it doesn't address are:
+</p>
+<ul>
+<li>Care must be taken to restore the host's A5 when control is returned to<br>
+the host (which can include callbacks). </li>
+<li>Standalone code resources cannot be marked purgeable without the risk of<br>
+losing any values stored in global variables. </li>
+<li>The global data is stored in an uncompressed format on disk. </li>
+</ul>
+<p>
+There's one major limitation that none of these techniques address. Neither MPW nor<br>
+THINK can handle certain kinds of global variables -- ones that get preinitialized to<br>
+some absolute address -- in standalone code. For instance, consider the following C<br>
+source:
+</p>
+<pre>char *myStrings[] = {
+    "Macintosh",
+    "Programming",
+    "Secrets",
+    "2nd Edition"
+};</pre>
+<p>
+This declares an array of pointers to the four given strings. When this definition<br>
+appears in source code in a THINK C project, the compiler will tell you that this sort<br>
+of initialization is illegal in standalone code. However, MPW's compilers aren't as<br>
+integrated into the build process as THINK's are, and they don't know to give you a<br>
+similar warning. Thus, we can compile an array like the one just shown without an<br>
+error. When the MakeStandAlone tool is later executed, it will dutifully initialize the<br>
+array with pointers to the given strings. However, these pointers are in the form of<br>
+absolute memory locations, which are valid only at the time the globals are expanded.<br>
+When it's time to execute the standalone code, it's almost certain that the strings won't<br>
+be loaded into the same place they were in when the globals were expanded, making the<br>
+pointers in our array invalid. 
+</p>
+<p>
+All you can do to avoid this problem is make sure that you don't have any global<br>
+variables that are preinitialized to the addresses of other objects (such as strings,<br>
+functions, and other variables).&nbsp;&nbsp;&nbsp;Without knowing the format of the compressed global<br>
+data that _DATAINIT expands, it isn't possible to program the MakeStandAlone tool to<br>
+look for the problem globals.
+</p>
+<h2>WHERE TO GO FROM HERE</h2>
+<p>
+This article just scratches the surface of what can be done with MPW. It gives a little<br>
+behind-the- scenes information and describes how to take advantage of that<br>
+information with a custom tool. The intrepid explorer may want to apply what's<br>
+learned here to some other topics. 
+</p>
+<p>
+<b>32-BIT EVERYTHING</b><br>
+With MPW 3.2, Apple has eliminated most of the traditional 32K barriers imposed by<br>
+16-bit fields.&nbsp;&nbsp;&nbsp;By expanding fields in the jump table to 32 bits, replacing the<br>
+Segment Loader, patching object code with absolute addresses, and providing<br>
+user-callable runtime routines, MPW allows you to create code and data blocks of<br>
+practically any size. It may be interesting to explore the new formats and data<br>
+structures used with 32-bit everything to see how you can use them in the same way<br>
+we used the old 16-bit information. 
+</p>
+<p>
+<b>MERGING START TECHNIQUES WITH THOSE OF THE TECH NOTE</b><br>
+The StART method uses a bit of assembly language to provide some runtime support for<br>
+standalone code. Specifically, it maintains a reference to the code's global variables in<br>
+a local data field. This same technique could be used to partially remove the dependency<br>
+of code created with the Tech Note method on the host application. 
+</p>
+<p>
+<b>JUMP TABLE</b><br>
+We've fully explored the area below A5, but only a small part of the area above A5.<br>
+We've looked at the globals area below A5 and the application parameters area above<br>
+A5, but the majority of the "above A5 world" is normally occupied by a jump table<br>
+that supports multisegmented applications.&nbsp;&nbsp;&nbsp;With a little more work and runtime<br>
+support, it may be possible to write multisegmented standalone code in MPW. 
+</p>
+<p>
+Multisegmented standalone code offers more benefits than simply allowing you to write<br>
+huge chunks of standalone code. Programmers using Object Pascal and readers of the<br>
+Macintosh Technical Note "Inside Object Pascal" (formerly #239) know that<br>
+polymorphism requires the use of a jump table. By implementing support for a jump<br>
+table in standalone code, it should be possible to write standalone code with Object<br>
+Pascal or C++'s PascalObjects. C++ programmers writing native C++ classes or<br>
+classes based on HandleObject should refer to Patrick Beard's article, "Polymorphic<br>
+Code Resources," in<i>develop</i> Issue 4. 
+</p>
+<p>
+<b>THANKS DEPARTMENT</b><br>
+This article would not have existed if not for the help and inspiration of the following<br>
+individuals and nonindividuals:
+</p>
+<ul>
+<li>The creators of the A4 method used in the THINK products for showing that<br>
+globals could be used in standalone code</li>
+<li>The authors of the BuildDCMD tool for MacsBug, a tool that proved that<br>
+applications conforming to a certain guideline could be converted to standalone<br>
+code</li>
+<li>Larry Rosenstein, who, thanks to file sharing, unknowingly provided the<br>
+source code shell for the MakeStandAlone tool (all the stuff that deals with<br>
+error handling and command-line parsing)</li>
+</ul>
+<p>
+<b>KEITH ROLLIN </b>is one of Taligent's charter members, sporting the obligatory snide<br>
+business title of Phantom Programmer (he got this title after buying that lakefront<br>
+property in the fifth basement of the Grand Opera House in Paris). When not fending<br>
+off people asking him what he does at Taligent, Keith skis, rides his bike, reads<br>
+voraciously, watches 1940s movies at the local oldies theater, and comes up with<br>
+reasons not to shave. Look for his latest book, <i> Macintosh Programming Secrets,</i>&nbsp;&nbsp;2nd<br>
+edition, co-authored with Scott Knaster, at your local bookstore (he needs the money).<br>
+*<b>For the sake of brevity, </b>I occasionally refer to both the THINK C and THINK<br>
+Pascal compilers simply as "THINK." *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS</b>C. K. Haun, Pete Helme, Craig Prouse *
+</p>
+</body>
+</html>

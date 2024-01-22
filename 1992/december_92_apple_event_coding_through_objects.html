@@ -1,0 +1,1247 @@
+<html>
+<head>
+<!-- Article ID: 43 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>December 92 - APPLE EVENT CODING THROUGH OBJECTS</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>APPLE EVENT CODING THROUGH OBJECTS</h2>
+<h1>ERIC M. BERDAHL</h1>
+<p>
+<img src="img/232.gif" width="180 px"></img>
+</p>
+<p>
+<i>In "Apple Event Objects and You" in </i>&nbsp;&nbsp;develop <i>Issue 10, Richard Clark discusses a</i><br>
+<i>procedural approach to programming for Apple events and goes into details of the Apple</i><br>
+<i>event object model. This article reveals a few simple truths about the significance of</i><br>
+<i>Apple events and the Apple event object model, focusing on how the object model maps</i><br>
+<i>onto a typical object-oriented application. It also provides an object- oriented C++</i><br>
+<i>framework for adding scripting support.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+It's every developer's worst nightmare: Your team has just spent the last two years<br>
+putting the finishing touches on the latest version of Turbo WhizzyWorks II NT Pro,<br>
+which does everything, including make coffee. As a reward for your great work, the<br>
+team is now preparing to do some serious tanning development on an exotic island.<br>
+Then, Marketing comes in with "one last request." They promise it's the last thing<br>
+they'll ask for before shipping, and in a weak moment, you agree that one last little<br>
+feature won't hurt your itinerary. "Good," quips the product manager, "then as soon as<br>
+you add full scripting support, you can enjoy your vacation."
+</p>
+<p>
+You know that to add scripting support, you need to delve into Apple events. You think<br>
+this requires learning about Apple events, the Apple event object model, and scripting<br>
+systems. Further, you think Apple events must be designed into your application from<br>
+the ground up and can't possibly be added without a complete redesign. Which of the<br>
+following is the appropriate reaction to Marketing's request?
+</p>
+<p><ol type="A">
+<li>Immediately strangle your sales manager and plead justifiable homicide. <br></li>
+<li>Look around while laughing hysterically and try to find the hidden Candid Camera.&nbsp;&nbsp;<br></li>
+<li>Change jobs.&nbsp;&nbsp;<br></li>
+<li>Feign deafness.&nbsp;&nbsp;<br></li>
+<li>None of the above.&nbsp;&nbsp;</li>
+</ol></p>
+<p class="spacer">&nbsp;</p>
+<p>
+Unfortunately, there's no correct answer, but the scenario is all too real as developers<br>
+are increasingly being asked to add scripting support to their applications. The design<br>
+of Apple events and the Apple event object model can provide the user with more power<br>
+than any other scripting system. However, to access the power of the design you need to<br>
+work with the complex interface provided by the Apple Event Manager. By its nature,<br>
+this interface collapses to a procedural plane of programming that prevents developers<br>
+from fully taking advantage of the object-oriented design inherent in the Appleevent<br>
+world. The Apple event object model is difficult to implement without some fancy<br>
+footwork on the part of your framework. But remember the words of Marshall<br>
+Brodeen, "All magic tricks are easy, once you know the secret." With this in mind,<br>
+join me on a trip through the rabbit hole into AppleEventLand. 
+</p>
+<h2>WHAT ARE APPLE EVENTS AND THE OBJECT MODEL?</h2>
+<p>
+Whenever I give presentations on Apple events, the audience has an overwhelming urge<br>
+to ignore the theory and jump into coding. Resist the urge. For most developers Apple<br>
+events provide an unfamiliar perspective on application design. To appreciate the<br>
+significance of Apple events and the object model, it's important to understand their<br>
+underlying concepts and background. So, although you'll be reading about code later, a<br>
+little theory needs to come first. 
+</p>
+<p>
+At the most basic level, Apple events are a program-to-program communication<br>
+(PPC) system, where<i>program</i>&nbsp;&nbsp;is defined as a piece of code that the Macintosh can see<br>
+as an application (in other words, that has a real WaitNextEvent-based event loop).<br>
+However, billing Apple events as PPC is akin to describing an F-16 as merely a plane.<br>
+To fully understand how Apple events are more than simple program-to-program<br>
+communication, you need to take a look at the Apple event object model.
+</p>
+<p>
+The object model isn't really defined in a pithy paragraph of<i>Inside Macintosh</i> , but is<br>
+instead a holistic approach to dealing with things that users call objects. In a literal<br>
+sense, the object model is a software developer's description of user-centric objects<br>
+or<i>cognitive objects. </i>
+</p>
+<p>
+<b>COGNITIVE THEORY</b><br>
+Cognitive science tells us that people interact with the world through objects. A<br>
+printed copy of<i>develop</i> is an object, a plant in the corner of your office is an object,<br>
+and a can of Coke Classic on your desk is an object. Each of the objects has properties,<br>
+behaviors, and parts. Some properties exist for each of the objects (for example, each<br>
+one has a<i>name</i> ) and other properties make sense for only some of the objects (for<br>
+example,<i>page size</i>&nbsp;&nbsp;makes sense only when applied to<i>develop</i> ). Behaviors are quite<br>
+similar to properties in their ephemeral binding to objects. Only Coke will<i>fizz</i> , but<br>
+all three objects will<i> decompose</i> . However, they each<i>decompose</i> in a different way.<br>
+Further, each object can be separated into arbitrary parts that are themselves<br>
+objects. The plant can be separated into branches, which can in turn be separated into<br>
+leaves. The plant itself can also be separated into leaves, so leaves are contained by<br>
+both branch objects and plant objects. 
+</p>
+<p>
+<b>BACK INSIDE THE COMPUTER</b><br>
+Now, since a user will someday interact with your software, and since users interact<br>
+with the world in terms of cognitive objects, it makes sense to model software in<br>
+terms of cognitive objects. Hence, the object model describes objects in a rather<br>
+ghostlike fashion whereby objects have behaviors and properties and contain other<br>
+objects. Although the object model defines an inheritance for each category of objects<br>
+(for example, Journal might inherit from OpenableThing which might inherit from<br>
+Object), it's used only for the purpose of grouping similar behaviors. Just as in the<br>
+mind, the only thing that's important is the identity of a specific object in existence at<br>
+a given time -- its categorization is purely a detail of implementation. 
+</p>
+<p>
+Gee, this sounds a lot like what<i>real</i>&nbsp;&nbsp;programmers mean when they talk about objects.<br>
+Strangely enough, real objects and cognitive objects are quite related. Many references<br>
+cite cognitive theory as justification for beginning to program in an object-oriented<br>
+style. Object-oriented code tries to get closer to the language of the native operating<br>
+system of the human mind than traditional procedural approaches, and the format of an<br>
+Apple event object mirrors natural language to a surprisingly large degree. It comes<br>
+as no surprise, then, that Good Object Design lends itself quite easily to slipping in<br>
+support for Apple event scripting. 
+</p>
+<h2>APPLE EVENT OBJECTS AND SCRIPTING</h2>
+<p>
+The motivation for you to provide object model support is so that your users can<br>
+"script" your application. There are a variety of solutions available today that allow<br>
+advanced users to write things that resemble DOS batch files or UNIX&#174; shell scripts.<br>
+These entities are commonly called<i>scripts</i> , but in the context of Apple events a script<br>
+is something with greater potential. Whenever a user thinks "Iwant to sharpen the<br>
+area around the rose in this picture," a script has been formed. If this seems too<br>
+simplistic, consider it again. <i>Script</i>&nbsp;&nbsp;here refers to the earliest conception of a user's<br>
+intent to do something. It's not relegated to the world of the computer and does not<br>
+imply any given form or class of forms; an oral representation (voice interface a la<br>
+the Knowledge Navigator) is equally as valid as a written one (traditional scripting<br>
+systems). From this perspective, the definition of<i>script</i> takes the user to a greater<br>
+depth of control over applications than previously dreamed of, allowing access to the<br>
+very engine of your application by the very engine of the user. This is the great<br>
+empowering ability of Apple events: they enable users to use their native operating<br>
+system -- the mind -- with little or no translation into computerese.
+</p>
+<h2>OBJECT-ORIENTED PROGRAMMING OBJECTS</h2>
+<p>
+The biggest problem with Apple event objects is the interface provided by the Apple<br>
+Event Manager.&nbsp;&nbsp;&nbsp;Instead of allowing you to write real object-oriented source code<br>
+using a given class library that implements basic Apple event and object model<br>
+functionality, the Apple Event Manager requires you to register every detail<br>
+programmatically. You must declare what classes exist, which methods exist and<br>
+where, and what relationships are possible within and between classes. Although at<br>
+first this flexibility seems advantageous, many developers find it a problem later<br>
+when they have to declare everything again at run time. Anyone with secret desires to<br>
+design an object-oriented runtime environment and a compiler/linker combination to<br>
+support that environment will feel quite at home with Apple event coding. 
+</p>
+<p>
+The second biggest problem with Apple event objects is that programs aren't written<br>
+in the Apple event (user) world. Instead, they're often written in object-oriented<br>
+programming languages like LISP and C++. What's needed is a good generic interface to<br>
+translate objects from the user world of natural language into the world of LISP or<br>
+C++ objects. Scripting systems do some of the work by delivering Apple event objects<br>
+to applications in the form of object specifiers, a strange data structure that<br>
+resembles a binary form of natural language stuffed into the familiar Apple event<br>
+generic data structure AEDesc. However, object-oriented applications ship objects<br>
+around in the form of . . . well . . . objects! So, you need translation from binary<br>
+natural language to actual objects. Easy, huh?&nbsp;&nbsp;&nbsp;(Don't hurt me yet -- this will seem<br>
+fairly straightforward after reading a bit further.)
+</p>
+<p>
+Presenting a new interface should solve the problem of the Apple Event Manager<br>
+interfaces.&nbsp;&nbsp;&nbsp;Presenting that new interface in terms of the familiar object-oriented<br>
+class libraries should solve the problem of different paradigms. So, if these two<br>
+problems are approached with an object perspective, it's clear that some of the classes<br>
+in your program need to include a set of methods that implement object model<br>
+protocols. Application domain classes must be able to return objects contained within<br>
+them and to perform generic operations on themselves. It turns out that if your classes<br>
+also provide the ability to count the number of a specific type of object they contain,<br>
+you can provide a rudimentary, yet powerful, parsing engine for transforming objects<br>
+from the Apple event world into the traditional object programming world. 
+</p>
+<p>
+Further analysis indicates that only those application domain classes that correspond<br>
+to object model classes need this protocol. This indicates that the protocol for<br>
+providing Apple event object model support is probably appropriate to provide in a<br>
+mixin class (a class that's meant to be multiply inherited from). In this way, only<br>
+those classes that need to provide object model support must provide the necessary<br>
+methods. In the sample application discussed later, that class is called MAppleObject.<br>
+MAppleObject plays a key role in UAppleObject, a generic unit that can be used to<br>
+provide Apple event object model support to any well-designed C++ application. 
+</p>
+<p>
+Apple provides a convenient solution to the user versus programming language<br>
+problem in the form of the Object Support Library (OSL). The OSL has the specific<br>
+responsibility of turning an object specifier into an application's internal<br>
+representation of an object. (See "A Sample OSL Resolution" for an example of how the<br>
+OSL actually works.) The OSL implements a generic parsing engine, applying a few<br>
+simple assumptions about the state of the application's design to the problem.&nbsp;&nbsp;<br>
+However, for all the power provided by the engine within the OSL, it lacks an<br>
+object-oriented interface. Instead, it uses a paradigm like that provided by the Apple<br>
+Event Manager, requiring the application to register a set of bottleneck routines to<br>
+provide application-specific functionality. As with the Apple Event Manager, you must<br>
+write routines that implement runtime dispatching to theindividual objects your<br>
+application creates instead of using the natural method-dispatching mechanisms found<br>
+in your favorite object-oriented language, whatever it may be. 
+</p>
+<h2>A SAMPLE OSL RESOLUTION</h2>
+<p>
+Here's a short example to give you a feel for how the OSL actually works. Don't read too<br>
+much into the details of object resolution, but do try to understand the flow and<br>
+methodology the OSL applies to resolve object specifiers. Also, don't worry too much<br>
+about how the OSL asks questions; the protocol you'll actually be using in UAppleObject<br>
+hides such details from you.
+</p>
+<p>
+Figure 1 on the next page gives an overview of the process. Consider the simple object<br>
+specifier "the third pixel in the first scan line of the image called 'Girl with Hat,'" and<br>
+an Apple event that says "Lighten the third pixel in the first scan line of the image<br>
+called 'Girl with Hat' by twenty gray levels." On receiving this Apple event (Lighten)<br>
+the application notes that the direct object of the event (the third pixel in the first<br>
+scan line of the image called "Girl with Hat") is an object specifier and asks the OSL to<br>
+resolve it into a real object.
+</p>
+<p>
+At this point the parsing engine in the OSL takes over, beginning a dialog with your<br>
+application through a set of preregistered callback routines. Notice that the object<br>
+specifier bears a striking resemblance to a clause of natural language -- English in<br>
+this case. This is not unintentional. Apple event objects are cognitive objects, and<br>
+cognitive objects are described by natural language -- hence the parallels between<br>
+object specifier formats and natural language. Further, the parsing engine inside the<br>
+OSL operates like a high school sophomore parsing sentences at the chalkboard. But I<br>
+digress . . .
+</p>
+<p>
+To continue, the OSL asks the null object to give it a token for the image called "Girl<br>
+with Hat." (Tokens are the Coin of the Realm to the OSL.) So the null object looks<br>
+through its images to find the one named "Girl with Hat" and returns a token to it.
+</p>
+<p>
+The OSL then turns around and asks the image called "Girl with Hat" to give it a token<br>
+for the first scan line. After getting this token, the OSL has no further use for the<br>
+image token, so it's returned to the application for disposal. In effect, this says, "Uh,<br>
+hey guys, I'm done with this token. If you want to do anything like free memory or<br>
+something, you can do it now." Notice how polite the OSL is.
+</p>
+<p>
+Next, the OSL asks the scan line for a token representing the third pixel, which the<br>
+line handily returns. Now it's the scan line token's turn to be returned to the<br>
+application for recycling. The OSL has no further use for the scan line token, so the<br>
+application can get rid of it if necessary.
+</p>
+<p>
+Finally, having retrieved the token for the third pixel of the first line of the image<br>
+called "Girl with Hat," the OSL returns the token with a "Thanks, and come again." The<br>
+application can then ask the object represented by the token to lighten itself<br>
+(remember that was the original Apple event), and dispose of the token for the pixel.
+</p>
+<p>
+As you can see, the OSL operates by taking an unreasonable request, "give me the third<br>
+pixel of the first line of the image called "Girl with Hat," and breaks it into a number<br>
+of perfectly reasonable requests. Thus, your application gets to take advantage of its<br>
+innate knowledge of its objects and their simple relationships to answer questions<br>
+about complex object relationships.
+</p>
+<p>
+<img src="img/233.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1</b> Resolving an Object Specifier
+</p>
+<p>
+&nbsp;The nicest thing about the OSL is that, like the Apple Event Manager itself, it applies<br>
+itself quite well to being wrapped with a real object-oriented interface (although you<br>
+have to write it yourself, sigh). Curiously, the OSL solves both problems -- poor<br>
+interface and cognitive versus object- oriented programming differences. With a nice<br>
+object-oriented framework, you can write your code once, in the fashion to which<br>
+you're accustomed. I won't lie to you by telling you the job becomes easy, but it does<br>
+change from obscure and harrowing to straightforward and tedious. 
+</p>
+<h2>&nbsp;OBJECT MODEL CONCEPTS</h2>
+<p>
+&nbsp;There are two basic concepts defined in the object model. One is<i>containment</i> , which<br>
+means that every object can be retrieved from within some other object. In the<br>
+language of the object model, every object is<i>contained by</i> another object. The only<br>
+exception to this rule is the single object called the<i>null object</i> . The null object is<br>
+commonly called the<i>application object,</i> and may or may not be contained by another<br>
+object. In practice, a null object specifier is like a global variable defined by the<br>
+object model. The application implicitly knows which object is meant by "null object."<br>
+Object resolution always begins by making some query of the null object.&nbsp;&nbsp;For<br>
+example, with a simple image processor, it would be appropriate to state that pixels<br>
+are contained by scan lines, scan lines by images, and images by windows. It's also<br>
+appropriate to have pixels contained by images and windows. Windows themselves have<br>
+no natural container, however.&nbsp;&nbsp;&nbsp;Therefore, they must be contained by the null object.<br>
+One way you can decide whether these relationships make sense for your product is to<br>
+ask if a user could find it useful to do something to "the eighth pixel of the second scan<br>
+line" or to "the twentieth pixel of the image." If statements like these make sense, a<br>
+containment relationship exists. 
+</p>
+<p>
+The second basic concept of the object model is<i>behavior</i> . Behavior is quite simple; it<br>
+means that objects must be able to respond to an Apple event. Behavior correlates<br>
+directly with the traditional object programming concept of methods of a class. In fact,<br>
+as you'll see, the actual Apple event-handling method of Apple event objects is usually<br>
+a switch statement that turns an Apple event into a dispatch to the C++ method that<br>
+implements the Apple event's functionality. 
+</p>
+<p>
+Taken together, the concepts of containment and behavior define the limits for objects<br>
+in the model of the Apple event world. The object model resembles the programming<br>
+worlds of Smalltalk or LISP, where everything is an object. Everything. For those<br>
+familiar with these paradigms where even integers, characters, and floating-point<br>
+numbers are full first-citizen objects, the Apple event world will be a refreshing<br>
+change from traditional programming in C++ and Pascal. 
+</p>
+<h2>FINDING THE OBJECTS</h2>
+<p>
+The overriding concept in designing object model support in your application is to do<br>
+what makes sense for both you -- as the developer -- and the user.
+</p>
+<ol>
+<li>It's best to begin by deciding what objects exist in your application. To<br>
+decide what objects exist, do some user testing and ask the users what objects<br>
+they see and what objects they think of while using your application. If this<br>
+isn't possible, just pretend you're a user and actually use your application,<br>
+asking yourself those same questions. For example, if you ask users for a list<br>
+of objects in an image processing application (and refrain from biasing them<br>
+with computer mumbo jumbo) they'll probably list such things as window,<br>
+icon, image, pixel, area, scan line, color, resolution, and menu bar. (Figure 2<br>
+shows types of objects a user might list.) Guess what? In reality, those<br>
+probably are object model classes that an image processing application could<br>
+support when it supports the object model. Since the objects you'll want to<br>
+support are user-level kinds of entities, this makes perfect sense. </li>
+<li>After deciding what objects exist in your application, run another series<br>
+of user tests to determine the relationships between different objects. For<br>
+example, what objects does a window contain? Menus? Pixels? Areas? Color?<br>
+What objects does an area contain? Pixels? Scan lines? Windows? This is just<br>
+as simple as it seems.&nbsp;&nbsp;&nbsp;Just ask the question, "Does this object contain that<br>
+object?" If you get immediate laughter, move on. Positive answers or<br>
+thoughtful looks indicate a possible relationship. </li>
+<li>Finally, determine what properties and behaviors each object class will<br>
+have. These questions can be asked during the same user test as in step 2<br>
+because the answers users will give are closely related. Will you be able to<br>
+ask windows for their names or pixels for their colors? How about asking<br>
+windows to move or close? Can you ask pixels to change color or make a copy?</li>
+</ol>
+<p>
+<img src="img/234.gif" width="564 px"></img>
+</p>
+<p>
+<b>Figure 2</b>
+</p>
+<p>
+You may have noticed that this approach falls into the category of Good Object Design.&nbsp;&nbsp;<br>
+Undoubtedly, anyone who does object-oriented design has gone through a similar<br>
+process when developing an application. Resist the temptation to design the<br>
+application's internal structure using G.O.D. and be done with it, because the object<br>
+model design is different from the application design.&nbsp;&nbsp;&nbsp;When designing the application,<br>
+you typically analyze structure from the perspective of eventually implementing the<br>
+design. Thus, you impose design constraints to make implementation easier. For<br>
+example, you probably don't keep representations of images, areas, and pixels, but<br>
+choose one model for your internal engine -- a reasonable solution for a programmer<br>
+looking at the problem space. A typical image processing program usually has real<br>
+classes representing images, and probably has an area class, but may not have a pixel<br>
+class or scan line class. Pixels and scan lines may be implemented by a more basic<br>
+representation than classes -- simple indices or pointers into a PixMap, for example.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+However, when you design object model support, you have a very different<br>
+perspective. You're designing classes based on user expectation and intention, not on<br>
+programmer constraints. In object model design of an image processor, you<i>do</i> have<br>
+TImage, TArea, TScanLine, and TPixel classes, regardless of your internal<br>
+representation. This is because a user<i>sees</i>&nbsp;&nbsp;all these classes. The TImage and TArea may<br>
+be the same as your internal engine's TImage and TArea, and probably are. After all,<br>
+there's little reason to ignore a perfectly usable class that already exists. However,<br>
+the TPixel and TScanLine classes exist only to provide object model support. I call<br>
+classes that exist only to provide object model support<i>ephemeral</i>&nbsp;&nbsp;classes. 
+</p>
+<p>
+Undeniably, the most useful tool for finding objects is user testing. Another important<br>
+source of information is the Apple Event Registry. The Apple Event Registry describes<br>
+Apple event classes that are standardized in the Apple event world. The Registry lists<br>
+each class along with its inheritance, properties, and behaviors. It's also the last word<br>
+on the values used to code object model support. For example, constants for predefined<br>
+Boolean operators and class types are listed in detail. As you follow the process for<br>
+finding the objects in your application, you can use the elements found in the Registry<br>
+as a basis for your investigation and for later implementation. For example, if your<br>
+user tests reveal that a pixel class is appropriate for your application and a Pixel<br>
+class is documented in the Registry, you should probably use the behaviors and<br>
+properties documented there as a basis for your application's TPixel class. Doing so<br>
+allows your application to work well with existing scripts that manipulate pixels and<br>
+allows your users to have a consistent scripting experience across all pixel-using<br>
+applications. 
+</p>
+<h2>OSL CONCEPTS</h2>
+<p>
+In addition to the principles imposed by the object model itself, the OSL makes a few<br>
+reasonable assumptions about what applications provide to support their objects.<br>
+Since the object model requires that objects be able to retrieve contained objects, the<br>
+OSL allows an object to count the number of objects of a given type contained within<br>
+them. So, if an image contains scan lines, the image object needs to be able to count the<br>
+number of scan line objects contained within it. Of course, in some circumstances, the<br>
+number of objects that are contained can't be counted or is just plain big (try asking<br>
+how many TSand objects are contained in a TBeach object). In this case, the OSL allows<br>
+the object to indicate that the number can't be counted.&nbsp;&nbsp;Additionally, the OSL allows<br>
+applications to apply simple Boolean operators to two objects. The operators<br>
+themselves are a part of the<i>Apple Event Registry.&nbsp;&nbsp;</i>They include the familiar operators<br>
+like less than, equal to, and greater than as well as some more interesting relations<br>
+like before, after, over, and under. The requirement for these operators is that they<br>
+have Boolean results. This means that&nbsp;&nbsp;if<i>object1</i> and<i> object2</i> have<i> operator</i> applied to<br>
+them, the expression<i>object1 operator object2</i>&nbsp;&nbsp;is either true or false. Of course,<br>
+there's no requirement that every class implement every operator, only those that<br>
+make sense. It makes little sense to ask if an object of type TColor is<i>greater than</i> <br>
+another, but<i>brighter than</i>&nbsp;&nbsp;is another story. 
+</p>
+<p>
+During resolution of an Apple event, the OSL asks for tokens of objects between the<br>
+application object and the final target to be returned (as described earlier in this<br>
+article in "A Sample OSL Resolution"). To a programmer, they look like AEDescs being<br>
+passed around, but the OSL treats them specially:
+</p>
+<ul>
+<li>The OSL guarantees that it will never ever look in the data portion of the<br>
+token, the dataHandle field of the AEDesc. It may peek at the descriptorType<br>
+field from time to time, but the data itself is golden. This becomes a critical<br>
+point when applying the OSL engine to an object-oriented interface. The token<br>
+data of Apple event objects should be "real" object references in whatever<br>
+programming language is appropriate, and keeping the data completely private<br>
+to the application makes this possible.</li>
+<li>The application must be able to recognize the token when it appears again.<br>
+Thus, if the application returns a token for the image "Girl with Hat" to the<br>
+OSL, the application must be able to recognize the significance of having that<br>
+token passed back by the OSL.</li>
+<li>The OSL asks only that we guarantee the validity of a token during the<br>
+resolution of the current object specifier.</li>
+</ul>
+<p>
+Since the data contained in the AEDescs is private, the OSL must provide a system for<br>
+the application to know when a token is being created and when it's being terminated.<br>
+Creation of tokens is provided through the containment accessor protocol. Termination<br>
+is provided by a callback routine which does the actual token disposal and which the<br>
+application registers with the OSL. This callback is invoked from AEDisposeToken and<br>
+comes in handy when applying the object model to C++ classes.
+</p>
+<p>
+There are also a number of features that are beyond the scope of this article. One of<br>
+these is the OSL concept of<i>marking</i>&nbsp;&nbsp;objects. This means that objects are labeled as<br>
+belonging to a particular group.&nbsp;&nbsp;&nbsp;The contract the OSL makes with the application is<br>
+that the OSL will ask whenever it needs a new kind of mark, and the application will<br>
+recognize whether any object is marked with a particular mark.&nbsp;&nbsp;&nbsp;Further, given the<br>
+mark itself, the application will be able to produce all the objects with that mark.&nbsp;&nbsp;&nbsp;If<br>
+this sounds particularly confusing, just consider mark objects as typical list objects.<br>
+Given a list and an object, it's quite natural to answer the question, "Is this object in<br>
+this list?" Further, it's quite natural to answer the question, "What are all the objects<br>
+contained in this list?"
+</p>
+<p>
+The framework for adding Apple event support described later in the section "Inside<br>
+UAppleObject" satisfies the basic OSL requests for counting objects, applying Boolean<br>
+operators, and handling tokens. However, it doesn't handle marks. The intrepid reader<br>
+could add support for this feature with a little thought. 
+</p>
+<h2>CLASS DESIGN</h2>
+<p>
+To incorporate object model support into your applications, you need a class library<br>
+that implements the object model classes you want to support -- for example, the<br>
+TWindow, TImage, TArea, and TPixel classes described earlier. These classes exist<br>
+because they represent Apple event objects the application will support. Then you<br>
+create a mapping of Apple event objects to the C++ classes that implement them (see<br>
+Figure 3). For the sake of argument, say that TWindow, TArea, and TImage are also<br>
+part of the class library used to implement the non-object-model portions of the<br>
+program.&nbsp;&nbsp;&nbsp;The TPixel class is an ephemeral class. What these four classes have in<br>
+common is a mixin class,MAppleObject, that provides the hooks for adding object<br>
+model functionality (see the next section, "Inside UAppleObject," for more details). 
+</p>
+<p>
+<img src="img/235.gif" width="549 px"></img>
+</p>
+<p>
+<b>Figure 3</b> The Objects As Implemented
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+MAppleObject must include protocol that implements the object model and OSL<br>
+concepts. Given an MAppleObject, there should be protocol for returning an object<br>
+contained within MAppleObject.&nbsp;&nbsp;&nbsp;This accessor method is expected to return an object<br>
+that satisfies the containment request. It also needs to inform the framework if the<br>
+returned object is an ephemeral object -- some might say that such an object is<i>lazy</i><br>
+<i>evaluated</i> into existence. As a practical matter, this informs the framework whether<br>
+an object needs to be deleted when the OSL disposes of the object's token (as described<br>
+in "A Sample OSL Resolution"). Obviously, it would be undesirable to have the<br>
+framework delete the TImages because the application depends on them for its internal<br>
+representation. It would be equally stomach-turning to have all the TPixels pile up in<br>
+the heap, never to be deleted. 
+</p>
+<p>
+Since TPixel objects don't actually exist until they're lazy evaluated into existence,<br>
+you're free to design their implementation in a wide variety of ways. Remember that<br>
+one of the contracts the OSL makes with the application is that tokens need to be valid<br>
+only during the resolution of the current object specifier. Well, consider that the<br>
+implementation of images is just a handle of gray values.&nbsp;&nbsp;&nbsp;Normally, if someone<br>
+suggested that a pixel be implemented as an index into a block of data, you'd throw<br>
+temper tantrums. "What!" you'd yell, "What if the pixel is moved in the image! Now<br>
+the index is stale." This is not an issue for tokens, because they're transient. Since<br>
+pixels won't be added during the resolution of an object specifier, such a<br>
+representation is fine. Of course, if you'd prefer a more robust implementation, that's<br>
+fine, too, but remember that the OSL doesn't impose such robustness on you. 
+</p>
+<p>
+MAppleObject must also include a protocol to implement the comparison operators,<br>
+counting protocol, and behavior dispatching. As a practical matter, these methods will<br>
+likely be large switch statements that call other, more meaningful, methods depending<br>
+on the details of the request. For example, the counting protocol might key on the kind<br>
+of objects that should be counted and invoke methods specialized to count contained<br>
+objects of a specific class. 
+</p>
+<p>
+Finally, each class provides protocol for telling clients which object model class the<br>
+object represents.&nbsp;&nbsp;&nbsp;This is necessary for the framework to be able to communicate<br>
+with the OSL. During the resolution conversation the OSL holds with the framework,<br>
+the framework returns descriptors of each object the OSL asks for. These descriptors<br>
+are required to publish to the OSL the type of the object returned from the request. 
+</p>
+<h2>INSIDE UAPPLEOBJECT</h2>
+<p>
+UAppleObject is a framework whose main contribution is the class MAppleObject.<br>
+MAppleObject provides the basis for integrating Apple event objects and Apple event<br>
+object support into object- oriented applications. UAppleObject also includes a<br>
+dispatcher, TAppleObjectDispatcher, and the 'aedt' resource. You drop the<br>
+UAppleObject files into your application and immediately begin subclassing to provide<br>
+Apple event functionality. 
+</p>
+<p>
+<b>EXCEPTION HANDLING IN UAPPLEOBJECT</b><br>
+Developers familiar with the details of Apple event implementation are no doubt aware<br>
+that the Apple Event Manager deals exclusively with error code return values, as does<br>
+the rest of the Toolbox.&nbsp;&nbsp;&nbsp;When the Apple Event Manager invokes a developer-supplied<br>
+callback routine, that routine commonly returns an integer error code. This style of<br>
+error handling is found nowhere in UAppleObject. Instead, UAppleObject uses the<br>
+UMAFailure unit to provide exception handling.&nbsp;&nbsp;&nbsp;UMAFailure is a unit available on<br>
+the<i>Developer CD Series</i> disc that provides both a MacApp-style exception-handling<br>
+mechanism for non-MacApp programs and excellent documentation for its use. 
+</p>
+<p>
+Wherever UAppleObject is invoked through a callback routine that expects an error<br>
+code to be returned, all exceptions are caught and the exception's error code is<br>
+returned to the Toolbox.&nbsp;&nbsp;&nbsp;Therefore, when an error occurs, call the appropriate<br>
+FailXXX routine provided by UMAFailure -- for example FailMemError, FailNIL, or<br>
+FailOSErr. In the UAppleObject documentation, calling one of these routines is<br>
+referred to as throwing an exception. 
+</p>
+<p>
+<b>MAPPLEOBJECT</b><br>
+The major workhorse of UAppleObject is MAppleObject, an implementation of the basic<br>
+Apple event object functionality. MAppleObject is an abstract mixin class that<br>
+provides the protocol necessary for the UAppleObject framework to resolve Apple<br>
+event objects and handle Apple events. 
+</p>
+<pre>class MAppleObject
+{
+public:
+             MAppleObject();
+             MAppleObject(const MAppleObject&amp; copy);
+    virtual ~MAppleObject();
+
+    MAppleObject&amp; operator=(const MAppleObject&amp; assignment);
+
+    virtual DescType GetAppleClass() const = 0;
+
+    virtual long CountContainedObjects(DescType ofType);
+    virtual MAppleObject* GetContainedObject(DescType desiredType,
+        DescType keyForm, const AEDesc&amp; keyData,
+        Boolean&amp; needDisposal);
+    virtual Boolean CompareAppleObjects(DescType compareOperator,
+        const MAppleObject&amp; toWhat);
+    virtual void DoAppleEvent(const AppleEvent&amp; message,
+        AppleEvent&amp; reply, long refCon);
+
+    static void SetDefaultAppleObject(MAppleObject* defaultObject);
+    static MAppleObject* GetDefaultAppleObject();
+
+    static void GotRequiredParameters
+        (const AppleEvent&amp; theAppleEvent);
+
+    static void InitAppleObject
+        (TAppleObjectDispatcher* dispatcher = nil);
+};</pre>
+<p>
+<b>GetAppleClass</b>
+</p>
+<pre>DescType GetAppleClass() const = 0;</pre>
+<p>
+GetAppleClass is an abstract method that returns the object model type of an object.<br>
+Every MAppleObject subclass should override this method to return the object model<br>
+type specific to the individual object. 
+</p>
+<p>
+<b>CountContainedObjects</b>
+</p>
+<pre>long CountContainedObjects(DescType ofType);</pre>
+<p>
+CountContainedObjects should return the number of objects of the indicated type that<br>
+are contained within the receiver object. This is usually done by counting the number<br>
+of objects your subclass knows how to access and adding it to the number of objects the<br>
+parent class finds (in other words, call the inherited version and add it to the number<br>
+you find yourself). If the number of objects is too large to be enumerated in a signed<br>
+16-bit integer, CountContainedObjects may throw the errAEIndexTooLarge exception. 
+</p>
+<p>
+<b>GetContainedObject</b>
+</p>
+<pre>MAppleObject* GetContainedObject(DescType desiredType, DescType
+keyForm,
+    const AEDesc&amp; keyData, Boolean&amp; needDisposal);</pre>
+<p>
+GetContainedObject is a generic method for obtaining an object contained by the<br>
+receiver.&nbsp;&nbsp;&nbsp;Subclasses always override this method to provide access to the subclass's<br>
+contained objects. The desiredType, keyForm, and keyData arguments indicate the<br>
+specific object to be returned as the function result. If the resulting object is one used<br>
+in the framework of the application, GetContainedObject should return false in the<br>
+needDisposal argument.
+</p>
+<p>
+The alternative is for GetContainedObject to create the resulting object specifically for<br>
+this request; in this case, it returns true in the needDisposal argument. If<br>
+needDisposal is true, the UAppleObject framework deletes the result object when it's<br>
+no longer needed. 
+</p>
+<p>
+<b>CompareAppleObjects</b>
+</p>
+<pre>Boolean CompareAppleObjects(DescType compareOperator,
+    const MAppleObject&amp; toWhat);</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;CompareAppleObjects performs the logical operation indicated by the arguments,<br>
+returning the Boolean value of the operation. The semantics of the operation is<i> this</i><br>
+<i>compareOperator toWhat</i> . So, if the compareOperator parameter were<br>
+kAEGreaterThan, the semantics of the method call would be<i>this is greater than toWhat</i> .<br>
+Subclasses always override this method to provide the logical operations they support.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>DoAppleEvent</b>
+</p>
+<pre>void DoAppleEvent(const AppleEvent&amp; message, AppleEvent&amp; reply,
+    long refCon);</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;When an object is identified as the target of an Apple event, it's sent the<br>
+DoAppleEvent message.&nbsp;&nbsp;&nbsp;The message and reply Apple event records are passed in the<br>
+corresponding arguments. If the direct parameter to the message is<br>
+typeObjectSpecifier, the object specifier is guaranteed to resolve to the receiver;<br>
+otherwise the receiver is the application object. Additional modifiers for the event can<br>
+be extracted from the message, and the reply should be filled in by DoAppleEvent, if<br>
+appropriate. The refCon parameter is the shortcut number registered with the<br>
+UAppleObject framework (see the section "The 'aedt' Resource"). Subclasses always<br>
+override DoAppleEvent to dispatch their supported Apple events to appropriate<br>
+methods. 
+</p>
+<p>
+<b>SetDefaultAppleObject and GetDefaultAppleObject</b>
+</p>
+<pre>void MAppleObject::SetDefaultAppleObject
+        (MAppleObject* defaultObject);
+    MAppleObject* MAppleObject::GetDefaultAppleObject();</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;GetDefaultAppleObject returns the MAppleObject currently registered as the null<br>
+container.&nbsp;&nbsp;&nbsp;Similarly, SetDefaultAppleObject registers a particular object as the null<br>
+container. Usually, the object serving as null container doesn't change during the<br>
+lifetime of the application -- it's always the application object. In this case, just call<br>
+SetDefaultAppleObject from within your application object'sconstructor. But<br>
+remember that any Apple event that arrives when no null container is registered falls<br>
+on the floor and is returned to the Apple Event Manager with the errAEEventNotHandled<br>
+error. 
+</p>
+<p>
+<b>GotRequiredParameters</b>
+</p>
+<pre>void MAppleObject::GotRequiredParameters(const AppleEvent&amp;
+    theAppleEvent);</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;GotRequiredParameters is here for convenience. To do Apple event processing<br>
+"right," each Apple event handler should check that it has received everything the<br>
+sender sent. Almost every good Apple event sample has this routine and calls it from<br>
+within the handlers. Since all handling is done from within an MAppleObject method, it<br>
+makes sense for this protocol to be a member function of MAppleObject. However, the<br>
+member function really doesn't need access to the object itself, and could actually be<br>
+called from anywhere, so it's a static member function. 
+</p>
+<p>
+<b>InitAppleObject</b>
+</p>
+<pre>void MAppleObject::InitAppleObject
+    (TAppleObjectDispatcher* dispatcher = nil);</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;InitAppleObject must be called once after the application initializes the Toolbox and<br>
+before it enters an event loop (specifically, before WaitNextEvent gets called). This<br>
+method installs the given object dispatcher, or creates a TAppleObjectDispatcher if nil<br>
+is passed. 
+</p>
+<p>
+<b>TAPPLEOBJECTDISPATCHER</b><br>
+The second element of UAppleObject is TAppleObjectDispatcher. Together with<br>
+MAppleObject, TAppleObjectDispatcher forms a complete model of Apple events, the<br>
+objects themselves, and the Apple event engine that drives the object protocol.<br>
+TAppleObjectDispatcher is responsible for intercepting Apple events and directing<br>
+them to the objects that should handle them. A core feature of this engine is the ability<br>
+to resolve object specifiers into "real" objects. 
+</p>
+<pre>class TAppleObjectDispatcher
+{
+public:
+    TAppleObjectDispatcher();
+    virtual ~TAppleObjectDispatcher();
+
+    virtual void Install();
+
+    virtual MAppleObject* ExtractObject(const AEDesc&amp; descriptor);
+    virtual void StuffDescriptor(AEDesc&amp; descriptor,
+        MAppleObject* object);
+
+    virtual void HandleAppleEvent(const AppleEvent&amp; message,
+        AppleEvent&amp; reply, long refCon);
+
+    virtual void AccessContainedObjects(DescType desiredClass,
+        const AEDesc&amp; container, DescType containerClass,
+        DescType form, const AEDesc&amp; selectionData,
+        AEDesc&amp; value, long refCon);
+    virtual long CountObjects(const AEDesc&amp; containerToken,
+        DescType countObjectsOfType);
+    virtual Boolean CompareObjects(DescType operation,
+        const AEDesc&amp; obj1, const AEDesc&amp; obj2);
+    virtual void DisposeToken(AEDesc&amp; unneededToken);
+
+    virtual MAppleObject* GetTarget(const AppleEvent&amp; message);
+
+    virtual void SetTokenObjectDisposal(MAppleObject* tokenObject,
+        Boolean needsDisposal);
+    virtual Boolean GetTokenObjectDisposal(const MAppleObject*
+        tokenObject);
+
+    virtual MAppleObject* ResolveSpecifier(AEDesc&amp; objectSpecifier);
+
+    virtual void InstallAppleEventHandler(AEEventClass theClass,
+        AEEventID theID, long refCon);
+
+    static TAppleObjectDispatcher* GetDispatcher();
+};</pre>
+<p>
+<b>Install</b>
+</p>
+<pre>void Install();</pre>
+<p>
+Install is called when the dispatcher object is actually installed (at InitAppleEvent<br>
+time). It's responsible for reading the 'aedt' resources for the application and<br>
+declaring the appropriate handlers to the Apple Event Manager as well as registering<br>
+with the OSL. Overrides should call the inherited version of this member function to<br>
+maintain proper functionality. This method may be overridden to provide functionality<br>
+beyond that supplied by TAppleObjectDispatcher -- to provide for mark tokens, for<br>
+example, which are left as an exercise for the reader. (Don'cha just hate it when<br>
+articles do this to you?)
+</p>
+<p>
+<b>ExtractObject and StuffDescriptor</b>
+</p>
+<pre>MAppleObject* ExtractObject(const AEDesc&amp; descriptor);
+void StuffDescriptor(AEDesc&amp; descriptor, MAppleObject* object);</pre>
+<p>
+One of the key abstractions provided by TAppleObjectDispatcher is the packaging of<br>
+MAppleObjects into tokens for communication with the Apple Event Manager and OSL.&nbsp;&nbsp;<br>
+ExtractObject and StuffDescriptor are the pair of routines that carry the<br>
+responsibility for translation. ExtractObject returns the MAppleObject contained<br>
+within the token descriptor, while StuffDescriptor provides the inverse function.<br>
+These functions are extensively used internally, but are probably of little interest to<br>
+clients. Subclasses that override one method should probably override the other as<br>
+well. 
+</p>
+<p>
+<b>HandleAppleEvent</b>
+</p>
+<pre>void HandleAppleEvent(const AppleEvent&amp; message, AppleEvent&amp; reply,
+    long refCon);</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;HandleAppleEvent is called whenever the application receives an Apple event. All<br>
+responsibility for distributing the Apple event to an object is held by this member<br>
+function. HandleAppleEvent is rarely overridden. 
+</p>
+<p>
+<b>AccessContainedObjects</b>
+</p>
+<pre>void AccessContainedObjects(DescType desiredClass,
+    const AEDesc&amp; container, DescType containerClass, DescType form,
+    const AEDesc&amp; selectionData, AEDesc&amp; value, long refCon);</pre>
+<p>
+At times during the resolution of an object specifier, MAppleObjects are asked to<br>
+return objects contained within them. AccessContainedObjects is called when the<br>
+parsing engine makes that query (in other words, it's the polymorphic counterpart of<br>
+the OSL's object accessor callback routine). The method is responsible for getting the<br>
+MAppleObject container, making the appropriate inquiry, and returning the result,<br>
+properly packed. AccessContainedObjects is rarely overridden. 
+</p>
+<p>
+<b>CountObjects</b>
+</p>
+<pre>long CountObjects(const AEDesc&amp; containerToken,
+    DescType countObjectsOfType);</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;At times during the resolution of an object specifier, it may be helpful to find out<br>
+how many of a particular object are contained within a token object. This method is<br>
+called when the parsing engine makes that query (in other words, it's the polymorphic<br>
+counterpart of the OSL's count objects callback routine). It's responsible for finding<br>
+the MAppleObject corresponding to the token, making the inquiry of the object, and<br>
+returning the answer. 
+</p>
+<p>
+<b>CompareObjects</b>
+</p>
+<pre>Boolean CompareObjects(DescType operation, const AEDesc&amp; obj1,
+    const AEDesc&amp; obj2);</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;At times during the resolution of an object specifier, it may be helpful to compare<br>
+two objects to determine if some logic relationship (for example, less than, equal to,<br>
+before, or after) holds between them. CompareObjects is responsible for making the<br>
+inquiry of the appropriate MAppleObject and returning the result (in other words, it's<br>
+the polymorphic counterpart of the OSL's compare objects callback routine). The<br>
+semantics of the operation is<i>obj1 operation obj2</i> . So, if the compareOperator<br>
+parameter were kAEGreaterThan, the semantics of the method call would be<i>obj1 is</i><br>
+<i>greater than obj2</i> .&nbsp;&nbsp;&nbsp;This method is rarely overridden. 
+</p>
+<p>
+<b>DisposeToken</b>
+</p>
+<pre>void DisposeToken(AEDesc&amp; unneededToken);</pre>
+<p>
+DisposeToken is called when the OSL determines that a token is no longer necessary.<br>
+This commonly occurs during resolution of an object specifier. DisposeToken is<br>
+responsible for acting appropriately (in other words, it's the polymorphic<br>
+counterpart of the OSL's object disposal callback routine). For the implementation in<br>
+TAppleObjectDispatcher, this means the routine checks to see if the object is marked<br>
+as needing disposal, and deletes the object if necessary. 
+</p>
+<p>
+<b>GetTarget</b>
+</p>
+<pre>MAppleObject* GetTarget(const AppleEvent&amp; message);</pre>
+<p>
+GetTarget is responsible for looking at the Apple event and determining which object<br>
+should receive it. Notably, GetTarget is used by HandleAppleEvent. The<br>
+TAppleObjectDispatcher implementation sends the Apple event to the default object<br>
+unless the direct parameter is an object specifier. If the direct parameter is an object<br>
+specifier, it's resolved to an MAppleObject, which is then sent the Apple event. This<br>
+method is rarely overridden. 
+</p>
+<p>
+<b>SetTokenObjectDisposal and GetTokenObjectDisposal</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>void SetTokenObjectDisposal(MAppleObject* tokenObject,
+    Boolean needsDisposal);
+Boolean GetTokenObjectDisposal(const MAppleObject* tokenObject);</pre>
+<p>
+Any MAppleObject can be marked as needing disposal or not needing it.<br>
+SetTokenObjectDisposal and GetTokenObjectDisposal manage the internal<br>
+representation of the table that keeps track of such information. You may want to<br>
+override them both (never do it one at a time) to provide your own representation. 
+</p>
+<p>
+<b>ResolveSpecifier</b>
+</p>
+<pre>MAppleObject* ResolveSpecifier(AEDesc&amp; objectSpecifier);</pre>
+<p>
+ResolveSpecifier returns the MAppleObject that corresponds to the object specifier<br>
+passed as an argument. Under most circumstances, you don't need to call this routine<br>
+since it's called automatically to convert the direct parameter of an Apple event into an<br>
+MAppleObject. If, however, in the course of handling an Apple event, you find another<br>
+parameter whose descriptorType is typeObjectSpecifier, you'll probably want to<br>
+resolve it through this routine. Remember that objects returned from<br>
+ResolveSpecifier may need to be deleted when the application is done with them.&nbsp;&nbsp;To<br>
+accomplish this, you may either stuff the object into an AEDesc by calling<br>
+StuffDescriptor and then call AEDisposeToken, or ask whether the object needs to be<br>
+deleted by calling GetTokenObjectDisposal and delete it if true is returned. 
+</p>
+<p>
+<b>InstallAppleEventHandler</b>
+</p>
+<pre>void InstallAppleEventHandler(AEEventClass theClass, AEEventID theID,
+    long refCon);</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;InstallAppleEventHandler is very rarely overridden. It's responsible for<br>
+registering an Apple event with the Apple Event Manager, notifying the manager that<br>
+the application handles the Apple event. <b>GetDispatcher</b>
+</p>
+<pre>TAppleObjectDispatcher* GetDispatcher();</pre>
+<p>
+This static member function returns the dispatcher object that's currently installed.<br>
+It's useful for calling TAppleObjectDispatcher member functions from a global scope. 
+</p>
+<p>
+<b>THE 'AEDT' RESOURCE</b><br>
+The last piece of the UAppleObject puzzle is the 'aedt' resource. The definition of this<br>
+resource type is in the Types.r file distributed with MPW. Developers familiar with<br>
+MacApp's use of the 'aedt' resource already know how it works in UAppleObject because<br>
+UAppleObject uses the same mechanism. 
+</p>
+<p>
+The 'aedt' resource is simply a list of entries describing the Apple events that an<br>
+application handles.&nbsp;&nbsp;&nbsp;Each entry contains, in order, the event class, the event ID, and a<br>
+numeric reference constant. The event class and ID describe the Apple event the<br>
+application supports and the numeric constant is used internally by your application.<br>
+The constant should be different for each supported Apple event. This allows your<br>
+application to recognize the kind of Apple event at run time by looking at the refCon<br>
+passed to DoAppleEvent.
+</p>
+<p>
+When installed via the Install method, a TAppleObjectDispatcher object looks at all<br>
+'aedt' resources in the application's resource fork, registering all the Apple events in<br>
+them. Thus, additional Apple event suites can be signified by adding resources instead<br>
+of adding to one resource. For example, the Rez code to define an 'aedt' resource for the<br>
+four required Apple events is as follows:
+</p>
+<pre>resource 'aedt' (100) {{
+    'aevt', 'oapp', 1;
+    'aevt', 'odoc', 2;
+    'aevt', 'pdoc', 3;
+    'aevt', 'quit', 4;
+}};</pre>
+<p>
+When the Open Document Apple event ('aevt', 'odoc') is sent to the application, the<br>
+refCon value to DoAppleEvent is 2. Since you've assigned a unique numeric constant to<br>
+each different Apple event, a refCon value of 2 can be passed to DoAppleEvent only<br>
+when the Apple event is Open Document. 
+</p>
+<p>
+To add the mythical foobar Apple event ('foo ', 'bar ') to the application, mapped to<br>
+number 5, you may either add a line to the resource described above or add another<br>
+resource:
+</p>
+<pre>resource 'aedt' (101) {{
+    'foo ', 'bar ', 5;
+}};</pre>
+<h2>EXTENDING CPLUSTESAMPLE</h2>
+<p>
+So far this sounds all well and good. The theory behind adding Apple event object<br>
+support holds together well on paper. The framework, UAppleObject, has been written<br>
+and works. The only thing left is to put my money where my mouth is and actually use<br>
+UAppleObject to demonstrate the addition of Apple events to an Apple event-unaware<br>
+application. The subject of this foray into the Twilight Zone is CPlusTESample in the<br>
+Sample Code folder on the<i>Developer CD Series</i> disc.&nbsp;&nbsp;&nbsp;TESample serves as the basis for<br>
+adding scripting support for object model classes. 
+</p>
+<p>
+CPlusTESample is attractive for a number of reasons. First, it's a simple application<br>
+that could support some nontrivial Apple events. Second, it's written in an<br>
+object-oriented style and contains a decent design from the standpoint of separating the<br>
+user interface from the engine and internal representation. Finally, it's written in<br>
+C++, a necessary evil for the use of UAppleObject. 
+</p>
+<p>
+To prove that CPlusTESample actually had the necessary flexibility to add Apple<br>
+events, I began by adding font, font size, and style menus to the original sample. Adding<br>
+these features required little modification to the original framework aside from the<br>
+addition of methods to existing classes. Thus, Iwas satisfied that the underlying<br>
+assumptions and framework could hold the paradigm shift of adding Apple event<br>
+support. 
+</p>
+<p>
+In identifying the objects of the program, I chose windows and text blocks as the<br>
+central object classes. If I were more gutsy, I would have attempted to actually define<br>
+words and characters.&nbsp;&nbsp;&nbsp;However, the ancient programmer's credo crept in -- it was<br>
+more work than I was willing to do for this example. Further complicating this<br>
+decision was the fact that CPlusTESample is built on TextEdit. Therefore, the obvious<br>
+concepts of paragraphs and words translated exceptionally poorly into the internal<br>
+representation, TEHandles. Characters would have been simpler than either<br>
+paragraphs or words, but I copped out and left it as an exercise for the reader. 
+</p>
+<p>
+The relationships between classes are very straightforward. Windows are contained by<br>
+the null object and text blocks are contained by windows. However, since I had a<br>
+concept of window, it became interesting to define various attributes contained in<br>
+windows: name, bounding box, and position. So, object model classes were defined for<br>
+names, bounding boxes, and positions. 
+</p>
+<p>
+Behaviors were similarly straightforward. Text blocks, names, bounding boxes, and<br>
+positions had protocol for getting their data and setting their data. Thus, an Apple event<br>
+could change a name or text block or could ask for a position or bounding box. 
+</p>
+<p>
+In the end, six classes were defined to implement the object model classes: TESample,<br>
+TEDocument, TWindowName, TWindowBounds, TWindowPosition, and TEditText.<br>
+TESample is the application class and functions as the null object. TEDocument<br>
+implements the window class and is used as the internal representation of the<br>
+document and all its data. The remaining four classes are ephemeral classes that refer<br>
+to a specific TEDocument instance and represent the indicated feature of that instance. 
+</p>
+<p>
+From that point, it was straightforward to write methods overriding MAppleObject to<br>
+provide the containment, counting, comparison, and behavior dispatching. You can<br>
+check out CPlusTESample with Apple event support added on the<i>Developer CD Series</i><br>
+disc. 
+</p>
+<h2>IMPLEMENTING A CLASS</h2>
+<p>
+This section shows how UAppleObject helps you write cleaner code by looking at one of<br>
+the CPlusTESample classes in detail -- TEditText, the text class. User testing revealed<br>
+the need for a class to represent the text found inside a CPlusTESample window, so I<br>
+created a TEditText class whose objects are contained within some window class.<br>
+Additionally, users wanted to retrieve and set the text represented by the text class.<br>
+The<i>Apple Event Registry</i> defines a text class that roughly resembles the text class I<br>
+wanted to provide in my CPlusTESample extension. Therefore, I decided to use the<br>
+Registry's description as a basis for my TEditText class. 
+</p>
+<p>
+TEditText provides object model support for the user's concept of text, indicating that<br>
+it should inherit from MAppleObject. TEditText objects don't contain any other objects,<br>
+so there's no need to override the CountContainedObjects or GetContainedObject<br>
+methods. However, TEditText objects do respond to Apple events. The Registry says that<br>
+text objects should provide access to the text data itself through the Set Data and Get<br>
+Data Apple events. Therefore, TEditText should include methods to implement each<br>
+Apple event and should override DoAppleEvent to dispatch an Apple event to the<br>
+appropriate method. After taking all this into account, here's what TEditText looks<br>
+like:
+</p>
+<pre>class TEditText : public MAppleObject
+{
+public:
+    TEditText(TEHandle itsTE);
+
+    virtual void DoAppleEvent(const AppleEvent&amp; message,
+        AppleEvent&amp; reply, long refCon);
+    virtual DescType GetAppleClass() const;
+
+    virtual void DoAppleGetData(const AppleEvent&amp; message,
+        AppleEvent&amp; reply);
+    virtual void DoAppleSetData(const AppleEvent&amp; message,
+        AppleEvent&amp; reply);
+private:
+    TEHandle    fTEHandle;
+};</pre>
+<p>
+The constructor is relatively simple to implement. Since CPlusTESample uses TextEdit<br>
+records internally, it's natural to implement TEditText in terms of TextEdit's<br>
+TEHandle data structure.&nbsp;&nbsp;&nbsp;Therefore, TEditText keeps the TEHandle to which it refers<br>
+in the fTEHandle instance variable. 
+</p>
+<pre>TEditText::TEditText(TEHandle itsTE)
+{
+    fTEHandle = itsTE;
+}</pre>
+<p>
+UAppleObject requires each MAppleObject instance to describe its object model class<br>
+type through the GetAppleClass method. Since all TEditText objects represent the<br>
+Registry class denoted by typeText, TEditText's GetAppleClass method is exceptionally<br>
+straightforward, blindly returning the typeText constant. 
+</p>
+<pre>DescType TEditText::GetAppleClass() const
+{
+    return typeText;
+}</pre>
+<p>
+DoAppleEvent is also straightforward. It looks at the refCon parameter to determine<br>
+which Apple event-handling method should be invoked. This method represents a large<br>
+part of the remaining tedium for Apple event coding. Each class is responsible for<br>
+translating the integer-based Apple event specifier, refCon in this example, into a<br>
+polymorphic method dispatch such as the invocation of DoAppleSetData or<br>
+DoAppleGetData. The nice part of this implementation is that subclasses of TEditText<br>
+won't need to implement DoAppleEvent again if all the subclass needed was the Set Data<br>
+or Get Data protocol. Instead such a subclass would simply override the DoAppleSetData<br>
+or DoAppleGetData method and let the C++ method-dispatching mechanisms do the<br>
+work. 
+</p>
+<pre>void TEditText::DoAppleEvent(const AppleEvent&amp; message,
+    AppleEvent&amp; reply, long refCon)
+{
+    switch (refCon)
+    {
+    case cSetData:
+        this-&gt;DoAppleSetData(message, reply);
+        break;
+    case cGetData:
+        this-&gt;DoAppleGetData(message, reply);
+        break;
+    default:
+        MAppleObject::DoAppleEvent(message, reply, refCon);
+        break;
+    }
+}</pre>
+<p>
+DoAppleGetData and DoAppleSetData are the Apple event-handling methods of the<br>
+TEditText class. To developers familiar with the traditional Apple Event Manager<br>
+interfaces, these methods are the UAppleObject equivalents of what the Apple Event<br>
+Manager calls Apple event handlers. Each method follows a general pattern common to<br>
+most remote procedure call protocols, of which Apple events are an advanced form. 
+</p>
+<p>
+First, the Apple event-handling method reads additional information from the message<br>
+Apple event.&nbsp;&nbsp;&nbsp;The DoAppleGetData method doesn't happen to need any additional<br>
+information because the entiremeaning of the message is found in the identity of the<br>
+Apple event itself. However, DoAppleSetData needs one additional piece of information<br>
+-- the text that should be stuffed into the object. 
+</p>
+<p>
+Next, the handler method calls GotRequiredParameters, passing the message Apple<br>
+event as the sole argument. GotRequiredParameters ensures that the handler has<br>
+retrieved all the information that the Apple event sender has sent. (For a discussion of<br>
+why this is necessary, see<i>Inside Macintosh</i> Volume VI, Chapter 6.)
+</p>
+<p>
+Third, the handler method will do whatever is necessary to perform the Apple event<br>
+and create necessary reply data. The Get Data Apple event requires the TEditText object<br>
+to fill the reply Apple event with the text it represents. Therefore, the DoAppleGetData<br>
+method should retrieve the text contained in the TEHandle and pack it into an<br>
+appropriate Apple event descriptor, putting that descriptor into the reply Apple event.<br>
+In contrast to Get Data, the Set Data Apple event requires no reply, but does require<br>
+that the text represented by the TEditText object be changed to reflect the text<br>
+contained by the message Apple event. Thus, the DoAppleSetData method should contain<br>
+code that sets the text contained in the object's TEHandle to the text retrieved from the<br>
+message Apple event. 
+</p>
+<pre>void TEditText::DoAppleGetData(const AppleEvent&amp; message,
+        AppleEvent&amp; reply)
+{
+    // Note: This method uses no additional parameters.
+
+    // Make sure we have all the required parameters.
+    GotRequiredParameters(message);
+
+    // Pack the text from the TEHandle into a descriptor.
+    CharsHandle theText = TEGetText(fTEHandle);
+    AEDesc      textDesc;
+    HLock((Handle) theText);
+    OSErr theErr = AECreateDesc(typeText, (Ptr) *theText,
+        GetHandleSize((Handle) theText), &amp;textDesc);
+
+    // Unlock the handle and check the error code, throwing an
+    // exception if necessary.
+    HUnlock((Handle) theText);
+    FailOSErr(theErr);
+
+    // Package the reply.
+    theErr = AEPutParamDesc(&amp;reply, keyDirectObject, &amp;textDesc);
+
+    // Dispose of the descriptor we created and check the reply from
+    // packaging the reply, throwing an exception if necessary.
+    OSErr ignoreErr = AEDisposeDesc(&amp;textDesc);
+    FailOSErr(theErr);
+}
+
+void TEditText::DoAppleSetData(const AppleEvent&amp; message,
+    AppleEvent&amp; /* reply */)
+{
+    // Get the text data descriptor from the message Apple event.
+    AEDesc  textDesc;
+    FailOSErr(AEGetParamDesc(&amp;message, keyAETheData, typeText,
+        &amp;textDesc));
+
+    // Make sure we have all the required parameters.
+    GotRequiredParameters(message);
+
+    // Use the data in the text descriptor to set the text of
+    // TEHandle.
+    HLock(textDesc.dataHandle);
+    TESetText(*textDesc.dataHandle,
+        GetHandleSize(textDesc.dataHandle), fTEHandle);
+    HUnlock(textDesc.dataHandle);
+
+    // Dispose of the text descriptor we created above.
+    OSErr   ignoreErr = AEDisposeDesc(&amp;textDesc);
+}</pre>
+<h2>IT'S UP TO YOU</h2>
+<p>
+This article set out to reveal the deep significance of Apple events and the object model<br>
+and to find a strategy for developing an object-oriented framework to take advantage of<br>
+the Apple event object model design. Along the way, it danced around cognitive theory<br>
+and discussed how cognitive theory applies to user perception of software. You've seen<br>
+how object programming resembles such cognitive models to a more-than-trivial<br>
+degree. And you've seen how those similarities can be leveraged to give workable,<br>
+programmable models of user concepts within Turbo WhizzyWorks II NT Pro. 
+</p>
+<p>
+You've also seen the difficulties presented by the Apple Event Manager interface.<br>
+Although Apple event objects and the object model are unarguably tied to user models<br>
+and user-centric models, the Apple Event Manager is not. The UAppleObject<br>
+framework presented here works with the object model and the Apple Event Manager to<br>
+reduce generic user scripting to a tedious but straightforward task.
+</p>
+<p>
+In the midst of all this detail, don't forget the payoff -- providing a mechanism for<br>
+users to interact with your applications using a level of control and precision<br>
+previously undreamed of. The rest, as they say, is in your hands. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>ERIC M. BERDAHL </b> (AppleLink BERDAHL) is a refugee from Chicago, recently<br>
+deported to the West Coast to join Taligent. Having lived most of his life in a suburb of<br>
+the Windy City, he exhibits a psychosis common to that area of the country -- fanatic<br>
+loyalty to the Cubs. His formula for success includes bucking the establishment and<br>
+blindly following one's heart over one's head. The jury's still out on whether that<br>
+formula works, but it's been effective so far. He's the current president of MADA, an<br>
+international developer's association devoted to providing cutting-edge access to<br>
+information about object technologies. MADA conferences are a real blast, too (just ask<br>
+Eric about his grass skirt). In his copious spare time, he collects comic books, catches<br>
+up on the Cubs' latest follies, and chases a neurotic flying disc around a grassy field<br>
+(some call it Ultimate).*
+</p>
+<p>
+<b>Marshall Brodeen,</b> a.k.a. Wizzo the Wacky Wizard from station WGN's "Bozo's<br>
+Circus," was a television spokesman for T.V. Magic Cards.*
+</p>
+<p>
+<b>Good Object Design </b>is sometimes lumped together with pornography as being<br>
+difficult to define, "but I'll know it when I see it." Others consider the search for G.O.D.<br>
+as a holy crusade. Rather than giving a thoroughly useless description for G.O.D. here,<br>
+I refer the interested reader to <i> Developing Object-Oriented Software for the</i><br>
+<i>Macintosh </i> by Alger and Goldstein (Addison-Wesley, 1992).*
+</p>
+<p>
+<b>AEDesc is the basic Apple event data structure </b> described in <i>Inside Macintosh</i><br>
+Volume VI, Chapter 6,<i> "</i> The Apple Event Manager."*
+</p>
+<p>
+<b>The Apple Event Registry </b>is on the <i> Developer CD Series </i> disc and is available in<br>
+print from APDA (#R0130LL/A). *
+</p>
+<p>
+<b>The naming convention </b>I use for classes differentiates between classes that are<br>
+intended to be instantiated directly and those that are intended to be used as a mixin<br>
+class. Classes that are directly instantiable begin with an uppercase <i> T</i>&nbsp;&nbsp;-- TPixel, for<br>
+example. Similarly, mixin classes begin with an uppercase <i> M</i>&nbsp;&nbsp;-- MAppleObject, for<br>
+example.*<b>TPixel objects don't actually exist </b>until someone -- usually the OSL<br>
+-- asks for them. Before that, pixels are hidden within other objects, probably<br>
+TImage or TArea objects. However, when someone asks for a pixel object, suddenly a<br>
+TPixel is<i>lazy evaluated </i> into existence.*
+</p>
+<p>
+<b>The TAppleObjectDispatcher implementation </b>registers a static member<br>
+function as the actual handler of the Apple event. This static member function calls the<br>
+dispatcher's HandleAppleEvent method polymorphically. Thus, you'll most likely get<br>
+the behavior you want out of an override of HandleAppleEvent. *
+</p>
+<p>
+<b>UAppleObject is easier to implement </b>in dynamic languages like Smalltalk or<br>
+Macintosh Common Lisp. However, these packages don't yet lend themselves to creating<br>
+commercial applications (no flames, please). The only language that has the requisite<br>
+malleability and marketability is Uncle Barney's love child. Sorry, folks. *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Richard Clark, C. K. Haun, Chris<br>
+Knepper *
+</p>
+</body>
+</html>

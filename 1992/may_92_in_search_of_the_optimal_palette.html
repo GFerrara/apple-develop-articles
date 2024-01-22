@@ -1,0 +1,540 @@
+<html>
+<head>
+<!-- Article ID: 21 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>May 92 - IN SEARCH OF THE OPTIMAL PALETTE</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>IN SEARCH OF THE OPTIMAL PALETTE</h2>
+<h1>DAVE GOOD AND KONSTANTIN OTHMER</h1>
+<p>
+<img src="img/171.gif" width="245 px"></img>
+</p>
+<p>
+<i>When you want to display an image that contains more color information than the</i><br>
+<i>display device is capable of rendering, how do you pick the best colors to use? The</i><br>
+<i>Picture Utilities Package, new in System 7, provides two methods, which we describe</i><br>
+<i>here. You also have the option of developing your own color selection algorithm. This</i><br>
+<i>article and the accompanying code on the Developer CD Series disc will get you started.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+It's tricky to display an image when the number of colors used in the source exceeds<br>
+the number of colors available on the device. On an indexed device (256 or fewer<br>
+colors), an application can choose, via the Palette Manager, which colors to use. But<br>
+how will it know which colors are the best ones to choose, given a particular image?
+</p>
+<p>
+To avoid this issue altogether, your application can simply draw the image and let<br>
+QuickDraw use its default color palettes to make the choice. Because these palettes<br>
+contain a well-dispersed set of colors, most images look pretty good. However, in the<br>
+case of an image that uses an unbalanced set of colors, such as an underwater scene<br>
+with many subtle shades of blue, relying on the default palette will not produce a<br>
+good-looking result. In this case, you<i>must</i>&nbsp;&nbsp;tackle the issue of how to choose the<br>
+optimal palette. That's when the new Picture Utilities Package can help. 
+</p>
+<p>
+Picture Utilities provides two methods--the popular method and the median<br>
+method--for determining the best colors. This article describes these two methods. In<br>
+addition, it describes a third method--the octree method--which, in addition to being<br>
+useful in itself, makes a convenient starting point for you to develop your own<br>
+algorithm for choosing the optimal color palette. 
+</p>
+<h2>DECIDING WHICH METHOD TO USE</h2>
+<p>
+It would be nice if one method of selecting colors worked best for all types of images.<br>
+But the truth is that the methods provided in Picture Utilities work best for some<br>
+types of images (such as those whose colors are all clustered in one small portion of<br>
+the RGB cube), while QuickDraw's standard method works best for other types.<br>
+Therefore, it's always important to give the user a choice of which Picture Utilities<br>
+color-picking method to use and whether to use one of these at all. 
+</p>
+<p>
+The three methods we discuss here differ in how they approximate the ideal color set.<br>
+The popular method bases its choices on a frequency count of colors used in the image,<br>
+returning the most frequently used colors. Both the median and octree methods are<br>
+algorithms that describe occupancy in a space. In this case, the space is the color cube<br>
+with axes of red, green, and blue, and the occupants are the colors in the image. These<br>
+algorithms differ in the way they divide up the space in order to return the correct<br>
+number of colors. The median algorithm starts with one giant box covering the entire<br>
+cube and splits it into successively smaller boxes; the octree algorithm starts with<br>
+lots of tiny boxes and joins them into larger ones. Both methods return the weighted<br>
+average of each of the boxes as the final set of colors. 
+</p>
+<p>
+The most appropriate method for your particular use depends on factors such as the<br>
+type of image you want to display (real world, computer-generated, graphic, and so<br>
+on), image content (perhaps the colors of items in the foreground are more important<br>
+than the colors of items in the background), or even how the image will be displayed<br>
+(halftoned or dithered, for example). For instance, none of these methods take<br>
+dithering into account, although since we provide you with the source code, you could<br>
+modify the octree method to do so.
+</p>
+<p>
+The speed of each method also varies, with the popular method being fastest, the<br>
+median method slower, and the octree method slowest, since in the latter there are<br>
+more calculations involved for each color chosen. Also, the code that we supply for the<br>
+octree method is intended to be easy to understand rather than blazingly fast. In fact,<br>
+the current code is slower than the popular method by a factor of four, but with a little<br>
+work this could probably be improved to be only twice as slow. 
+</p>
+<p>
+Another basic consideration is whether you want to represent the majority of colors in<br>
+the image or the range of colors present. For example, if you could select only two<br>
+colors to represent an image that contains several different shades of red and one blue<br>
+dot, you would have to decide whether to pick two reds in an attempt to represent the<br>
+majority of colors in the image, or one red and one blue to represent the range of<br>
+colors the image contains. The popular method would do the former, while the median<br>
+method would do the latter.
+</p>
+<p>
+In general, the best method to use for an image that has a fairly well dispersed set of<br>
+colors is QuickDraw's default palette. The popular method is useful when the source<br>
+image contains only a few more colors than are available on the display device. For<br>
+example, if you want to display a 32-bit image that uses only 200 distinct colors on<br>
+an 8-bit device, the popular method is the best choice for speed and accuracy. While<br>
+this case is trivial, using the popular method does guarantee that the needed colors will<br>
+be made available, a claim that can't be made for the default palette. The median and<br>
+octree methods generally give the best results for images where small patches of a<br>
+distinctly different color must be preserved at the cost of blending together large<br>
+patches of similar colors.
+</p>
+<p>
+Experience will give you a better feel for the strengths and weaknesses of each of these<br>
+methods.&nbsp;&nbsp;&nbsp;Meanwhile, for purposes of comparison, Figure 1 shows screen snapshots of<br>
+a 32-bit image as it originally appeared, using QuickDraw's default 16-color palette,<br>
+using 16 popular colors, using 16 median colors, and using 16 octree colors. The<br>
+original image has 77 different colors (to a resolution of five bits per color<br>
+component). A test program on the<i>Developer CD Series</i> disc enables you to experiment<br>
+with this image (or others) and to take a look at the code used to generate the various<br>
+versions. 
+</p>
+<p>
+Notice in the original image that the colors marking the minutes follow a smooth<br>
+progression from cyan on the far left to dark blue at the top to magenta on the right to<br>
+purple on the bottom and then to dark red just before the cyan. Also notice the subtle<br>
+color blending where the translucent minute and second hands intersect the underlying<br>
+clock. When the standard 16-color palette is used, the soft colors of the minute<br>
+markers change into much brighter, harder colors, and the smooth transitions are<br>
+replaced by sudden transitions. The colors of the background and the face of the clock<br>
+have changed. Furthermore, the subtle difference in color between the background and<br>
+the background of the date (January 24) is lost.
+</p>
+<p>
+The popular method preserves the colors of the largest color areas: the background,<br>
+the clock face, the background of the date, the color of the minute and hour hands, and<br>
+the lettering. The colors of the minute markers remain soft, but lose their shading<br>
+resolution; for example, the cyan is replaced by a darker blue. Because it preserves<br>
+the range of colors, the median method performs somewhat better on the minute<br>
+markers than the previous two methods, but the clock face turns to black and the green<br>
+hand becomes washed out. Although the image's appearance may not be ideal because<br>
+many of the large areas are wrong, areas of the image that depend on the color ranges <br>
+(which in this image just happen to occupy small areas) are reproduced more<br>
+accurately. When the octree method is used, the result is similar to that of the median<br>
+method, except the green hour hand is completely lost. This is due to the simple tree<br>
+reduction algorithm we use; if the tree reduction improvements that we suggest at the<br>
+end of the article were implemented, the hour hand most likely would be preserved,<br>
+although its shade of green might change (much as happened with the median method). <br>
+The octree performed better than the median in preserving the color of the text and the<br>
+background of the date.
+</p>
+<p>
+&nbsp;One conclusion from these images is that there is not a single best color-picking<br>
+algorithm, even for a particular picture. For this image, we would be inclined to use<br>
+the popular method, since we don't care too much about the subtle shading effects on<br>
+the minute markers. However, an artist might be much more concerned with the<br>
+subtle shading effects and actually not care if the face of the clock went to a completely<br>
+different but still solid shade. In this case, the artist would probably pick the median<br>
+or octree method. This is why applications that provide color optimization should allow<br>
+the user to choose between the various available methods. 
+</p>
+<p>
+<img src="img/172.gif" width="240 px"></img>
+</p>
+<p>
+Original
+</p>
+<p>
+<img src="img/173.gif" width="240 px"></img>
+</p>
+<p>
+<img src="img/174.gif" width="240 px"></img>
+</p>
+<p>
+Default 16-color palette 16 popular colors
+</p>
+<p>
+<img src="img/175.gif" width="240 px"></img>
+</p>
+<p>
+<img src="img/176.gif" width="240 px"></img>
+</p>
+<p>
+16 median colors 16 octree colors
+</p>
+<p>
+<b>&nbsp;Figure 1</b> An Image Displayed Using Four Different Color-Picking Methods
+</p>
+<p>
+There is also a "system" method built into the Picture Utilities Package that tries to<br>
+select the best general method available. Currently, the popular method is selected if<br>
+the number of requested colors is 75% or greater of the total number of distinct<br>
+colors in the image (to a resolution of five bits per color component); otherwise the<br>
+median method is selected. The operation of this system method is almost certain to<br>
+change in the future. 
+</p>
+<p>
+&nbsp;Now that you have some idea of how the available color-picking methods compare, we<br>
+turn to details of how the popular, median, and octree methods work. 
+</p>
+<h2>HOW THE POPULAR METHOD WORKS</h2>
+<p>
+&nbsp;The popular method of color selection is the easiest to understand and in general<br>
+produces the least satisfactory results. This method chooses colors based on how<br>
+frequently they're used in the image.&nbsp;&nbsp;&nbsp;The operation is performed by creating a<br>
+histogram (a frequency count of each color) and then returning the colors that occur<br>
+most often (as shown in Figure 2), up to the specified number of colors. If the image<br>
+contains more than 256 different colors or if any of the source items are 32-bit<br>
+pixMaps, Picture Utilities only maintains color information to a resolution of five bits<br>
+per color component. Thus, colors must differ in the highest five bits of any of the<br>
+three color components (red, green, and blue) to be considered distinct. 
+</p>
+<p>
+<img src="img/177.gif" width="404 px"></img>
+</p>
+<p>
+<b>Figure 2</b> Picking Four Colors Using the Popular Method
+</p>
+<p>
+In Figure 2, the x-axis represents each possible RGB color to a resolution of five bits<br>
+per component.&nbsp;&nbsp;&nbsp;These colors range from 0-0-0 (0 red, 0 green, 0 blue) to<br>
+32-32-32 (32 red, 32 green, 32 blue) in the high five bits of the red-green-blue<br>
+color components, for a total of 215 or around 32,000 entries.&nbsp;&nbsp;&nbsp;The y-axis measures<br>
+the frequency of each of the colors, up to a maximum of 32,767 occurrences.&nbsp;&nbsp;&nbsp;Thus,<br>
+this table contains 215 entries of one word each and occupies 64K of memory. 
+</p>
+<p>
+&nbsp;For custom methods, Picture Utilities can generate this histogram of color usage for<br>
+you. If your custom method wants this, its initialization subroutine must return the<br>
+value ColorBankIs555 for the color bank parameter. The octree method described later<br>
+in this article does not use a histogram.&nbsp;&nbsp;&nbsp;Instead, it uses its own custom color bank and<br>
+thus returns ColorBankIsCustom as its color bank parameter. 
+</p>
+<h2>HOW THE MEDIAN METHOD WORKS</h2>
+<p>
+&nbsp;The median method is an iterative algorithm that views the colors in an image as if<br>
+they were arranged in a cube with axes representing the red, green, and blue<br>
+components. It starts by generating a histogram of the source colors, just as the<br>
+popular method does. However, while the popular method is pretty much done after<br>
+this, the median method's real work has only just begun. 
+</p>
+<p>
+&nbsp;The first real step is to determine the smallest RGB cube that will hold all the colors<br>
+in the image.&nbsp;&nbsp;&nbsp;After finding the median color along the longest color axis, it then puts<br>
+all the colors on one side of that color into one box and the remaining colors into<br>
+another box. It continues this measuring and splitting process&nbsp;&nbsp;until the colors have<br>
+been assigned to as many boxes as colors requested. Then the weighted average color of<br>
+each of the boxes is returned as the color set to use. 
+</p>
+<p>
+&nbsp;Since the algorithm is much easier to visualize in two dimensions, we'll illustrate<br>
+how it works in the red-green plane only. Extending the algorithm to three dimensions<br>
+is straightforward. In Figure 3, eight colors are present in the red-green color plane<br>
+(the blue component is taken as 0 for all colors).&nbsp;&nbsp;&nbsp;In this simplified example, each<br>
+color occurs only once. In the general case, if a color occurs more than once, that color<br>
+is weighted accordingly in the final step when the colors in each box are averaged. 
+</p>
+<p>
+&nbsp;The first division is along the green axis since the difference between the most green<br>
+and the least green color is slightly larger than the difference between the most red<br>
+and the least red color. This division results in the two boxes shown in step 2 of Figure<br>
+3. The largest difference in colors along one axis is now along the red axis of the top<br>
+box. Thus, this box is divided into two along the red axis, leaving us with three boxes<br>
+as shown in step 3. This time the largest difference is in the red axis of the bottom<br>
+box, so this box is divided along the median, producing the result shown in step 4. 
+</p>
+<p>
+<img src="img/178.gif" width="569 px"></img>
+</p>
+<p>
+<b>Figure 3</b> Picking Four Colors Using the Median Method
+</p>
+<p>
+We now have four boxes, and since the best four colors were requested in this<br>
+example, we're done.&nbsp;&nbsp;&nbsp;The colors returned are the weighted averages of the colors in<br>
+each of the boxes, as shown. 
+</p>
+<h2>HOW THE OCTREE METHOD WORKS</h2>
+<p>
+The octree method, like the median method, is an iterative algorithm that describes<br>
+how the colors in an image are arranged in an RGB cube. Like the median method, the<br>
+octree method groups the colors in an image together into the same number of boxes as<br>
+colors requested and then returns weighted averages from these boxes, but the way<br>
+these boxes are constructed differs substantially between the two methods. While the<br>
+popular and median methods process data that's stored in a histogram, the octree<br>
+method does its color accounting via a tree. This means that rather than truncating<br>
+colors to 5-5-5 from the get-go, the method maintains the full 8-8-8 color<br>
+throughout the process. 
+</p>
+<p>
+An octree is similar to a binary tree, except that instead of having two branches at<br>
+each node, it has eight. An octree corresponds to a cube with axes representing the red,<br>
+green, and blue components of an image. At each level of the tree, the colors are placed<br>
+in the branch of the tree indicated by the corresponding bits of the red, green, and blue<br>
+components. For instance, say a color consists of one bit of red, one bit of blue, and one<br>
+bit of green. The 0-0-0 (red-green-blue) color will be the first entry in the node,<br>
+the 0-0-1 color will be the second entry in the node, and the 1-1-1 color will be the<br>
+eighth entry in the node. Astute readers will notice that to determine which entry a<br>
+color should be, we simply use the color value itself as a zero-based index into the<br>
+node. 
+</p>
+<p>
+Our octree must deal with eight bits of red, green, and blue for each color, but this is<br>
+an easy extension of the previous case. To handle multiple bits of color information,<br>
+the code extracts the highest bit of each of the red, green, and blue components of the<br>
+color and uses this as an index into the level-0 node to find the level-1 node. Then the<br>
+next highest bit of each component is extracted and used as an index into this level-1<br>
+node to find the level-2 node. This process continues down to the lowest bit, which is<br>
+used as an index into the level-7 node to find the color record (a level-8 leaf). 
+</p>
+<p>
+The actual color selection details of the octree method are much easier to understand in<br>
+two dimensions, just as the core of the median method was. In two dimensions we're<br>
+working with a quadtree instead of an octree. A quadtree has four branches at each<br>
+node, as illustrated in Figure 4.&nbsp;&nbsp;&nbsp;(Note that below level 1 only one branch per node is<br>
+followed to a deeper level, for the sake of simplifying the drawing. In reality, each<br>
+node sprouts four branches, each of which in turn sprouts four more, and so on to the<br>
+deepest level.) Colors are inserted into the quadtree much as they would be in an<br>
+octree, except that the blue component is missing. For instance, the 0-0 (red-green)<br>
+color is the first entry in the node, the 0-1 color is the second entry, and the 1-1<br>
+color is the fourth entry. Thus, the two-dimensional color value can still be used as a<br>
+zero-based index into the node. 
+</p>
+<p>
+We think of this quadtree as corresponding to a coordinate plane formed by two color<br>
+axes; each branch then corresponds to a quadrant of the space covered by the parent<br>
+node. For instance, if a quadtree is being used to represent the red-green plane of an<br>
+RGB cube with each axis ranging from 0 to 8, the four level-1 nodes represent the<br>
+four quadrants of this plane defined by (red 0-4, green 0- 4), (red 4-8, green<br>
+0-4), (red 0-4, green 4-8), and (red 4-8, green 4-8). The level-2 nodes of the<br>
+(red 0-4, green 0-4) quadrant represent the four quarters of this particular<br>
+quadrant, and so on down to the deepest level. Of course, in the case of the octree (the<br>
+structure that our algorithm actually uses), the eight branches contained by a node<br>
+correspond to the eight subcubes of the space represented by the entire node. 
+</p>
+<p>
+<img src="img/179.gif" width="470 px"></img>
+</p>
+<p>
+<b>Figure 4</b> A Five-Level Quadtree
+</p>
+<p>
+&nbsp;The octree algorithm first adds colors (leaves) to the tree until there is one more<br>
+color (leaf) than requested. Then the tree is reduced so that there are no more leaves<br>
+than colors requested. The reduction process starts on the deepest level and attempts to<br>
+find two or more leaves that have the same parent. If this condition is not met on the<br>
+deepest level, the search continues up to the next level until multiple leaves with the<br>
+same parent are found. These leaves are then reduced to the parent node. The process<br>
+continues until the tree contains no more than the number of colors (leaves) requested<br>
+and no more colors remain to be added. The final color for each leaf in the tree is<br>
+determined by calculating a weighted average of all the colors reduced to that leaf. 
+</p>
+<p>
+&nbsp;One major difference that distinguishes our octree implementation from the median or<br>
+popular method is the way that colors are recorded. The octree method calculates the<br>
+set of best colors (reduces nodes) as the source colors are being added to the tree,<br>
+instead of counting and storing all the colors before beginning to pare them down. This<br>
+is not an inherent limitation of octrees in general; we simply chose this<br>
+implementation to reduce our memory requirements and to make these requirements<br>
+independent of the complexity of the image. The disadvantage of this choice is that the<br>
+octree method must make decisions on which colors to throw out based on incomplete<br>
+information. 
+</p>
+<p>
+&nbsp;Another interesting difference is that the octree algorithm can actually return fewer<br>
+colors than requested, instead of always returning the exact number. Theoretically,<br>
+this can reduce the accuracy of the returned color set, since there are fewer colors to<br>
+represent the full range and detail of the picture. However, we have found that most<br>
+images do return either the full number of colors requested or only one or two fewer. 
+</p>
+<p>
+&nbsp;For purposes of comparison, we'll discuss how the octree method picks the best four<br>
+colors in a color plane when given the same eight colors as used in the example for the<br>
+median method. The process is illustrated in Figure 5. Note that the quadtree is<br>
+represented there by a 16 x 16 grid; each position in the grid corresponds to one of<br>
+the leaves on the fifth level of the quadtree shown in Figure 4. 
+</p>
+<p>
+<img src="img/180.gif" width="578 px"></img>
+</p>
+<p>
+<b>Figure 5</b> Picking Four Colors Using the Octree Method
+</p>
+<p>
+&nbsp;In the grid, each color initially occupies its own tiny box. The color selection process<br>
+translates into collecting the grid squares into bigger and bigger boxes until more than<br>
+one color falls into a single box. We start with five colors in step 1, one more color<br>
+than requested. The reduction from step 1 to step 2 in the figure involves reducing a<br>
+node at the fourth level of the quadtree, creating a 4 x 4 box containing two colors. Had<br>
+a fifth-level node containing two colors been found, the new box would be 2 x 2 rather<br>
+than 4 x 4. 
+</p>
+<p>
+&nbsp;In step 3, another color is added and since it doesn't fall into an existing subdivision,<br>
+the tree is reduced again. This time an 8 x 8 box, as shown in step 4, is formed. Step 5<br>
+adds another color, but since it falls in the 8 x 8 box, no further reduction is<br>
+necessary. Step 6 adds the eighth and last color.&nbsp;&nbsp;&nbsp;It doesn't fall into an existing node, so<br>
+a reduction is done and another 8 x 8 box is formed. As there are no more colors in the<br>
+image, the weighted average of the colors in each of the boxes is returned and we're<br>
+done. 
+</p>
+<p>
+&nbsp;Extending this algorithm to work in three dimensions rather than two is easy. The<br>
+details of the implementation are in the source code, which can be found on<br>
+the<i>Developer CD Series</i> disc. Once you've studied this source code you may want to<br>
+write your own completely different color selection algorithm; Chapter 18 of<i>Inside</i><br>
+<i>Macintosh</i> Volume VI fully describes how to do this.
+</p>
+<h2>ADDITIONAL APPLICATION CODE</h2>
+<p>
+&nbsp;In addition to the code for the octree algorithm itself, we've supplied code on the CD<br>
+for a crude test application that demonstrates how to apply both the popular and<br>
+median methods as well as the octree method to a picture contained in a PICT file. The<br>
+test application has a very simple user interface that allows you to open any PICT file<br>
+and see what it looks like using the set of colors returned by the popular, median, and<br>
+octree algorithms, as well as the standard system color table. 
+</p>
+<p>
+&nbsp;The source code for this application shows how to associate the color information that<br>
+Picture Utilities returns with windows, and it also contains several useful routines<br>
+for managing pictures stored on disk. These routines allow you to treat "disk pictures"<br>
+as objects that can easily be passed around to various routines, drawn, profiled (using<br>
+Picture Utilities), and even cached in memory if there's space to do so. Take a look at<br>
+the actual source for the details on all this.&nbsp;&nbsp;Our test application does not attempt to<br>
+demonstrate how to use Picture Utilities to profile multiple pictures and pixMaps;<br>
+see<i>Inside Macintosh</i> Volume VI for a complete explanation of how to do this. 
+</p>
+<h2>ROOM FOR IMPROVEMENT</h2>
+<p>
+From the algorithms, it seems as though the median and octree methods should produce<br>
+an excellent set of colors with which to display any image. Unfortunately, both<br>
+algorithms fall somewhat short of this goal, especially with images that have a fairly<br>
+well dispersed set of colors. 
+</p>
+<p>
+We can think of several areas where both could be improved. First, both algorithms<br>
+weigh the red, green, and blue axes equally. As it turns out, the eye does the best job of<br>
+perceiving green and a relatively poorer job of perceiving blue. Perhaps different<br>
+weights could be assigned to the axes to compensate for this quirk of human perception.<br>
+An advanced color selection method could take into account the fact that even within one<br>
+color axis, the eye does not perceive the color (intensity and saturation) uniformly,<br>
+and could compensate for variation in the gamma function of each monitor as well. 
+</p>
+<p>
+Second, in both methods the colors in the final boxes are averaged. While this produces<br>
+the color that most accurately represents each box, it necessarily leaves some colors<br>
+unreachable, even by dithering. A better choice of color might be the corner of the<br>
+final box that's farthest away from the center of the RGB cube. This would assure that<br>
+all the colors in the image would be within the cube of colors defined by the palette<br>
+used to represent the image. 
+</p>
+<p>
+The median method isn't a realistic candidate for improvement since it's built into the<br>
+Picture Utilities Package. On the other hand, we're providing you with the full source<br>
+code for the octree method, so you're free to modify it. Since that's the case, we'll<br>
+suggest a few other things that could be improved. 
+</p>
+<p>
+The most important part of the octree method is determining which nodes in the tree to<br>
+reduce when the maximum number of colors has been reached. The algorithm we use in<br>
+our sample code is much too simple; we simply scan through all the nodes at the<br>
+deepest level looking for one that has two or more colors hanging off it. Then if we don't<br>
+find any such nodes at the deepest level, we move up a level and look for ones that have<br>
+two or more nodes hanging off them. 
+</p>
+<p>
+One better approach would be to reduce nodes that have the most discrete colors<br>
+hanging off them; this would tend to blend similar shades into a single color, while<br>
+preserving "fringe" colors. Another approach would be to reduce the nodes that have<br>
+the most occurrences of colors hanging off them so that small splashes of color would<br>
+not lose their distinctness.
+</p>
+<p>
+Of course, if it's important to preserve subtle shades in the main areas of the picture<br>
+and it's OK for fringe colors to be drastically modified, the previously mentioned<br>
+improvements could be reversed to always reduce the nodes with the fewest discrete<br>
+colors or the nodes with the fewest occurrences. A good general algorithm would<br>
+probably try to incorporate both of these effects by having an occurrence threshold;<br>
+colors that occur fewer than a certain number of times would be considered noise and<br>
+either thrown out completely or reduced before more significant colors. In the case of<br>
+colors that occur more than the threshold number of times, the algorithm could look<br>
+for nodes with the most colors, since if a patch of fringe color is large enough to be<br>
+noticeable, it should probably be preserved. 
+</p>
+<p>
+To properly implement these improvements, the octree method would probably need to<br>
+be modified to collect all the colors before reducing any of them, to ensure accurate<br>
+occurrence counts. Also, as we've mentioned before, currently our method can return<br>
+fewer colors than were actually requested.&nbsp;&nbsp;&nbsp;If the code were modified to collect all the<br>
+colors first, it would be relatively easy to ensure that the octree is never reduced<br>
+below the requested number of colors. While overall this effect would probably be<br>
+small compared to the benefit of a smarter reduction algorithm, it would substantially<br>
+improve the quality of the rare images that degenerate under the current<br>
+implementation and return many fewer colors than requested. 
+</p>
+<p>
+Other general improvements that could be made to the octree sample provided on the<br>
+CD are dynamic memory management and overflow checking. We presently allocate all<br>
+the memory that we'll need for the maximum size octree up front. While this is easy to<br>
+do, it wastes space and prevents the code from being robust enough to support storing<br>
+all the colors in the image before reducing any nodes. We also don't check for overflows<br>
+when accumulating the average color represented by the node. Enhancements like this<br>
+are very important if a piece of software is going to be more than just a sample. For<br>
+example, both the built-in Picture Utilities methods do check for overflows and do<br>
+some dynamic memory allocation. 
+</p>
+<h2>HACK ON</h2>
+<p>
+This article has discussed techniques for picking the best colors for displaying an<br>
+image that contains more color information than the display device is capable of<br>
+rendering. While there is no one best algorithm for selecting colors in every case,<br>
+experience will show you which of the three simple methods we've discussed is most<br>
+appropriate in each case. With your new understanding of the popular and median<br>
+methods offered by the Picture Utilities Package and with the source code sample for<br>
+the octree method, you should find it easy to generate your own custom color selection<br>
+algorithm.
+</p>
+<p>
+<b>DAVE ("KNOW") GOOD </b>admits to never having graduated from grade school, high<br>
+school, or college, though he's attended all three. Still, this didn't keep him from<br>
+learning to program the Macintosh, and he's been employed by Apple for four years,<br>
+working on things as varied as System Utilities 3.1 for the Apple IIc, TextEdit for the<br>
+II GS, and Picture Utilities (and other graphics-oriented work) for the Macintosh.<br>
+Like most graphics programmers, he enjoys juggling, eating Chinese food, reading<br>
+science fiction, and working from midafternoon till 4 or 5 in the morning. As a public<br>
+service, he runs a talk-line at 976-DAVE. "If it's 3&nbsp;&nbsp;A.M. and you're bored, just give<br>
+me a call (techno-weenies only)!" On the rare occasions when Dave isn't at work, you<br>
+can find him hiking in the Santa Cruz Mountains, riding his mountain bike, or skiing.*
+</p>
+<p>
+<b>KONSTANTIN OTHMER </b>has been known to frequent Garden City (a local poker club)<br>
+and is said to be planning an early retirement from Apple.*
+</p>
+<p>
+<b>The RGB cube </b>is pictured in color on the first page of <i> Inside Macintosh</i>&nbsp;&nbsp;Volume V<br>
+and is described on page 43 of that volume.*<b>How direct pixel values are stored</b><br>
+<b>in memory</b> is explained in Chapter 17 of <i> Inside Macintosh </i> Volume VI.*
+</p>
+<p>
+<b>How an octree works</b> is discussed in more detail on pages 550-555 of <i> Computer</i><br>
+<i>Graphics: Principles and Practice,</i>&nbsp;&nbsp;2nd ed., by Foley, Van Dam, Feiner, and Hughes<br>
+(Addison-Wesley, 1990).*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Sean Callahan, Edgar Lee, Greg<br>
+Marriot, Mike Reed, Steve Swen *
+</p>
+</body>
+</html>

@@ -1,0 +1,829 @@
+<html>
+<head>
+<!-- Article ID: 33 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>August 92 - LIVING IN AN EXCEPTIONAL WORLD</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>LIVING IN AN EXCEPTIONAL WORLD</h2>
+<h1>SEAN PARENT</h1>
+<p>
+<img src="img/214.gif" width="180 px"></img>
+</p>
+<p>
+<i>Handling exceptions is a difficult but important part of developing Macintosh</i><br>
+<i>applications. This article provides a methodology as well as a set of C tools for handling</i><br>
+<i>exceptions and writing robust code. Techniques and examples are provided for dealing</i><br>
+<i>with some of the Toolbox idiosyncrasies, and some interesting features of the C</i><br>
+<i>preprocessor, MacsBug, and MPW are explored.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Writing software on the Macintosh can be difficult. Writing robust software on the<br>
+Macintosh is even more difficult. Every call to the Toolbox is a potential source of a<br>
+bug and there are too many cases to handle--what if there isn't enough memory, or the<br>
+disk containing the code has been ejected, or there isn't enough stack space, or the<br>
+printer is unplugged, or . . . The list goes on, and a well-written application is<br>
+expected to handle every case--always recovering without loss of information. By<br>
+looking at how software is developed, this article introduces a methodology and tools<br>
+for handling the exceptional cases with minimal impact on the code that handles the<br>
+task at hand. 
+</p>
+<h2>VERSION 1: NORMAL FLOW OF CONTROL</h2>
+<p>
+When writing code, programmers usually begin by writing the normal flow of<br>
+control--no error handling. The code shown below is a reconstruction of the first<br>
+version of a printing loop routine that eventually went out as a Macintosh Technical<br>
+Note, "A Printing Loop That Cares . . ." (#161).&nbsp;&nbsp;&nbsp;Note that comments were removed to<br>
+make the structure more apparent. 
+</p>
+<pre>#include &lt;Printing.h&gt;
+#include &lt;Resources.h&gt;
+#include &lt;Memory.h&gt;
+
+void PrintStuff(void)
+{
+    GrafPtr         oldPort;
+    short           copies, firstPage, lastPage, numCopies,
+                    printmgrsResFile, realNumberOfPagesInDoc,
+                    pageNumber;
+    DialogPtr       printingStatusDialog;
+    THPrint         thePrRecHdl;
+    TPPrPort        thePrPort;
+    TPrStatus       theStatus;
+
+    GetPort(&amp;oldPort);
+    UnLoadTheWorld();
+    thePrRecHdl = (THPrint)NewHandle(sizeof(TPrint));
+    PrOpen();
+    printmgrsResFile = CurResFile();
+    PrintDefault(thePrRecHdl);
+    if (PrStlDialog(thePrRecHdl)) {
+        realNumberOfPagesInDoc = DetermineNumberOfPagesInDoc(
+            (**thePrRecHdl).prInfo.rPage);
+        if (PrJobDialog(thePrRecHdl)) {
+            numCopies = (**thePrRecHdl).prJob.iCopies;
+            firstPage = (**thePrRecHdl).prJob.iFstPage;
+            lastPage = (**thePrRecHdl).prJob.iLstPage;
+            (**thePrRecHdl).prJob.iFstPage = 1;
+            (**thePrRecHdl).prJob.iLstPage = 9999;
+            if (realNumberOfPagesInDoc &lt; lastPage) {
+                lastPage = realNumberOfPagesInDoc;
+            }
+            printingStatusDialog =
+                GetNewDialog(257, nil, (WindowPtr) -1);
+            for (copies = 1; copies &lt;= numCopies; copies++) {
+                (**thePrRecHdl).prJob.pIdleProc =
+                    CheckMyPrintDialogButton;
+                UseResFile(printmgrsResFile);
+                thePrPort = PrOpenDoc(thePrRecHdl, nil, nil);
+                pageNumber = firstPage;
+                while (pageNumber &lt;= lastPage) {
+                    PrOpenPage(thePrPort, nil);
+                    DrawStuff((**thePrRecHdl).prInfo.rPage,
+                        (GrafPtr)thePrPort, pageNumber);
+                    PrClosePage(thePrPort);
+                    ++pageNumber;
+                }
+                PrCloseDoc(thePrPort);
+            }
+            if ((**thePrRecHdl).prJob.bJDocLoop == bSpoolLoop) {
+                PrPicFile(thePrRecHdl, nil, nil, nil, &amp;theStatus);
+            }
+        }
+    }
+    PrClose();
+    DisposeHandle((Handle)thePrRecHdl);
+    DisposeDialog(printingStatusDialog);
+    SetPort(oldPort);
+} /* PrintStuff */</pre>
+<h2>VERSION 2: ERROR HANDLING ADDED</h2>
+<p>
+With code in the preliminary stage shown above, the flow of control is easy to follow.<br>
+After writing it, the programmer probably read through it and added some<br>
+error-handling code. Adding "if (error == noErr)" logic wasn't difficult, but it took<br>
+some thought to determine how to handle the cleanup and deal with the two loops. Some<br>
+more error-handling code may have been added after running the routine under<br>
+stressful conditions. Perhaps it was reviewed by lots of people before it went out as a<br>
+Technical Note. Here's the new version of the code (with the added error-handling code<br>
+shown in bold):
+</p>
+<pre>#include &lt;Printing.h&gt;
+#include &lt;Resources.h&gt;
+#include &lt;Memory.h&gt;
+
+void PrintStuff(void)
+{
+    GrafPtr         oldPort;
+    short           copies, firstPage, lastPage, numCopies,
+                    printmgrsResFile, realNumberOfPagesInDoc,
+                    pageNumber, <b>printError</b>;
+    DialogPtr       printingStatusDialog;
+    THPrint         thePrRecHdl;
+    TPPrPort        thePrPort;
+    TPrStatus       theStatus;
+
+    GetPort(&amp;oldPort);
+    UnLoadTheWorld();
+    thePrRecHdl = (THPrint)NewHandle(sizeof(TPrint));
+    if (<b>MemError() == noErr &amp;&amp; thePrRecHdl != nil) {</b>
+        PrOpen();
+        <b>if (PrError() == noErr) {</b>
+            printmgrsResFile = CurResFile();
+            PrintDefault(thePrRecHdl);
+            if (<b>PrError() == noErr) {</b>
+                if (PrStlDialog(thePrRecHdl)) {
+                    realNumberOfPagesInDoc =
+                        DetermineNumberOfPagesInDoc(
+                        (**thePrRecHdl).prInfo.rPage);
+                    if (PrJobDialog(thePrRecHdl)) {
+                        numCopies = (**thePrRecHdl).prJob.iCopies;
+                        firstPage = (**thePrRecHdl).prJob.iFstPage;
+                        lastPage = (**thePrRecHdl).prJob.iLstPage;
+                        (**thePrRecHdl).prJob.iFstPage = 1;
+                        (**thePrRecHdl).prJob.iLstPage = 9999;
+                        if (realNumberOfPagesInDoc &lt; lastPage) {
+                            lastPage = realNumberOfPagesInDoc;
+                        }
+                        printingStatusDialog =
+                            GetNewDialog(257, nil, (WindowPtr) -1);
+                        for (copies = 1; copies &lt;= numCopies;
+                             copies++) {
+                            (**thePrRecHdl).prJob.pIdleProc =
+                                CheckMyPrintDialogButton;
+                            UseResFile(printmgrsResFile);
+                            thePrPort =
+                                PrOpenDoc(thePrRecHdl, nil, nil);
+                            if <b>(PrError() == noErr) {</b>
+                                pageNumber = firstPage;
+                                while (pageNumber &lt;= lastPage &amp;&amp;
+                                        <b>PrError() == noErr) {</b>
+                                    PrOpenPage(thePrPort, nil);
+                                    <b>if (PrError() == noErr) {</b>
+                                        DrawStuff(
+                                            (**thePrRecHdl).prInfo.
+                                                rPage,
+                                            (GrafPtr)thePrPort,
+                                            pageNumber);
+                                    }
+                                    PrClosePage(thePrPort);
+                                    ++pageNumber;
+                                }
+                            }
+                            PrCloseDoc(thePrPort);
+                        }
+                    <b>} else PrSetError(iPrAbort);</b>
+                <b>} else PrSetError(iPrAbort);</b>
+            }
+        }
+        if (((**thePrRecHdl).prJob.bJDocLoop == bSpoolLoop) <b>&amp;&amp;</b>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(PrError() == noErr)</b>) {<br>
+            PrPicFile(thePrRecHdl, nil, nil, nil, &amp;theStatus);
+        }
+        <b>printError = PrError();</b>
+        PrClose();
+        <b>if (printError != noErr)</b>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PostPrintingErrors(printError);</b><br>
+    }
+    <b>if (thePrRecHdl != nil) </b> DisposeHandle((Handle)thePrRecHdl);
+    <b>if (printingStatusDialog != nil)</b>
+        DisposeDialog(printingStatusDialog);
+    SetPort(oldPort);
+} /* PrintStuff */</pre>
+<p>
+Can you easily follow the normal flow of control in the second version? What if an<br>
+error occurs?&nbsp;&nbsp;&nbsp;Could an error ever go unreported? Could this code crash because it<br>
+didn't handle an error? Does this routine always clean up after itself? These questions<br>
+are difficult to answer because the normal flow of control of this routine is<br>
+intertwined with the flow that will occur in the event of an error. If the two could be<br>
+separated, it would be much easier to tell what the routine does normally and how<br>
+things are handled when something goes wrong. Besides making the code easier to read,<br>
+a methodology that allowed such separation would make the code easier to write, debug,<br>
+and, maintain. 
+</p>
+<h2>PROGRAMMING BY CONTRACT</h2>
+<p>
+Programming by contract is based on the assumption that all correct routines have a<br>
+contract, either stated or implied, with their caller. The contract states that if a given<br>
+set of preconditions is met, the routine either succeeds or flags an exception and leaves<br>
+the machine in a known or determinable state. This contract is flexible enough to be<br>
+applied to any correct code.
+</p>
+<p>
+The secret to writing robust code is to understand what the preconditions of a given<br>
+routine are, when an exception can be flagged, and how to handle the exception.<br>
+Separating the logic that checks conditions and handles exceptions from the algorithm<br>
+of the routine allows code to be written in a straightforward way with the flow of<br>
+control seen as easily as in our first version. 
+</p>
+<p>
+<b>PRECONDITIONS</b><br>
+The preconditions of a routine specify the state the machine must be in for the routine<br>
+to execute without failure (where failure implies a crash--not flagging an exception).<br>
+A routine may require in its precondition items such as
+</p>
+<ul>
+<li>a previously called initialization routine</li>
+<li>valid ranges for value parameters</li>
+<li>available memory</li>
+<li>initialization of global state</li>
+<li>a specific software version</li>
+</ul>
+<p>
+For some routines the preconditions may be readily apparent either in the interface or<br>
+in the documentation. Sometimes it's necessary to experiment to discover the<br>
+preconditions of a routine.&nbsp;&nbsp;&nbsp;When writing a routine, the "strength" of the precondition<br>
+can be set according to the use of the routine. For example, a routine named DivideLong<br>
+is written with a description that states: Given two numbers, numer and denom,<br>
+DivideLong will divide numer by denom, set numer to the result, and return noErr. If<br>
+denom is zero, DivideLong will return divideByZeroErr and leave numer unchanged. 
+</p>
+<p>
+With this description, numer and denom can be any numbers of the proper type. This<br>
+is a weak precondition. Another description might read: Given two numbers, numer and<br>
+denom, DivideLong will divide numer by denom and return the result. If denom is zero,<br>
+DivideLong will fail. 
+</p>
+<p>
+With the second description, it would be the caller's responsibility to ensure that<br>
+denom isn't zero.&nbsp;&nbsp;&nbsp;This is a strong precondition. 
+</p>
+<p>
+In general, it's better to have a strong precondition in a routine that is used within a<br>
+sequence of related routines or shares conditions with other routines, because it<br>
+generates more efficient code byeliminating error checking. It's better to have a weak<br>
+precondition in routines that are called only once or at the start of a sequence of<br>
+related routines. Routines with weak preconditions free the caller from ensuring the<br>
+state of the machine before making the call. 
+</p>
+<p>
+A precondition can be strengthened by the caller but must not be weakened.<br>
+Strengthening is useful when you're making a sequence of related calls where being<br>
+sure additional conditions are met guarantees that no routine flags an exception. For<br>
+example, given the first description of DivideLong it would be valid for a caller to do<br>
+the following:
+</p>
+<pre>if (denom != 0) {
+(void)DivideLong(&amp;numer_a, denom); /* Ignore return. */
+(void)DivideLong(&amp;numer_b, denom); /* Ignore return. */
+} else HandleError();</pre>
+<p>
+This may be more desirable than checking for a result of divideByZeroErr after each<br>
+call. An example of weakening a precondition would be to call DivideLong as described<br>
+in the second description without ensuring that denom isn't zero. This would constitute<br>
+a bug. 
+</p>
+<p>
+<b>POST-CONDITIONS</b><br>
+Post-conditions specify the state of the machine on the return of a routine. They<br>
+include side effects and changes to global state as well as function results and variable<br>
+parameters. The post-conditions of a routine must be determinable for the routine to<br>
+be correct. They don't vary in strength and, if not met, the routine has a bug. A<br>
+thorough understanding of the post-conditions of a routine is required to ensure that<br>
+the routine is being called correctly and that cleanup can occur when the routine flags<br>
+an exception. 
+</p>
+<p>
+Sometimes it's necessary to rephrase the preconditions and post-conditions of a<br>
+routine to use it correctly. For example, a common misconception is that the only<br>
+preconditions for calling TEKey are that it has passed a valid TEHandle and the<br>
+appropriate Managers have been initialized. Since there's no mechanism for TEKey to<br>
+flag an exception, the assumption is that it can't fail. But TEKey may need to grow the<br>
+hText handle if the character isn't replacing others and isn't a backspace.&nbsp;&nbsp;&nbsp;Growing a<br>
+handle requires memory--something there may not be enough of. Since TEKey can fail<br>
+without flagging an exception with these preconditions, it appears to be incorrect and<br>
+contain a bug.&nbsp;&nbsp;&nbsp;However, by strengthening the preconditions to require that hText<br>
+must be able to grow by the size of a character, the routine is once again correct.<br>
+Strengthening preconditions is an easy fix often used in system software. (See the<br>
+section "Preflighting Calls" for tips on how to ensure preconditions.)
+</p>
+<p>
+<b>HOW TO WRITE CHECKS</b><br>
+The<b> check</b>macro is used to ensure that static preconditions and post-conditions are<br>
+being met during development. It also documents conditions for you, making it a very<br>
+useful tool that adds to the maintainability of the code. Unfortunately, these conditions<br>
+cannot be expressed directly in the interface so as to be more apparent to the caller.<br>
+The syntax for<b>check</b>is
+</p>
+<p>
+<b>check(</b><i>assertion</i> <b>);</b>
+</p>
+<p>
+To use the<b>check</b> macro, include Exceptions.h (provided on the<i>Developer CD Series</i><br>
+disc). For MacsBug, use ResEdit to add Exceptions.rsrc to the DebuggerPrefs file in the<br>
+System Folder. 
+</p>
+<p>
+What<b> check</b>does depends on the setting of the compile-time variable DEBUGLEVEL.&nbsp;&nbsp;<br>
+DEBUGLEVEL can be set to one of the following values:
+</p>
+<ul>
+<li>DEBUGOFF or DEBUGWARN:<b>check</b>does nothing and<i>assertion</i> is not<br>
+evaluated.</li>
+<li>DEBUGMIN or DEBUGSYM:<i>assertion</i> is evaluated and, if it's false (zero), a<br>
+debugger break is executed. (The debugger break is Debugger ( ) for<br>
+DEBUGMIN and SysBreak ( ) for DEBUGSYM. The first is useful for low-level<br>
+debuggers like MacsBug or TMON, the second for symbolic debuggers like<br>
+SourceBug, SADE, or THINK C.)</li>
+<li>DEBUGON or DEBUGFULL:<i>assertion</i> is evaluated and, if it's false (zero),<br>
+MacsBug is entered and the dprintf dcmd is invoked to display more<br>
+information.&nbsp;&nbsp;&nbsp;If DEBUGON,<i>assertion</i> is displayed and if DEBUGFULL, the<br>
+source code file and line number are also displayed (see "Wonders of MacsBug<br>
+and dprintf" for more information about dprintf). </li>
+</ul>
+<p>
+Normally,<b>check</b>is used at the start and end of a routine. At the start it's used to ensure<br>
+that parameters are within a given range and are not specific values (such as nil). At<br>
+the end it's used to ensure that allocations succeeded and results are as desired. 
+</p>
+<h2>REQUIREMENTS FOR BETTER LIVING</h2>
+<p>
+Although<b>check</b>can ensure that preconditions and post-conditions are being met during<br>
+development,<b>check</b>is of limited value in situations where it cannot be determined<br>
+whether the conditions are being met statically, because
+</p>
+<ul>
+<li>it disappears when DEBUGLEVEL is set to DEBUGOFF</li>
+<li>it doesn't provide sufficient support for handling exceptions to return the<br>
+machine to a known state</li>
+</ul>
+<p>
+What's needed is a mechanism that does not compile out and provides the ability to<br>
+invoke a handler when<i>assertion</i> fails. 
+</p>
+<p>
+<b>WHAT WE REQUIRE</b><br>
+The<b> require</b>macro was created to make handling exceptions simpler. The syntax<br>
+for<b>require</b>is
+</p>
+<p>
+<b>require(</b><i>assertion</i> <b>,</b><i> exception</i> <b>);</b>
+</p>
+<p>
+If<i>assertion</i> evaluates to false (zero), execution continues at the handler<i>exception</i> .<br>
+(The<i>exception</i> parameter, by convention, shares the name of the routine that failed,<br>
+but this isn't mandatory.) Handlers are typically written as shells with control falling<br>
+from one to the next, cleaning up after prior calls along the way. The extent of the<br>
+cleanup needed gets deeper as more of the routine succeeds. Figure 1 shows an extended<br>
+form of<b>require</b>called<b> require_action</b>. The extended form executes a statement<br>
+when<i>assertion</i> fails before executing the handler. This is most useful for setting an<br>
+error variable. The syntax for<b>require_action</b>is
+</p>
+<p>
+<b>require_action(</b><i>assertion</i> <b>,</b><i> exception</i> <b>,</b><i> action</i> <b>);</b>
+</p>
+<p>
+Like<b> check</b>,<b> require</b>breaks into MacsBug and displays pertinent information<br>
+depending on the settings of DEBUGLEVEL. Unlike<b>check</b>,<b> require</b>does not compile out<br>
+when DEBUGLEVEL is set to DEBUGWARN or DEBUGOFF. It evaluates<i>assertion</i> and<br>
+invokes the handler (and<i>action</i> ), but no break occurs. 
+</p>
+<p>
+The<b> nrequire</b>macro is equivalent to<b>require(!&nbsp;&nbsp;</b><i>assertion</i> <b>,</b><i> exception</i> <b>)</b>. However,<br>
+under rare circumstances it generates more efficient code, and when debugging is on,<br>
+it displays the value of<i>assertion</i> . It's also easier to read. As a general rule,<br>
+use<b>require</b>with handles and pointers and<b>nrequire</b>with errors. 
+</p>
+<h2>VERSION 3: IMPROVED WITH REQUIRE</h2>
+<p>
+A close look at the code in version 2 reveals some problems:
+</p>
+<ul>
+<li>No error handling is done after PrCloseDoc, though any errors will get<br>
+caught either after the next PrOpenDoc or on exit. </li>
+<li>If the NewHandle at the start of the code fails, it won't print and the user<br>
+is never notified why. </li>
+<li>If an error occurs in the copies loop, the loop isn't terminated. </li>
+</ul>
+<p>
+&nbsp;If printing is well behaved and does nothing once PrError has been set, none of these<br>
+problems poses much of a threat to the actual stability of the code (with the exception<br>
+of GetNewDialog). However, the use of<b>require</b>when writing the code could have<br>
+avoided the problems and the code would be easier to understand and maintain. This is<br>
+shown in the code below--version 3. The structure of the code in version 3 is almost<br>
+identical to version 1 with the addition of the<b>require</b>statements and the handlers at<br>
+the end. Writing code like this is straightforward. When a routine is called that can<br>
+flag an exception, a<b>require</b>statement is added with a handler. The statements executed<br>
+in a handler typically clean up after the routines called before the routine flagging the<br>
+exception. (See the section "When To Clean Up" for more discussion.) Although PrClose<br>
+should never cause an error, a<b>check</b> statement was added during development. 
+</p>
+<p>
+&nbsp;Here's version 3 of the code (with changes from version 1 shown in bold):
+</p>
+<pre>#include &lt;Printing.h&gt;
+#include &lt;Resources.h&gt;
+#include &lt;Memory.h&gt;
+<b>#include &lt;Errors.h&gt;</b><br>
+<b>#include "Exceptions.h"</b><br>
+void PrintStuff(void)
+{
+    GrafPtr     oldPort;
+    short       copies, firstPage, lastPage, numCopies,
+                printmgrsResFile, realNumberOfPagesInDoc,
+                pageNumber;
+    DialogPtr   printingStatusDialog;
+    <b>OSErr       theError;</b>
+    THPrint     thePrRecHdl;
+    TPPrPort    thePrPort;
+    TPrStatus   theStatus;
+    <b>long        contig, total;</b>
+   
+    <b>enum { dialogSlop = 8192 };</b>
+<p class="spacer">&nbsp;</p>
+    GetPort(&amp;oldPort);
+    UnLoadTheWorld();
+   
+    thePrRecHdl = (THPrint)NewHandle(sizeof(TPrint));
+    <b>require_action(thePrRecHdl, NewHandle,</b>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError = MemError(););</b><br>
+   
+    PrOpen();
+    <b>nrequire(theError = PrError(), PrOpen);</b>
+   
+    printmgrsResFile = CurResFile();
+    PrintDefault(thePrRecHdl);
+    <b>nrequire(theError = PrError(), PrintDefault);</b>
+   
+    if (PrStlDialog(thePrRecHdl)) {
+        realNumberOfPagesInDoc = DetermineNumberOfPagesInDoc(
+            (**thePrRecHdl).prInfo.rPage);
+        if (PrJobDialog(thePrRecHdl)) {
+            numCopies = (**thePrRecHdl).prJob.iCopies;
+            firstPage = (**thePrRecHdl).prJob.iFstPage;
+            lastPage = (**thePrRecHdl).prJob.iLstPage;
+            (**thePrRecHdl).prJob.iFstPage = 1;
+            (**thePrRecHdl).prJob.iLstPage = 9999;
+            if (realNumberOfPagesInDoc &lt; lastPage) {
+                lastPage = realNumberOfPagesInDoc;
+            }
+           
+            <b>PurgeSpace(&amp;total, &amp;contig);</b>
+            <b>require_action(contig &gt;= dialogSlop, PurgeSpace,</b>
+                <b>theError = memFullErr;);</b>
+           
+            printingStatusDialog =
+                GetNewDialog(257, nil, (WindowPtr) -1);
+            <b>require_action(printingStatusDialog, GetNewDialog,</b>
+                <b>theError = memFullErr;);</b>
+           
+            for (copies = 1; copies &lt;= numCopies; copies++) {
+                (**thePrRecHdl).prJob.pIdleProc =
+                    CheckMyPrintDialogButton;
+                UseResFile(printmgrsResFile);
+                thePrPort = PrOpenDoc(thePrRecHdl, nil, nil);
+                <b>nrequire(theError = PrError(), PrOpenDoc);</b>
+               
+                pageNumber = firstPage;
+                while (pageNumber &lt;= lastPage) {
+                    PrOpenPage(thePrPort, nil);
+                    <b>nrequire(theError = PrError(), PrOpenPage);</b>
+                   
+                    DrawStuff((**thePrRecHdl).prInfo.rPage,
+                        (GrafPtr)thePrPort, pageNumber);
+                    PrClosePage(thePrPort);
+                    <b>nrequire(theError = PrError(),</b>
+                        <b>PrClosePage);</b>
+                   
+                    ++pageNumber;
+                }
+                PrCloseDoc(thePrPort);
+                <b>nrequire(theError = PrError(), PrCloseDoc);</b>
+            }
+            if ((**thePrRecHdl).prJob.bJDocLoop == bSpoolLoop) {
+                PrPicFile(thePrRecHdl, nil, nil, nil, &amp;theStatus);
+                <b>nrequire(theError = PrError(), PrPicFile);</b>
+            }
+        }
+    }
+
+    PrClose();
+    <b>ncheck(PrError());</b>
+   
+    DisposeHandle((Handle)thePrRecHdl);
+    DisposeDialog(printingStatusDialog);
+    SetPort(oldPort);
+    <b>return;</b>
+</pre></p>
+<b><code>PrOpenPage:</code></b><br>
+<b><code>&nbsp;&nbsp;&nbsp;&nbsp;PrClosePage(thePrPort);</code></b><br>
+<b><code>PrClosePage:</code></b><br>
+<b><code>PrOpenDoc:</code></b><br>
+<b><code>&nbsp;&nbsp;&nbsp;&nbsp;PrCloseDoc(thePrPort);</code></b><br>
+<b><code>PrPicFile:</code></b><br>
+<b><code>PrCloseDoc:</code></b><br>
+<b><code>&nbsp;&nbsp;&nbsp;&nbsp;DisposeDialog(printingStatusDialog);</code></b><br>
+<b><code>GetNewDialog:</code></b><br>
+<b><code>PurgeSpace:</code></b><br>
+<b><code>PrintDefault:</code></b><br>
+<b><code>PrOpen:</code></b><br>
+<b><code>&nbsp;&nbsp;&nbsp;&nbsp;PrClose();</code></b><br>
+<b><code>&nbsp;&nbsp;&nbsp;&nbsp;DisposeHandle((Handle)thePrRecHdl);</code></b><br>
+<b><code>NewHandle:</code></b><br>
+<b><code>&nbsp;&nbsp;&nbsp;&nbsp;SetPort(oldPort);</code></b><br>
+<b><code>&nbsp;&nbsp;&nbsp;&nbsp;PostPrintingErrors(theError);</code></b>
+</p>
+<pre>} /* PrintStuff */</pre>
+<h2>PREFLIGHTING CALLS</h2>
+<p>
+Preflighting a call is the process of ensuring that the preconditions are met. Usually<br>
+this isn't necessary since the preconditions will be satisfied by handling the exceptions<br>
+of prior calls or will be implicit in the caller's preconditions. For example, there's no<br>
+need to ensure that the TEHandle being passed to TEKey isn't nil if the exceptional case<br>
+of the previous TENew returning nil was handled.&nbsp;&nbsp;In case preconditions haven't been<br>
+satisfied by handling the exceptions of previous calls,<b>require</b>can be used to check the<br>
+precondition and invoke a handler if it's not being met. This is especially useful for<br>
+routines that have strong preconditions or preconditions that are difficult to<br>
+determine. Earlier, TEKey was used as an example of a routine with strong<br>
+preconditions. To ensure the preconditions for TEKey,<b>require</b>could be used as follows:
+</p>
+<pre>OSErr SafeTEKey(short key, TEHandle hTE) {
+    enum { teSlop = 1024 };
+
+    OSErr       error;
+    TEPtr       w               = *hTE;
+    Handle      hText           = w-&gt;hText;
+    short       teLength        = w-&gt;teLength;
+   
+    SetHandleSize(hText, teLength + teSlop);
+    nrequire(error = MemError(), SetHandleSize);
+    SetHandleSize(hText, teLength);
+    TEKey(key, hTE);
+    return(noErr);
+   
+SetHandleSize:
+    return error;
+}</pre>
+<p>
+The constant teSlop is used instead of 1 just to be safe. Adding some slop for routines<br>
+with implied, rather than stated, preconditions is always a good idea.
+</p>
+<p>
+For some routines the preconditions are too complex or subject to change to accurately<br>
+state as an assertion. This is the case for GetNewDialog, as shown in version 3.<br>
+GetNewDialog can fail when there isn't enough memory for one of the numerous<br>
+QuickDraw elements to be allocated, to load the WDEF, or, if the dialog contains<br>
+TextEdit items, to create the TEHandle. About all that can be done to guarantee that<br>
+GetNewDialog succeeds is to ensure that there's a reasonable amount of memory<br>
+available. It's fairly safe to rely on the Process Manager in System 7 to make sure<br>
+there's space in the system heap for the WDEF. This is what's done in version 3. The<br>
+assertion is based on contiguous memory instead of total memory in case the heap is too<br>
+fragmented to allocate some of the larger blocks required. Sometimes all that can be<br>
+done is to increase the chances of survival. 
+</p>
+<h2>WHEN TO CLEAN UP</h2>
+<p>
+Just as preconditions can sometimes be tricky to determine, post-conditions can be<br>
+hazardous as well.&nbsp;&nbsp;&nbsp;It's important to understand the post-conditions of the routines<br>
+being called, so that the machine can be returned to a known state, ensuring valid<br>
+post-conditions for the calling routine. Normally, if an exception is being raised, a<br>
+routine should dispose of everything it<i>successfully</i> allocated, close everything<br>
+it<i>successfully</i> opened, and release everything it<i>successfully</i> locked. So, if NewHandle<br>
+is called successfully, DisposeHandle is called in the handler. If OpenFile is called<br>
+successfully, CloseFile is called in the handler.
+</p>
+<p>
+But this rule isn't always true. One counterexample is the Printing Manager. Even if<br>
+PrOpen flags an exception PrClose<i>must</i>&nbsp;&nbsp;be called. The same is true for<br>
+PrOpenDocument and PrOpenPage.
+</p>
+<p>
+Shared resources present another potential problem. If GetResource is successfully<br>
+called on a system resource, it's a bad idea to release it, because it may also be in use<br>
+by another routine.&nbsp;&nbsp;&nbsp;SetResLoad(false) and GetResource can be called to determine<br>
+whether the resource is already in memory before loading it, and then it can be<br>
+released only if it was loaded. This, however, is taking things to an extreme. It may be<br>
+better to document that these resources may be loaded even if the routine flags an<br>
+exception. Since this is determinable by the caller, it suffices as a valid post-<br>
+condition. 
+</p>
+<h2>FUTURE DIRECTIONS</h2>
+<p>
+The routines and macros provided in Exceptions.h lay the foundation for writing robust<br>
+software.&nbsp;&nbsp;&nbsp;There are more sophisticated exception-handling mechanisms, such as the<br>
+proposed<b>catch</b> and<b>throw</b> implementation for C++. Ada has a reasonable<br>
+exception-handling mechanism, as does CLU and Eiffel. However, these mechanisms<br>
+don't lend themselves to dealing with exceptions from routines that were not written<br>
+using the same mechanism and so are difficult to use on the Macintosh when dealing<br>
+with the OS and Toolbox. The<b>check</b>and<b> require</b>macros are flexible enough to be<br>
+useful in most situations and are implemented in C, so they can be of value for many<br>
+(if not most) existing projects. They are also C++ friendly and can be of great use to<br>
+C++ programmers as well.
+</p>
+<p>
+After you read the code in version 3 that uses these macros it should be fairly simple<br>
+to answer the questions asked about version 2 at the beginning of the article. This is<br>
+left as an exercise. 
+</p>
+<p>
+Turn the page if you want even more detail . .
+</p>
+<h2>MORE DETAIL THAN MOST FOLKS NEED</h2>
+<p>
+The <b>require</b> and <b>check</b> macro implementation is shown in Figure 2. To ensure that<br>
+there aren't any side effects, any macro that's larger than a single statement is<br>
+enclosed in <b> do { } while(false)</b>. This ensures that the macro behaves as a simple<br>
+statement and can be used anyplace a simple statement would be (such as after an <b>if</b>).<br>
+The <b>do { } while(false)</b> does not generate any object code. In some of the macros, <br>
+<b>if</b> statements appear in the form
+</p>
+<pre>if (assertion) ; /* Do nothing. */
+else { /* Do something. */ }</pre>
+<p>
+Under some conditions, this will generate more efficient code than
+</p>
+<pre>if (!assertion) { /* Do something. */ }</pre>
+<p>
+(This was especially true back in the days of the MPW 3.1 compiler.) There are<br>
+variables declared within the scope of the macros when debugging is on. This avoids<br>
+side effects caused by evaluating <i> assertion</i>&nbsp;&nbsp;multiple times (once in the condition and<br>
+once to display it). For example:
+</p>
+<pre>nrequire(ReadCharacters(), Fail);</pre>
+<p>
+If ReadCharacters returned a value other than nil, MacsBug would be invoked to<br>
+display the result before executing the handler Fail. Without the local variable,<br>
+ReadCharacters would be executed a second time to display the value. The second<br>
+execution may cause side effects like increasing a file pointer as well as reading in a<br>
+different set of characters.
+</p>
+<p>
+When <i>assertion</i>&nbsp;&nbsp;is an error code returned by a function, it can be assigned to a<br>
+variable to preserve the error. This also keeps the exception-handling code enclosed<br>
+within the <b> require</b>statement. For example:
+</p>
+<pre>nrequire(error = GetError(), Fail);</pre>
+<p>
+However, with warnings set to full, this invokes a warning because the assignment<br>
+takes place as part of an<b>if</b> statement. Using
+</p>
+<pre>error = GetError();
+nrequire(error, Fail);</pre>
+<p>
+generates identical code (at least with MPW 3.2) and doesn't cause any warnings.
+</p>
+<p>
+A macro, <b>resume</b>, is provided for recovering from exceptions. It's used within a<br>
+handler and takes the form
+</p>
+<p>
+<b>resume(</b><i>exception</i> <b>);</b>
+</p>
+<p>
+where <i>exception</i>&nbsp;&nbsp;corresponds to <i>exception</i>&nbsp;&nbsp;used in a <b>require</b> statement. The <b>resume</b><br>
+macro simply transfers control to the point immediately following the <b>require</b><br>
+statement. Because of the <b>resume</b> feature, multiple<b>require</b> statements cannot share<br>
+the same exception handler. Sometimes sharing a handler is convenient, so<b>resume</b> can<br>
+be disabled with a statement:
+</p>
+<pre>#define resumeLabel(exception)</pre>
+<p>
+To reenable <b>resume</b>, use
+</p>
+<pre>#define resumeLabel(exception)\
+    resume_ ## exception:</pre>
+<p>
+There's also a <b>check_action</b>macro which, like <b>require_action</b>, allows a statement<br>
+to be executed when<i>assertion</i>&nbsp;&nbsp;fails. The <b>check_action</b> macro compiles out like all<br>
+<b>check</b> macros and should be viewed as a development-time tool only. Being able to<br>
+execute a statement allows for the exit of a routine if the preconditions aren't met.
+</p>
+<pre>#define require(assertion, exception)               \
+    do {                                                \
+        if (assertion) ;                                \
+        else {                                          \
+            dprintf(notrace,                            \
+                "Assertion \"%s\" Failed\n"     \
+                "Exception \"%s\" Raised",          \
+                #assertion, #exception);            \
+            goto exception;                         \
+            resumeLabel(exception);                 \
+        }                                               \
+    } while (false)
+
+#define check(assertion)                            \
+    do {                                                \
+        if (assertion) ;                                \
+        else {                                          \
+            dprintf(notrace,                            \
+                "Assertion \"%s\" Failed",          \
+                #assertion);                            \
+        }                                               \
+    } while (false)</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Figure 2</b>Implementing <b>require</b> and <b>check</b>
+</p>
+<h2>WONDERS OF MACSBUG AND DPRINTF</h2>
+<p>
+The MacsBug dcmd, dprintf, is used by the <b>require</b>and <b>check</b> macros to display<br>
+useful debugging information. The dprintf command is also a powerful tool that<br>
+provides all the features of the standard printf but uses MacsBug as the console. The<br>
+dprintf command assumes MPW parameter-passing conventions. The syntax for<br>
+dprintf is
+</p>
+<p>
+<b>dprintf(</b>[<b>no</b>]<b>trace,</b><i> formatString</i> <b>,</b> ...<b>);</b>
+</p>
+<p>
+where <b>trace</b> and <b>notrace</b> are used to specify whether&nbsp;&nbsp;or not to continue after<br>
+displaying the information in MacsBug. The variable <i> formatString </i> is a printf style-<br>
+format string with some extensions (see the comment in the Exceptions.h file on the <br>
+<i>Developer CD Series</i>&nbsp;&nbsp;disc). Following <i>formatString</i> are the parameters to display.<br>
+This can be a very useful tool for viewing complex structures or difficult-to-read<br>
+values like floating- or fixed-point numbers.The implementation of the dprintf dcmd<br>
+is shown in the DPrintf.c file on the CD. It's fairly straightforward and can be extended<br>
+easily to add any special data types required (for example, a <b> t</b> format character that<br>
+would take a pointer to text and an integer length and display the text). The dcmd is<br>
+invoked from C using the inline declaration for dprintf. The inline declaration invokes<br>
+the DebugStr trap and pushes a long on the stack. The push&nbsp;&nbsp;is required because<br>
+DebugStr uses Pascal calling conventions and so pops the [<b> no</b>]<b>trace</b> string from the<br>
+stack. Since dprintf is a C-based function, the stack is fixed, so the string isn't popped<br>
+twice. Both <b> trace</b>and <b>notrace</b> are macro Pascal strings containing<br>
+";dprintf;doTrace" and ";dprintf". Since the strings begin with a semicolon, MacsBug<br>
+interprets them as commands and executes them. The dcmd then fetches the parameters<br>
+from the stack according to <i>formatString</i> and displays them. The MacsBug macro<br>
+<b>doTrace</b>evaluates to "g" or "". It's used to switch tracing between <b> trace</b> and <b>break</b><br>
+by entering either <b>traceGo </b>or<b>traceBreak </b>in MacsBug.
+</p>
+<p>
+When developing software, it's useful to insert dprintf statements to display<br>
+information in sections of code that are executed only in unusual circumstances. If<br>
+dprintf is bracketed with #if debugon / #endif directives, it compiles out when<br>
+DEBUGLEVEL is set to DEBUGWARN or DEBUGOFF. With <b> trace</b> the information is<br>
+displayed without seriously interrupting the execution of the code. The <b>trace</b> macro is<br>
+also useful for logging timing&nbsp;&nbsp;statistics by displaying Ticks. Since <i>formatString</i>&nbsp;&nbsp;is<br>
+interpreted in MacsBug with interrupts disabled, even a complex <i>formatString</i>&nbsp;&nbsp;has<br>
+minimal impact on timing results.
+</p>
+<p>
+<b>MACSBUG POWER USER TIP</b><br>
+If you have more than one monitor, you can use the swap command to make MacsBug<br>
+always visible and use dprintf with <b>trace</b> to continually log information. You can set<br>
+which screen MacsBug uses by opening the Monitors control panel, holding down the<br>
+Option key, and dragging the "Happy Macintosh" to the monitor on which you want to<br>
+display MacsBug (you have to restart for it to take effect).
+</p>
+<p>
+<b>MPW POWER USER TIP</b><br>
+At the end of the comment for dprintf in Exceptions.h is a section that uses Echo to pipe<br>
+code to the assembler.
+</p>
+<pre>/*********************************************
+Echo "                         &#8706;n&#8706;
+ PRINT      OFF,NOHDR               &#8706;n&#8706;
+ INCLUDE    'Traps.a'               &#8706;n&#8706;
+ PRINT      ON                      &#8706;n&#8706;
+ PROC                               &#8706;n&#8706;
+ _DebugStr                          &#8706;n&#8706;
+ SUBQ       #4,SP   ; Fix the stack &#8706;n&#8706;
+ ENDPROC                            &#8706;n&#8706;
+ END                                &#8706;n&#8706;
+" | Asm -l
+*********************************************/</pre>
+<p>
+If you select this section and press Enter, it generates a listing with hex output. This is<br>
+a handy way to generate and document inline functions.. 
+</p>
+<h2>RELATED READING</h2>
+<ul>
+<li>Macintosh Technical Note "A Printing Loop That Cares . . ." (formerly<br>
+#161).</li>
+<li><i>Object-Oriented Software Construction</i>  by Bertrand Meyer<br>
+(Prentice-Hall, 1988). Contains more information on programming by<br>
+contract.</li>
+<li><i>Debugging Macintosh Software with MacsBug</i>  by Konstantin Othmer and<br>
+Jim Straus (Addison-Wesley, 1991). Contains additional MacsBug tips.</li>
+</ul>
+<p>
+<b>SEAN PARENT </b>(AppleLink PARENT, Internet parent@apple.com) <i>is </i> a parent, but<br>
+Parent is his last name, not his title. He grew up in Renton, Washington, with his<br>
+parents (you know, the people who produced him), who are also Parents. Sean came to<br>
+Apple to pursue his lifelong interest in reference manuals. He enjoys a good ANSI<br>
+standards document duringbreakfast, and likes catchy punch lines such as, "No, no! I<br>
+said 'ANSI,' not 'ASCII'!" Sean also likes to write a good hack, and consistently comes in<br>
+next-to-second-best at the annual MacHack MacHax Hack Contest. Unable to hide his<br>
+prowess, he gave in to the inevitable job at Apple, and now he wants to change the<br>
+world, one programming paradigm at a time.*
+</p>
+<p>
+<b>CouldDialog, </b>which was intended as a preflight tool for GetNewDialog, is a no-op in<br>
+System 7 (it's been broken since the Macintosh II was introduced).*
+</p>
+<p>
+<b>Seriously insane cycle counters </b>take note that the MPW 3.2 C compiler doesn't<br>
+reuse a register to store a variable in a local scope when the register was used in a<br>
+prior scope containing a <b> goto</b> statement (<b>require</b> generates a <b>goto</b>). This can lead to<br>
+code that isn't as efficient as it should be but can usually be coded around (it's difficult<br>
+to generate in the first place). Hopefully this will be fixed in a future compiler. *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS</b> Scott Boyd, Konstantin Othmer, Sam<br>
+Weiss. Also, special thanks to everyone in the Print Shop (present and former<br>
+members) for using this stuff and suggesting numerous improvements during the past<br>
+few years. *
+</p>
+</body>
+</html>

@@ -1,0 +1,1489 @@
+<html>
+<head>
+<!-- Article ID: 34 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>August 92 - THE ASYNCHRONOUS SOUND HELPER</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>THE ASYNCHRONOUS SOUND HELPER</h2>
+<h1>BRYAN K. ("BEAKER") RESSLER</h1>
+<p>
+<img src="img/215.gif" width="180 px"></img>
+</p>
+<p>
+<i>In system software version 6.0.7 and later, the Sound Manager has impressive sound</i><br>
+<i>input and output capabilities that are largely untapped by the existing body of</i><br>
+<i>application software. This article presents a code module called the Asynchronous</i><br>
+<i>Sound Helper that's designed to make asynchronous sound input and output easily</i><br>
+<i>accessible to the application programmer, yet provide an interface flexible enough to</i><br>
+<i>facilitate extensive application features.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Of all the Managers in<i>Inside Macintosh,</i> the Sound Manager may be the winner of the<br>
+Most Startling Metamorphosis contest. On the earliest Macintosh computers, sound was<br>
+produced by direct calls to a Sound Driver, as described in<i>Inside Macintosh</i> Volume II.<br>
+Later, with the advent of system software version 4.1 and the more powerful<br>
+sound-generation hardware of the Macintosh SE and Macintosh II, the Sound Driver<br>
+was superseded by a fairly buggy initial implementation of the Sound Manager, which<br>
+was first documented in<i>Inside Macintosh</i> Volume V. The new Sound Manager presented a<br>
+problem for developers, because there was a large installed base of Macintosh 128K,<br>
+512K, 512K enhanced, and Plus computers that didn't have the ROMs or system<br>
+software to support the Sound Manager. At this point, all but the heartiest developers<br>
+decided the tradeoffs for including sound in a non-sound-related application were too<br>
+severe. 
+</p>
+<p>
+By the time version 6.0.7 rolled around, many of the details of the Sound Manager had<br>
+changed, and sound input support was added. In fact, the Sound Manager in 6.0.7 and<br>
+System 7 is relatively stable.&nbsp;&nbsp;&nbsp;So if you've been waiting for the right moment to add<br>
+sound support to your application, the moment has arrived. 
+</p>
+<p>
+The Macintosh Sound Manager acts as a buffer between your application and the<br>
+complexities of the sound hardware (see Figure 1). Sounds are produced by<br>
+sending<i>sound commands</i> to a<i> sound channel</i> .&nbsp;&nbsp;&nbsp;The sound channel sends the commands<br>
+through a<i>synthesizer</i> that knows how to control the audio hardware. Among the Sound<br>
+Manager's current 38 commands are operations such as playing simple frequencies,<br>
+playing complex recorded sounds, and changing sound volume. The Sound Manager also<br>
+allows you to record new sounds if the appropriate hardware is available. Recording is<br>
+performed through a<i> sound input driver. </i>
+</p>
+<p>
+<img src="img/216.gif" width="435 px"></img>
+</p>
+<p>
+<b>Figure 1</b>The Sound Manager
+</p>
+<p>
+&nbsp;Sound playback and recording through the Sound Manager can be<br>
+performed<i>synchronously</i> or<i> asynchronously</i> . When you make a synchronous call to the<br>
+Sound Manager, the function doesn't return control to your application until the entire<br>
+operation (sound playback, for instance) is complete. In general, it's easy to use the<br>
+Sound Manager to play or record sound synchronously. Asynchronous calls return<br>
+control immediately to your application and perform their operations in the<br>
+background, which makes asynchronous operations somewhat trickier. Many<br>
+developers feel that there are too many details to make asynchronous sound worthwhile<br>
+in an application not specifically oriented toward sound. However, with sound input<br>
+devices becoming more common, the market impetus to add sound is growing. 
+</p>
+<p>
+&nbsp;This article presents the Asynchronous Sound Helper, a code module designed to take<br>
+much of the heartburn out of asynchronous sound input and output. The goals of Helper,<br>
+as we'll be calling it from now on, are threefold:
+</p>
+<ul>
+<li>Provide a straightforward and uncomplicated interface for asynchronous<br>
+sound I/O specifically tailored toward common application requirements. </li>
+<li>Encourage developers to include support for sound as a standard type of<br>
+data, just like text or graphics. </li>
+<li>Function as a tutorial on how to perform asynchronous sound input and<br>
+output using the Sound Manager. </li>
+</ul>
+<p>
+&nbsp;Helper provides two-tiered support--"easy" calls for basic operations and<br>
+"advanced" calls for more complex operations. You choose which calls to use depending<br>
+on your application's specific needs and user interface. For simple asynchronous<br>
+recording and playback, only a few routines are required.&nbsp;&nbsp;&nbsp;Or go all out and use Helper<br>
+routines to easily provide a "sound palette" with tape-deck-like controls for your<br>
+application. 
+</p>
+<p>
+&nbsp;To top it off, the overhead for Helper is fairly small. The code compiles to about 4K,<br>
+and it adds 86 bytes of global data to your application. At run time, it uses around 4K<br>
+in your application's heap.&nbsp;&nbsp;&nbsp;Helper uses clean Sound Manager techniques--nothing<br>
+skanky that might cause compatibility problems in the future. 
+</p>
+<h2>HOOKING UP WITH HELPER</h2>
+<p>
+&nbsp;First let's take a quick look at how Helper works and how your application uses it.<br>
+We'll leave the details for later.
+</p>
+<p>
+&nbsp;Before you can use Helper you need to add a global Boolean flag to your application<br>
+--the attention flag. At initialization time, your application calls Helper's<br>
+initialization routine and provides theaddress of the attention flag. In its main event<br>
+loop, your application checks the value of the attention flag and, if true, calls Helper's<br>
+idle routine.
+</p>
+<p>
+Because Helper's main function is to spawn asynchronous sound tasks, communication<br>
+between your application and Helper is carried out on an as-needed basis. Here are the<br>
+basic phases of communication for a typical sound playback sequence (the numbers<br>
+correspond to Figure 2).
+</p>
+<ol>
+<li>Your application tells Helper to play some sound. </li>
+<li>Helper uses the Sound Manager to allocate a sound channel and begins<br>
+asynchronous playback of your sound. </li>
+<li>The application goes on its merry way, with the sound playing<br>
+asynchronously in the background. </li>
+<li>The sound completes playback. Helper has set up a sound command that<br>
+causes Helper to be informed immediately upon completion of playback (this<br>
+occurs at interrupt time). At that time, Helper sets the application's global<br>
+attention flag. </li>
+<li>The next time through your application's event loop, the application<br>
+notices that the attention flag is set and calls SHIdle to free up the sound<br>
+channel. </li>
+</ol>
+<p>
+<img src="img/217.gif" width="497 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> Application-Sound Manager Interface
+</p>
+<p>
+When your application terminates, it calls Helper's kill routine. Helper's method of<br>
+communication with the application minimizes processing overhead. By using the<br>
+attention flag scheme, your application calls Helper's idle routine only when it's<br>
+really necessary. This could be important in game and multimedia applications where<br>
+CPU bandwidth is pushed to the limit. 
+</p>
+<h2>HELPER'S INTERFACE</h2>
+<p>
+Now let's take a look at the interfaces and the basic uses of the routines provided by<br>
+Helper. Later we'll go into more detail about how the routines work and how to use<br>
+them. 
+</p>
+<p>
+<b>INITIALIZATION, IDLE, AND TERMINATION</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr SHInitSoundHelper(Boolean *attnFlag, short numChannels);
+pascal void SHIdle(void);
+pascal void SHKillSoundHelper(void);</pre>
+<p>
+SHInitSoundHelper initializes Helper. It allocates memory, so you should call it near<br>
+the beginning of your application. The application passes to SHInitSoundHelper the<br>
+address of the Boolean attention flag that Helper uses to inform the application when it<br>
+needs attention.
+</p>
+<p>
+SHIdle performs various cleanup tasks. Call SHIdle when the attention flag goes true.
+</p>
+<p>
+At application termination, call SHKillSoundHelper. It stops current recording and<br>
+playback and deallocates Helper's memory. 
+</p>
+<p>
+<b>EASY SOUND OUTPUT</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr SHPlayByID(short resID, long *refNum);
+pascal OSErr SHPlayByHandle(Handle sound, long *refNum);
+pascal OSErr SHPlayStop(long refNum);
+pascal OSErr SHPlayStopAll(void);</pre>
+<p>
+SHPlayByID and SHPlayByHandle provide an easy way to begin asynchronous sound<br>
+playback.&nbsp;&nbsp;&nbsp;These routines return a reference number via the refNum parameter. This<br>
+reference number can be used to stop playback and can be used with the advanced<br>
+routines described later. If you intend to simply trigger a sound that you want to run to<br>
+completion (like a gunshot sound in a game), you can pass nil for the refNum<br>
+parameter, thereby ignoring the reference number. 
+</p>
+<p>
+To stop a given sound or stop all playback, use SHPlayStop or SHPlayStopAll. 
+</p>
+<p>
+<b>ADVANCED SOUND OUTPUT</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr SHPlayPause(long refNum);
+pascal OSErr SHPlayContinue(long refNum);
+pascal SHPlayStat SHPlayStatus(long refNum);
+pascal OSErr SHGetChannel(long refNum, SndChannelPtr *channel);</pre>
+<p>
+If you want more control over the playback process, these routines will be of interest.<br>
+SHPlayPause pauses the playback of a sound, like the pause button on a tape deck.<br>
+SHPlayContinue continues playback of a sound that was previously paused. Use<br>
+SHPlayStatus to find out the status of a sound-- finished, playing, or paused. If you<br>
+want to send commands directly to a sound channel that was allocated by Helper, use<br>
+SHGetChannel. You might want to send sound commands in your application, for<br>
+example, to play continuous looped background music. 
+</p>
+<p>
+<b>EASY SOUND INPUT</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr SHRecordStart(short maxK, OSType quality,
+    Boolean *doneFlag);
+pascal OSErr SHGetRecordedSound(Handle *theSound);
+pascal OSErr SHRecordStop(void);</pre>
+<p>
+These are the three basic routines for recording sound through a sound input device. To<br>
+begin asynchronous sound recording, use SHRecordStart. The application passes the<br>
+address of a Boolean--a recording-completed flag--that tells the application when the<br>
+recording is complete.&nbsp;&nbsp;&nbsp;Once complete, the application calls SHGetRecordedSound to<br>
+retrieve a sound handle. The handle is suitable for playback with SHPlayByHandle or to<br>
+be written out as a 'snd ' resource. To stop recording immediately (as with the stop<br>
+button on a tape recorder), use SHRecordStop. 
+</p>
+<p>
+<b>ADVANCED SOUND INPUT</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr SHRecordPause(void);
+pascal OSErr SHRecordContinue(void);
+pascal OSErr SHRecordStatus(SHRecordStatusRec *recordStatus);</pre>
+<p>
+To pause recording, use SHRecordPause. To continue previously paused recording, use<br>
+SHRecordContinue. Use SHRecordStatus to get information about the status of<br>
+recording. This status information includes the current input level (which could be<br>
+used to draw a tape-deck-likelevel meter), the amount of sound that's been recorded<br>
+(with respect to the maximum), and whether the recording is finished, recording, or<br>
+paused. 
+</p>
+<h2>HELPER'S DATA STRUCTURES</h2>
+<p>
+Helper uses three internal data structures to keep track of recording and playback. 
+</p>
+<pre>typedef struct {
+    SndChannel  channel;    // Our sound channel.
+    long        refNum;     // Our Helper reference number.
+    Handle      sound;      // The sound we're playing.
+    Fixed       rate;       // Sampled sound playback rate.
+    char        handleState;// The handle state for this handle.
+    Boolean     inUse;      // Tells whether this SHOutRec is in use.
+    Boolean     paused;     // Tells whether this sound is paused.
+} SHOutRec, *SHOutPtr;</pre>
+<p>
+The SHOutputVars record contains an array of SHOutRec records. The numOutRecs field<br>
+tells how many are in the array. These records, one for each allocated channel, hold<br>
+information about currently playing sounds. They're reused when sounds have<br>
+completed. The SHOutputVars record also keeps track of the next available output<br>
+reference number, in the field nextRef. The reference numbers are unique (modulo<br>
+2,147,483,647). 
+</p>
+<pre>typedef struct {
+    long     inRefNum;       // Sound Manager's input device refNum.
+    SPB      inPB;           // The input parameter block.
+    Handle   inHandle;       // The handle we're recording into.
+    short    headerLength;   // The length of the sound's header.
+    Boolean  recording;      // Tells that we're actually recording.
+    Boolean  recordComplete; // Tells that recording is complete.
+    OSErr    recordErr;      // Error, if error terminated recording.
+    short    numChannels;    // Number of channels for recording.
+    short    sampleSize;     // Sample size for recording.
+    Fixed    sampleRate;     // Sample rate for recording.
+    OSType   compType;       // Compression type for recording.
+    Boolean  *appComplete;   // Tells caller when recording is done.
+    Boolean  paused;         // Tells that recording has been paused.
+} SHInputVars;</pre>
+<p>
+An SHOutRec record's first field, channel, contains the actual Sound Manager<br>
+SndChannel used to play the sound. The sound reference number associated with this<br>
+sound (the one passed back to the application) is stored in the refNum field. A handle to<br>
+the sound we're playing is stored in the sound field. The rate field holds the sample<br>
+playback rate of sampled sounds, which is used when pausing sampled sounds. The<br>
+handleState field contains the original handle state (derived via a call to SHGetState),<br>
+so Helper can reset the handle's state after playback is complete. The inUse field tells<br>
+whether a given SHOutRec is in use by a playing sound (as opposed to available for<br>
+reuse). Finally, the paused flag lets Helper remember when a sound has been paused. 
+</p>
+<pre>typedef struct {
+    long     inRefNum;       // Sound Manager's input device refNum.
+    SPB      inPB;           // The input parameter block.
+    Handle   inHandle;       // The handle we're recording into.
+    short    headerLength;   // The length of the sound's header.
+    Boolean  recording;      // Tells that we're actually recording.
+    Boolean  recordComplete; // Tells that recording is complete.
+    OSErr    recordErr;      // Error, if error terminated recording.
+    short    numChannels;    // Number of channels for recording.
+    short    sampleSize;     // Sample size for recording.
+    Fixed    sampleRate;     // Sample rate for recording.
+    OSType   compType;       // Compression type for recording.
+    Boolean  *appComplete;   // Tells caller when recording is done.
+    Boolean  paused;         // Tells that recording has been paused.
+} SHInputVars;</pre>
+<p>
+The SHInputVars record contains information pertaining to a sound being recorded.<br>
+When the sound input device is opened, its reference number is stored in inRefNum.<br>
+The sound input parameter block, inPB, is part of SHInputVars. The sound being<br>
+recorded is stored in inHandle until complete. The recording flag tells whether we're<br>
+actually in the act of asynchronous recording, and the recordComplete flag (set by the<br>
+record completion routine, described later) tells us whenrecording has completed. If<br>
+an error occurs during recording, it's saved in recordErr so that it can be returned to<br>
+the application later, when it calls SHGetRecordedSound. The next four fields--<br>
+numChannels, sampleSize, sampleRate, and compType--hold information that's used to<br>
+construct the sound's header. The appComplete field points to a Boolean that the<br>
+application may optionally use to be informed of recording termination (the<br>
+application may use repeated calls to the SHRecordStatus routine instead). The paused<br>
+flag lets Helper keep track of when recording has been paused. 
+</p>
+<p>
+Helper declares its global storage as shown on the following page. As we go on, you'll<br>
+see the use of these globals in context, which will clarify their function. 
+</p>
+<pre>static Boolean gsSHInited = false;  // Has Helper been initialized?
+static Boolean *gsSHNeedsTime;      // Pointer to application's
+                                    // attention flag.
+static SHOutputVarsgsSHOutVars;     // Sound output variables.
+static SHInputVarsgsSHInVars;       // Sound input variables.</pre>
+<h2>HELPER'S INTERNAL UTILITY ROUTINES</h2>
+<p>
+Helper uses twelve static utility routines to help it carry out its job. Many of these<br>
+routines are trivial, but let's go over a few of the more important ones in detail--<br>
+SHPlayCompletion, SHRecordCompletion, and SHOutRecFromRefNum.
+</p>
+<p>
+When Helper performs asynchronous sound playback, it depends on a callback routine<br>
+that signals to the application that playback has completed. Here's the playback<br>
+callback routine, SHPlayCompletion:
+</p>
+<pre>pascal void SHPlayCompletion(SndChannelPtr channel,
+    SndCommand *command)
+{
+    long    otherA5;
+   
+    // Look for our "callback signature" in the sound command.
+    if (command-&gt;param1 == kSHCompleteSig) {
+        otherA5 = SetA5(command-&gt;param2);    // Set up our A5.
+       
+        channel-&gt;userInfo = kSHComplete;
+        *gsSHNeedsTime = true;
+           // Tell application to give us an SHIdle call.
+       
+        SetA5(otherA5);                         // Restore old A5.
+    }
+}</pre>
+<p>
+When Helper begins the sound playback, it queues up a sound command-- a<br>
+callBackCmd--in the sound channel. The callBackCmd tells the Sound Manager to call<br>
+the callback routine, SHPlayCompletion. We place a verifiable "signature" in the sound<br>
+command record so that the application can verify that the call occurred as a result of<br>
+a specific callBackCmd, and not as a result of some spurious one. When such a blessed<br>
+callback occurs, Helper uses another handy value stuffed into the sound command--a<br>
+pointer to the A5 global world--to set up access to the globals. Helper then sets the<br>
+channel's userInfo field to a value that flags the sound as complete.&nbsp;&nbsp;&nbsp;Helper also sets<br>
+the application's attention flag so that later, in the main event loop, the application<br>
+sees that the attention flag is set and calls SHIdle. SHIdle then skips through the<br>
+SHOutRec array looking for sound channels that are in use and have kSHComplete in<br>
+their userInfo fields, and disposes of their sound channels. This is how Helper cleans<br>
+up after sound playback has completed. 
+</p>
+<p>
+Asynchronous sound recording also relies on a callback routine that signals when<br>
+recording has completed. Here's the callback routine, SHRecordCompletion:
+</p>
+<pre>pascal void SHRecordCompletion(SPBPtr inParams)
+{
+    long    otherA5;
+   
+    otherA5 = SetA5(inParams-&gt;userLong); // Set up our A5.
+
+    *gsSHNeedsTime = true;
+        // Tell application to give us// an SHIdle call.
+    gsSHInVars.recordComplete = true;    // Make a note to ourselves.
+   
+    SetA5(otherA5);                        // Restore old A5.
+}</pre>
+<p>
+When recording has completed (for any reason--we filled the entire buffer, an error<br>
+occurred, or the user manually stopped recording), the Sound Manager calls the<br>
+record callback routine. Like the playback callback routine, it first sets up the A5<br>
+world. Then it sets the application's attention flag and the recordComplete flag inside<br>
+the global SHInputVars structure. Later, the application will notice its attention flag is<br>
+set and call SHIdle. SHIdle checks the recordComplete flag and notices that recording is<br>
+complete, closes the sound input device, and prepares for the application to call<br>
+SHGetRecordedSound to retrieve the recorded sound. This is how Helper cleans up after<br>
+asynchronous sound recording. 
+</p>
+<p>
+Another heavily used static utility routine is SHOutRecFromRefNum. It maps a sound<br>
+reference number into a pointer to the appropriate SHOutRec. 
+</p>
+<pre>SHOutPtr SHOutRecFromRefNum(long refNum)
+{
+    short   i;
+   
+    // Search for the specified refNum.
+    for (i = 0; i &lt; gsSHOutVars.numOutRecs; i++)
+        if (gsSHOutVars.outArray[i].inUse &amp;&amp;
+                gsSHOutVars.outArray[i].refNum == refNum)
+            break;
+   
+    // If we found it, return a pointer to that record, otherwise
+    // nil.
+    if (i == gsSHOutVars.numOutRecs)
+        return(nil);
+    else return(&amp;gsSHOutVars.outArray[i]);
+}</pre>
+<p>
+SHOutRecFromRefNum simply does a linear search through the output records, looking<br>
+for a record that is in use and has a matching reference number. If none is found, nil is<br>
+returned. 
+</p>
+<p>
+We'll investigate a few more utility routines as we delve into the details of the public<br>
+routines in the sections that follow. 
+</p>
+<h2>HELPER'S INITIALIZATION, TERMINATION, AND IDLE<br>
+ROUTINES</h2>
+<p>
+Let's take a closer look at the SHInitSoundHelper, SHKillSoundHelper, and SHIdle<br>
+routines. 
+</p>
+<p>
+<b>SHINITSOUNDHELPER</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr SHInitSoundHelper(Boolean *attnFlag, short numChannels)
+{
+    OSErr   err;
+   
+    // Use default number of channels if zero was specified.
+    if (numChannels == 0)
+        numChannels = kSHDefChannels;
+   
+    // Remember the address of the application's attention flag.
+    gsSHNeedsTime = attnFlag;
+   
+    // Allocate the channels.
+    gsSHOutVars.numOutRecs = numChannels;
+    gsSHOutVars.outArray = (SHOutPtr)NewPtrClear(numChannels *
+        sizeof(SHOutRec));
+
+    // If successful, flag that we're initialized and exit.
+    if (gsSHOutVars.outArray != nil) {
+        gsSHInited = true;
+        return(noErr);
+    } else {
+        // Return some kind of error (MemError if there is one,
+        // otherwise make one up).
+        err = MemError();
+        if (err == noErr)
+            err = memFullErr;
+        return(err);
+    }
+}</pre>
+<p>
+SHInitSoundHelper is fairly uncomplicated. The attnFlag parameter points to the<br>
+application's attention flag, which is used to tell the application that a call to SHIdle is<br>
+needed. The numChannels parameter tells Helper how many channels to allocate. The<br>
+number of simultaneous sounds that can be played back by Helper is limited by the<br>
+number of channels allocated (via numChannels) and the number of simultaneous<br>
+sound channels the Sound Manager allows. So use a numChannels that's appropriate to<br>
+your needs. If you specify zero, a reasonable default (four) is used.&nbsp;&nbsp;<br>
+SHInitSoundHelper allocates the output records and stores a pointer to the array in<br>
+gsSHOutVars. If the memory allocation is successful, gsSHInited is set to true.
+</p>
+<p>
+<b>SHKILLSOUNDHELPER</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal void SHKillSoundHelper(void)
+{
+    short       i;
+    long        timeout;
+    Boolean outputClean, inputClean;
+   
+    if (!gsSHInited)
+        return;
+
+    SHPlayStopAll();    // Kill all playback.
+    SHRecordStop();     // Kill recording.
+   
+    // Now sync-wait for everything to clean itself up.
+    timeout = TickCount() + kSHSyncWaitTimeout;
+    do {
+        if (*gsSHNeedsTime)
+            SHIdle();       // Clean up when required.
+
+        // Check whether all our output channels are cleaned up.
+        outputClean = true;
+        for (i = 0; i &lt; gsSHOutVars.numOutRecs &amp;&amp; outputClean; i++)
+            if (gsSHOutVars.outArray[i].inUse)
+                outputClean = false;
+       
+        // Check whether our recording is cleaned up.
+        inputClean = !gsSHInVars.recording;
+       
+        if (inputClean &amp;&amp; outputClean)
+            break;
+    } while (TickCount() &lt; timeout);
+   
+    // Lose our preallocated sound channels.
+    DisposePtr((Ptr)gsSHOutVars.outArray);
+}</pre>
+<p>
+SHKillSoundHelper first stops any asynchronous sound input or output in progress. It<br>
+waits for all the output channels to be free and for recording to stop before continuing.<br>
+Finally, it disposes of the output record array. 
+</p>
+<p>
+<b>SHIDLE</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal void SHIdle(void)
+{
+    short   i;
+    OSErr   err;
+    long    realSize;
+   
+    // Immediately turn off the application's attention flag.
+    *gsSHNeedsTime = false;
+
+    // Do playback cleanup.
+    for (i = 0; i &lt; gsSHOutVars.numOutRecs; i++)
+        if (gsSHOutVars.outArray[i].inUse &amp;&amp;
+                gsSHOutVars.outArray[i].channel.userInfo ==
+                kSHComplete)
+            // We've found a channel that needs closing.
+            SHReleaseOutRec(&amp;gsSHOutVars.outArray[i]);
+   
+    // Do recording cleanup.
+    if (gsSHInVars.recording &amp;&amp; gsSHInVars.recordComplete) {
+        HUnlock(gsSHInVars.inHandle);
+        if (gsSHInVars.inPB.error &amp;&amp;
+            gsSHInVars.inPB.error != abortErr) {
+            // An error (other than a manual stop) occurred during
+            // recording. Kill the handle and save the error code.
+            gsSHInVars.recordErr = gsSHInVars.inPB.error;
+            DisposeHandle(gsSHInVars.inHandle);
+            gsSHInVars.inHandle = nil;
+        } else {
+            // Recording completed normally (which includes abortErr,
+            // the "error" that occurs when recording is stopped
+            // manually).
+            gsSHInVars.recordErr = noErr;
+            realSize = gsSHInVars.inPB.count +
+                gsSHInVars.headerLength;
+            err = SetupSndHeader(
+                gsSHInVars.inHandle, gsSHInVars.numChannels,
+                gsSHInVars.sampleRate, gsSHInVars.sampleSize,
+                gsSHInVars.compType, kSHBaseNote, realSize,
+                &amp;gsSHInVars.headerLength);
+            SetHandleSize(gsSHInVars.inHandle, realSize);
+        }
+
+        // Error or not, close the recording device and tell the
+        // application that recording is complete through the
+        // recording-completed flag that the caller originally
+        // passed into SHRecordStart.
+        SPBCloseDevice(gsSHInVars.inRefNum);
+        gsSHInVars.recording = false;
+        gsSHInVars.inRefNum = 0;
+        if (gsSHInVars.appComplete != nil)
+            *gsSHInVars.appComplete = true;
+    }
+}
+}</pre>
+<p>
+SHIdle is one of the most important routines in Helper. It performs cleanup of<br>
+completed sound playback and recording. First SHIdle clears the application's attention<br>
+flag. For playback cleanup, it iterates through the output records looking for records<br>
+that have their inUse flag set and have kSHComplete in their sound channel's userInfo<br>
+field. These sounds have been flagged as completed by the callback routine. When such<br>
+an output record is found, its channel is closed with a call to SHReleaseOutRec. 
+</p>
+<pre>void SHReleaseOutRec(SHOutPtr outRec)
+{
+    short       i;
+    Boolean found = false;
+   
+    // An SHOutRec's inUse flag gets set only if SndNewChannel has
+    // been called on the record's sound channel. So if it's in use,
+    // we call SndDisposeChannel and ignore the error. (What else
+    // can we do?)
+    if (outRec-&gt;inUse)
+        SndDisposeChannel(&amp;outRec-&gt;channel, kSHQuietNow);
+
+    // If this sound handle isn't being used by some other output
+    // record, kindly restore the original handle state.
+    if (outRec-&gt;sound != nil) {
+        for (i = 0; i &lt; gsSHOutVars.numOutRecs &amp;&amp; !found; i++)
+            if (&amp;gsSHOutVars.outArray[i] != outRec &amp;&amp;
+                    gsSHOutVars.outArray[i].inUse &amp;&amp;
+                    gsSHOutVars.outArray[i].sound == outRec-&gt;sound)
+                found = true;
+       
+        if (!found)
+            HSetState(outRec-&gt;sound, outRec-&gt;handleState);
+    }
+   
+    outRec-&gt;inUse = false;
+}</pre>
+<p>
+The SHReleaseOutRec routine has two important functions. First, it calls<br>
+SndDisposeChannel to free up the sound channel. Second, it restores the handle state of<br>
+the sound that was playing if that same sound isn't currently playing on some other<br>
+channel. 
+</p>
+<p>
+Recording cleanup is also performed back in SHIdle. If the recording flag<i>and</i> the<br>
+recordComplete flag are set, the record callback has informed Helper that recording is<br>
+complete. Right away, Helper unlocks the sound handle. Next Helper checks for errors.<br>
+If the application called SHRecordStop to manually stop recording before the buffer<br>
+was full, the error abortErr is generated. We don't really consider this an error, so<br>
+we expressly allow abortErr. If an error did occur, Helper saves the error code. This<br>
+way, later, when the application calls SHGetRecordedSound, Helper can return an<br>
+appropriate OSErr. If no error occurred, Helper calculates the actual size of the<br>
+sampled sound and builds an appropriate sound header, including the correct length.
+</p>
+<p>
+After checking for errors, Helper resizes the handle to exactly the size it should be.<br>
+Then it calls SPBCloseDevice to close the sound input device, clears the recording flag,<br>
+and sets the application's recording-completed flag, if one was provided. 
+</p>
+<p>
+As you can see, it's important to call SHIdle when the attention flag goes true;<br>
+otherwise subsequent requests for playback or recording may fail. 
+</p>
+<h2>EASY PLAYBACK ROUTINES</h2>
+<p>
+Now we'll look more closely at Helper's easy playback routines, SHPlayByID,<br>
+SHPlayByHandle, SHPlayStop, and SHPlayStopAll. 
+</p>
+<p>
+<b>SHPLAYBYID AND SHPLAYBYHANDLE</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr SHPlayByID(short resID, long *refNum)
+{
+    Handle  sound;
+    char        oldHandleState;
+    short       ref;
+    OSErr       err;
+    SHOutPtr    outRec;
+   
+    // First, try to get the caller's 'snd ' resource.
+    sound = GetResource(soundListRsrc, resID);
+    if (sound == nil) {
+        err = ResError();
+        if (err == noErr)
+            err = resNotFound;
+        return(err);
+    }
+    oldHandleState = SHGetState(sound);
+    HNoPurge(sound);
+    // Now let's get a reference number and an output record.
+    ref = SHNewRefNum();
+    err = SHNewOutRec(&amp;outRec);
+    if (err != noErr) {
+        HSetState(sound, oldHandleState);
+        return(err);
+    }
+   
+    // Now let's fill in the output record. This routine also
+    // initializes the sound channel and flags outRec as "in use."
+    err = SHInitOutRec(outRec, ref, sound, oldHandleState);
+    if (err != noErr) {
+        HSetState(sound, oldHandleState);
+        SHReleaseOutRec(outRec);
+        return(err);
+    }
+   
+    // We're in pretty good shape. We've got a reference number, an
+    // initialized output record, and the sound handle. Let's party.
+    MoveHHi(sound);
+    HLock(sound);
+    err = SHBeginPlayback(outRec);
+    if (err != noErr) {
+        HSetState(sound, oldHandleState);
+        SHReleaseOutRec(outRec);
+        return(err);
+    } else {
+        if (refNum != nil)  // refNum is optional--the caller may not
+            *refNum = ref;  // want it.
+        return(noErr);
+    }
+}</pre>
+<p>
+SHPlayByID starts asynchronous playback of the 'snd ' resource with ID resID. First<br>
+the resource is loaded and set to be nonpurgeable. Notice the call to SHGetState. This<br>
+utility routine searches the output record array looking for the given sound handle in<br>
+some output record that's flagged as inUse. If the handle is found, SHGetState returns<br>
+the handle state that's stored in the output record.&nbsp;&nbsp;&nbsp;If the sound handle isn't found, the<br>
+function returns HGetState(sound). See "Why SHGetState?" for details on why this is<br>
+necessary.&nbsp;&nbsp;Then SHPlayByID calls SHNewRefNum to get the next consecutive sound<br>
+reference number, and SHNewOutRec to find the first available output record in the<br>
+list. Next, SHPlayByID calls SHInitOutRec to fill out the output record. 
+</p>
+<pre>OSErr SHInitOutRec(SHOutPtr outRec, long refNum, Handle sound,
+    char handleState)
+{
+    short               i;
+    OSErr               err;
+    SndChannelPtr   channel;
+   
+    // Initialize the sound channel inside outRec. Clear the bytes to
+    // zero, install the proper queue size, and then call
+    // SndNewChannel.
+    for (i = 0; i &lt; sizeof(SndChannel); i++)
+        ((char *)&amp;outRec-&gt;channel)[i] = 0;
+    outRec-&gt;channel.qLength = stdQLength;
+    channel = &amp;outRec-&gt;channel;
+    err = SndNewChannel(&amp;channel, kSHNoSynth, kSHNoInit,
+        (SndCallBackProcPtr)SHPlayCompletion);
+    if (err != noErr)
+        return(err);
+   
+    // Initialize the rest of the record and return noErr. Note that
+    // we set the record's inUse flag only if the SndNewChannel call
+    // was successful.
+    outRec-&gt;refNum = refNum;
+    outRec-&gt;sound = sound;
+    outRec-&gt;rate = 0;
+    outRec-&gt;handleState = handleState;
+    outRec-&gt;inUse = true;
+    outRec-&gt;paused = false;
+    return(noErr);
+}</pre>
+<p>
+The SHInitOutRec routine calls SndNewChannel to open the sound channel that's<br>
+associated with this output record. The constant kSHNoSynth is passed as the<br>
+synthesizer and kSHNoInit is passed as the synthesizer initializer value. These values<br>
+are passed because Helper doesn't have any idea what kind of sound will be played on<br>
+this channel, so it must assume nothing. (See "Types of Sound" for an overview of the<br>
+different synthesizers.) SHInitOutRec also passes the address of the playback<br>
+completion routine, SHPlayCompletion, to SndNewChannel. If successful, the rest of<br>
+the output record is filled out and the output record's inUse flag is set. 
+</p>
+<p>
+If the SHInitOutRec call is successful, SHPlayByID moves the handle high in the heap,<br>
+locks it, and begins playback with a call to SHBeginPlayback. 
+</p>
+<pre>OSErr SHBeginPlayback(SHOutPtr outRec)
+{
+    OSErr   err;
+   
+    // First, initiate playback. If an error occurs, return it
+    // immediately.
+    err = SndPlay(&amp;outRec-&gt;channel, outRec-&gt;sound, kSHAsync);
+    if (err != noErr)
+        return(err);
+   
+    // Playback started OK. Let's queue up a callback command so that
+    // we'll know when the sound is finished.
+    SHQueueCallback(&amp;outRec-&gt;channel);
+                                // Ignore error. (What can we do?)
+    return(noErr);
+}</pre>
+<p>
+The SHBeginPlayback routine calls SndPlay to start the sound playing asynchronously,<br>
+passing as parameters the sound handle and the flag kSHAsync. Since the only way to<br>
+tell that an asynchronous sound has completed is via a callback, Helper must queue up<br>
+a callBackCmd after beginning playback. This is done with a call to SHQueueCallback. 
+</p>
+<p>
+Finally, SHPlayByID returns the sound reference number, if the application wants it.<br>
+(You can pass nil if you don't care about the reference number.)
+</p>
+<p>
+The SHPlayByHandle routine is similar to SHPlayByID, except that it supports a<br>
+special case: you can pass SHPlayByHandle a nil handle. This means "go ahead and open<br>
+a sound channel, but don't call SndPlay." Normally an application that does this<br>
+subsequently calls SHGetChannel to retrieve the sound channel pointer and sends sound<br>
+commands directly to the channel itself. This is covered in more detail later in the<br>
+section "Advanced Playback Routines."
+</p>
+<p>
+<b>SHPLAYSTOP AND SHPLAYSTOPALL</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr SHPlayStopAll(void)
+{
+    short   i;
+   
+    // Look for output records that are in use and stop their
+    // playback with SHPlayStopByRec.
+    for (i = 0; i &lt; gsSHOutVars.numOutRecs; i++)
+        if (gsSHOutVars.outArray[i].inUse)
+            SHPlayStopByRec(&amp;gsSHOutVars.outArray[i]);
+   
+    return(noErr);
+}</pre>
+<p>
+SHPlayStop stops playback of a given sound by looking up the reference number. The<br>
+routine tries to find the output record associated with refNum by a call to<br>
+SHOutRecFromRefNum. If one is found, SHPlayStop calls SHPlayStopByRec to do the<br>
+actual work. 
+</p>
+<pre>pascal OSErr SHPlayStopAll(void)
+{
+    short   i;
+   
+    // Look for output records that are in use and stop their
+    // playback with SHPlayStopByRec.
+    for (i = 0; i &lt; gsSHOutVars.numOutRecs; i++)
+        if (gsSHOutVars.outArray[i].inUse)
+            SHPlayStopByRec(&amp;gsSHOutVars.outArray[i]);
+   
+    return(noErr);
+}</pre>
+<p>
+SHPlayStopAll is not much different, but instead of looking up a reference number, it<br>
+calls SHPlayStopByRec on all output records that have their inUse flag set. Let's take a<br>
+look at SHPlayStopByRec. 
+</p>
+<pre>void SHPlayStopByRec(SHOutPtr outRec)
+{
+    SndCommand  cmd;
+
+    // Dump the rest of the commands in the queue (including our
+    // callBackCmd).
+    cmd.cmd = flushCmd;
+    cmd.param1 = 0;
+    cmd.param2 = 0;
+    SndDoImmediate(&amp;outRec-&gt;channel, &amp;cmd);
+   
+    // Shut up and go to your room! No dessert for you, little boy.
+    cmd.cmd = quietCmd;
+    cmd.param1 = 0;
+    cmd.param2 = 0;
+    SndDoImmediate(&amp;outRec-&gt;channel, &amp;cmd);
+   
+    // It's now safe to manually dump our channel (we'll just skip
+    // the whole callback thing in this case).
+    SHReleaseOutRec(outRec);
+}</pre>
+<p>
+To stop a playing sound, Helper sends a flushCmd, which flushes all subsequent<br>
+(currently unprocessed) sound commands from a channel's queue, and a quietCmd,<br>
+which tells the channel to stop making sound. The flushCmd also flushes the<br>
+callBackCmd we previously queued up. After these two commands, we can safely call<br>
+SHReleaseOutRec to dispose of the sound channel for the sound. 
+</p>
+<p>
+Now that we've seen the basic stuff, on to the advanced sound output routines. 
+</p>
+<h2>ADVANCED PLAYBACK ROUTINES</h2>
+<p>
+Helper's easy calls are enough to satisfy the demands of many applications. If finer<br>
+control is desired, a few other playback routines can be used. Let's take a closer look at<br>
+the advanced playback routines, SHPlayPause, SHPlayContinue, SHPlayStatus, and<br>
+SHGetChannel. 
+</p>
+<p>
+<b>SHPLAYPAUSE</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr SHPlayPause(long refNum)
+{
+    SHOutPtr        outRec;
+    SndCommand  cmd;
+    OSErr           err;
+   
+    outRec = SHOutRecFromRefNum(refNum);
+    if (outRec != nil) {
+        // Don't bother with this if we're already paused.
+        if (outRec-&gt;paused)
+            return(kSHErrAlreadyPaused);
+       
+        // Get the current playback rate for this sound.
+        cmd.cmd = getRateCmd;
+        cmd.param1 = 0;
+        cmd.param2 = &amp;outRec-&gt;rate;
+        err = SndDoImmediate(&amp;outRec-&gt;channel, &amp;cmd);
+        if (err != noErr)
+            return(err);
+       
+        // Now pause with either a rateCmd or a pauseCmd, as
+        // appropriate.
+        cmd.param1 = 0;
+        cmd.param2 = 0;
+        if (outRec-&gt;rate != 0) {
+            // If we get something nonzero, it's safe to assume that
+            // whatever synthesizer we're talking to will be able to
+            // understand a rateCmd to restore the rate (probably the
+            // sampled synthesizer). To pause the sound, we'll set
+            // the rate to zero.
+            cmd.cmd = rateCmd;
+            err = SndDoImmediate(&amp;outRec-&gt;channel, &amp;cmd);
+            if (err != noErr)
+                return(err);
+        } else {
+            // This synthesizer doesn't understand rateCmds. So
+            // instead we'll just pause command queue processing with
+            // a pauseCmd.  This is how we pause command-type sounds
+            // (e.g., Simple Beep).
+            cmd.cmd = pauseCmd;
+            err = SndDoImmediate(&amp;outRec-&gt;channel, &amp;cmd);
+            if (err != noErr)
+                return(err);
+        }
+
+        outRec-&gt;paused = true;
+        return(noErr);
+    } else return(kSHErrBadRefNum);
+}</pre>
+<p>
+There are two basic methods of pausing a sound: one uses a pauseCmd, the other uses a<br>
+rateCmd.&nbsp;&nbsp;&nbsp;Sounds that are composed of a lot of little sound commands (like Simple<br>
+Beep) are paused by pausing command-queue processing with a pauseCmd. Most<br>
+sampled sounds, however, have only one command, a bufferCmd, which plays the<br>
+sampled sound. A pauseCmd is ineffective for this type of sound because it pauses<br>
+command-queue processing after the completion of the bufferCmd; in essence, the<br>
+sound plays to completion before pausing. Therefore, a different approach is taken<br>
+with sampled sounds: a rateCmd is used to set the sample playback rate to 0.0,<br>
+effectively stopping the bufferCmd in its tracks. 
+</p>
+<p>
+SHPlayPause first retrieves the output record associated with the given refNum, and<br>
+then checks that the sound is not already paused. SHPlayPause then sends a getRateCmd<br>
+to establish the current playback rate of the sound. If getRateCmd returns a nonzero<br>
+rate, SHPlayPause knows that a rateCmd can be used to pause the sound; otherwise a<br>
+pauseCmd is used. Either way, SHPlayPause sets the paused flag in the output record. 
+</p>
+<p>
+<b>SHPLAYCONTINUE</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr SHPlayContinue(long refNum)
+{
+    SHOutPtr        outRec;
+    SndCommand  cmd;
+    OSErr           err;
+   
+    outRec = SHOutRecFromRefNum(refNum);
+    if (outRec != nil) {
+        // Don't even bother with this stuff if the channel isn't
+        // paused.
+        if (!outRec-&gt;paused)
+            return(kSHErrAlreadyContinued);
+       
+        // Now continue playback with a rateCmd or a resumeCmd, as
+        // appropriate.
+        cmd.param1 = 0;
+        if (outRec-&gt;rate != 0) {
+            // Resume sampled sound playback by restoring the
+            // synthesizer's playback rate with a rateCmd.
+            cmd.cmd = rateCmd;
+            cmd.param2 = outRec-&gt;rate;
+            err = SndDoImmediate(&amp;outRec-&gt;channel, &amp;cmd);
+            if (err != noErr)
+                return(err);
+        } else {
+            // Resume sound queue processing with a resumeCmd.
+            cmd.cmd = resumeCmd;
+            cmd.param2 = 0;
+            err = SndDoImmediate(&amp;outRec-&gt;channel, &amp;cmd);
+            if (err != noErr)
+                return(err);
+        }
+       
+        outRec-&gt;paused = false;
+        return(noErr);
+    } else return(kSHErrBadRefNum);
+}</pre>
+<p>
+SHPlayContinue continues the playback of a previously paused sound, checking<br>
+whether there's a nonzero rate in the output record. This is the indicator of whether to<br>
+send a resumeCmd or rateCmd. If the rate is zero, SHPlayContinue sends a resumeCmd<br>
+to resume the sound. If the rate is nonzero, SHPlayContinue sends a rateCmd to restore<br>
+the sample playback rate for the sound. 
+</p>
+<p>
+<b>SHPLAYSTATUS</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal SHPlayStat SHPlayStatus(long refNum)
+{
+    SHOutPtr    outRec;
+   
+    if (refNum &gt;= gsSHOutVars.nextRef)
+        return(shpError);
+    else {
+        outRec = SHOutRecFromRefNum(refNum);
+   
+        if (outRec != nil) {
+            // We found an SHOutRec for the refNum (so it's in use).
+            return((outRec-&gt;paused) ? shpPaused : shpPlaying);
+
+        } else {
+            // Although we've used the reference number in the past,
+            // it's not in use, so we can assume whatever sound it
+            // was associated with has stopped. Therefore, we'll
+            // return shpFinished.
+            return(shpFinished);
+        }
+    }
+}</pre>
+<p>
+SHPlayStatus returns status information about a given sound, by reference number.<br>
+The SHPlayStat enum looks like this:
+</p>
+<pre>typedef enum {
+    shpError = -1,
+    shpFinished = 0,
+    shpPaused = 1,
+    shpPlaying = 2
+} SHPlayStat;</pre>
+<p>
+SHPlayStatus uses the fact that sound reference numbers are sequential and unique to<br>
+infer the status of a sound, even if its record is no longer in the output record array. If<br>
+refNum is greater than the next available reference number, SHPlayStatus returns<br>
+shpError, since refNum is invalid. If refNum can be found in the output record list,<br>
+SHPlayStatus returns shpPlaying or shpPaused, depending on the state of the output<br>
+record's paused flag. And finally, if refNum is not in use by an existing output record<br>
+but has been used in the past, it's safe to assume that playback has completed for that<br>
+reference number, and SHPlayStatus returns shpFinished. 
+</p>
+<p>
+<b>SHGETCHANNEL</b><br>
+Finally, there's SHGetChannel. This routine allows you to use Helper to do sound<br>
+channel management but retain the ability to send sound commands to the channel<br>
+yourself. This is most commonly done to play looped continuous music in the<br>
+background. 
+</p>
+<p>
+To use Helper to play looped continuous music, the application calls the<br>
+SHPlayByHandle routine with nil as the sound handle. This tells Helper to open the<br>
+channel without a subsequent call to SndPlay. Then the application calls SHGetChannel<br>
+to retrieve a pointer to the sound channel that Helper has set up. The application loads<br>
+a sound resource containing a soundCmd, which installs a sampled sound as a voice. It<br>
+plays this sound in the channel with a call to SndPlay, then issues a freqCmd to start it<br>
+playing indefinitely. The demonstration program SHDemo provided on the<i>Developer CD</i><br>
+<i>Series</i> disc gives a specific example of this technique. 
+</p>
+<pre>pascal OSErr SHGetChannel(long refNum, SndChannelPtr *channel)
+{
+    SHOutPtr    outRec;
+   
+    // Look for the output record associated with refNum.
+    outRec = SHOutRecFromRefNum(refNum);
+   
+    // If we found one, return a pointer to the sound channel.
+    if (outRec != nil) {
+        *channel = &amp;outRec-&gt;channel;
+        return(noErr);
+    } else return(kSHErrBadRefNum);
+}</pre>
+<p>
+SHGetChannel simply searches for the output record associated with refNum. If one is<br>
+found, a pointer to the sound channel is returned via the channel parameter. 
+</p>
+<h2>EASY RECORDING ROUTINES</h2>
+<p>
+Helper provides routines to simplify the process of asynchronous sound recording.<br>
+Most applications' needs will be satisfied by the three easy routines, SHRecordStart,<br>
+SHGetRecordedSound, and SHRecordStop. 
+</p>
+<pre>pascal OSErr SHRecordStart(short maxK, OSType quality,
+     Boolean *doneFlag)
+{
+    Boolean deviceOpened = false;
+    Boolean allocated = false;
+   
+    OSErr       err;
+    short       canDoAsync;
+    short       metering;
+    long        allocSize;
+   
+    // 1. Try to open the current sound input device.
+    err = SPBOpenDevice(nil, siWritePermission,
+              &amp;gsSHInVars.inRefNum);
+    if (err == noErr)
+        deviceOpened = true;
+
+    // 2. Now let's see if this device can handle asynchronous
+    // recording.
+    if (err == noErr) {
+        err = SPBGetDeviceInfo(gsSHInVars.inRefNum, siAsync,
+            (Ptr)&amp;canDoAsync);
+        if (err == noErr &amp;&amp; !canDoAsync)
+            err = kSHErrNonAsyncDevice;
+    }
+   
+    // 3. Try to allocate memory for the application's sound.
+    if (err == noErr) {
+        allocSize = (maxK * 1024) + kSHHeaderSlop;
+        gsSHInVars.inHandle = NewHandle(allocSize);
+        if (gsSHInVars.inHandle == nil) {
+            err = MemError();
+            if (err == noErr)
+                err = memFullErr;
+        }
+        if (err == noErr)
+            allocated = true;
+    }
+       
+    // 4. Set up various recording parameters (metering and quality).
+    if (err == noErr) {
+        metering = 1;
+        SPBSetDeviceInfo(gsSHInVars.inRefNum, siLevelMeterOnOff,
+            (Ptr)&amp;metering);
+        err = SPBSetDeviceInfo(gsSHInVars.inRefNum,
+            siRecordingQuality, (Ptr)&amp;quality);
+    }
+   
+    // 5. Call SHGetDeviceSettings to determine a bunch of
+    // information we'll need to make a header for this sound.
+    if (err == noErr) {
+        err = SHGetDeviceSettings(gsSHInVars.inRefNum,
+            &amp;gsSHInVars.numChannels, &amp;gsSHInVars.sampleRate,
+            &amp;gsSHInVars.sampleSize, &amp;gsSHInVars.compType);
+    }
+   
+    // 6. Create a header for this sound.
+    if (err == noErr) {
+        err = SetupSndHeader(gsSHInVars.inHandle,
+            gsSHInVars.numChannels, gsSHInVars.sampleRate,
+            gsSHInVars.sampleSize, gsSHInVars.compType,
+            kSHBaseNote, allocSize, &amp;gsSHInVars.headerLength);
+    }
+   
+    // 7. Lock the input sound handle and set up the input parameter
+    // block.
+    if (err == noErr) {
+        MoveHHi(gsSHInVars.inHandle);
+        HLock(gsSHInVars.inHandle);
+        allocSize -= gsSHInVars.headerLength;
+        gsSHInVars.inPB.inRefNum = gsSHInVars.inRefNum;
+        gsSHInVars.inPB.count = allocSize;
+        gsSHInVars.inPB.milliseconds = 0;
+        gsSHInVars.inPB.bufferLength = allocSize;
+        gsSHInVars.inPB.bufferPtr = *gsSHInVars.inHandle +
+            gsSHInVars.headerLength;
+        gsSHInVars.inPB.completionRoutine =
+            (ProcPtr)SHRecordCompletion;
+        gsSHInVars.inPB.interruptRoutine = nil;
+        gsSHInVars.inPB.userLong = SetCurrentA5();
+                                       // For our completion routine.
+        gsSHInVars.inPB.error = noErr;
+        gsSHInVars.inPB.unused1 = 0;
+       
+        err = noErr;
+    }
+   
+    // 8. Finally, if all went well, set our recording flag, make
+    // sure our recording-completed flag is clear, and initiate
+    // asynchronous recording.
+    if (err == noErr) {
+        gsSHInVars.recording = true;
+        gsSHInVars.recordComplete = false;
+        gsSHInVars.appComplete = doneFlag;
+        gsSHInVars.paused = false;
+        if (gsSHInVars.appComplete != nil)
+            *gsSHInVars.appComplete = false;
+       
+        err = SPBRecord(&amp;gsSHInVars.inPB, kSHAsync);
+    }
+   
+    // 9. Now clean up any errors that might have occurred.
+    if (err != noErr) {
+        gsSHInVars.recording = false;
+        if (deviceOpened)
+            SPBCloseDevice(gsSHInVars.inRefNum);
+        if (allocated) {
+            DisposeHandle(gsSHInVars.inHandle);
+            gsSHInVars.inHandle = nil;
+        }
+    }
+   
+    return(err);
+}</pre>
+<p>
+This routine, the most lengthy in Helper, is staged, and nearly every stage can fail.<br>
+Each stage does its function and sets err to some error code. Subsequent stages execute<br>
+only if the result of the previous stage was noErr. Significant stages (like opening the<br>
+sound input device and memory allocation) set flags that allow SHRecordStart to clean<br>
+up if an error occurs after one of those operations. 
+</p>
+<p>
+The first stage tries to open the sound input device with SPBOpenDevice. The device's<br>
+reference number is stored in the inRefNum field of the input variables record. The<br>
+second stage tests the device to see if it can handle asynchronous recording. The third<br>
+stage attempts to allocate the memory buffer for the recorded sound based on the<br>
+parameter maxK. 
+</p>
+<p>
+The fourth stage turns on metering (which allows Helper to retrieve the instantaneous<br>
+record level) and sets the recording quality based on the quality parameter (the Sound<br>
+Manager recording values-- 'good', 'betr', or 'best'). The fifth stage retrieves device<br>
+settings that Helper uses to construct the sound header. The sixth stage actually creates<br>
+the header with a call to the Sound Manager routine SetupSndHeader.
+</p>
+<p>
+The seventh stage moves the recording handle high in the heap and locks it in<br>
+preparation for recording. SHRecordStart then sets up inPB, the sound input<br>
+parameter block, in preparation for recording. Finally, the eighth stage flags that<br>
+recording is under way, clears the application's recording-completed flag, and then<br>
+initiates recording with a call to SPBRecord. If some failure occurred, the sound<br>
+handle is deallocated if necessary, and the sound input device is closed if it was opened.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>SHGETRECORDEDSOUND</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr SHGetRecordedSound(Handle *theSound)
+{
+    if (gsSHInVars.recordComplete) {
+        if (gsSHInVars.recordErr != noErr) {
+            *theSound = nil;
+            return(gsSHInVars.recordErr);
+        } else {
+            *theSound = gsSHInVars.inHandle;
+            return(noErr);
+        }
+    } else {
+        *theSound = nil;
+        return(kSHErrNoRecording);
+    }
+}</pre>
+<p>
+SHGetRecordedSound is used by the application to retrieve the handle of a sound that<br>
+has finished recording. Once the application's recording-completed flag goes true (or<br>
+SHRecordStatus indicates "finished") it's OK to call SHGetRecordedSound. If an error<br>
+terminated recording, SHGetRecordedSound returns the error. If no error occurred,<br>
+theSound is set as a handle to therecorded sound. The recorded sound can be played back<br>
+with the Sound Manager or any of Helper's playback routines, or can be written out as<br>
+a 'snd ' resource. 
+</p>
+<p>
+<b>SHRECORDSTOP</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr SHRecordStop(void)
+{
+    if (gsSHInVars.recording)
+        return(SPBStopRecording(gsSHInVars.inRefNum));
+}</pre>
+<p>
+SHRecordStop stops recording like the stop button on a tape deck. If recording was<br>
+stopped before the entire input buffer was filled, SHIdle will shorten the sound handle<br>
+to the correct size. 
+</p>
+<h2>ADVANCED RECORDING ROUTINES</h2>
+<p>
+Three advanced routines give you more control over the recording process.<br>
+SHRecordPause and SHRecordContinue pause and continue recording. SHRecordStatus<br>
+returns status information about a recording sound, as well as its progress (how much<br>
+has been recorded with respect to the total space that has been allocated) and the<br>
+instantaneous input level. 
+</p>
+<p>
+<b>SHRECORDPAUSE AND SHRECORDCONTINUE</b>
+</p>
+<pre>pascal OSErr SHRecordPause(void)
+{
+    OSErr   err;
+   
+    if (gsSHInVars.recording) {
+        if (!gsSHInVars.paused) {
+            err = SPBPauseRecording(gsSHInVars.inRefNum);
+            gsSHInVars.paused = (err == noErr);
+            return(err);
+        } else return(kSHErrAlreadyPaused);
+    } else return(kSHErrNotRecording);
+}</pre>
+<p>
+SHRecordPause simply pauses recording with the routine SPBPauseRecording,<br>
+assuming the recording is not already paused. 
+</p>
+<pre>pascal OSErr SHRecordContinue(void)
+{
+    OSErr   err;
+   
+    if (gsSHInVars.recording) {
+        if (gsSHInVars.paused) {
+            err = SPBResumeRecording(gsSHInVars.inRefNum);
+            gsSHInVars.paused = !(err == noErr);
+            return(err);
+        } else return(kSHErrAlreadyContinued);
+    } else return(kSHErrNotRecording);
+}</pre>
+<p>
+SHRecordContinue resumes recording of a previously paused recording with the<br>
+routine SPBResumeRecording. 
+</p>
+<p>
+<b>SHRECORDSTATUS</b><br>
+SHRecordStatus uses an SHRecordStatusRec record to provide detailed information<br>
+about the progress of a sound while it's being recorded.
+</p>
+<pre>typedef struct {
+    SHRecordStat    recordStatus;     // Current recording status.
+    unsigned long   totalRecordTime;
+                                // Total (maximum) record time in ms.
+    unsigned long   currentRecordTime // Current recorded time in ms.
+    short           meterLevel;      
+                                  // 0..255, the current input level.
+} SHRecordStatusRec;
+
+pascal OSErr SHRecordStatus(SHRecordStatusRec *recordStatus)
+{
+    short           recStatus;
+    OSErr           err;
+    unsigned long   totalSamplesToRecord, numberOfSamplesRecorded;
+    if (gsSHInVars.recording) {
+        err = SPBGetRecordingStatus(gsSHInVars.inRefNum, &amp;recStatus,
+            &amp;recordStatus-&gt;meterLevel, &amp;totalSamplesToRecord,
+            &amp;numberOfSamplesRecorded,
+            &amp;recordStatus-&gt;totalRecordTime,
+            &amp;recordStatus-&gt;currentRecordTime);
+        if (err == noErr)
+            recordStatus-&gt;recordStatus =
+                (gsSHInVars.paused ? shrPaused : shrRecording);
+        else recordStatus-&gt;recordStatus = shrError;
+        return(err);
+    } else if (gsSHInVars.recordComplete) {
+        recordStatus-&gt;recordStatus = shrFinished;
+        recordStatus-&gt;meterLevel = 0;
+        // Don't know about the other fields--just leave 'em.
+        return(noErr);
+    } else return(kSHErrNotRecording);
+}</pre>
+<p>
+An SHRecordStatusRec record contains a recordStatus field that's analogous to the<br>
+playback status.&nbsp;&nbsp;&nbsp;SHRecordStatus calls SPBGetRecordingStatus to get status<br>
+information from the Sound Manager.&nbsp;&nbsp;&nbsp;The meter level, total record time, and current<br>
+record time are placed directly in the output record.
+</p>
+<p>
+The SHRecordStat enum looks like this:
+</p>
+<pre>typedef enum {
+    shrError = -1,
+    shrFinished = 0,
+    shrPaused = 1,
+    shrRecording = 2
+} SHRecordStat;</pre>
+<p>
+The recording status is set to shrError if an error occurred on the<br>
+SPBGetRecordingStatus call, shrFinished if the recordComplete flag is set,<br>
+shrRecording if the sound is currently recording, or shrPaused if the sound is<br>
+recording but is paused. The information in an SHRecordStatusRec, along with the<br>
+other routines described in this article, is enough to support an on-screen tape deck. 
+</p>
+<h2>USING HELPER</h2>
+<p>
+The best way to get a feeling for how to use Helper is to look over the source code for<br>
+the small demonstration program, SHDemo, on the CD. It demonstrates triggered<br>
+sounds using SHPlayByID; continuous background music using SHPlayByHandle and<br>
+SHGetChannel; and a mini tape deck with a level meter, progress bar, and record, stop,<br>
+play, and pause buttons that work for both recording and playback. SHDemo exercises<br>
+all of Helper's calls, so you're likely to find appropriate examples somewhere inside<br>
+SHDemo. For a practical example of what Helper can do, take a look at the RapMaster<br>
+application on the CD. 
+</p>
+<h2>JOIN THE NOISY REVOLUTION</h2>
+<p>
+Consider how sound, as a data type, might fit into and enhance your application. You'll<br>
+still need to implement the user interface, but Helper can shield you from many of the<br>
+ugly Sound Manager details described above, and can also form the basis for a<br>
+customized sound package better suited to the specific needs of your application. Either<br>
+way, join the Noisy Revolution today! 
+</p>
+<h2>WHY SHGETSTATE?</h2>
+<p>
+SHGetState is necessary because your application might trigger the same sound handle<br>
+twice, the second time while the first is still playing. If SHPlayByID used only<br>
+HGetState, here's what would happen:
+</p>
+<ol>
+<li>At time t0 your application calls SHPlayByID. The handle's state is<br>
+retrieved--unlocked and purgeable-- and stored in output record 0. So far,<br>
+all is well, and the sound begins playing.</li>
+<li>Later, at time t1, your application makes a new call to SHPlayByID to<br>
+trigger the same sound again while the first call is still playing. SHPlayByID<br>
+calls HGetState to get the handle's state--locked, nonpurgeable-- and stores it<br>
+in output record 1 (perhaps you see the problem already). The sound begins<br>
+playing a second time, over the one that's already playing.</li>
+<li>At time t2, the first sound completes. Your application's attention flag<br>
+gets set, and you dutifully call SHIdle. SHIdle retrieves the sound's original<br>
+state--unlocked and purgeable--from output record 0 and sets the sound<br>
+handle to that state.</li>
+<li>At time t3, the second sound completes. Again, SHIdle sets the sound<br>
+handle's state according to what's stored in the output record--locked and<br>
+nonpurgeable.</li>
+</ol>
+<p>
+We're left with the sound handle in the wrong state. So instead of HGetState,<br>
+SHPlayByID uses SHGetState. SHGetState looks to see if the sound has already been<br>
+triggered, and if so, returns the state stored in the previous trigger's output record.<br>
+Also, SHReleaseOutRec doesn't reset the handle's state if the sound handle is found to be<br>
+currently playing on some other channel.
+</p>
+<h2>TYPES OF SOUND</h2>
+<p>
+The Sound Manager supports three basic types of sound. First is simple <i> square-wave</i><br>
+<i>synthesis</i> . You can specify&nbsp;&nbsp;the amplitude (volume), frequency (pitch), approximate<br>
+timbre, and duration of sounds for a square-wave synthesizer with the Sound Manager<br>
+commands ampCmd, timbreCmd, and freqDurationCmd.
+</p>
+<p>
+The second type of sound is <i>wave-table synthesis</i> , which allows you to specify a<br>
+waveform as 512 <i> samples</i> . These samples specify the relative output voltage over<br>
+time for one period of the waveform. Sounds with more complex timbre can be created<br>
+using a wave-table synthesizer. You control the frequency and amplitude of wave-table<br>
+sound in the same way as square-wave sound.
+</p>
+<p>
+The most interesting sounds can be produced via the third type--<i> sampled synthesis</i> .<br>
+Sampled sounds are a continuous list of relative voltages over time that allow the<br>
+Sound Manager to reconstruct an arbitrary analog waveform. This could be a recording<br>
+of music, your voice --anything.
+</p>
+<p>
+Helper allows you to easily play any of these types of sound asynchronously.
+</p>
+<p>
+<b>QUALITY OF SAMPLED SOUND</b><br>
+Two basic characteristics affect the quality of sampled sound: sample rate and sample<br>
+size.
+</p>
+<p>
+Sample rate, or the rate at which voltage samples are taken, determines the highest<br>
+possible frequency that can be recorded. Specifically, for a given sample rate, you can<br>
+sample sounds of up to <i> half</i>&nbsp;&nbsp;that frequency. For instance, if the sample rate is 22,254<br>
+samples per second (hertz, or Hz), the highest frequency you could record would be<br>
+around 11,000 Hz.
+</p>
+<p>
+A commercial compact disc is sampled at 44,100 samples per second, providing a<br>
+frequency response of up to around 20,000 Hz, the limit of human hearing. Your dog,<br>
+however, may find your CD player a bit wanting.
+</p>
+<p>
+Sample size, or <i>quantization,</i>&nbsp;&nbsp;determines the dynamic range of the recording (the<br>
+difference between the quietest and the loudest sound). If the sample size is eight bits,<br>
+there are 256 discrete voltage levels that can be recorded. This provides<br>
+approximately 48 decibels (dB) of dynamic range. A CD's sample size is 16 bits,<br>
+which provides about 96 dB of dynamic range. Humans with good hearing are sensitive<br>
+to ranges greater than 100 dB, so you're likely to see 18- or 20-bit digital audio in<br>
+the next ten years.
+</p>
+<h2>RELATED READING</h2>
+<ul>
+<li><i>Inside Macintosh </i> Volume VI (Addison-Wesley, 1991), Chapter 22,<br>
+provides comprehensive information on the latest version of the Sound<br>
+Manager, including information on sound input.</li>
+<li><i>Inside Macintosh </i> Volume V (Addison-Wesley, 1988), Chapter 2,<br>
+provides user interface guidelines for the inclusion of sound in Macintosh<br>
+applications.</li>
+<li><i>Inside Macintosh </i> Volume II (Addison-Wesley, 1985), Chapter 8, and<br>
+Volume V, Chapter 27, provide a historical perspective on sound on the<br>
+Macintosh, if&nbsp;&nbsp;you're curious. The information in these chapters is superseded<br>
+by Volume VI, Chapter 22.</li>
+</ul>
+<p>
+<b>BRYAN K. ("BEAKER") RESSLER </b>(AppleLink: ADOBE.BEAKER) Looking back, it<br>
+seems clear that Bryan sacrificed quality time with his wife during the writing of this<br>
+article. So, in the spirit of fairness, <i> develop </i> asked Bryan's wife, Nicole, to contribute<br>
+the bio for her husband. Here it is: "I owe it all to my wife, without whom I wouldn't be<br>
+the man I am today. The End."*
+</p>
+<p>
+<b>Helper is written in C, </b>but all public routines are declared as Pascal so that they<br>
+can be called from other languages. *
+</p>
+<p>
+<b>A note to MacApp users: </b> Set PermAllocation to true before calling<br>
+SHInitSoundHelper; otherwise the outArray pointer may be allocated from temporary<br>
+storage.*
+</p>
+<p>
+<b>A note to MacApp users: </b> You should set PermAllocation to true before calling<br>
+SHRecordStart; otherwise the sound input handle may be allocated from temporary<br>
+storage. *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Rich Collyer, Neil Day, Kip Olson, Jim<br>
+Reekes *
+</p>
+</body>
+</html>

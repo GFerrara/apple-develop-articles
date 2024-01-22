@@ -1,0 +1,1330 @@
+<html>
+<head>
+<!-- Article ID: 47 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>December 92 - TECHNIQUES FOR WRITING AND DEBUGGING COMPONENTS</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>TECHNIQUES FOR WRITING AND DEBUGGING COMPONENTS</h2>
+<h1>GARY WOODCOCK AND CASEY KING</h1>
+<p>
+<img src="img/252.gif" width="180 px"></img>
+</p>
+<p>
+<i>Programmers first saw the Component Manager as part of the QuickTime 1.0 system</i><br>
+<i>extension. Now that the Component Manager is part of System 7.1, components aren't</i><br>
+<i>just for QuickTime programmers any more. This article shows you how to take</i><br>
+<i>advantage of the power and flexibility of components as a way to give extended</i><br>
+<i>functionality to any Macintosh application.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Software developers are continually searching for ways to avoid reinventing the<br>
+proverbial wheel every time they need new capabilities for their programs. A new<br>
+approach is available with components. Components are modules of functionality that<br>
+applications can share at run time. They enable applications to extend the services of<br>
+the core Macintosh system software with minimal risk of introducing<br>
+incompatibilities (unlike, for example, trap patching).
+</p>
+<p>
+As Figure 1 suggests, components also encourage a building-block approach to solving<br>
+complex problems. Higher-level components can call lower-level components to build<br>
+sophisticated functionality, while at the same time making the application program<br>
+interface (API) much simpler.&nbsp;&nbsp;&nbsp;What's more, because components are separate from<br>
+an application that uses them, you can modify and extend components without affecting<br>
+the application. 
+</p>
+<p>
+Components are maintained by the Component Manager, which is responsible for<br>
+keeping track of the components available at any given time and of the particular<br>
+services they provide. The Component Manager provides a standard interface through<br>
+which applications establish connections to the components they need. 
+</p>
+<p>
+Almost anything you can dream up can be a component -- video digitizer drivers,<br>
+dialogs, graphics primitives, statistical functions, and more. QuickTime 1.0 itself<br>
+contains a number of useful components, including the movie controller, the sequence<br>
+grabber, and a variety of image compressors and decompressors (<i>codecs</i> ), all of<br>
+which are available to any client application. 
+</p>
+<p>
+<img src="img/253.gif" width="561 px"></img>
+</p>
+<p>
+<b>Figure 1</b> Using Components as Software Building Blocks
+</p>
+<p>
+To demonstrate the all-around usefulness of components, we'll examine the<br>
+development and implementation of a component that does some rather trivial<br>
+mathematical calculations. This example will help us focus on concepts rather than<br>
+getting lost in the details of solving a complex problem. We'll build a fairly generic<br>
+component template that you can use in your own designs.&nbsp;&nbsp;&nbsp;We'll also discuss some<br>
+advanced component features, such as extending component functionality, capturing<br>
+components, and delegating component functions. Finally, we'll show you some<br>
+techniques and tools for debugging your components. The accompanying<i>Developer CD</i><br>
+<i>Series</i> disc contains our example component's source code, a simple application to test<br>
+our component, and the debugging tools. 
+</p>
+<p>
+Note that this article doesn't spend a great deal of time explaining how applications can<br>
+find and use components. We assume that you've invested some effort in reading<br>
+the<i>QuickTime Developer's Guide</i> (part of the QuickTime Developer's Kit). If you<br>
+haven't, we strongly urge you to do so, since the<i>Developer's Guide</i> contains the<br>
+definitive description of the Component Manager. 
+</p>
+<p>
+<b>SHOULD YOU WRITE A COMPONENT?</b><br>
+OK, components sound interesting, but should you write one? Why write a component<br>
+when you can just code the functionality you need directly into your application or<br>
+write a device driver? Here are a few reasons to choose components over the<br>
+alternatives:
+</p>
+<ul>
+<li>Components are easier for applications to use. Client applications don't<br>
+have to know what they're looking for before opening a service. This is<br>
+different from device drivers, where open calls must provide either a driver<br>
+name or a refNum.&nbsp;&nbsp;&nbsp;An application can simply tell the Component Manager,<br>
+"I'm looking for somebody to do this for me. Is anybody available?" In addition,<br>
+clients don't need to set up parameter blocks or make control/status calls to<br>
+use components. Armed with the API of the component type, the caller simply<br>
+makes normal function calls to the component, and the Component Manager<br>
+does the work. </li>
+<li>Components are more flexible. You can modify the behavior of a<br>
+component by overriding its capabilities without adversely affecting the<br>
+application. The Component Manager enables the component to communicate its<br>
+capabilities to clients dynamically. </li>
+<li>Components allow you to design more flexible applications. They can be<br>
+used to divide the functional aspects of an application into parts. For example,<br>
+a word processing application might use a spelling checker component, a<br>
+thesaurus component, and a grammar checker component. If the thesaurus<br>
+component is updated, the application code doesn't have to change at all. A user<br>
+can simply replace the old thesaurus component with the new one. </li>
+<li>Components are easier to implement than device drivers. There are no<br>
+declaration structures, driver headers, assembly code glue, installation INITs,<br>
+or any of the peculiarities that come with device drivers. </li>
+<li>Components are easier to debug than device drivers. No longer will you be<br>
+walking the unit table to find your driver so that you can set a breakpoint at<br>
+your control call dispatcher. You can easily and effectively debug your code<br>
+using a source-level debugger such as Symantec's THINK C Debugger. </li>
+</ul>
+<p>
+Now that you know the advantages of components, you have to decide whether the<br>
+functionality you need is a good candidate for a component. To do this, ask yourself the<br>
+following:
+</p>
+<ul>
+<li>Do I anticipate reusing this functionality in other applications?<br>
+Components are ideal for providing services that many applications can use. </li>
+<li>Do I anticipate having to modify certain aspects of this functionality in the<br>
+future?&nbsp;&nbsp;&nbsp;Functionality encapsulated in a component can be extended or<br>
+modified without disturbing the original interface specification. </li>
+<li>Is there a benefit to users in establishing a common API for this<br>
+functionality, so that other developers can use or extend it? You might want to<br>
+be able to allow third parties to extend your application without having to<br>
+expose detailed information about your application's internal data structures.<br>
+For example, many of the "plug-in" modules for today's popular graphics<br>
+applications could easily be implemented as components. </li>
+</ul>
+<p>
+A "yes" to more than one of these questions means that components are probably a good<br>
+approach for your next product. But you still have one last question to answer: has<br>
+someone else already written a component that solves your problem? To find out, you<br>
+need to contact Apple's Component Registry group (AppleLink REGISTRY) and ask them.<br>
+These folks maintain a database of all registered component types, subtypes, and<br>
+manufacturers, as well as the corresponding APIs (if they're publicly available). A<br>
+check with the Registry is mandatory for anyone who's contemplating writing a<br>
+component.
+</p>
+<p>
+If after all this you find that you're still about to embark into uncharted territory,<br>
+read on, and we'll endeavor to illuminate your passage. 
+</p>
+<h2>COMPONENT BASICS 101</h2>
+<p>
+Client applications use the Component Manager to access components. As shown in<br>
+Figure 2, the Component Manager acts as a mediator between an application's requests<br>
+for component services and a component's execution of those requests. The Component<br>
+Manager uses a<i>component instance</i> to determine which component is needed to satisfy<br>
+an application's request for services. An instance can be thought of as an application's<br>
+connection to a component. We'll have more to say about component instances later on.
+</p>
+<p>
+<img src="img/254.gif" width="522 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> How Applications Work With Components
+</p>
+<p>
+Conceptually, components consist of two parts: a collection of functions as defined in<br>
+the component's API, and a dispatcher that takes care of routing application requests to<br>
+the proper function. These requests are represented by request codes that the<br>
+Component Manager maps to the component functions. Let's take a look at both the<br>
+component functions and the component dispatcher in detail. 
+</p>
+<p>
+<b>COMPONENT FUNCTIONS</b><br>
+There are two groups of functions that are implemented in a component. One group does<br>
+the custom work that's unique to the component. The nature of these functions depends<br>
+on the capabilities that the component is intended to provide to clients. For example,<br>
+the movie controller component, which plays QuickTime movies, has a number of<br>
+functions in this category that control the position, playback rate, size, and other<br>
+movie characteristics. Each function defined in your component API must have a<br>
+corresponding request code, and you must assign these request codes positive values (0<br>
+or greater). 
+</p>
+<p>
+The second group of functions comprises the standard calls defined by the Component<br>
+Manager for use by a component. Currently, four of these standard calls<i>must</i>&nbsp;&nbsp;be<br>
+implemented by every component: open, close, can do, and version. Two more request<br>
+codes, register and target, are defined, but supporting these is optional. The standard<br>
+calls are represented by negative request codes and are defined<i>only</i> by Apple.
+</p>
+<p>
+Here's a quick look at each of the six standard calls. 
+</p>
+<p>
+<b>The open function. </b>The open function gives a component the opportunity to<br>
+initialize itself before handling client requests, and in particular to allocate any<br>
+private storage it may need. Private storage is useful if your component has<br>
+hardware-dependent settings, local environment settings, cached data structures, IDs<br>
+of component instances that may provide services to your component, or anything else<br>
+you might want to keep around.
+</p>
+<p>
+<b>The close function. </b>The close function provides for an orderly shutdown of a<br>
+component. For simple components, closing mainly involves disposing of the private<br>
+storage created in the open function.&nbsp;&nbsp;&nbsp;For more complex components, it may be<br>
+necessary to close supporting components and to reset hardware. 
+</p>
+<p>
+<b>The can do function. </b>The can do function tells an application which functions in the<br>
+component's API are supported. Clients that need to query a component about its<br>
+capabilities can use the ComponentFunctionImplemented routine to send the component<br>
+a can do request. 
+</p>
+<p>
+<b>The version function. </b>The version function provides two important pieces of<br>
+information: the component specification level and the implementation level. A change<br>
+in the specification levelnormally indicates a change in the basic API for a particular<br>
+component class, while implementation- level changes indicate, for example, a bug fix<br>
+or the use of a new algorithm. 
+</p>
+<p>
+<b>The register function. </b>The register function allows a component to determine<br>
+whether it can function properly with the current system configuration. Video<br>
+digitizer components, for example, typically use register requests to check for the<br>
+presence of their corresponding digitizing hardware before accepting registration with<br>
+the Component Manager. A component receives a register request code only if it<br>
+explicitly asks for it. We'll see how this is done when we walk through our sample<br>
+component.
+</p>
+<p>
+<b>The target function. </b>The target function informs your component it has<br>
+been<i>captured</i> by another component. Capturing a component is similar to subclassing<br>
+an object, in that the captured component is superseded by the capturing component.<br>
+The captured component is replaced by the capturing component in the component<br>
+registration list and is no longer available to clients. We'll discuss the notion of<br>
+capturing components in more detail later. 
+</p>
+<p>
+<b>THE COMPONENT DISPATCHER</b><br>
+All components must have a main entry point consisting of a dispatcher that routes the<br>
+requests the client application sends via the Component Manager. When an application<br>
+calls a component function, the Component Manager passes two parameters to the<br>
+component dispatcher -- a ComponentParameters structure and a handle to any<br>
+private storage that was set up in the component's open function. The<br>
+ComponentParameters structure looks like this:
+</p>
+<pre>typedef struct {
+    unsigned char   flags;
+    unsigned char   paramSize;
+    short           what;
+    long            params[kSmallestArray];
+} ComponentParameters;</pre>
+<p>
+The first two fields are used internally by the Component Manager and aren't of much<br>
+interest here.&nbsp;&nbsp;&nbsp;The what field contains the request code corresponding to the<br>
+component function call made by the application. The params field contains the<br>
+parameters that accompany the call. 
+</p>
+<p>
+Figure 3 shows a detailed view of how a component function call from an application is<br>
+processed.&nbsp;&nbsp;&nbsp;The component dispatcher examines the what field of the<br>
+ComponentParameters record to determine the request code, and then transfers control<br>
+to the appropriate component function. 
+</p>
+<p>
+<b>REGISTERING A COMPONENT</b><br>
+Before a component can be used by an application, it must be registered with the<br>
+Component Manager. This way the Component Manager knows which components are<br>
+available when it's asked to open a particular type of component.
+</p>
+<p>
+<img src="img/255.gif" width="593 px"></img>
+</p>
+<p>
+<b>Figure 3</b>Processing an Application's Request for Component Services
+</p>
+<p>
+<b>Autoregistration versus application registration. </b>There are two ways that<br>
+you can register a component.&nbsp;&nbsp;&nbsp;By far the easiest way is to build a standalone<br>
+component file of type 'thng'. At system startup, the Component Manager will<br>
+automatically register any component that it finds in files of type 'thng' in the System<br>
+Folder and in the Extensions folder (in System 7) and its subfolders. The 'thng'<br>
+component file must contain both your component and the corresponding component<br>
+('thng') resource. The definition of this resource can be found in the Components.h<br>
+header file and is shown below. 
+</p>
+<pre>typedef struct {
+    unsigned long  type;    /* 4-byte code */
+    short  id;
+} ResourceSpec;
+
+typedef struct {
+    ComponentDescription td;            /* Registration parameters */
+    ResourceSpec         component;    
+                                   /* Resource where code is found */
+    ResourceSpec         componentName; /* Name string resource */
+    ResourceSpec         componentInfo; /* Info string resource */
+    ResourceSpec         componentIcon; /* Icon resource */
+} ComponentResource;</pre>
+<p>
+Figure 4 shows the contents of the component resource that we'll use for the example<br>
+component. 
+</p>
+<p>
+<img src="img/256.gif" width="494 px"></img>
+</p>
+<p>
+<b>Figure 4</b> Math Component Resource
+</p>
+<p>
+An application can also register a component itself using the Component Manager call<br>
+RegisterComponent or RegisterComponentResource. As we'll see, this registration<br>
+method facilitates symbolic debugging of components. 
+</p>
+<p>
+<b>Global versus local registration. </b>Components can be registered locally or<br>
+globally. A component that's registered locally is visible only within the A5 world in<br>
+which it's registered, whereas a globally registered component is available to all<br>
+potential client applications. Typically, you register a component locally only if you<br>
+want to restrict its use to a particular application. 
+</p>
+<h2>A SIMPLE MATH COMPONENT</h2>
+<p>
+To help you understand how to write a component, we're going to go through the whole<br>
+process with an example -- in this case, a simple math component. We start by<br>
+contacting the Apple Component Registry group, and to our astonishment (and their<br>
+bemusement), we find that there are no registered components that do simple math!<br>
+We assume for the moment that the arithmetic operators in our high-level<br>
+programming language are unavailable and that our application is in desperate need of<br>
+integer division and multiplication support. 
+</p>
+<p>
+We create a component called Math that performs integer division and multiplication. 
+</p>
+<p>
+<b>THE FUNCTION PROTOTYPE DEFINITION</b><br>
+We need to define function prototypes for each of the calls in our component API --<br>
+namely, DoDivide and DoMultiply. The function prototype for the DoDivide component<br>
+call can be found in MathComponent.h and is shown below. The declaration for the<br>
+DoMultiply function is similar. 
+</p>
+<pre>pascal ComponentResult DoDivide (MathComponent mathInstance,
+        short numerator, short denominator, short *result) =
+        ComponentCallNow (kDoDivideSelect, 0x08);</pre>
+<p>
+This resembles a normal C language function prototype with a relatively<br>
+straightforward parameter list. The mathInstance parameter is the component<br>
+instance through which the application accesses the component; we'll see how an<br>
+application gets one of these instances in a moment. The numerator and denominator<br>
+parameters are self-explanatory and are passed in by the calling application as well.&nbsp;&nbsp;<br>
+The contents of the last parameter, result, are filled in by the DoDivide function upon<br>
+completion. 
+</p>
+<p>
+Those of you who have a passing familiarity with C are probably more than a little<br>
+curious about the last portion of the declaration. ComponentCallNow is a macro defined<br>
+by the Component Manager (see "Inside the ComponentCallNow Macro" for the nuts and<br>
+bolts of how the macro works). Its main purpose is to identify a routine as a<br>
+component function, as opposed to a normal C function.&nbsp;&nbsp;&nbsp;When an application calls the<br>
+DoDivide function, the macro is executed. This causes a trap to the Component Manager<br>
+to be executed, allowing the Component Manager to send a message to the component<br>
+responsible for handling the function.
+</p>
+<p>
+The first parameter to the ComponentCallNow macro is an integer value representing<br>
+the request code for the integer division function. As noted earlier, your component's<br>
+dispatcher uses this request code to determine what function has been requested. Recall<br>
+that you may only define request codes that are positive. 
+</p>
+<p>
+The second parameter is an integer value that indicates the amount of stack space (in<br>
+bytes) that's required by the function for its parameters, not including the component<br>
+instance parameter. Be careful to note that Boolean and single-byte parameters may<br>
+need to be passed as 16- bit integer values (see the section "Eleven Common Mistakes"<br>
+for details). For the Math component, the space required for the DoDivide function is<br>
+two 16-bit integers followed by a 32-bit pointer, for a total of eight bytes. 
+</p>
+<p>
+<b>THE MATH COMPONENT DISPATCHER</b><br>
+The dispatcher of the Math component is shown in its entirety below. Notice that the<br>
+dispatcher executes its component functions indirectly by calling one of two Component<br>
+Manager utility functions -- CallComponentFunction or<br>
+CallComponentFunctionWithStorage. You use CallComponentFunction when your<br>
+component function needs only the fields in the ComponentParameters structure, and<br>
+CallComponentFunctionWithStorage when it also needs access to the private storage<br>
+that was allocated in your component's open function.
+</p>
+<pre>pascal ComponentResult main (ComponentParameters *params,
+     Handle storage)
+{
+    // This routine is the main dispatcher for the Math component.
+    ComponentResult result = noErr;
+   
+    // Did we get a Component Manager request code (&lt; 0)?
+    if (params-&gt;what &lt; 0) {
+        switch (params-&gt;what)
+        {
+            case kComponentOpenSelect:          // Open request
+                result = CallComponentFunctionWithStorage
+                    (storage, params,
+                    (ComponentFunction) _MathOpen);
+                break;
+            case kComponentCloseSelect:     // Close request
+                result = CallComponentFunctionWithStorage
+                    (storage, params,
+                    (ComponentFunction) _MathClose);
+                break;
+            case kComponentCanDoSelect:     // Can do request
+                result = CallComponentFunction (params,
+                                ComponentFunction) _MathCanDo);
+                break;
+            case kComponentVersionSelect:       // Version request
+                result = CallComponentFunction (params,
+                                (ComponentFunction) _MathVersion);
+                break;
+            case kComponentTargetSelect:        // Target request
+                result = CallComponentFunctionWithStorage
+                    (storage, params,
+                    (ComponentFunction) _MathTarget);
+                break;
+            case kComponentRegisterSelect:  // Register request not  
+// supported
+            default:                         // Unknown request
+                result = paramErr;
+                break;
+        }
+    }
+    else {                               // One of our request codes?
+        switch (params-&gt;what)
+        {
+            case kDoDivideSelect:               // Divide request
+                result = CallComponentFunction (params,
+                                (ComponentFunction) _MathDoDivide);
+                break;
+            case kDoMultiplySelect:             // Multiply request
+                result = CallComponentFunction (params,
+                                (ComponentFunction) _MathDoMultiply);
+                break;
+            default:                             // Unknown request
+                result = paramErr;
+                break;
+        }
+    }
+    return (result);
+}</pre>
+<p>
+A drawback of the dispatcher is the overhead incurred in having the Component<br>
+Manager functions mediate all your requests. To reduce your calling overhead and thus<br>
+improve performance, you can use a<i> fast dispatch</i> technique. While this technique is<br>
+used in most of the QuickTime 1.0 components, this is the first time that it's been<br>
+publicly described. See "Fast Component Dispatch" for details. 
+</p>
+<p>
+<b>THE MATH COMPONENT DODIVIDE CALL</b><br>
+For the Math component, the DoDivide function is declared as follows:
+</p>
+<pre>pascal ComponentResult _MathDoDivide (short numerator,
+    short denominator, short* quotient)
+{
+    ComponentResult result = noErr;
+   
+    if (denominator != 0) {
+        *quotient = numerator/denominator;
+    }
+    else {
+        *quotient = 0;
+        result = -1L;   // Divide by zero not allowed
+    }
+    return (result);
+}</pre>
+<p>
+The key thing to note here is that component functions must always return a result<br>
+code. The return value is 32 bits and is defined in the API for the component. In our<br>
+case, a value of 0 (noErr) indicates successful completion of the call and a negative<br>
+value indicates that an abnormal completion occurred. Note that for some components a<br>
+negative result code could indicate that the returned parameter values should be<br>
+interpreted in a particular manner. For example, a video digitizer may return a<br>
+negative result code of notExactSize from the VDSetDestination call. This doesn't<br>
+indicate an error. It just means that the requested size wasn't available on the digitizer<br>
+and that the next closest size was given instead. Also, since this result code is 32 bits,<br>
+you could actually return pointers or handles as results, rather than error codes.
+</p>
+<h2>USING THE MATH COMPONENT</h2>
+<p>
+In this section, we look at how an application uses the Math component. First, the<br>
+application has to ask the Component Manager to locate the Math component. If the Math<br>
+component is found, the application can open it and make calls to it. 
+</p>
+<p>
+<b>FINDING AND OPENING THE MATH COMPONENT</b><br>
+We tell the Component Manager which component we're looking for by sending it a<br>
+ComponentDescription record containing the type, subtype, and manufacturer codes<br>
+for the desired component. We then call the Component Manager routine<br>
+FindNextComponent to locate a registered component that fits the description. The code<br>
+fragment below shows how this looks. 
+</p>
+<pre>ComponentDescription        mathDesc;
+Component                   mathComponentID;
+// Math component description
+mathDesc.componentType = mathComponentType;
+mathDesc.componentSubType = 0L;                 // Wild card
+mathDesc.componentManufacturer = 'appl';
+mathDesc.componentFlags = 0L;                   // Wild card
+mathDesc.componentFlagsMask = 0L;               // Wild card
+
+// Find a Math component
+mathComponentID = FindNextComponent (nil, &amp;mathDesc);</pre>
+<p>
+The zeros in the componentSubType, componentFlags, and componentFlagsMask fields<br>
+indicate that they function as wild cards. If the Component Manager was unable to<br>
+locate a component matching the description, it returns zero.
+</p>
+<p>
+Assuming the Component Manager returned a nonzero component ID, we now open the<br>
+component using the OpenComponent call, as follows:
+</p>
+<pre>mathInstance = OpenComponent (mathComponentID);</pre>
+<p>
+OpenComponent returns a unique connection reference -- a component instance -- to<br>
+the Math component. If the component instance is nonzero, we're ready to use the<br>
+component. Figure 5 illustrates the process of finding a component.
+</p>
+<p>
+<img src="img/257.gif" width="590 px"></img>
+</p>
+<p>
+<b>Figure 5</b>How Applications Find Components
+</p>
+<p>
+<b>MAKING CALLS TO THE MATH COMPONENT</b><br>
+The Math component performs only two functions, dividing and multiplying two<br>
+integers. To ask it to divide two numbers for us, we just call the component function<br>
+DoDivide with the component instance value we got by opening the Math component. 
+</p>
+<pre>result = DoDivide (mathInstance, numerator, denominator, &amp;quotient);</pre>
+<p>
+When we're done with the component, we close the connection with the CloseComponent<br>
+call, like this:
+</p>
+<pre>result = CloseComponent (mathInstance);</pre>
+<p>
+That's all there is to it. You can see that making component function calls is much like<br>
+making any other kind of call. 
+</p>
+<h2>EXTENDING EXISTING COMPONENTS</h2>
+<p>
+After defining the basic functionality for your component, you may find that you want<br>
+to extend it beyond what you originally specified in your component API. There are<br>
+three ways to extend the functionality of existing components:
+</p>
+<ul>
+<li>Use the subtype and/or manufacturer fields of the component description<br>
+to indicate to a client application that a specific component implementation<br>
+provides previously undefined functionality. </li>
+<li>Revise the component API to add calls that weren't specified in the<br>
+original interface. </li>
+<li>Modify the behavior of a particular component implementation by<br>
+capturing it and overriding a specific function. </li>
+</ul>
+<p>
+The following sections examine these methods in detail. 
+</p>
+<p>
+<b>ADDING NEW FUNCTIONALITY TO A SPECIFIC COMPONENT</b><br>
+<b>IMPLEMENTATION</b><br>
+Let's add some more functionality to the Math component. The MoMath component<br>
+extends the Math component by adding an addition function. A new function prototype is<br>
+added for the new function in MoMathComponent.h, along with a new request code,<br>
+kDoAddSelect. 
+</p>
+<pre>pascal ComponentResult DoAdd (MathComponent mathInstance,
+        short firstNum, short secondNum, short* result) =
+    ComponentCallNow (kDoAddSelect, 0x08);</pre>
+<p>
+Request codes for implementation-specific functions must have an ID of 256 or<br>
+greater. This is required to differentiate these functions from those that are generally<br>
+defined in the API for the component type. Implementation-specific functions usually<br>
+provide capabilities beyond those specified in the component API, and thus offer<br>
+developers a way to differentiate their component implementations from those of<br>
+competing developers. The following code fragment from the MoMath component<br>
+dispatcher shows support for the DoAdd function:
+</p>
+<pre>case kDoAddSelect: // Add function
+{
+    result = CallComponentFunction (params,
+            (ComponentFunction) _MoMathDoAdd);
+    break;
+}</pre>
+<p>
+How does the calling application know that a superset of the Math component is<br>
+around? To start with, the caller needs to know that such a beast even exists.<br>
+Remember, this is an extension of a component implementation by a particular<br>
+vendor, not of the component type in general. In this case, the extended component is<br>
+differentiated from its basic implementation by its manufacturer code. Both Math and<br>
+MoMath have the same component type ('math'), but their manufacturer codes differ<br>
+('appl' for Math and 'gwck' for MoMath). Note that the subtype field can be used in a<br>
+similar manner, but it's typically used to distinguish algorithmic variations of a<br>
+general component type. For example, image compressor components ('imco') use the<br>
+subtype field to differentiate various types of compression algorithms ('rle ' for run<br>
+length encoding, 'jpeg' for JPEG, and so on). The manufacturer field is used to identify<br>
+vendor-specific implementations of a particular compression algorithm. 
+</p>
+<p>
+If the application is aware that this extended component exists, it can use the<br>
+information stored in the component's 'thng' resource to locate and open it. Once the<br>
+component has been opened, the application calls the extended function just as it would<br>
+any other component function. 
+</p>
+<p>
+<b>ADDING NEW FUNCTIONALITY TO A COMPONENT TYPE</b><br>
+In the preceding example, we used the manufacturer code to hook in new functionality<br>
+to the Math component; this allowed a specific implementation to extend the interface.<br>
+In reality, we would be better off extending the component by defining a change to the<br>
+Math component API, so that all components of this type would have an interface<br>
+defined for the new addition function. Of course, this is an option only when you're the<br>
+owner of the component API. Changing component APIs that are owned by others (for<br>
+instance, by Apple) is a good way to break applications, and no one appreciates that,<br>
+least of all your users. 
+</p>
+<p>
+If you're going to take this route, be sure that the existing API is left unchanged, so<br>
+that clients using the old component's API can use your new component without having<br>
+to be modified. In addition, it's important to update the interface revision level of<br>
+components that implement the new API, so that clients can determine whether a<br>
+particular component implementation supports the new API. 
+</p>
+<p>
+<b>MODIFYING EXISTING FUNCTIONALITY</b><br>
+Modifying existing functionality is a little more complicated than adding functionality<br>
+to a component type. In the example component, the DoDivide function divides two<br>
+16-bit integers, truncating the result. We would actually get a better answer if the<br>
+result were rounded to the nearest integer. We don't need to add a new call to do this,<br>
+since what we really want to do is replace the implementation of the existing call with<br>
+a more accurate version. On the other hand, the Mathcomponent does an acceptable job<br>
+of multiplying two integers, so we don't need to override that function. Instead, we'll<br>
+use the multiply function that's already implemented. 
+</p>
+<p>
+We can do this by writing a component that does the following:
+</p>
+<ul>
+<li>captures the original Math component</li>
+<li>overrides the original DoDivide function with a more accurate division<br>
+function</li>
+<li>delegates the DoMultiply function to the original Math component</li>
+</ul>
+<p>
+Let's start by writing a new component -- in the example code, it's called<br>
+NuMathComponent -- that contains a dispatcher, as well as functions to handle the<br>
+Component Manager request codes and the new DoDivide routine. We use a register<br>
+routine to check for the availability of a Math component before we allow the NuMath<br>
+component to be registered. If no Math component is available, obviously we can't<br>
+capture it, and we shouldn't register. We also set cmpWantsRegisterMessage (bit 31)<br>
+in the componentFlags field of the ComponentDescription record in the NuMath<br>
+component's 'thng' resource to let the Component Manager know that we want a chance<br>
+to check our environment before we're registered. With this flag set, the sequence of<br>
+requests that NuMath will get at registration time will be open, register, and close. 
+</p>
+<p>
+The NuMath component register routine is as follows:
+</p>
+<pre>pascal ComponentResult _NuMathRegister (void)
+{
+   // See if a Math component is registered. If not, don't register
+   // this component, since it can't work without the Math component.
+   // We return 0 to register, 1 to not register.
+
+    ComponentDescription    mathDesc;
+   
+    mathDesc.componentType = mathComponentType;
+    mathDesc.componentSubType = 0L;             // Wild card
+    mathDesc.componentManufacturer = 'appl';
+    mathDesc.componentFlags = 0L;               // Wild card
+    mathDesc.componentFlagsMask = 0L;           // Wild card
+   
+    return ((FindNextComponent (nil, &amp;mathDesc) != 0L) ? 0L : 1L);
+}</pre>
+<p>
+The original Math component ID is now effectively removed from the Component<br>
+Manager's registration list. This means that the Math component is now hidden from<br>
+all other clients, except those that already had a connection open to it before it was<br>
+captured. 
+</p>
+<p>
+We then open an instance of the Math component, and use the ComponentSetTarget<br>
+utility (defined in MathComponent.h) to inform Math that it's been captured by<br>
+NuMath. 
+</p>
+<pre>result = ComponentSetTarget (mathInstance, self);</pre>
+<p>
+Why does a component need to know that it's been captured? If a captured component<br>
+makes use of its own functions, it needs to call through the capturing component<br>
+instead of through itself, becausethe capturing component may be overriding one of the<br>
+calls that the captured component is using. A captured component does this by keeping<br>
+track of the component instance that the ComponentSetTarget call passed to it and by<br>
+using that instance to make calls to the capturing component. 
+</p>
+<p>
+When the NuMath Comp;onent receives a divide request code, we dispatch to the new<br>
+DoDivide function, effectively overriding the DoDivide function that was implemented<br>
+in the Math component. However, when we receive a multiply request code, we delegate<br>
+this to the captured Math component, since we aren't overriding the multiply function.<br>
+We do this by simply making a DoMultiply call to the Math component, passing in the<br>
+parameters that the NuMath component was provided with. 
+</p>
+<pre>result = DoMultiply (mathInstance, firstNum, secondNum,
+    multiplicationResult);</pre>
+<p>
+In the close routine of the NuMath component, we remember to close the instance of the<br>
+Math component we were using, and also to uncapture it so that we restore the system<br>
+to its original state. 
+</p>
+<pre>result = CloseComponent (mathInstance);
+result = UncaptureComponent (mathComponentID);</pre>
+<p>
+<b>THAT WASN'T SO BAD, WAS IT?</b><br>
+As you can see, adding new functionality is no big deal. As always, however, you should<br>
+notify developers who may use your component of any late-breaking interface changes.<br>
+You want to be sure that everyone's writing code that conforms to your most recent<br>
+component specification. 
+</p>
+<h2>ELEVEN COMMON MISTAKES</h2>
+<p>
+You may encounter some pitfalls during the development of your component. Here we<br>
+discuss 11 common mistakes that we've either made personally or observed other<br>
+developers make. We hope that you'll learn from our own fumblings and save yourself<br>
+time and frustration. 
+</p>
+<p>
+<b>Allocating space at registration time. </b>Generally, it's best if your component<br>
+allocates its storage only when it's about to be asked to do something -- that is, when it<br>
+has received a kOpenComponentSelect request code. This way, memory isn't tied up<br>
+unnecessarily. Remember, your component may<i>never</i> be called during a given session,<br>
+and if it's not, it shouldn't hang out sucking up memory some other process might be<br>
+able to use. 
+</p>
+<p>
+<b>Allocating space in the system heap. </b>The system heap shouldn't be your first<br>
+choice as a place to put your component globals. The system heap is generally reserved<br>
+for system-wide resources (big surprise), and most components fall into the category<br>
+of application resources that needn't be resident at all times. Consider carefully<br>
+whether you need to scarf up system space. In addition, if your component is registered<br>
+in an application heap, you should never try to allocate space in the system heap. The<br>
+fact that you're registered in an application heap probably indicates that there isn't<br>
+any more space in the system heap for you to grab. 
+</p>
+<p>
+<b>Not supporting the kComponentVersionSelect request code. </b>This is a pretty<br>
+nasty omission for several reasons. First, this is the<i>easiest</i> request code to implement;<br>
+it takes only a single line of code! What are you, lazy? (Don't answer that.) Second,<br>
+clients may use the API version level to keep track of extended functionality -- it may<br>
+be that version 2 of a component interface contains additional calls over version 1, and<br>
+a client certainly has reason to want to know that. Third, clients may use the<br>
+component version to determine, for example, whether the component in question<br>
+contains a recent bug fix. 
+</p>
+<p>
+<b>Incorrectly calculating the parameter size for your component function</b><br>
+<b>prototype. </b> If you do this, you'll probably notice it right after calling the offending<br>
+component function, since your stack will be messed up by however many bytes you<br>
+failed to calculate correctly. A common instance of this error occurs when calculating<br>
+the space required by a function call that has char or Boolean parameters.&nbsp;&nbsp;Under<br>
+certain circumstances, Boolean and char types are padded to two bytes when passed as<br>
+function parameters.
+</p>
+<p>
+To illustrate, we'll look at two example declarations. How many bytes of stack space<br>
+need to be reserved for the parameters of the following function? 
+</p>
+<pre>pascal ComponentResult I2CSendMessage (ComponentInstance ti,
+    unsigned char slaveAddr, unsigned char *dataBuf, short byteCount)</pre>
+<p>
+The correct answer is eight bytes. The slaveAddr parameter is promoted to two bytes,<br>
+the dataBuf pointer takes four bytes, and the byteCount takes two bytes. The rest of the<br>
+declaration then takes the following form:
+</p>
+<pre> = ComponentCallNow (kI2CSendMessageSelect, 0x08);</pre>
+<p>
+Let's look at the next example. How many bytes of stack space does this function<br>
+require? 
+</p>
+<pre>pascal ComponentResult MyFunction (ComponentInstance ti,
+    Boolean aBoolean, char aChar, short *aPointer)</pre>
+<p>
+The correct answer is six bytes. The aBoolean parameter takes one byte, the aChar<br>
+parameter takes one byte, and the aPointer parameter takes four bytes. What's that?<br>
+Didn't we just say that Boolean and char parameters got padded to two bytes? We<br>
+certainly did, but these types get padded only when an odd number of char or Boolean<br>
+parameters occurs consecutively in the declaration. Because we could add one byte for<br>
+the Boolean to the one byte for the char following it, we didn't need to do any padding<br>
+-- the total number of bytes was even (two bytes), and that's what's important. In the<br>
+first example, this didn't work. We added one byte for the char to the four bytes for the<br>
+pointer following it, and got five bytes, and so we needed to pad the char parameter by<br>
+one byte. The rest of the declaration for the second example is
+</p>
+<pre> = ComponentCallNow (kMyFunctionSelect, 0x06);</pre>
+<p>
+<b>Registering your component when its required hardware isn't available.</b><br>
+&nbsp;If your component doesn't depend on specific hardware functionality, don't worry<br>
+about this. If it does (as, for example, video digitizers do), make sure you check for<br>
+your hardware before you register your component. The Component Manager provides<br>
+a flag, cmpWantsRegisterMessage, that you can set in the componentFlags field of your<br>
+component description record to inform the Component Manager that your component<br>
+wants to be called before it's registered. This gives your component an opportunity to<br>
+check for its associated hardware, and to decline registration if the hardware isn't<br>
+available. 
+</p>
+<p>
+<b>Creating multiple instances in response to OpenComponent calls when</b><br>
+<b>your component doesn't support multiple instances. </b>Only you can know<br>
+whether your component can be opened multiple times. For instance, the Math<br>
+component is capable of being opened as many times as memory allows (although our<br>
+sample code restricts the number of open instances to three for the sake of<br>
+illustration).&nbsp;&nbsp;&nbsp;Normally, a component that controls a single hardware resource should<br>
+be opened only once and should fail on subsequent open requests. This will prevent<br>
+clients from oversubscribing your component.
+</p>
+<p>
+<b>Not performing requisite housekeeping in response to a CloseComponent</b><br>
+<b>call. </b> Bad things will happen, especially if you have hierarchies of components! As<br>
+part of your close routine, remember to dispose of your private global storage and to<br>
+close any drivers, components, files, and so on that you no longer need.
+</p>
+<p>
+<b>Allowing multiple instances from a single registration of a hardware</b><br>
+<b>component instead of allowing a single instance from each of multiple</b><br>
+<b>registrations. </b> While this isn't really a common mistake today, we want to<br>
+emphasize that there's a big difference between designing your component to allow<br>
+multiple instances versus registering the component multiple times and allowing each<br>
+registered component to open only once. In the case of a generic software library<br>
+element (like Math), there's no problem with multiple instances being opened. In the<br>
+case of a hardware resource that's being controlled with acomponent, it's almost<br>
+always preferable to register the component once for every resource that's available<br>
+(four widget cards would result in four different registrations rather than one<br>
+registration that can be opened four times).
+</p>
+<p>
+Why does it matter? Consider an application whose sole purpose in life is to manage<br>
+components that control hardware resources. It may be selecting which resource to<br>
+use, which one to configure, or which one to pipe into another. It's much more natural<br>
+to ask the Component Manager to provide a list of all components of a certain type than<br>
+it is to open each component that fits the criteria<i>n</i> times (until it returns an open<br>
+error) in order to determine how many are available.
+</p>
+<p>
+To kill a dead horse, suppose we have three identical video digitizers, and we want to<br>
+convey that information to the user via a menu list. If all are registered separately, we<br>
+can easily determine how many video digitizers are available (without even opening<br>
+them) by using the FindNextComponent call. If only one were registered, the list<br>
+presented to the user would only be a partial list. Take the blind leap of faith: register<br>
+duplicate hardware resources! 
+</p>
+<p>
+As a final note, if you're registering a single component multiple times, be sure that<br>
+the component name is unique for each registration. This allows users to distinguish<br>
+between available components (as in the menu example in the previous paragraph),<br>
+and it also helps you avoid the next gotcha. 
+</p>
+<p>
+<b>Always counting on your component refCon being preserved. </b> We know this<br>
+may be upsetting to many of you, but there exists a situation in which your component<br>
+refCon may not be valid. A component refCon (similar to a dialog, window, or control<br>
+refCon) is a 4-byte value that a component or client can use for any purpose. It's<br>
+accessed through a pair of Component Manager calls, GetComponentRefcon and<br>
+SetComponentRefcon. Component refCons are frequently used to hold useful<br>
+information such as device IDs or other shared global data, and so can be quite critical<br>
+to a component. We can hear you now . . . "<i>What</i> ? You're going to nuke my<i>global data</i><br>
+reference?!" Well, not exactly -- it's just not as immediately accessible as you would<br>
+like it to be. Don't worry, it's possible to detect when your component is in this<br>
+situation and retrieve the refCon from it, as long as you follow a few simple steps. 
+</p>
+<p>
+The situation in question arises when there's not enough room in the system heap to<br>
+open a registered component. This happens when you run an application (that uses<br>
+your component) in a partition space so large that all free memory is reserved by the<br>
+application. This will prevent the system heap from being able to grow. When the<br>
+application calls OpenComponent, the component may be unable to open in the system<br>
+heap because there's no available space. In this case, the Component Manager will<i>clone</i><br>
+the component. When a component is cloned, a new registration of the component is<br>
+created in the caller's heap, and the component ID of the cloned component is returned<br>
+to the caller,<i>not</i>&nbsp;&nbsp;the component ID of the original registration. The clone is very<br>
+nearly a perfect copy, but like the Doppleg&amp;auml;nger Captain Kirk in the<i>Star Trek</i><br>
+episode "What Are Little Girls Made Of?" it's missing something crucial. 
+</p>
+<p>
+That something is the component refCon. The refCon isn't preserved in the clone, so if<br>
+your component needs the refCon to perform properly, it must be recovered from the<br>
+original component. How you go about doing this is a bit tricky. We assume that you<br>
+followed our advice and made sure that your component registered itself with a unique<br>
+name. (This technique is<i>not</i> guaranteed to work properly unless this constraint is<br>
+satisfied -- you'll see why shortly.)
+</p>
+<p>
+The first problem is detecting whether your component has been cloned at open time.<br>
+You can determine this by examining your component's A5 world using the<br>
+GetComponentInstanceA5 routine. If the A5 world is nonzero, you've been cloned. But<br>
+wait, you say, what if I registered my component locally? Won't it have a valid A5<br>
+value? Yep, it sure will, but if it was registered locally, we won't have this nasty<br>
+situation to begin with, since the component won't be in the system heap anyway. 
+</p>
+<p>
+Now you know that you've been cloned, and that you can't depend on your refCon. How do<br>
+you retrieve it? Well, we know that there are two registrations of the same component<br>
+in the Component Manager registration list (the original and the clone). So all we have<br>
+to do is to set up a componentdescription for our component, and then use<br>
+FindNextComponent to iterate through all registrations of it. We know what our<br>
+current component description and ID are, so we can just examine the component<br>
+description and ID for each component returned. Once we find a component whose ID is<br>
+different from ours but whose description is identical, we've found the original<br>
+component registration. We can then make a call to GetComponentRefcon to obtain the<br>
+original refCon value, and then set the clone's refCon appropriately. Whew! 
+</p>
+<p>
+This technique won't work with a component that registers multiple times and doesn't<br>
+register each time with a unique name. If component X, capable of multiple<br>
+registrations, always registers with the name "X," then when we try to find the<br>
+original component from the clone, there will be multiple components named "X" in<br>
+the registration list, and we'll be unable to determine which component is the one we<br>
+were cloned from. 
+</p>
+<p>
+<b>Omitting the "pascal" keyword from declarations for your component</b><br>
+<b>dispatcher or for any functions that are called by</b><br>
+<b>CallComponentFunction or CallComponentFunctionWithStorage. </b>This bug<br>
+will only antagonize those developers who are working in C. As many of you know, the<br>
+Macintosh system software was originally written in Pascal, and functions that are<br>
+called by Toolbox routines (in this case, by the Component Manager) must conform to<br>
+Pascal calling conventions. If you fail to include this keyword where necessary, the<br>
+parameters for your function will be interpreted in the reverse order from what you<br>
+intended, and your component may enter the Twilight Zone, perhaps never to return. 
+</p>
+<p>
+<b>Trying to read resources from your component file when its resource</b><br>
+<b>fork isn't open. </b> When one of your component functions is called, the current<br>
+resource file (as obtained from CurResFile) is<i>not</i>&nbsp;&nbsp;the component's resource file<br>
+unless you explicitly make it so. If you need to access resources that are stored in your<br>
+component file, you must first call OpenComponentResFile to get an access path, and<br>
+then call UseResFile with that path. When you're done with the file, restore the<br>
+current resource file and call CloseComponentResFile to close your component file. 
+</p>
+<h2>DEBUGGING TOOLS AND TECHNIQUES</h2>
+<p>
+Debugging components can be frustrating if all you have to work with is MacsBug.<br>
+Fortunately, there are a few tricks and tools that give you a little more power to<br>
+terminate those pesky bugs. In this section, we'll show you how to debug your<br>
+component code with a symbolic debugger, and then we'll examine three utilities that<br>
+will help you test your component. 
+</p>
+<p>
+<b>SYMBOLIC DEBUGGING</b><br>
+Let's suppose that we've got the Math component up and running, but something funny<br>
+is happening in our DoDivide routine. It would be nice to be able to step through the<br>
+component code symbolically and see what's happening. Fortunately, there's a simple<br>
+trick that involves registering our component in such a way that it can be<br>
+symbolically debugged. 
+</p>
+<p>
+For the purposes of the example, we'll discuss how to do this with Symantec's THINK C<br>
+development system. The first step is to add the component source code to the<br>
+application source code project. Then we modify the application code so that instead of<br>
+using the FindNextComponent call to locate the Math component, we register it<br>
+ourselves using the RegisterComponent call. 
+</p>
+<pre>#define kRegisterLocally 0
+mathComponentID = RegisterComponent (&amp;mathDesc,
+        (ComponentRoutine) MathDispatcher, kRegisterLocally,
+        nil, nil, nil);</pre>
+<p>
+Note that when you register a component in an application heap as we're doing, you<br>
+must register it locally, or your system may die a horrible death after your<br>
+application quits and its application heap goes away. 
+</p>
+<p>
+The component description, mathDesc, is set up just as before. The second parameter<br>
+is the main entry point (the dispatcher) to the Math component. The Component<br>
+Manager will call this routine every time it receives a request code for an instance of<br>
+the Math component. In the Math component code, we set up a debug compiler flag<br>
+(DEBUG_IT, found in DebugFlags.h) which, if defined, indicates whether we want to<br>
+declare our component dispatcher as a main entry point for a standalone code resource<br>
+or as just another routine linked into our application program. 
+</p>
+<pre>#ifdef DEBUG_IT
+    // Use this declaration when we're running linked.
+    pascal ComponentResult MathDispatcher
+        (ComponentParameters *params, Handle storage)
+#else
+    // Use this declaration when we're building a standalone
+    // component.
+    pascal ComponentResult main
+        (ComponentParameters *params, Handle storage)
+#endif DEBUG_IT</pre>
+<p>
+The two declarations differ only in that one is declared as a main and one isn't.<br>
+(Remember, with both the source for the component and the application in the same<br>
+project, we can't have two mains.) Now, each time the Component Manager sends a<br>
+request code to the Math component, it's calling a component routine linked into the<br>
+application (MathDispatcher) that we can trace with the debugger. When we've<br>
+finished debugging the component, we can undefine the debug flag and rebuild the<br>
+component as a standalone code resource. The test application will now use<br>
+FindNextComponent to access the standalone component. 
+</p>
+<p>
+<b>THE THING MACSBUG DCMD</b>The<b> thing</b>dcmd is included on the QuickTime 1.0<br>
+Developer's CD. To use this dcmd, simply use ResEdit to copy the 'thng' dcmd resource<br>
+into a file named Debugger Prefs, and put this file into your System Folder. Once in<br>
+MacsBug, the dcmd is invoked by entering "thing". A sample<b>thing</b>display is shown in<br>
+Figure 6. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b><code>Displaying Registered Components</code></b><br>
+<b><code>Cnt tRef# ThingName Type SubT Manu Flags EntryPnt FileName Prnt LocalA5 RefCon</code></b><br>
+<b><code>#0 010005 Movie Grabber barg **** appl 40000000 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 010007 Preview Loader blob **** appl 00000000 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 01000c Apple Microse... clok micr appl 40000003 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 01000d Apple Tick Cl... clok tick appl 40000001 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 01000e Apple Alias D... dhlr alis appl 40000000 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 010018 Apple Photo -... imco jpeg appl 40600028 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 010014 Apple None imco raw appl 4060003f 00000000 QuickTi... 00000000 00000000</code></b><br>
+<b><code>#0 01001c Apple Animati... imco rle appl 4060043f 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 010016 Apple Video imco rpza appl 40200438 00000000 QuickTi... 00000000 00000000</code></b><br>
+<b><code>#0 01001a Apple Graphics imco smc appl 40600408 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 010012 imdc SIVQ appl 00000030 00000000 QuickTi... 00000000 00000000</code></b><br>
+<b><code>#0 010017 Apple Photo -... imdc jpeg appl 40400028 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 010013 Apple None imdc raw appl 40400bff 00000000 QuickTi... 00000000 00000000</code></b><br>
+<b><code>#0 01001b Apple Animati... imdc rle appl 40400c7f 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 010015 Apple Video imdc rpza appl 40000878 00000000 QuickTi... 00000000 00000000</code></b><br>
+<b><code>#0 010019 Apple Graphics imdc smc appl 40400438 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 ..000b jimB jph leak 00000000 00000000 QuickTi... 00000000 00000000</code></b><br>
+<b><code>#1 010002 NuMath Compon... math appl 80000000 001a9b80 NuMath ... 00000000 00000000</code></b><br>
+<b><code>820000 0000 00000000 01263af8</code></b><br>
+<b><code>#1 ..0000 Math Component math appl 00000000 001a9f80 Math Co... 00000000 00000000</code></b><br>
+<b><code>840001 0000 00000000 01263b08</code></b><br>
+<b><code>#0 010001 MoMath Compon... math gwck 00000000 00000000 MoMath ... 00000000 00000000</code></b><br>
+<b><code>#0 010011 Apple Standar... mhlr mhlr appl 40000000 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 01000f Apple Sound M... mhlr soun appl 40000000 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 010010 Apple Video M... mhlr vide appl 40000000 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 010006 Movie Control... play **** appl 40000000 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 010009 Movie Preview... pmak MooV appl 00000000 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 010008 Pict Preview ... pmak PICT appl 00000000 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 01000a Picture Previ... pnot PICT appl 00000000 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 010003 Movie Grabber... sgch soun appl 40000000 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#0 010004 Movie Grabber... sgch vide appl 40000000 00000000 QuickTi... 00000000</code></b><br>
+<b><code>00000000</code></b><br>
+<b><code>#32 Thing Table entries, #29 in use.&nbsp;&nbsp;#32 Instance Table entries, #2 in use.</code></b><br>
+<b><code>#5 File Table entries, #4 in use. Thing Modification Seed #33.&nbsp;&nbsp;Codec Manager</code></b><br>
+<b><code>000dad3c</code></b>
+</p>
+<p>
+<b>Figure 6</b>Sample <b>thing</b> MacsBug Display
+</p>
+<p>
+The Cnt field indicates the number of instances of a particular component.
+</p>
+<p>
+The tRef# field shows the component ID that the Component Manager has assigned to a<br>
+particular component; this is the value that's returned to your application by the<br>
+FindNextComponent call. If there are instances of a component open, the component<br>
+instances are listed below the component ID in the tRef# field. Note that the tRef# for<br>
+the Math component is ..0000. The two dots at the beginning indicate that this<br>
+component has been captured. (We know from the earlier discussion of the NuMath<br>
+component that it has captured the Math component.)
+</p>
+<p>
+The ThingName field displays the name of a particular component. This is either the<br>
+string that's pointed to by the component's 'thng' resource or the name that it was<br>
+registered with by a call to RegisterComponent.
+</p>
+<p>
+The Type, SubT, Manu, and Flags fields likewise correspond either to the information<br>
+that's stored in the component's 'thng' resource or to the codes and flags that were<br>
+supplied to a call to RegisterComponent. 
+</p>
+<p>
+The EntryPnt field is the main entry point of the component code.
+</p>
+<p>
+The FileName field indicates what file the component's 'thng' resource resides in. This<br>
+field is empty for components registered without a component resource. 
+</p>
+<p>
+The Prnt field displays the parent of a cloned component. This information isn't<br>
+available through the Component Manager API.
+</p>
+<p>
+The LocalA5 field shows the A5 world that the component is associated with; unless the<br>
+component is cloned or registered locally, this value is 0.
+</p>
+<p>
+The RefCon field is the value of the component's refCon. 
+</p>
+<p>
+At the bottom of the display there's a decimal number indicating the number of<br>
+component (thing) entries allocated in the Component Manager registration list, along<br>
+with the number of entries actually in use. Similar information is given for the<br>
+number of file table entries. Finally, the Component Manager modification seed is<br>
+listed. 
+</p>
+<p>
+<b>THINGS! CONTROL PANEL</b><br>
+The Things! control panel, included on the QuickTime 1.0 Developer's CD, is similar to<br>
+the<b>thing</b>dcmd but provides several additional capabilities. These include displays of<br>
+version levels, info and name strings, and resource information, as well as controls to<br>
+reorder the component search chain and to unregister components. 
+</p>
+<p>
+<img src="img/258.gif" width="353 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 7</b> Things! Control Panel Main Display
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;Figure 7 shows a sample display of the Things! control panel. 
+</p>
+<p>
+&nbsp;The list on the left in the top panel shows the types of components currently<br>
+registered with the Component Manager; the list on the right shows the components of<br>
+the selected type that are currently registered. The latest version of Things! doesn't<br>
+display components that aren't registered globally or that aren't registered in the same<br>
+application heap as the control panel is operating in.&nbsp;&nbsp;&nbsp;Things! also doesn't show<br>
+components that aren't resource-based. 
+</p>
+<p>
+&nbsp;The middle panel shows the name of the currently selected component and a<br>
+description of its type, subtype, and manufacturer fields. The number of instances of<br>
+the type of component selected (in the example, the 'imco', or image compressor,<br>
+component type) is displayed at the bottom of this panel.&nbsp;&nbsp;&nbsp;Clicking this field will<br>
+toggle it to display the number of instances of the selected component (in this case, the<br>
+Apple Video image compressor component). 
+</p>
+<p>
+&nbsp;The bottom panel shows an information string that usually describes what the<br>
+component does. At the upper left in this panel are two arrow buttons that can be used<br>
+for paging the bottom panel (the top and middle panels don't change). 
+</p>
+<p>
+&nbsp;Figure 8 shows a variation of the bottom panel's second page. The component version<br>
+information is displayed at the top. The "Set default" button allows you to assign a<br>
+particular component as the first component in the Component Manager's search chain<br>
+for that component type.
+</p>
+<p>
+<img src="img/259.gif" width="359 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 8</b> Things! Page 2 Display
+</p>
+<p>
+&nbsp;If the Option key is held down while paging to the second page, a Destroy button is<br>
+displayed (as shown in Figure 9). Clicking this button will unconditionally unregister<br>
+the currently selected component.
+</p>
+<p>
+<img src="img/260.gif" width="363 px"></img>
+</p>
+<p>
+<b>Figure 9</b> Things! Extended Page 2 Display
+</p>
+<p>
+&nbsp;The third page shows the flags and mask fields of the component.
+</p>
+<p>
+&nbsp;The fourth page displays a variety of information about the 'thng' resource associated<br>
+with a particular component, including the resource name and ID as well as its<br>
+attributes.
+</p>
+<p>
+&nbsp;Page 5 presents a summary of the system software configuration. 
+</p>
+<p>
+<b>&nbsp;REINSTALLER</b><br>
+Reinstaller is a utility that lets you install resource-based components without<br>
+restarting your Macintosh. Launching the application presents a Standard File dialog<br>
+asking you to choose the file containing the component you want to register. Clicking<br>
+the Open button will dismiss the dialog and register the selected component with the<br>
+Component Manager. 
+</p>
+<p>
+&nbsp;The same component file can be installed multiple times. Duplicate components aren't<br>
+removed; the most recently installed version of a component becomes the default<br>
+component for that type. Note that any components installed with Reinstaller are<br>
+installed only until shutdown or reboot. 
+</p>
+<p>
+&nbsp;This utility is quite handy in conjunction with the Things! control panel's Destroy<br>
+button. Between the two of them, you can easily register and unregister your<br>
+components without having to restart your Macintosh. 
+</p>
+<h2>GO DO YOUR OWN "THING"</h2>
+<p>
+&nbsp;Now you know how easy it is to write your own components. You've learned how to<br>
+declare your own component API and how to implement a component dispatcher for it.<br>
+You've seen what common pitfalls to avoid and how to symbolically debug your<br>
+component to help you get around new pitfalls we haven't thought of.
+</p>
+<p>
+&nbsp;We're confident that once you start programming components, you'll become addicted!<br>
+So what are you hanging around here for? Get busy writing, and start amazing your<br>
+users (and us, too) with some way cool components. We're waiting . . .
+</p>
+<p>
+<b>&nbsp;COMPONENT TRIVIA #1</b><br>
+The original name for the Component Manager (as conceived of by Bruce "Of <i> course</i><br>
+the feature set is frozen!" Leak) was the Thing Manager. Components were referred to<br>
+as "things" (as were the QuickTime project schedules, the significance of which<br>
+engineers couldn't easily grasp). The use of this terminology led to one of two<br>
+conditions in most QuickTime engineers: in some, an irrepressible compulsion to make<br>
+"thing" puns, and in others, perhaps as a backlash against the former, an almost<br>
+pathological aversion to the use of the word "thing" in normal conversation.
+</p>
+<p>
+<b>&nbsp;COMPONENT TRIVIA #2</b><br>
+The original component type for the sequence grabber component was, logically<br>
+enough, 'grab'. The engineer primarily responsible for the sequence grabber, Peter<br>
+Hoddie, requires massive infusions of Diet Coke to function properly. During a<br>
+particularly intense bout of engineering mania, the Diet Coke supply was exhausted;<br>
+unbeknownst to anyone, Peter became temporarily dyslexic and changed the sequence<br>
+grabber component type to 'barg'. The change was never noticed, and it caused no real<br>
+harm, other than the wasted time developers spent trying to figure out what 'barg'<br>
+might be an acronym for (Boffo AudioReverb Gadget? Bodacious Analog Reference<br>
+Gizmo?). Peter's brain has since returned to its (relatively) normal state.
+</p>
+<p>
+<b>INSIDE THE COMPONENTCALLNOW MACRO</b><br>
+Some of you may be wondering exactly what the ComponentCallNow macro does. Let's<br>
+expand this macro for our DoDivide component call and examine it in detail.
+</p>
+<pre>= {0x2F3C, 0x08, kDoDivideSelect, 0x7000, 0xA82A};</pre>
+<p>
+The first element, 0x2F3C, is the Motorola 68000 opcode for a move instruction.<br>
+Execution of this instruction loads the contents of the next two elements onto the stack.<br>
+The next element, 0x08, is the amount of stack space that we calculated for the<br>
+function parameters of the DoDivide call. The third element, kDoDivideSelect, is the<br>
+request code corresponding to the DoDivide call. The fourth element, 0x7000, is the<br>
+Motorola 68000 opcode for an instruction that sets the contents of register D0 to 0.<br>
+The Component Manager interprets this condition as a request to call your component<br>
+rather than handling the request itself. The last element, 0xA82A, is the opcode for an<br>
+instruction that executes a trap to the Component Manager.
+</p>
+<p>
+While you can use this inline code in your component function declarations directly,<br>
+we recommend that you use the ComponentCallNow macro to make your code more<br>
+portable.
+</p>
+<p>
+<b>FAST COMPONENT DISPATCH BY MARK KRUEGER</b>
+</p>
+<p>
+If you're concerned about the time it takes to dispatch calls made to your component,<br>
+try the fast dispatch method. This method eliminates the need for your component to<br>
+make the extra call to the Component Manager functions CallComponentFunction and<br>
+CallComponentFunctionWithStorage, and allows control to pass directly back to the<br>
+caller. It does this by calling your component entry point with the call's parameters,<br>
+the instance storage, and the caller's return address already on the stack. It passes the<br>
+component request code in register D0, and points register A0 at the stack location<br>
+where the instance storage is kept.
+</p>
+<p>
+To handle a fast dispatch, you must write your component entry point in assembly<br>
+language. Use the request code in D0 as an index into a table of function addresses,<br>
+paying special attention to the negative request codes used&nbsp;&nbsp;for the standard Component<br>
+Manager calls like OpenComponent and CloseComponent. If the functions are defined<br>
+correctly, the dispatcher can jump directly to the function address. Note that the<br>
+function parameter the caller uses to specify the component instance will instead be a<br>
+handle to your component instance storage. When the function completes, control will<br>
+return to the calling application.
+</p>
+<p>
+You need to tell the Component Manager that your component has a fast dispatch<br>
+handler instead of a normal dispatcher. To do this, set bit 30 ($40000000)&nbsp;&nbsp;of the<br>
+componentFlags field of your component resource, and the Component Manager will<br>
+always call your component using the fast dispatch method.
+</p>
+<h2>REQUIRED READING</h2>
+<ul>
+<li><i>QuickTime Developer's Guide </i> (part of the QuickTime Developer's Kit v.<br>
+1.0, ADPA #R0147LL/A). Currently the essential reference for<br>
+programming with the Component Manager. This documentation will be<br>
+replaced in the near future by three new <i>Inside Macintosh</i>&nbsp;&nbsp;volumes:<br>
+<i>QuickTime, QuickTime Components</i> , and<i> More Macintosh Toolbox. </i> (The<br>
+Component Manager will be documented in the latter volume.)</li>
+<li>"QuickTime 1.0: 'You Oughta Be in Pictures,'" Guillermo A. Ortiz, <i>develop</i><br>
+Issue 7. An overview of QuickTime, including the Component Manager.</li>
+</ul>
+<p>
+<b>GARY WOODCOCK AND CASEY KING </b>have a long history of collaboration. They<br>
+first met at a flight simulation company in the early 80's where they worked together<br>
+on designing a multimillion-dollar F-16 jet fighter simulator (and you thought Falcon<br>
+was cool!). They parted ways temporarily, but regrouped at Apple to join forces in<br>
+what colleague Jim Batson has termed the "QuickTime sleep deprivation experiment."<br>
+They're both currently working on RISCy products, but from different parts of the<br>
+country (Gary in Cupertino, and Casey in the new PowerPC mecca of Austin, Texas).<br>
+With his wife Lonna,Casey is the proud co-owner of his latest obsession -- a year-old<br>
+baby boy named Brian -- but he still makes time for mountain biking, hiking, and<br>
+flying. Gary still spends much of his time diligently testing video capture cards for<br>
+QuickTime compatibility with Movie Recorder (translation: watching <i>Star Trek: The</i><br>
+<i>Next Generation </i> episodes on his Macintosh). Occasionally he ventures out for a bit of<br>
+mountain biking or flying. This article is their latest joint venture. *
+</p>
+<p>
+<b>HELPFUL TIP </b>You can obtain the component ID corresponding to a component<br>
+instance by calling GetComponentInfo with the component instance (you'll need to cast<br>
+it as a Component). The componentFlagsMask of the returned ComponentDescription<br>
+record will contain the component ID. *
+</p>
+<p>
+<b>In our sample code,</b> ComponentSetTarget is defined in MathComponent.h because the<br>
+QuickTime 1.0 Components.h interface file doesn't declare it. The ComponentSetTarget<br>
+declaration is included in newer QuickTime interface files, so if you're using them,<br>
+you should comment it out in MathComponent.h. *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Neil Day, Mike Dodd, Mark Krueger,<br>
+John Wang *
+</p>
+</body>
+</html>

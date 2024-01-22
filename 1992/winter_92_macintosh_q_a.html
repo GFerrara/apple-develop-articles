@@ -1,0 +1,746 @@
+<html>
+<head>
+<!-- Article ID: 8 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Winter 92 - MACINTOSH Q & A</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH Q &amp; A</h2>
+<h1>MACINTOSH DEVELOPER TECH SUPPORT</h1>
+<p>
+<b>Q</b><i> If I send Apple events to myself and specify kAEQueueReply to AESend, the event</i><br>
+<i>doesn't get put in the queue as I requested. It shows up immediately in the reply</i><br>
+<i>parameter. According to Inside Macintosh, if I specify kAEQueueReply I should treat</i><br>
+<i>the reply event as undefined. Please help; my application falls apart because it never</i><br>
+<i>receives the event it's supposed to. If this is a bug, will the behavior be changed in the</i><br>
+<i>future?</i>
+</p>
+<p>
+<b>A </b> This isn't a bug; it's an undocumented "feature" of the Apple Event Manager (AEM).<br>
+If you send an Apple event to yourself, the AEM <i> directly dispatches</i>&nbsp;&nbsp;to the handler<br>
+you've installed for that event. So Apple events you send to yourself don't come in<br>
+through WaitNextEvent. This means that if you reply to an Apple event you sent<br>
+yourself, your 'ansr' handler will get called directly.
+</p>
+<p>
+&nbsp;This was not an arbitrary decision, though it can have some confusing ramifications<br>
+for an application. Two factors influenced the decision--the first minor, the second<br>
+major:
+</p>
+<ul>
+<li>Speed. The AEM has all the handlers for your application in a hashed table,<br>
+and can dispatch <i>very</i>&nbsp;&nbsp;quickly to them, so for performance reasons direct<br>
+dispatching was implemented.</li>
+<li>Event priorities and sequencing. Apple events have a lower priority than<br>
+user-generated events (keystrokes, clicks); they come in right before update<br>
+events. This created a potentially serious problem for applications that sent<br>
+Apple events to themselves.</li>
+</ul>
+<p>
+&nbsp;If all Apple events came through the event loop, you could easily create the following<br>
+scenario:<br>
+1. The user selects a menu item, the application sends an Apple event to itself in<br>
+response, and this Apple event requires a reply or will cause other Apple events to be<br>
+sent.<br>
+2. The user clicks the mouse in an application window.
+</p>
+<p>
+&nbsp;The mouse click has a higher priority than the reply or any Apple events that are sent<br>
+in response to the first Apple event, and gets posted ahead of the Apple event in the<br>
+event queue. This means that the mouse click happens and conceivably changes the<br>
+current context of the application (perhaps switching windows, for example); then<br>
+when the Apple events sent by the menu item handler are processed through the queue,<br>
+the application state is <i> not</i>&nbsp;&nbsp;the same as it was when the menu selection was made, and<br>
+the menu selection may be totally inappropriate for the current configuration.
+</p>
+<p>
+&nbsp;So, to prevent a loss of sequencing, the AEM directly dispatches. Any non-Apple events<br>
+that happen while you're sending and processing an Apple event to yourself will be<br>
+queued and won't interrupt the Apple event process you've initiated. What this means<br>
+in the case you're describing is that queued replies don't happen when you're sending to<br>
+yourself. The AEM will directly dispatch to your 'ansr' handler, bypassing<br>
+WaitNextEvent processing of Apple events to prevent any other events from breaking<br>
+the chain of Apple events you may be processing. This isn't a major problem, but it's<br>
+something you need to be aware of if you're expecting some other events to be<br>
+processed before you get a reply or other Apple event.
+</p>
+<p>
+<b>Q</b><i> Under System 7, but not System 6, HiliteMode doesn't work when the foreground and</i><br>
+<i>background colors are similar. Is this a bug?</i>
+</p>
+<p>
+<b>A </b> Yes, it's a bug. The problem you encounter exists whenever the background and<br>
+foreground color map to the same color table index. If the foreground color is the same<br>
+as the background color, highlighting is ignored. Therefore, you should always make<br>
+sure the foreground and background colors are different when using HiliteMode.
+</p>
+<p>
+<b>Q</b><i> When my hardware device sends data to a Macintosh at 57.6 kilobaud, characters can</i><br>
+<i>get lost if LocalTalk is on and a file server is mounted. Does Apple know about the</i><br>
+<i>problem? Is there a solution?</i>
+</p>
+<p>
+<b>A </b> The coherency of a standard serial connection is not guaranteed at any baud rate.<br>
+Guaranteed delivery requires more complicated protocols like those employed by<br>
+AppleTalk or by file transfer protocols like Kermit. At high baud rates, particularly<br>
+over 19.2 kilobaud, a Macintosh serial connection may not be reliable depending on a<br>
+number of factors.
+</p>
+<p>
+&nbsp;Every single character that's sent or received by the Macintosh serial port requires<br>
+an interrupt to alert the processor that a character is available at the receiver or that<br>
+the transmitter is ready to send a character. A nasty drawback of interrupts is that<br>
+they can be masked--equal or higher priority interrupts may be in service or other<br>
+pieces of code running on the machine can disable interrupts altogether. If the period<br>
+of time interrupts are not serviced becomes too great, the 3- byte receive buffer in<br>
+the serial chip overflows with incoming data and characters are lost. This is known as<br>
+a hardware overrun.
+</p>
+<p>
+&nbsp;AppleTalk works a little differently. When a packet comes across the network, an<br>
+interrupt alerts the processor to that event. AppleTalk code then disables interrupts<br>
+and polls in the entire packet without multiple successive interrupts. This is<br>
+necessary because of the high speed at which data is received: 230.4 kilobaud. The<br>
+overhead of processing an interrupt for each byte of data would be prohibitive.
+</p>
+<p>
+&nbsp;A "worst case" situation is that a 603-byte packet (the largest possible AppleTalk<br>
+packet) sent to the LocalTalk port takes approximately 26 milliseconds to receive.<br>
+Compare this with asynchronous serial data transmitted at 9600 baud, which would<br>
+take only 1 millisecond to receive. A very realistic situation arises in which 26 bits<br>
+could be lost during a concurrent AppleTalk/Serial Device transmission. This<br>
+possibility is increased when there are routers on the network, which send out large<br>
+RTMPs (Routing Table Maintenance Packets).
+</p>
+<p>
+&nbsp;During the time that interrupts are disabled by AppleTalk, AppleTalk code attempts to<br>
+poll regular serial data as well (from the modem port only) to prevent the hardware<br>
+overrun problem. Unfortunately, at very high serial baud rates there may not be<br>
+enough time to do both; characters may be lost anyway.
+</p>
+<p>
+&nbsp;This same loss of characters may also occur in conjunction with the Sony driver. If a<br>
+disk is inserted that requires special attention (like formatting), the odds of losing<br>
+characters is increased. The Sony driver has built-in checks like the AppleTalk driver<br>
+(although not as frequent). So you can still lose data at high transfer rates if a disk is<br>
+inserted during the transfer.
+</p>
+<p>
+&nbsp;The character dropout also occurs on systems that aren't currently running AppleTalk<br>
+but are receiving serial transmissions from high-speed devices (57.6 kilobaud) and<br>
+are performing CPU tasks that require a high amount of memory access (such as a CPU<br>
+like the Macintosh IIsi or IIci running on-board video in 8-bit mode, or a CPU using<br>
+virtual memory).
+</p>
+<p>
+&nbsp;This is simply a performance problem, asking the machine to process more data over<br>
+two separate ports than the processor speed and hardware architecture can allow. Any<br>
+number of factors affect serial performance at high baud rates. Turning off AppleTalk<br>
+helps. Turning on 32-bit addressing helps because it reduces interrupt handler<br>
+overhead. Turning on VM hurts performance for the opposite reason. Running on a<br>
+faster machine helps. Running on a Macintosh IIfx or Macintosh Quadra 900 with a<br>
+serial I/O Processor (IOP) helps a lot because the IOP handles the serial port<br>
+regardless of whether the main processor is busy doing something else.
+</p>
+<p>
+&nbsp;There is, however, a way to ensure reception of high-speed serial data without<br>
+character loss-- through the use of a Serial NB card or a third-party NuBus TM card<br>
+with a dedicated processor necessary to provide higher speeds. These cards in essence<br>
+operate as dedicated port-handling circuitry. They're able to perform necessary<br>
+buffering while the processor is servicing other interrupts. This is the reason that<br>
+network cards such as EtherTalk and TokenTalk can accomplish transactions without<br>
+data loss; they do at least some of their own buffering until being serviced to avoid<br>
+interference with other operations such as receiving serial data. Alternatively, you<br>
+may want to develop a custom card yourself that exactly fits the needs of your product.<br>
+In this case you should look into the Macintosh Coprocessor Platform (MCP) and Apple<br>
+Real-Time Operating System Environment (A/ROSE) as a possible basis of this line of<br>
+development. Development packages for both these products--the Macintosh<br>
+Coprocessor Platform Developer's Kit (#M0793LL/B) and the A/ROSE Software Kit<br>
+(#M0794LL/B)--are available from APDA.
+</p>
+<p>
+<b>Q</b><i> How can I make FSSpec file information comply with what was an SFReply</i><br>
+<i>information block? Is there a way to convert FSSpec information--as passed, for</i><br>
+<i>example, via an Open Documents Apple event--to a vRefNum as understood by an</i><br>
+<i>SFReply record? We want to keep our tried-and-true non-System 7 file management</i><br>
+<i>logic and convert from FSSpec to SFReply-type format.</i>
+</p>
+<p>
+<b>A </b> Not wanting to make a good bit of file system code obsolete is understandable;<br>
+however, while it's unlikely that Apple will dispense with support for old SFGetFile or<br>
+SFPutFile functions in the near future, the use of SFReply-style data structures in<br>
+internal calls has no development future.
+</p>
+<p>
+&nbsp;The vRefNum field of the SFReply record was originally (in <i> Inside Macintosh</i>&nbsp;&nbsp;Volume<br>
+II days) a volume reference number; later, with the creation of HFS in 1986, it<br>
+became a working directory reference number for purposes of backward<br>
+compatibility. In HFS, a file or directory entity on a volume is specified with a volume<br>
+reference number, a directory ID, and a name. An FSSpec contains this latter<br>
+information.
+</p>
+<p>
+&nbsp;Converting from FSSpec to SFReply requires that your application manage the<br>
+manipulation of working directory entities, which has disadvantages from the point of<br>
+view of the system and compatibility. There are several difficulties with working<br>
+directory references:
+</p>
+<ul>
+<li>There's a system-wide limit on their number.</li>
+<li>If you have a working directory reference to which no file buffers are<br>
+open and some other application closes that working directory without your<br>
+knowledge of it, your internally stored reference number is invalid and you<br>
+have no way of knowing about it.</li>
+<li>The documentation about where, when, and how to close a working<br>
+directory is somewhat ambiguous.</li>
+<li>An FSSpec can refer to either a file or a directory while an SFReply can<br>
+refer only to a file.</li>
+</ul>
+<p>
+&nbsp;Developer Technical Support urges you to take the time to remove dependencies on<br>
+SFReply data structures as soon as is feasible.
+</p>
+<p>
+<b>Q</b><i> Can I add a media to a QuickTime movie that is not video or audio? If so, is there</i><br>
+<i>anything special I need to do to add text notes that can potentially accompany each</i><br>
+<i>frame in my "movie," which can follow the video frames if a user edits the movie in</i><br>
+<i>any way?</i>
+</p>
+<p>
+<b>A </b> QuickTime version 1.0 allows for only video and sound media. There's no way to<br>
+install your own type, even in a case so obvious as the one you mention. Adding other<br>
+media types is a high QuickTime priority and is likely to make it in a future release,<br>
+but currently there's no mechanism to do it.
+</p>
+<p>
+<b>Q</b><i> Inside Macintosh Volume V (page 445) states that SGetCString automatically</i><br>
+<i>allocates memory for holding the requested string. Does this mean that repeated calls</i><br>
+<i>to SGetCString will eventually exhaust memory and, if so, what's the correct way to</i><br>
+<i>release the memory?</i>
+</p>
+<p>
+<b>A </b> SGetCString automatically allocates memory (via NewPtr) for holding the requested<br>
+string. It copies the string into that pointer and returns the pointer in spResult. You<br>
+need to call DisposPtr on spResult to deallocate the pointer.</p><p><b>Q</b><i> Installing a VBL task</i><br>
+<i>doesn't seem to work on Macintosh systems with on-board video. I get the slot number</i><br>
+<i>for a video card by extracting the second nibble of the base address of the screen's</i><br>
+<i>pixMap; however, on-board video computers report that the video card is in slot $B</i><br>
+<i>but the video card doesn't seem to exist in any slot. Is there a better way to determine a</i><br>
+<i>video card slot number? Is there any way to attach a VBL task to on-board video? How</i><br>
+<i>can I determine whether the main monitor is using on-board video?</i>
+</p>
+<p>
+<b>A </b> You should be getting the slot number for the video from the AuxDCE entry, not<br>
+from the base address of the pixMap (<i>Inside Macintosh</i>&nbsp;&nbsp;Volume V, page 424). You'll<br>
+need to get the gdRefNum for the desired monitor from the device list (<i> Inside</i><br>
+<i>Macintosh</i>&nbsp;&nbsp;Volume V, Chapter 5). For example, to install a VBL task for the main<br>
+screen, do something like this:
+</p>
+<pre>GDevHand := GetMainDevice;
+IF GDevHand = NIL THEN HandleError
+ELSE
+    BEGIN
+        mainGDRefNum := GDevHand^^.gdRefNum;
+        DCEHand := AuxDCEHandle(GetDctlEntry(mainGDRefNum));
+        IF DCEHand = NIL THEN HandleError
+        ELSE retCode := SlotVInstall(@myVBLTask,DCEHand^^.dCtlSlot);
+    END;</pre>
+<p>
+&nbsp;This should work regardless of the kind of video used.
+</p>
+<p>
+<b>Q</b><i> When using "-model far," I get the following error from the linker:</i>
+</p>
+<pre>### While reading file "HD:MPW:Libraries:Libraries:Runtime.o"
+### Link: Error: PC-relative edit, offset out of range.
+                                                   (Error 48) %__MAIN
+(260) Reference to: main in file: xxx.c.o</pre>
+<p>
+<i>&nbsp;What does it mean?</i>
+</p>
+<p>
+<b>A </b> In your Link command, you should put Runtime.o and the object file containing your<br>
+main program close together, and as early in the list as possible. This is because<br>
+%__MAIN (the part of Runtime.o that actually receives control when your application<br>
+is launched) uses a PC- relative BSR instruction to transfer control to your "real"<br>
+main. (OK, so it's "32-bit-almost-everything"!)
+</p>
+<p>
+<b>Q</b><i> Do all System 7-savvy programs need to run with background processing enabled?</i>
+</p>
+<p>
+<b>A </b> Yes, System 7-savvy applications should have the SIZE resource's background<br>
+processing bit set. (It's not documented explicitly that you need to have this bit set.)
+</p>
+<p>
+&nbsp;All System 7 Apple event-aware applications need to be background-capable, since<br>
+there are many instances where Apple events will come in to you while you're in the<br>
+background, and there will be many times (as new applications are developed) when<br>
+you will <i> not</i>&nbsp;&nbsp;come to the front to process a series of events; you'll work in the<br>
+background as a client for another application.
+</p>
+<p>
+&nbsp;You don't want to hog a lot of system time when you have nothing to do in the<br>
+background, but with the Edition Manager you do need to be able to receive events<br>
+while you're in the background. However, you can still be system-friendly when you<br>
+do this. Here's one way: When you're switched into the background, set your sleep time<br>
+to MAXLONGINT and make sure you have an empty mouse region. This way, you'll be<br>
+getting null events <i> very</i>&nbsp;&nbsp;rarely, and you won't be taking much time away from other<br>
+applications, but you can still react to events sent to you by other parts of the system.<br>
+Then when you come forward, you can reset your sleep time to your normal, low,<br>
+frontmost sleep. Note that WaitNextEvent is implemented when running System 6<br>
+without MultiFinder, but there's no DA Handler ensuring that DAs receive time. In this<br>
+case, large sleep values prevent DAs from receiving timely accRun calls--the Alarm<br>
+Clock DA stops ticking, for example. A compromise that doesn't hog too much<br>
+processing time is to use sleep values only as large as 30-60 ticks for System 6.
+</p>
+<p>
+<b>Q</b><i> Is there a way to test whether a particular key is down independently of the event</i><br>
+<i>record? My application needs to check the Option key status before entering the main</i><br>
+<i>event loop.</i>
+</p>
+<p>
+<b>A </b> The call GetKeys(VAR theKeys:KeyMap) returns a keyMap of the current state of all<br>
+the keys on the keyboard. The call is documented in <i> Inside Macintosh</i>&nbsp;&nbsp;Volume I on page<br>
+259. The Option key will appear as the 58th bit (counting from 0) in the map. In<br>
+MacsBug you can see this with a DM KeyMap, which returns the following:
+</p>
+<pre> 0000 0000 0000 0004 0000 0000 0000 0000</pre>
+<p>
+&nbsp;It's important to understand that the keyMap is an array of packed bits. You need to<br>
+test whether the Option key bit is 1 or 0. The key code 58 = $3A is the 58th bit of the<br>
+keyMap. This number can be determined from the keyboard figure on page 251 of <br>
+<i>Inside Macintosh</i>&nbsp;&nbsp;Volume I and pages 191-192 of Volume V. (If in counting the above<br>
+bits you get 61 instead of 58, remember that the bits within each byte are counted<br>
+right to left.)
+</p>
+<p>
+&nbsp;With the above information you should be able to determine the status of any key on<br>
+the keyboard within your program without waiting for an event. GetKeys, however,<br>
+should be called only for special situations. Normal keyboard processing should be done<br>
+through events; otherwise, your application risks incompatibilities with nonstandard<br>
+input devices.
+</p>
+<p>
+<b>Q</b><i> Read calls at interrupt time often result in a "hang," waiting for the parameter</i><br>
+<i>block to show "done." This happens if the interrupt occurred during another Read call.</i><br>
+<i>I've tried checking the low-memory global FSBusy, and that decreases the occurrence</i><br>
+<i>of this problem but does not eliminate it. When is it safe to make the Read call?</i>
+</p>
+<p>
+<b>A </b> The problem you're experiencing is a common one known as "deadlock." The good<br>
+news is that you can <i>always</i>&nbsp;&nbsp;make Read calls at interrupt time! The only requirement<br>
+is that you make them <i>asynchronously</i>&nbsp;&nbsp;and provide a completion routine, rather than<br>
+loop, waiting for the ioResult field to indicate the call has completed. This will require<br>
+that you use the lower-level PBRead call, rather than the high-level FSRead.
+</p>
+<p>
+&nbsp;The low-memory global FSBusy is <i> not</i>&nbsp;&nbsp;a reliable indicator of the state of the File<br>
+Manager. The File Manager's implementation has changed over time, and new entities<br>
+patch it and use the hooks it offers to do strange and wonderful things. File Sharing<br>
+really turns it on its ear. The result is that when FSBusy is set, you can be sure the<br>
+File Manager is busy, but when it's clear you can't be sure it's free. Therefore, it<br>
+would be best if you ignore its existence.
+</p>
+<p>
+&nbsp;If you need to have the Read calls execute in a particular order, you'll have to chain<br>
+them through their completion routine. The basic concept is that the completion<br>
+routine for the first Read request initiates the next Read request, and so on until<br>
+you're done reading.
+</p>
+<p>
+&nbsp;By the way, never make synchronous calls at interrupt time (and, contrary to the<br>
+popular misconception, deferred tasks are still considered to be run at interrupt<br>
+time) or from ioCompletion routines, which may get called at interrupt time.
+</p>
+<p>
+<b>Q</b><i> Is there a limit on the values set in the Name Binding Protocol (NBP) interval and</i><br>
+<i>count fields when used with PLookupName and PConfirmName calls? How do the</i><br>
+<i>interval and count work? If a device is not on the network and I send a PLookupName</i><br>
+<i>with interval = 20 and count = 20, will I wait 400 seconds before PLookupName</i><br>
+<i>returns?</i>
+</p>
+<p>
+<b>A </b> Since the interval and count parameters for NBP calls are both 1-byte, the values<br>
+used are limited to the range of 0-255 ($00-$FF). Here's what the values do:
+</p>
+<ul>
+<li>interval = retransmit interval in 8-tick units. This value is used to set<br>
+up a VBL task. A value of 0 should not be used because that would mean the VBL<br>
+task would never be executed and would be removed from the VBL queue.</li>
+<li>count = total number of transmit attempts. Each time the interval timer<br>
+expires, this value is decremented by 1. When it reaches 0, the NBP call<br>
+completes. So if a value of 0 is used, the packet will be retransmitted 255<br>
+times (or transmitted 256 times).</li>
+</ul>
+<p>
+&nbsp;Three things can happen to make the LookupName, RegisterName, or ConfirmName<br>
+calls complete:
+</p>
+<ul>
+<li>PKillNBP can be called to abort one of the calls (see <i> Inside Macintosh</i> <br>
+Volume V, page 519).</li>
+<li>maxToGet matches are returned or the return buffer is filled. Here's how<br>
+this works: Each time an NBP lookup reply (LkUp-Reply) packet is received,<br>
+an attempt is made to add all the NBP tuples found in that LkUp-Reply packet<br>
+to the return buffer. If all the tuples cannot be added to the buffer because<br>
+there isn't enough room, the call completes with as many tuples as could fit<br>
+and the numGotten field will contain the number of matches in the buffer. If all<br>
+the tuples from the LkUp-Reply packet are added to the buffer, numGotten<br>
+(the number of matches in the buffer) is compared to the value passed in the<br>
+maxToGet field. If numGotten is greater than or equal to maxToGet, the call<br>
+completes and the numGotten field will contain the number of matches in the<br>
+buffer. Since the buffer can fill before maxToGet matches are received and<br>
+since LkUp-Reply packets can return multiple tuples, you may get more or<br>
+fewer matches than you asked for with maxToGet.</li>
+<li>The count is decremented to 0. You can use this equation to determine how<br>
+long the call would take to complete this way:</li>
+</ul>
+<pre>IF count = 0 THEN count := 256;
+TimeToCompleteInTicks := count * interval * 8;</pre>
+<p>
+&nbsp;The RegisterName and ConfirmName calls always complete after they receive the first<br>
+LkUp- Reply packet to their request, so you could look at them as always having a<br>
+maxToGet of 1 (maxToGet is <i>not</i>&nbsp;&nbsp;one of the parameters for those two calls).
+</p>
+<p>
+<b>Q</b><i> Why does System 7 get rid of my 'vers' resources in my desk accessories when</i><br>
+<i>dropped into the System Folder icon?</i>
+</p>
+<p>
+<b>A </b> The System 7 Finder takes over some of the job of the old Font/DA Mover program.<br>
+The Font/DA Mover took great pains to keep all resources owned by the DA together<br>
+with the driver resource. This is mentioned in Macintosh Technical Note #6,<br>
+"Shortcut for Owned Resources," as well as in <i> Inside Macintosh</i>&nbsp;&nbsp;Volume I, page 109.
+</p>
+<p>
+&nbsp;Under System 7, the 'vers' resource used for Finder information is not owned by the<br>
+desk accessory, so when the Finder copies the desk accessory it skips the resources<br>
+extraneous to the DA--including the 'vers' resource.
+</p>
+<p>
+&nbsp;The simplest thing to do is to provide a System 7-ready version of your DA (see <br>
+<i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI, page 9-32). The Finder will not strip off resources if<br>
+the file type is already 'dfil' when the DA is dragged to the System Folder. You can also<br>
+provide a version of the DA in a suitcase for System 6, or you can instruct System 6<br>
+users to hold down the Option key while clicking Open in Font/DA Mover if they want to<br>
+install your DA.
+</p>
+<p>
+<b>Q</b><i> Are CRMSerialRecord's inputDriverName and outputDriverName fields of type</i><br>
+<i>StringHandle or are they Pascal string pointers?</i>
+</p>
+<p>
+<b>A </b> As shown on page 183 of <i> Inside the Macintosh Communications Toolbox</i> , the<br>
+CRMSerialRecord data structure contains two fields, inputDriverName and<br>
+outputDriverName, declared as type StringHandle. These two fields are erroneously<br>
+described as "pointer to Pascal-style string" in the documentation further down the<br>
+page. The correct declaration is type StringHandle.
+</p>
+<p>
+<b>Q</b><i> How many ways are there to assemble an industry-standard Mr. Potato Head, part</i><br>
+<i>number 2250?</i>
+</p>
+<p>
+<b>A </b> With the standard Mr. Potato Head accessory set, there are 1,139,391,522<br>
+different ways to assemble Mr. Potato Head. Some of our favorite configurations are as<br>
+follows:
+</p>
+<ul>
+<li>The demon cyclops Potato Head: assemble as normal, but turn the eyes<br>
+sideways and tape sharp objects to his hands.</li>
+<li>The Australian Potato Head: assemble upside down (in Australia, this is<br>
+known as the U.S.A. Potato Head).</li>
+<li>The "Gaping Wonder" Potato Head: assemble backwards, using the part<br>
+storage compartment as a mouth.</li>
+</ul>
+<p>
+<b>Q</b><i> What is csCode 100? A control call with csCode 100 seems to come into my block</i><br>
+<i>device driver whenever the Macintosh system fails to recognize the file system on my</i><br>
+<i>media. Should my driver specify valid non- HFS formats such as ISO 9660?</i>
+</p>
+<p>
+<b>A </b> The csCode 100 you're seeing is a ReadTOC command bound for what the operating<br>
+system thinks is a CD-ROM drive. What's happening here is that after deciding your<br>
+device doesn't contain an HFS partition, Foreign File Access (FFA) is attempting to<br>
+identify the file system residing on that device; looking at the Table of Contents on a CD<br>
+is one of the ways that it attempts to go about that. This csCode is documented in the <br>
+<i>AppleCD SC Developer's Guide,</i>&nbsp;&nbsp;which is available through APDA (#A7G0023/A).
+</p>
+<p>
+&nbsp;If you remove the Audio CD File System Translator (FST) from your System Folder,<br>
+you'll find that the csCode no longer gets issued. The reason is that the ReadTOC call<br>
+returns information about audio CDs. Your driver doesn't even have to support this<br>
+call; if FFA sees a paramErr (which you should return upon seeing an unrecognized<br>
+csCode) it knows it can't be looking at an audio CD.
+</p>
+<p>
+&nbsp;You needn't worry about adding any support to your driver for ISO 9660 or High<br>
+Sierra. FFA's FSTs will just request certain blocks from your driver which contain<br>
+information that identifies the disk in question as ISO or HFS.
+</p>
+<p>
+<b>Q</b><i> What's the story with RealFont and TrueType? I'm finding that, of the standard</i><br>
+<i>System 7 TrueType fonts, only Symbol and Courier get a TRUE result from RealFont</i><br>
+<i>for 7-point.</i>
+</p>
+<p>
+<b>A </b> You're correct in your observation of RealFont for the 7-point size of certain<br>
+TrueType fonts. The explanation is hidden in <i> TrueType Spec--The TrueType Font</i><br>
+<i>Format Specification</i>&nbsp;&nbsp;(APDA #M0825LL/A), page 227.
+</p>
+<p>
+&nbsp;The font header table contains a lowestRecPPEM field, which indicates the "lowest<br>
+recommended pixel number per em," or, in other words, the smallest readable size in<br>
+pixels. As it turns out, the Font Manager in its wisdom uses this information for the<br>
+value it returns from RealFont. Note that for higher-resolution devices, a point size of<br>
+7 does <i> not</i>&nbsp;&nbsp;correspond to 7 pixels; but since the unit "point" is 1/72 inch and the<br>
+screen resolution is (approximately) 72 dpi, the result corresponds to reality in this<br>
+case.
+</p>
+<p>
+&nbsp;The value for lowestRecPPEM can be arbitrarily set by the font designer. We all know<br>
+that small point sizes on low-resolution devices never look great, and even less so for<br>
+outline fonts. Courier and Symbol have lowestRecPPEM = 6, while the other outline<br>
+fonts in the system have lowestRecPPEM = 9. This doesn't mean that Courier and<br>
+Symbol (TrueType) in 7-point size look better than Times&#174; or Helvetica under the<br>
+same conditions. It means the font designer had higher standards (or was in a different<br>
+mood) when choosing lowestRecPPEM = 9.
+</p>
+<p>
+<b>Q</b><i> Is trackbox in the MPW C library broken? It always returns 0 (false).</i>
+</p>
+<p>
+<b>A </b> Yes, the glue for the MPW C library trackbox is broken. In fact, the glue for many<br>
+of the lowercase Toolbox calls is broken. Fixing lowercase glue routines is a<br>
+never-ending challenge. This probably won't be fixed; instead, expect to see all<br>
+lowercase glue routines removed from future versions of MPW. What does this mean to<br>
+you? Use only the proper mixed-case interfaces (the ones spelled just like in <i> Inside</i><br>
+<i>Macintosh</i> ) at all times. This also will serve to make your code smaller and faster,<br>
+since the mixed-case interfaces make direct Toolbox calls instead of calls to glue<br>
+routines in many cases.
+</p>
+<p>
+&nbsp;Incidentally, in case you're wondering, the C library trackbox doesn't work because<br>
+the glue clears a long for the result instead of a word and pulls a long off the stack, so<br>
+the result is in the wrong byte of the register on return.
+</p>
+<p>
+<b>Q</b><i> After an application in the System 7 Application or Apple menu is selected,</i><br>
+<i>sometimes control doesn't switch from our application to the selected application.</i><br>
+<i>What could be wrong and how can I zero in on the problem?</i>
+</p>
+<p>
+<b>A </b> The symptoms you've described--the process menu not switching layers--is<br>
+exactly what happens if you have an activate or update event pending that you're not<br>
+acting on. Here are ways that pending activate or update events can be handled<br>
+incorrectly:
+</p>
+<ul>
+<li>You're not calling BeginUpdate and EndUpdate (the most likely problem).</li>
+<li>Your application isn't asking for all events.</li>
+<li>Your application has dueling event loops.</li>
+<li>The word in your code that contains the everyEvent constant is trashed<br>
+(unlikely).</li>
+</ul>
+<p>
+<b>Q</b><i> I have a problem with Balloon Help for modeless dialogs. The balloons don't show up</i><br>
+<i>most of the time unless the user clicks the mouse over the dialog item of interest.</i>
+</p>
+<p>
+<b>A </b> The problem you're having is that you're not calling isDialogEvent with null events.<br>
+The most likely cause for this is that you're not getting null events, or you have your<br>
+sleep time way too high in WaitNextEvent. If you're not getting null events, it's<br>
+probably due to unserviced update events in the event queue. If you can't ensure that<br>
+you'll get null events back from WaitNextEvent, you must fudge them instead. This way<br>
+the TextEdit insertion point will blink properly as well.
+</p>
+<p>
+<b>Q</b><i> What's the correct method for a custom MDEF to dim menu items when running</i><br>
+<i>under System 7? What's the preferred method for determining whether to draw in a</i><br>
+<i>gray color or paint the items with a gray pattern?</i>
+</p>
+<p>
+<b>A </b> The proper method for dimming text in menu items is to use the grayishTextOr<br>
+transfer mode when drawing text. This is documented on page 17-17 of <i> Inside</i><br>
+<i>Macintosh</i>&nbsp;&nbsp;Volume VI and is what Apple uses. This mode takes into account both color<br>
+and black-and-white screens. A simple method for dimming nontext items is to set the<br>
+OpColor to gray and then draw the nontext item in Blend mode.
+</p>
+<p>
+<b>Q</b><i> Under System 7 my filter procedure for displaying invisible data files no longer</i><br>
+<i>works. How can I use Standard File to display the names of invisible files of a specific</i><br>
+<i>type under System 7?</i>
+</p>
+<p>
+<b>A </b> System 7 can show invisible files in the standard SFGetFile dialog box; however, not<br>
+all System 6 Standard File package calls are handled the same in System 7. When using<br>
+invisible files under System 7, you should perform type filtering within a filter proc<br>
+and not with the typeList field of the SFGetFile call. System 7 no longer allows a<br>
+typeList for detecting invisible files. The actual check for invisible files of a<br>
+particular type or types should be done within the file filter proc.
+</p>
+<p>
+&nbsp;The SFGetFile call below displays only folders and invisible 'TEXT' files in the<br>
+standard SFGetFile dialog box. With the numTypes parameter set to -1, all types of<br>
+files will be passed to the filter proc.
+</p>
+<pre>SFGetFile( where, "", myFilterProc, -1, typeList, nil,
+              &amp;reply );</pre>
+<p>
+&nbsp;In this example, the filter proc's return value depends on the file's type and Finder<br>
+flags.
+</p>
+<pre>pascal Boolean myFilterProc( fp )
+FileParam *fp;
+{
+    if ((fp-&gt;ioFlFndrInfo.fdFlags &amp; fInvisible) &amp;&amp;
+            (fp-&gt;ioFlFndrInfo.fdType == 'TEXT'))
+        return FALSE;
+    else
+        return TRUE;
+}</pre>
+<p>
+<b>Q</b><i> The System 7 Help, Keyboard, and Application menus at the right of the Macintosh</i><br>
+<i>menu bar don't have text titles that can be included in a command string in the way that</i><br>
+<i>"File" or "Edit" can be. Do these menus always have the same menu ID?</i>
+</p>
+<p>
+<b>A </b> The menu ID numbers of the Help, Keyboard, and Application menus are always the<br>
+same, so the menus can always be identified by their IDs:
+</p>
+<pre>kHMHelpMenuID = -16490;
+kPMKeyBdMenuID = -16491;
+kPMProcessMenuID = -16489;</pre>
+<p>
+<b>Q</b><i> Do String2Date and Date2Secs treat all dates with the year 04 to 10 as 2004 to</i><br>
+<i>2010 instead of 1904 to 1910?</i>
+</p>
+<p>
+<b>A </b> Yes, the Script Manager treats two-digit years less than or equal to 10 as 20xx<br>
+dates if the current year is between 1990 and 1999, inclusive. Basically, it just<br>
+assumes that you're talking about 1-20 years in the future, rather than 80-100<br>
+years in the past. The same is true of two- digit 9x dates, when the current year is<br>
+less than or equal to xx10. Thus, in 2003, the date returned when 3/7/94 is<br>
+converted will be 1994, not 2094. This is all documented in <i> Macintosh Worldwide</i><br>
+<i>Development: Guide to System Software</i>&nbsp;&nbsp;, available from APDA (#M7047/A).
+</p>
+<p>
+<b>Q</b><i> Is there a universally recognized wildcard character for the Macintosh, like the "*"</i><br>
+<i>in the MS-DOS world? Furthermore, for Boolean logic, should my application accept</i><br>
+<i>Pascal syntax (such as .NOT., .AND., .OR.), C syntax (such as !, &amp;&amp;, ||), or still</i><br>
+<i>another convention? My users aren't programming gurus.</i>
+</p>
+<p>
+<b>A </b> First, see if there's a friendlier way to implement the wildcard's function. Take a<br>
+look at System 7 Finder's Find command, for example. If you find wildcard use is<br>
+necessary, "*" is common, though for file searching any character other than ":" can<br>
+be used in an HFS filename.
+</p>
+<p>
+&nbsp;As for Boolean operators, nonprogrammers prefer a syntax that matches English as<br>
+closely as possible, so AND, OR, and NOT are better than their C counterparts.<br>
+However, user testing indicates that the most intuitive, user-friendly way to put<br>
+Boolean search criteria on a command line is to bring up a dialog with pop-up menus<br>
+used to form an English sentence describing the search (like System 7's Find). If you<br>
+can make something like this work for your application, your nontechnical users will<br>
+love you.
+</p>
+<p>
+<b>Q</b><i> When I pass FALSE in the cUpdates parameter to SetPalette, I still get update events</i><br>
+<i>to that window when I modify its palette. What's going on?</i>
+</p>
+<p>
+<b>A </b> SetPalette's cUpdates parameter controls whether color-table changes cause that<br>
+window to get update events only if that window is <i> not</i>&nbsp;&nbsp;the frontmost window. If that<br>
+window is the frontmost window, any changes to its palette cause it to get an update<br>
+event regardless of what the cUpdates parameter is. When you call SetEntryColor and<br>
+then ActivatePalette for your frontmost window, the window gets an update event<br>
+because it's the frontmost window even though you passed FALSE in the cUpdates<br>
+parameter. Another important point is that windows that don't have palettes always get<br>
+update events when another window's palette is activated.
+</p>
+<p>
+&nbsp;Fortunately, system software version 6.0.2 introduced the NSetPalette routine, which<br>
+is documented in Macintosh Technical Note #211, "Palette Manager Changes in System<br>
+6.0.2," and on page 20-20 in the Palette Manager chapter of <i> Inside Macintosh</i> <br>
+Volume VI. This variation of SetPalette gives you the following options in controlling<br>
+whether your window gets an update event:
+</p>
+<ul>
+<li>If you pass pmAllUpdates in the nCUpdates parameter, your window gets<br>
+an update event when either it or another window's palette is activated.</li>
+<li>If you pass pmFgUpdates, your window gets an update event when a palette<br>
+is activated only if it's the frontmost window (in effect, it gets an update event<br>
+only if its own palette is activated).</li>
+<li>If you pass pmBkUpdates, your window gets an update event when a palette<br>
+is activated only if it's not the frontmost window (in effect, it gets an update<br>
+event only if another window's palette is activated).</li>
+<li>If you pass pmNoUpdates, your window never gets an update event from<br>
+any window's palette being activated, including that window itself.</li>
+</ul>
+<p>
+<b>Q</b><i> I want to determine whether a disk is locked before trying to mount the volume.</i><br>
+<i>When I examine bit 15 of ioVAtrb using PBGetVInfo, as suggested on page 104 of Inside</i><br>
+<i>Macintosh Volume II, bit 15 is clear for a locked volume such as a CD-ROM, but bit 7</i><br>
+<i>is set. Why is this happening?</i>
+</p>
+<p>
+<b>A </b> The reason for your observed discrepancy is that bit 15 is set for a software lock<br>
+and bit 7 is set for a hardware lock. In the case of the CD-ROM there's no software lock<br>
+but only a hardware lock, so bit 7 is set and bit 15 is clear. Volumes II and IV of <i> Inside</i><br>
+<i>Macintosh</i>&nbsp;&nbsp;both say that "only bit 15 can be changed" and should be set if the volume is<br>
+locked. The fact that you can set it with PBSetVol means that it's a software lock. What<br>
+the documentation fails to mention is that using PBGetVInfo you can also check bit 7 of<br>
+ioVAtrb to see if there's a hardware lock. The recommended procedure is to first check<br>
+the hardware lock (bit 7 of ioVAtrb) and then check the software lock (bit 15 of<br>
+ioVAtrb).
+</p>
+<p>
+<b>Q</b><i> How do we create a "fixed fractional width" font using ResEdit 2.1? I tried setting</i><br>
+<i>FontInfo fields such as ascent and widMax with fractional numbers, but ResEdit</i><br>
+<i>refused all noninteger numbers.</i>
+</p>
+<p>
+<b>A </b> ResEdit doesn't know how to take fixed-point numbers as input, so it assumes the<br>
+number you enter for a value like widMax is the integer representation of the<br>
+fixed-point number. In other words, ResEdit displays a 16-bit fixed-point number as<br>
+an integer with 256 times the value of the fixed-point number actually used by the<br>
+Font Manager.
+</p>
+<p>
+&nbsp;To enter the numbers with ResEdit, you'll need to do the conversion yourself. Take an<br>
+8.8 fixed-point number and multiply by 256 to get the integer to enter, or take a<br>
+4.12 fixed-point number and multiply by 4096 to get the integer. This rigamarole is<br>
+necessary because ResEdit wasn't designed to build fonts from scratch. You may find<br>
+that third-party tools specifically designed for this task are easier for you. The time<br>
+you save in building your width table may be worth the cost of the program.
+</p>
+<p>
+<b>Q</b><i> In my Installer script, how can I include the current volume name in a</i><br>
+<i>reportVolError alert, as many of the installation scripts from Apple do?</i>
+</p>
+<p>
+<b>A </b> The volume name can be included by inserting "^0" as part of the Pascal string<br>
+passed to the reportVolError error-reporting clause.
+</p>
+<p>
+<b>Kudos to our readers </b> who care enough to ask us terrific and well thought-out<br>
+questions. The answers are supplied by our teams of technical gurus; our thanks to all.<br>
+Special thanks to Pete "Luke" Alexander, Mark Baumwell, Mike Bell, Jim "Im"<br>
+Beninghaus, Rich Collyer, Neil Day, Tim Dierks, Godfrey DiGiorgi, Steve Falkenburg, <br>
+C. K. Haun, Dave Hersey, Dennis Hescox, Dave Johnson, Rich Kubota, Edgar Lee, Jim<br>
+Luther, Joseph Maurer, Kevin Mellander, Jim Mensch, Bill Mitchell, Guillermo<br>
+Ortiz, Greg Robbins, Gordon Sheridan, Bryan "Stearno" Stearns, Forrest Tanaka,<br>
+Vincent Tapia, John Wang, and Scott "Zz" Zimmerman for the material in this Q &amp; A<br>
+column. *
+</p>
+<p>
+<b>Have more questions? </b>Need more answers? Take a look at the Dev Tech Answers<br>
+library on AppleLink (updated weekly) or at the Q &amp; A stack on the <i> Developer CD</i><br>
+<i>Series </i> disc.*
+</p>
+</body>
+</html>

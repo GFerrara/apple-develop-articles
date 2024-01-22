@@ -1,0 +1,549 @@
+<html>
+<head>
+<!-- Article ID: 45 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>December 92 - TIME BASES: THE HEARTBEAT OF QUICKTIME</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>TIME BASES: THE HEARTBEAT OF QUICKTIME</h2>
+<h1>GUILLERMO A. ORTIZ</h1>
+<p>
+<img src="img/239.gif" width="180 px"></img>
+</p>
+<p>
+<i>&nbsp;A time base is the heartbeat of a QuickTime movie. It keeps the movie going and tells</i><br>
+<i>the Movie Toolbox when to stop and when to display the next frame. This article</i><br>
+<i>explores the concept of time bases and shows how you can use time bases to affect the</i><br>
+<i>behavior of movies as well as how to use time base callback procedures for timing</i><br>
+<i>purposes.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;In a basic sense, a time base can be viewed as the black box that maintains the<br>
+temporal characteristics of a QuickTime movie. When a movie is playing, some of its<br>
+temporal characteristics are obvious: it has a duration, it's "moving" or not, and so on.<br>
+Some of the not-so-obvious characteristics that a time base keeps track of are also<br>
+important, such as the clock that governs the passing of time as far as the movie is<br>
+concerned and whether the movie is looping. 
+</p>
+<p>
+&nbsp;Time bases are created dynamically by the Movie Toolbox each time a movie is opened,<br>
+rather than being stored with a movie. Time bases can also exist by themselves, with<br>
+no movie attached, and can therefore be used to time other dynamic events, much as<br>
+you would use a Time Manager task.
+</p>
+<p>
+&nbsp;The QuickTime Movie Toolbox provides a high-level interface that lets you modify all<br>
+the parameters of a movie, some of which implicitly change its associated time base.<br>
+Most applications therefore will never need to manipulate time bases directly.<br>
+Nevertheless, there are situations in which it's necessary to access time bases more<br>
+directly, such as the following:
+</p>
+<ul>
+<li>when a document presents multiple views of a movie and all views need to<br>
+be kept in sync</li>
+<li>when you need to take advantage of the callback functions of a time base</li>
+<li>when you're writing a custom movie controller</li>
+</ul>
+<p>
+&nbsp;This article addresses these situations. 
+</p>
+<h2>THE ARROW OF TIME</h2>
+<p>
+First let's define some of the terms related to the way QuickTime treats time:
+</p>
+<ul>
+<li>Time scale: the number of units into which a second is subdivided. For<br>
+most QuickTime movies, the time scale is set to 600, meaning that the<br>
+smallest fraction of time measurement for the movie is 1/600th of a second. </li>
+<li>Rate: the multiplier for the time scale. The rate controls how fast the<br>
+movie plays.&nbsp;&nbsp;&nbsp;When the rate is 1.0, the movie plays at its normal speed,<br>
+meaning that for each second of play the movie's time advances a number of<br>
+units equal to the time scale.&nbsp;&nbsp;&nbsp;If the rate is between 0.0 and 1.0, the movie<br>
+plays in slow motion, and fewer units are counted off per second of play. A<br>
+negative rate implies that the movie is playing backward. A rate of 0 means<br>
+that the movie is stopped. </li>
+<li>Time value: indicates where we are in the movie being played back. The<br>
+time value is given as a number of time scale units. When a movie is playing<br>
+forward from its start, the current time value can be calculated as&nbsp;&nbsp;time<br>
+elapsed (in seconds)* time scale* rate</li>
+</ul>
+<p>
+You can think of a time base as a dynamic container that holds the following<br>
+information about a process, normally a movie: the time source (either the clock being<br>
+used as the master clock or the master time base); the time bounds (the start and stop<br>
+time values) and the current time value; the rate; the time base flags, indicating<br>
+different conditions for the time base; and a list of callback routines. 
+</p>
+<p>
+Figure 1 illustrates these concepts and shows how they interact. The figure assumes<br>
+that the clock or time source ticks at a constant speed; however, you could conceivably<br>
+use a clock that runs at a varied speed, which would make the movie go faster and<br>
+slower in sync with the clock. 
+</p>
+<p>
+Figure 1 doesn't show the effect of the time base flags. In QuickTime versions 1.0 and<br>
+1.5, two mutually exclusive flags are defined -- loopTimeBase and<br>
+palindromeLoopTimeBase. The loopTimeBase flag causes the time base to go back to the<br>
+start time value when it reaches the stop time value (or vice versa if the movie is<br>
+playing in reverse); palindromeLoopTimeBase reverses the direction of play when it<br>
+gets to the start or stop value of the time base. 
+</p>
+<p>
+<img src="img/240.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1</b> Time Concepts in a QuickTime Movie
+</p>
+<h2>THE BASIC STUFF</h2>
+<p>
+The QuickTime Movie Toolbox is the best mechanism for manipulating movies and their<br>
+parameters. The high-level calls provided by the Toolbox are all that most<br>
+applications will ever need. Using graphics as an analogy, suppose that you wanted to<br>
+draw a complicated image. The easiest way to do this would be with QuickDraw, by<br>
+calling DrawPicture, but you could also interpret the picture by hand and execute its<br>
+opcodes individually or even set the video RAM pixels directly! Similarly, when<br>
+working with a movie, you can work directly with its time base, but it's best to let the<br>
+Movie Toolbox do as much as possible -- not because it's the only way, but because it's<br>
+safer, it lessens the chances for compatibility problems, and it's simpler. Thus, for<br>
+time bases associated with movies, it's best to call SetMovieTime rather than<br>
+SetTimeBaseTime and to call SetMovieMasterClock rather than<br>
+SetTimeBaseMasterClock.
+</p>
+<p>
+&nbsp;For those cases in which it makes sense to access and modify time bases directly (as in<br>
+the scenarios mentioned earlier), the Movie Toolbox provides procedural interfaces<br>
+that allow you to do so. The sample program TimeBaseSimple provided on the<i>Developer</i><br>
+<i>CD Series</i> disc shows how to get a time base from a movie, how to interrogate the time<br>
+base, and how to change some of its parameters. 
+</p>
+<p>
+&nbsp;Figure 2 shows the window displayed by TimeBaseSimple. This window displays the<br>
+duration of the time base (in most cases the same as the duration of the movie), a<br>
+number obtained by subtracting the start time value from the stop time value. It also<br>
+shows the rate at which the movie is playing, the preferred rate (a value normally set<br>
+when the movie is created; it will differ from the rate if the movie is stopped or is<br>
+playing in reverse due to palindrome looping), the name of the clock being used, and<br>
+the type of looping in effect.
+</p>
+<p>
+<img src="img/241.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> TimeBaseSimple Window
+</p>
+<p>
+Through this window, the user can set the preferred rate, which is the rate the Movie<br>
+Toolbox and the standard movie controller use to set the movie in motion. Radio buttons<br>
+allow the user to specify the type of looping via the time base flags. The user can also<br>
+scan the movie backward and forward by clicking the shuttle control in the top left of<br>
+the window. This control is included in the sample to show how to go forward or<br>
+backward in the movie by changing the current time value in the movie's time base. 
+</p>
+<p>
+<b>GETTING AND CHANGING A TIME BASE</b><br>
+Before you can begin working with a time base, you have to get it. TimeBaseSimple<br>
+does this with the following line:
+</p>
+<pre>tb := GetMovieTimeBase(gMoov); (* get movie's time base *)</pre>
+<p>
+GetMovieTimeBase returns the time base associated with the movie gMoov. The<br>
+variable tb receives this value. 
+</p>
+<p>
+<b>Getting the clock information. </b>Once you've retrieved the time base, you can get<br>
+the information about it. TimeBaseSimple acquires the information regarding the<br>
+master clock in order to display its name in the window. The clock information is<br>
+obtained via the Component Manager. First we obtain the clock component being used<br>
+by the time base; then we use it to get the information from the Component Manager.
+</p>
+<pre>clock := GetTimeBaseMasterClock(tb);
+                                   (* instance of clock being used *)
+err := GetComponentInfo(Component(clock), cd, Handle(clockN),
+           NIL, NIL);</pre>
+<p>
+In the variable cd, a ComponentDescription record, GetComponentInfo returns the type<br>
+of component, the subtype, the manufacturer, and the component flags. Note that the<br>
+program could be written to pass NIL instead, because the information received is not<br>
+used. clockN is a handle in which GetComponentInfo returns the name of the component,<br>
+which is what we're really looking for. 
+</p>
+<p>
+Note also that when a time base has been enslaved to another (as discussed later),<br>
+GetTimeBaseMasterClock returns NIL. To ensure there's a master clock associated with<br>
+a time base,the application should first call GetTimeBaseMasterTimeBase; a NIL result<br>
+indicates that the time base has a master clock, whereas a nonzero result indicates that<br>
+a master time base exists that contains the master clock. 
+</p>
+<p>
+<b>Getting and changing the time values. </b> You can get the start and stop time values<br>
+for a time base as follows:
+</p>
+<pre>scale := GetMovieTimeScale(gMoov);     (* first get the time scale *)
+startTimeValue :=
+    GetTimeBaseStartTime(tb, scale, startTime);(* get start time *)
+stopTimeValue :=
+    GetTimeBaseStopTime(tb, scale, stopTime); (* get stop time *)</pre>
+<p>
+Note that the start and stop times returned are given in terms of the time scale being<br>
+passed; this means that we can get different values for the same time point, depending<br>
+on the granularity we require. As a matter of fact, in TimeBaseSimple, when we're<br>
+preparing the shuttle control, we get the same values but with a different scale:
+</p>
+<pre>shuttleScale := moovScale DIV 10;
+localDuration := GetTimeBaseStopTime(tBase, shuttleScale, tr);
+localDuration :=
+       localDuration - GetTimeBaseStartTime(tBase, shuttleScale, tr);</pre>
+<p>
+The shuttle control in TimeBaseSimple lets you scan the movie backward and forward.<br>
+This is implemented by changing the current time value for the time base, which looks<br>
+something like this:
+</p>
+<pre>SetTimeBaseValue(gTBState.tBase, value*10, gTBState.moovScale);
+                                (* 'movie scale/10' tick *)</pre>
+<p>
+<b>Setting the rate. </b>Although you can obtain the current rate for a time base and set<br>
+the rate directly, for a time base associated with a movie a better approach is to make<br>
+Movie Toolbox calls such as StartMovie or SetMovieRate. The Movie Toolbox executes<br>
+these calls by changing the time base associated with the movie. For example,<br>
+StartMovie gets the preferred rate and sets the time base rate to it, setting the movie's<br>
+time base in motion.
+</p>
+<p>
+When the movie is being controlled by the standard movie controller, it's important to<br>
+call MCMovieChanged if you change any movie characteristic, such as the rate or the<br>
+current time value, to keep the controller in sync with the new settings. As mentioned<br>
+earlier, it's better to use high-level interfaces to enact these changes; for example, to<br>
+change the rate via the movie controller, you can call MCDoAction(mc, mcActionPlay,<br>
+newRate). 
+</p>
+<p>
+<b>Using the time base flags. </b>When you access a time base directly, you can set its<br>
+movie to loop, either normally or backward and forward, by setting the time base<br>
+flags. GetTimeBaseFlags retrieves the flags for inspection, and SetTimeBaseFlags<br>
+modifies the flags. In TimeBaseSimple, the SetTBLoop routine sets the looping flags:
+</p>
+<pre>(* Changes the state of looping in the movie if needed. *)
+PROCEDURE SetTBLoop(newFlags: LONGINT);
+VAR     targetTB:   TimeBase;
+BEGIN
+    targetTB := gTBState.tBase;           (* the movie's time base *)
+    SetTimeBaseFlags(targetTB, newFlags); (* change it *)
+    gTBState.flags := newFlags;           (* remember new state *)
+END;</pre>
+<p>
+Now that you've seen how you can access the state information of a time base, let's look<br>
+at some of the possible uses of time bases. 
+</p>
+<h2>TIME SLAVES</h2>
+<p>
+One interesting situation arises when you need to play back two or more instances of a<br>
+movie simultaneously. In such situations you can synchronize the movies by enslaving<br>
+all the instances to one time base. The central idea behind this is to have control of the<br>
+movie's time flow pass through a single point instead of having a number of individual<br>
+time bases running at the same time. The sample program TimeBaseSlave on<br>
+the<i>Developer CD Series</i> disc shows how to do this. 
+</p>
+<p>
+TimeBaseSlave splits the window in which the selected movie is to play into four<br>
+parts, with the quarters rotating while the movie is playing back. Figure 3 shows the<br>
+TimeBaseSlave window at its four stages of playback.
+</p>
+<p>
+<img src="img/242.gif" width="207 px"></img>
+</p>
+<p>
+<img src="img/243.gif" width="207 px"></img>
+</p>
+<p>
+<img src="img/244.gif" width="207 px"></img>
+</p>
+<p>
+<img src="img/245.gif" width="207 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 3</b> TimeBaseSlave Window at Its Four Stages of Playback
+</p>
+<p>
+The basic programming strategy is as follows:
+</p>
+<ol>
+<li>Get the time base associated with one of the instances of the movie. </li>
+<li>Force the time base from step 1 to be used for the other instances. </li>
+<li>Start playing the first instance of the movie, controlling it in any way you<br>
+like.&nbsp;&nbsp;&nbsp;(TimeBaseSlave starts the movie and sets it back to the beginning when<br>
+it reaches the end.)</li>
+<li>The other instances of the movie will follow blindly. </li>
+</ol>
+<p>
+The EnslaveMovies routine in TimeBaseSlave takes care of all this:
+</p>
+<pre>FUNCTION EnslaveMovies: OSErr;
+VAR     err:                    OSErr;
+            masterTimeBase:     TimeBase;
+            slaveZero:          TimeRecord;
+            slaveZeroTV:        TimeValue;
+            masterScale:        TimeScale;
+            count:              INTEGER;
+BEGIN
+    err := noErr;
+    masterTimeBase := GetMovieTimeBase(gMoov[1]);
+                              {* time base of first movie instance *}
+    masterScale := GetMovieTimeScale(gMoov[1]);
+                              {* needed for SetMovieMasterTimeBase *}
+    slaveZeroTV :=
+        GetTimeBaseStartTime(masterTimeBase, masterScale, slaveZero);
+                                                          {* ditto *}
+    FOR count := 2 TO 4 DO  (* slave all movies to first time base *)
+        BEGIN
+            SetMovieMasterTimeBase(gMoov[count], masterTimeBase,
+                slaveZero);                        {* now we do it *}
+
+            (* real programmers do check for errors *)
+            err := GetMoviesError;
+            IF err &lt;&gt; noErr THEN
+                BEGIN
+                    ErrorControl('SetMovieMasterTimeBase failed');
+                LEAVE;
+                END;
+        END;
+    EnslaveMovies := err;
+END;</pre>
+<p>
+Once the slave instances of the movie have been set to obey the first time base, their<br>
+behavior will mimic the first movie's actions. In the TimeBaseSlave code, it appears<br>
+that only the first instance is started and that only it is rewound when the end is<br>
+reached. These actions are accomplished in TimeBaseSlave by calls to StartMovie and<br>
+GoToBeginningOfMovie, respectively, with the first movie passed as a parameter. 
+</p>
+<p>
+You could use this technique to play different movies but have all of them under a<br>
+single control. It might also be useful when no movies are involved at all but time<br>
+bases are being used for timing purposes. 
+</p>
+<h2>TIMELY TASKS</h2>
+<p>
+TimeBaseSlave also shows how to take advantage of the callback capabilities of time<br>
+bases. Callbacks are useful when an application needs to execute given tasks when the<br>
+time base passes through certain states. You can program time base callbacks to be<br>
+triggered under the following conditions:
+</p>
+<ul>
+<li>when a certain time value is encountered (callBackAtTime)</li>
+<li>when a rate change occurs (callBackAtRate)</li>
+<li>when there's a jump in time (callBackAtTimeJump)</li>
+<li>when the start or stop time is reached (callBackAtExtremes)</li>
+</ul>
+<p>
+Passing callBackAtTime to NewCallBack shows the use of callbacks that are executed at<br>
+a specified time value. TimeBaseSlave uses the callback service to rotate the movie<br>
+pieces at regular intervals; we ask to be called every three seconds in movie time.
+</p>
+<p>
+Note that the time value triggering the callback depends on the rate of the time base. In<br>
+other words, the time value specified will never be reached if the movie isn't playing<br>
+(if the rate is 0). If the rate is something other than 1.0 (if the movie is accelerated<br>
+or is moving in slow motion or in reverse), the specified break will come every three<br>
+seconds in movie time, not clock time. 
+</p>
+<p>
+<b>CREATING A CALLBACK</b><br>
+First TimeBaseSlave has to create a callback. This could be accomplished as follows:
+</p>
+<pre>cb := NewCallBack(tb, callBackAtTime);</pre>
+<p>
+Since we want to be called at interrupt time, however, the line looks like this:
+</p>
+<pre>cb := NewCallBack(tb, callBackAtTime + callBackAtInterrupt);</pre>
+<p>
+The variable cb receives a callback, which depends on the time base tb. The callback<br>
+will be executed at specific times and can be scheduled to fire at interrupt time. 
+</p>
+<p>
+NewCallBack moves memory, which means that you can't create a callback while in an<br>
+interrupt handler. Electing to be called at interrupt time has an advantage over normal<br>
+interrupt-driven tasks, however, as I'll explain later. 
+</p>
+<p>
+<b>PRIMING THE CALLBACK</b><br>
+Once we're satisfied that the callback was created (cb &lt;&gt; NIL), we proceed to prime the<br>
+callback. At this point we have only the hook into the time base; priming the callback<br>
+schedules it to call us. This is accomplished by CallMeWhen, as follows:
+</p>
+<pre>err := CallMeWhen(cb, @FlipPieces, callWhen, triggerTimeFwd,
+    callWhen, scale);</pre>
+<p>
+FlipPieces is the routine that we want to have called when the specified time value<br>
+arrives. The callWhen variable is passed both as a refCon (the third parameter) and as<br>
+the time to trigger the callback (the fifth parameter), the idea being that FlipPieces<br>
+will need to know the current time. Of course, the refCon parameter can also be used<br>
+for any other purpose you may see fit. 
+</p>
+<p>
+The time at which the callback is triggered is given a frame of reference by the scale<br>
+parameter.&nbsp;&nbsp;&nbsp;Remember that a time value without a time scale has no meaning at all.<br>
+Finally, triggerTimeFwd means that our routine will be called only when the movie is<br>
+moving forward. This is reasonable since TimeBaseSlave plays back the selected movie<br>
+in forward motion only. 
+</p>
+<p>
+<b>THE FLIPPIECES ROUTINE</b><br>
+The routine responsible for servicing the callback follows a simple interface and is<br>
+defined in TimeBaseSlave as follows:
+</p>
+<pre>(* CallBackProc *)
+PROCEDURE FlipPieces(cb: QTCallBack; refCon: LONGINT);
+(* The refCon parameter contains the time that triggers the
+callback; this is the value passed to the CallMeWhen routine. *)
+VAR     j:          INTEGER;
+        callWhen:   LONGINT;
+        scale:      TimeScale;
+        stop:       LONGINT;
+        tr:         TimeRecord;
+        tb:         TimeBase;
+        err:        OSErr;
+BEGIN
+    stage := (stage + 1) MOD 4;
+    FOR j := 1 TO MoviePieces DO
+        ShiftMoviePieces(j);    (* turn the movie pieces around *)
+    scale := 100;        (* 100 units in this scale means 1 second *)
+    callWhen := refCon + 3*scale;       (* call me in 3 seconds *)
+    tb := GetCallBackTimeBase(cb);  (* needed for next line *)
+    stop := GetTimeBaseStopTime(tb, scale, tr);
+    IF callWhen &gt; stop THEN  (* wrap around the three seconds *)
+        callWhen :=
+            GetTimeBaseStartTime(tb, scale, tr) + callWhen - stop;
+                              
+    (* now to really reprime the callback *)
+    err := CallMeWhen(cb, @FlipPieces, callWhen,
+        triggerTimeFwd + callBackAtInterrupt, callWhen, scale);
+END;</pre>
+<p>
+TimeBaseSlave does the actual splitting of the movie into different views by creating<br>
+four instances of the same movie and setting the movie clipping region for each one to<br>
+be the rectangle in which eachis expected to display. When it's time to move the pieces,<br>
+the movie box of each instance is offset to cover the next spot. Take a look at SplitMovie<br>
+and ShiftMoviePieces to see the code. 
+</p>
+<p>
+<b>A FEW CONSIDERATIONS</b><br>
+Inquisitive readers will have noted that when calling CallMeWhen, TimeBaseSlave uses<br>
+both noninterrupt and interrupt-time invocations. This was done to illustrate one of<br>
+the advantages of using Movie Toolbox callbacks: the Toolbox takes care of setting up<br>
+the A5 world when your service routine is called. Having the A5 world set up properly<br>
+is useful when your program needs to access global variables; other interrupt<br>
+handlers can't count on A5 being right when they're invoked. 
+</p>
+<p>
+Using time base interrupt callback routines does not, however, liberate the<br>
+application from the normal limitations of interrupt-servicing routines; for example,<br>
+you can't move memory. 
+</p>
+<p>
+As mentioned earlier, although time bases are created automatically when a movie is<br>
+opened or created, they can also exist on their own. If an application requires services<br>
+that allow control over the passing of time, it can create a time base and use callbacks<br>
+to trigger the service routines required.&nbsp;&nbsp;&nbsp;Keep in mind that even when a time base has<br>
+no movie, the application must still call MoviesTask to guarantee that callback<br>
+routines will get time to run. 
+</p>
+<p>
+<b>OTHER TYPES OF CALLBACKS</b><br>
+Time base callbacks can also be triggered by a change in the rate or by a jump in the<br>
+time value. A change in the rate occurs when the movie is stopped while it's playing,<br>
+when a movie is set in motion, or when the playback speed is somehow changed. A jump<br>
+in time occurs when the current time value in the time base is set to a value outside<br>
+the normal flow -- for example, when a movie that's playing is set back to the<br>
+beginning. In addition, QuickTime 1.5 introduces callbacks "at extremes" that can be<br>
+triggered when the time base time reaches the start or stop time. 
+</p>
+<p>
+These three means of triggering a callback are of interest only if the code is tracking<br>
+the behavior of the movie, as a movie controller or a media handler would need to do;<br>
+the constants used for calling NewCallBack in these cases are callBackAtRate,<br>
+callBackAtTimeJump, and callBackAtExtremes. 
+</p>
+<h2>FINALLY</h2>
+<p>
+If you'd like to play with the sample programs, you may want to try some variations.<br>
+For instance, it's very easy to modify TimeBaseSlave to have all the movies play at<br>
+their own beat, with separate time bases, and compare the performance with the<br>
+original TimeBaseSlave. You could also modify TimeBaseSimple to see the time values<br>
+obtained with different time scales. 
+</p>
+<p>
+Time bases are an important part of the QuickTime Movie Toolbox. Understanding their<br>
+role in the way movies play back can be extremely important for developers trying to<br>
+push the envelope in writing new and innovative QuickTime applications. This article<br>
+has opened the door; now it's up to you to decide whether this route will prove<br>
+beneficial to your efforts. 
+</p>
+<h2>HIGHLIGHTS OF QUICKTIME 1.5 NEW FEATURES</h2>
+<p>
+Listed below are some of the more significant features of QuickTime 1.5.
+</p>
+<ul>
+<li>Photo CD: Using QuickTime 1.5 and the Photo CD Access extension, you can<br>
+work with Kodak Photo CDs on your Macintosh. Photos on the CD appear as<br>
+standard PICT files and can be opened in any application that opens pictures.</li>
+<li>Compact video compressor: A new compressor has been added that<br>
+provides high-quailty, low data rate playback.</li>
+<li>Movie import: Any application that opens movies using QuickTime's<br>
+Standard File Preview can import PICS, AIFF, PICT, and System 7 sound files.</li>
+<li>1-bit dither: Playback performace of color movies has been significantly<br>
+enhanced on black-and-white (1- bit) displays. This is particularly useful on<br>
+PowerBook computers.</li>
+<li>Sequence grabber dialogs: To provide for a more flexible and consistent<br>
+user interface for configuring&nbsp;&nbsp;capture devices, the sequence grabber provides<br>
+a set of standard configuration dialogs. Support for sound capture is also<br>
+substantially improved.</li>
+<li>Text media handler: In addition to sound and video, QuickTime 1.5 has<br>
+built-in support for text. The text media handler is built using QuickTime's<br>
+new Generic Media handler, which allows you to create your own QuickTime<br>
+data types.</li>
+<li>Standard compression: The Standard Image Compression dialog is now<br>
+built into QuickTime. The user can pan and zoom the test image within<br>
+Standard Compression.</li>
+</ul>
+<p>
+<b>GUILLERMO A. ORTIZ</b>When I met Guillermo I was really young. The first thing I<br>
+said to him was, "Are you my dad?" Well, really I said something like "Waaaa!" As a<br>
+matter of fact, I was a newborn. What I like about Guillermo is that we are almost the<br>
+same. We like the same food and we watch the same TV shows, like <i> Star Trek</i>&nbsp;&nbsp;and <i>Nova</i><br>
+. We like to play the same sports, such as tennis and basketball, and we both like to<br>
+read a lot -- lately we even read the same books. But the one way we are most alike is<br>
+that we love computers. Isn't that a weird coincidence? Another thing I like about<br>
+Guillermo is that he is really smart. He used to be a teacher, and having a teacher<br>
+around the house is always useful. He is always there to help me with stuff like math<br>
+and science. He is also a great cook. The dinners he prepares for us on the weekends are<br>
+fit for a king! He is like my family's own personal four-star chef. The music<br>
+Guillermo likes to listen to is the Beatles, the Doors, Santana, and Cream. I like those<br>
+groups too, but on our way to school we listen to rap. Guillermo is a great guy and I am<br>
+really glad to have him for a dad. -- Guillermo A. Ortiz Jr., age 13 *
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>RECOMMENDED READING</b>This article assumes a reasonable knowledge of QuickTime<br>
+programming. For background information, see the QuickTime developer notes,<br>
+available from APDA as part of the QuickTime Developer's Kit v. 1.0 (#R0147LL/A).<br>
+For an introduction to QuickTime, see my article "QuickTime 1.0: 'You Oughta Be in<br>
+Pictures'" in <i> develop </i> Issue 7.*
+</p>
+<p>
+<b>There are no guidelines </b> (as of this writing) regarding ways to allow users to set<br>
+the rate&nbsp;&nbsp;of a movie; the solution implemented in TimeBaseSimple has not been<br>
+approved by the User Interface gods. It's primitive, but it works.*
+</p>
+<p>
+<b>The TimeBaseSimple shuttle control </b>is a cool CDEF created by C. K. Haun,<br>
+member emeritus of Developer Technical Support. Its C source is included on the <br>
+<i>Developer CD Series </i> disc.*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Bill Guschwan, Peter Hoddie, David<br>
+Van Brink*
+</p>
+</body>
+</html>

@@ -1,0 +1,1152 @@
+<html>
+<head>
+<!-- Article ID: 23 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>May 92 - DRAWING IN GWORLDS FOR SPEED AND VERSATILITY</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>DRAWING IN GWORLDS FOR SPEED AND VERSATILITY</h2>
+<h1>KONSTANTIN OTHMER AND MIKE REED</h1>
+<p>
+<img src="img/183.gif" width="180 px"></img>
+</p>
+<p>
+<i>32-Bit QuickDraw brought system support for off-screen drawing worlds to the</i><br>
+<i>Macintosh, and Color QuickDraw continues this support in System 7. Using custom</i><br>
+<i>drawing routines in off-screen worlds can increase a program's speed and image-</i><br>
+<i>processing versatility. This article describes custom drawing routines that do just</i><br>
+<i>that.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+It's a basic rule of Macintosh programming never to write a drawing routine that<br>
+draws directly to the screen. There are two good reasons for this rule. First, multiple<br>
+clients share the screen, and custom routines that draw directly to the screen may<br>
+violate cooperation rules (new ones are being invented all the time). Second, support<br>
+for new types of displays may be added to QuickDraw (as was the case with 32-Bit<br>
+QuickDraw), and custom routines that draw directly to the screen certainly won't<br>
+work when new display types are introduced. 
+</p>
+<p>
+So if your application has a drawing need that QuickDraw cannot fulfill, off-screen<br>
+drawing is the only way to go. Your application draws to an off-screen copy of the<br>
+application window, and the off- screen image is transferred to the screen with<br>
+QuickDraw's CopyBits procedure. In the off-screen environment your application is<br>
+the sole proprietor, and support for new displays will not affect how the off-screen<br>
+environment behaves. In addition, using CopyBits to transfer an off-screen image onto<br>
+the screen enables fast and smooth updating.
+</p>
+<p>
+There are a couple of different ways to create an off-screen drawing environment. The<br>
+old-fashioned way is to create it by hand, an arduous task that results in all the<br>
+structures being kept in main memory. The new, improved way is to create it with the<br>
+NewGWorld call first made available by 32- Bit QuickDraw and now supported by<br>
+Color QuickDraw in System 7. When this method is used, a copy of the GWorld can be<br>
+cached on an accelerator card, thus enabling improved performance by minimizing<br>
+NuBusTM traffic during drawing operations. (For a full comparison of drawing<br>
+operations with and without the use of GWorlds, see "Macintosh Display Card 8*24GC"<br>
+in<i>develop</i> Issue 3.)
+</p>
+<p>
+Given that you must certainly see the wisdom of using GWorlds in applications, we'll<br>
+now move on to the good stuff--how to increase performance and create some<br>
+interesting special effects with custom drawing routines. You should know the basics of<br>
+creating and disposing of GWorlds to get the most from this article. If you need a<br>
+review of these basics, read "Braving Offscreen Worlds" in<i>develop</i> Issue 1 or see<br>
+Chapter 21 of<i>Inside Macintosh</i> Volume VI. 
+</p>
+<h2>CUSTOM DRAWING ROUTINES TO INCREASE SPEED</h2>
+<p>
+Sometimes QuickDraw works too slowly for some of us. Whereas QuickDraw often<br>
+trades performance for flexibility, there are times we'd just as soon trade flexibility<br>
+for performance. In those cases, we can achieve tremendous gains in speed by writing<br>
+custom routines to draw to off-screen worlds. Before writing such a routine, though,<br>
+we need to understand what slows QuickDraw down. 
+</p>
+<p>
+<b>WHY IS QUICKDRAW OFTEN SO SLOW?</b><br>
+Let's examine EraseRect to help us understand the considerable overhead QuickDraw<br>
+has to deal with just to perform a simple operation. An EraseRect call is issued via a<br>
+trap, so right off the bat we incur the overhead of the trap dispatcher. For a complex<br>
+operation, this overhead is relatively small, but for a simple operation performed<br>
+repetitively, this overhead can be significant. In the latter case, the trap dispatcher<br>
+overhead can be avoided by calling GetTrapAddress and then calling the routine<br>
+directly. (Note that with high-level routines, some traps take a selector.)
+</p>
+<p>
+After we've called the routine, QuickDraw must do the following setup:
+</p>
+<ol>
+<li>Check for a bottleneck procedure in the current port. </li>
+<li>Check whether picture recording is enabled. </li>
+<li>Calculate the intersection of the clipRgn and the visRgn and see if the<br>
+drawing will be clipped out. </li>
+<li>Check whether drawing is to the screen, and if so shield the cursor if the<br>
+drawing intersects the cursor location. </li>
+<li>Walk the device list and draw to each monitor that the clipped rectangle<br>
+intersects. </li>
+</ol>
+<p>
+Then the drawing takes place, consisting of these steps:
+</p>
+<ol>
+<li>If the pixel map requires 32-bit addressing, enter 32-bit mode. </li>
+<li>Determine the transfer mode to draw with. </li>
+<li>Convert the pattern to the correct depth and alignment for this drawing. </li>
+<li>Determine how to color the pixel pattern using the colors from the port. </li>
+<li>Blast the bits. </li>
+</ol>
+<p>
+The teardown consists of two steps:
+</p>
+<ol>
+<li>Exit 32-bit addressing mode, if appropriate. </li>
+<li>Unshield the cursor. </li>
+</ol>
+<p>
+Notice that this list doesn't include error checking. QuickDraw does do some error<br>
+checking, but rigorous checking slows performance further. While many of the items<br>
+on this list are a simple check, others require considerable processor time. There's<br>
+plenty of room here for reducing overhead by writing custom routines. 
+</p>
+<p>
+Custom routines can often skip all but step 10. For drawing operations that spend the<br>
+majority of time in step 10, custom routines can't offer big wins in performance. But<br>
+for operations that spend most of the time elsewhere, custom routines can achieve<br>
+significant performance gains.
+</p>
+<p>
+For example, if you copy a large image with CopyBits and the source and destination<br>
+pixel depths are the same, the fgColor is black and the bkColor is white, the color<br>
+tables match, the clipping regions are rectangular, and the alignment is the same, the<br>
+operation is already very efficient since the majority of time is spent moving the bits<br>
+rather than doing overhead. In this situation, you can't hope to gain substantial speed<br>
+with a custom drawing routine. In contrast, for an operation such as setting a single<br>
+pixel, the overhead involved in setting up the drawing operation eclipses the time<br>
+actually spent drawing, so this is a candidate for a custom drawing routine. 
+</p>
+<p>
+<b>OPTIMIZING A CUSTOM ROUTINE TO SET A SINGLE PIXEL</b><br>
+The simplest drawing to an off-screen world is setting a single pixel. Let's compare<br>
+how QuickDraw sets a single pixel with how a custom drawing routine might do it. For<br>
+our custom routine, we'll assume the off-screen world is 32 bits deep. This<br>
+assumption gives us significant gains in speed and reduces code size and complexity. 
+</p>
+<p>
+&nbsp;Our sample code inverts the red and green channels. Figure 1 illustrates the<br>
+transformation this accomplishes. Using QuickDraw, the code looks like this:
+</p>
+<pre>for (y = bounds.top; y &lt; bounds.bottom; y++)
+{
+    for (x = bounds.left; x &lt; bounds.right; x++)
+    {
+        GetCPixel(x, y, &amp;myRGB);
+        myRGB.red ^= 0xFFFF; /* Invert the red and green channels. */
+        myRGB.green ^= 0xFFFF;
+        SetCPixel(x, y, &amp;myRGB);
+    }
+}</pre>
+<p>
+<img src="img/184.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1</b> A Couple of Crazy Guys, Before and After Red/Green Inversion
+</p>
+<p>
+As shown here, we use the QuickDraw routines GetCPixel and SetCPixel to get and set<br>
+the color of a single pixel. SetCPixel is converted to a line-drawing command, because<br>
+setting a single pixel is actually a special case of drawing a line (a<i>very</i> short line!).<br>
+This way of implementing pixel setting is advantageous because line-drawing<br>
+operations are saved in pictures and use the pattern and transfer mode from the port.<br>
+It also simplifies QuickDraw on the bottleneck level since no separate bottleneck<br>
+routine exists for setting pixels. The downside is that setting a single pixel this way is<br>
+slow.&nbsp;&nbsp;&nbsp;To produce the transformation shown in Figure 1, the code takes 624 ticks or<br>
+about 10.4 seconds to run on a Macintosh IIfx.
+</p>
+<p>
+<b>&nbsp;Faster. </b>Now let's develop a custom routine that optimizes setting a single pixel. For<br>
+a first pass, we'll eliminate the majority of the overhead and set the pixel directly<br>
+rather than do line drawing. Given a GWorldPtr, an x and y position, and a 32-bit<br>
+value, our routine GWSet32PixelC sets the pixel at that position to that value. The<br>
+parallel call GWGet32PixelC is identical, except that where GWSet32PixelC sets the<br>
+value, GWGet32PixelC returns it. 
+</p>
+<pre>GWSet32PixelC(GWorldPtr src, short x, short y, long pixelValue)
+{
+PixMapHandle        srcPixMap;
+unsigned short  srcRowBytes;
+long                srcBaseAddr;
+long                srcAddr;
+char                mmuMode;
+
+    srcPixMap = GetGWorldPixMap(src);
+    /* Get the address of the pixels. */
+    srcBaseAddr = (long) GetPixBaseAddr(srcPixMap);
+    /* Get the row increment. */
+    srcRowBytes = (**srcPixMap).rowBytes &amp; 0x7fff;
+
+    /* Make coordinates pixel map relative. */
+    x -= (**srcPixMap).bounds.left;
+    y -= (**srcPixMap).bounds.top;
+
+    mmuMode = true32b;
+    SwapMMUMode(&amp;mmuMode);      /* Set the MMU to 32-bit mode. */
+
+    /* Calculate the address of the pixel:  base + y*(row size in
+        bytes) + x*(bytes/pixel). */
+    srcAddr = srcBaseAddr + (long)y*srcRowBytes + (x << 2);
+    *((long *)srcAddr) = pixelValue;
+    SwapMMUMode(&amp;mmuMode);   /* Restore the previous MMU mode. */
+}</pre>
+<p>
+Of interest in this code is the call to SwapMMUMode before drawing to the GWorld. This<br>
+is necessary since the GWorld could be cached on an accelerator card and require<br>
+32-bit addressing to access it. (See "QuickDraw's CopyBits Procedure" in<i>develop</i><br>
+Issue 6 for a complete explanation.)
+</p>
+<p>
+If we revise our sample code to use our new calls GWGet32PixelC and GWSet32PixelC,<br>
+the image shown in Figure 1 takes 398 ticks (or 6.8 seconds) to process. This is about<br>
+65% faster than QuickDraw, but is still much slower than it needs to be.
+</p>
+<p>
+<b>And faster. </b>There are two major inefficiencies in our sample code: it makes four<br>
+trap calls and it's at the mercy of the C compiler. Both of these problems are easily<br>
+overcome, as the FastGWSet32Pixel routine demonstrates. Rather than take a<br>
+GWorldPtr, FastGWSet32Pixel takes a pixMap pointer and a base address.<br>
+Furthermore, the routine assumes it's being called in 32-bit mode. Note that the<br>
+variables<b>bounds</b>,<b> top</b>,<b> rowBytes</b>, and<b> left</b> are defined in QuickEquate.a. 
+</p>
+<pre>FastGWSet32Pixel(PixMap *srcPixMap, long *srcBaseAddr, short x,
+short y, long pixelValue)
+{</pre>
+<pre>FastGWSet32Pixel(PixMap *srcPixMap, long *srcBaseAddr, short x,
+    short y, long pixelValue)
+{
+
+ asm {
+   move.l   srcPixMap,a0       ;Must be 32-bit-clean pointer
+   move.w   y,d1               ;Get y
+   sub.w    bounds+top(a0),d1  ;Make y bounds 0 relative
+   move.w   rowBytes(a0),d0    ;Get rowBytes
+   and.w    #0x7FFF,d0         ;Strip bitmap/pixMap bit
+   mulu.w   d0,d1              ;Calculate offset to start of this row
+   move.l   srcBaseAddr,a1     ;Must be 32-bit base address
+   adda.l   d1,a1              ;Calculate address of this row
+   moveq    #0,d0              ;Extend x to a word
+   move.w   x,d0
+   sub.w    bounds+left(a0),d0 ;Make x bounds 0 relative
+   lsl.w    #2,d0              ;Convert x to pixels (4 bytes/pixel)
+   adda.l   d0,a1              ;Calculate pixel address
+   move.l   pixelValue,(a1)
+ }
+}</pre>
+<p>
+You may wonder why this routine takes both a pixMap and a base address. Can't it just<br>
+get the base address from the pixMap directly? The answer is no, since the base<br>
+address of a GWorld can be a handle rather than a pointer and in the future might be<br>
+something different again. You must pass in abase address that's good in 32-bit<br>
+addressing mode. The GetPixBaseAddr routine called by GWSet32PixelC returns the<br>
+correct base address given a pixMap. 
+</p>
+<p>
+Revising our sample code isn't as trivial as it was before because of the additional<br>
+assumptions made by these fast get and set pixel routines. Here's the new version of<br>
+the code:
+</p>
+<pre>/* Get pixMap's 32-bit base address. */
+srcBaseAddr = (long *) GetPixBaseAddr(myPixMapHandle);
+myPixMapPtr = *myPixMapHandle;
+
+/* WARNING: The pixMapHandle is dereferenced throughout these next
+    loops. The code makes sure memory will not move. In particular,
+    it's important that the segment containing the FastGWGet32Pixel
+    and FastGWSet32Pixel routines is already loaded or is in the same
+    segment as the caller. Otherwise memory might move when the
+    segment is loaded. A trick to make sure the segment is loaded is
+    to call a routine in the same segment (or these routines
+    themselves) before making assumptions about memory not moving. */
+
+/* Make it 32-bit clean. */
+LockPixels(myPixMapHandle);
+myPixMapPtr = (PixMap *) StripAddress((Ptr)myPixMapPtr);
+
+mmuMode = true32b;
+SwapMMUMode(&amp;mmuMode);          /* Set the MMU to 32-bit mode. */
+
+for (y = bounds.top; y &lt; bounds.bottom; y++)
+{
+    for (x = bounds.left; x &lt; bounds.right; x++)
+    {  
+        myPixel = FastGWGet32Pixel(myPixMapPtr, srcBaseAddr, x, y);
+        myPixel ^= 0x00FFFF00;     
+                             /* Invert the red and green channels. */
+        FastGWSet32Pixel(myPixMapPtr, srcBaseAddr, x, y, myPixel);
+    }
+}
+
+SwapMMUMode(&amp;mmuMode);      /* Set it back. */
+UnlockPixels(myPixMapHandle);</pre>
+<p>
+Note that the code calls StripAddress on the pixMapPtr since it'll be used in 32-bit<br>
+mode. Also note that although we locked the pixels, we didn't lock the pixMapHandle, so<br>
+no operation that could move memory is performed. You must be careful that the get<br>
+and set pixel routines are in the same segment as the code that's calling them, or the<br>
+Segment Loader might move memory when the routines are called. If all these<br>
+restrictions are too much to keep in mind, simply call HLock on the pixMapHandle, and<br>
+then HUnlock when you've finished. 
+</p>
+<p>
+Our sample image now takes only 17 ticks to process, or about .3 second. This is a<br>
+nearly 37-fold improvement over the first version. But we're not done yet.
+</p>
+<p>
+<b>And even faster. </b>We're still performing two subroutine calls and two multiplies<br>
+per pixel, a major inefficiency. The RedGreenInvert routine gets rid of this<br>
+inefficiency by walking a GWorld's pixMap to invert the red and green channels. 
+</p>
+<pre>RedGreenInvert(GWorldPtr src)
+{
+PixMapHandle        srcPixMap;
+short               srcRowBytes;
+long                *srcBaseAddr;
+long                *srcAddr1;
+char                mmuMode;
+short               row, column;
+short               width, height;
+
+    srcPixMap = GetGWorldPixMap(src);
+
+    if(LockPixels(srcPixMap))
+    {
+        /* Get the base address. */
+        srcBaseAddr = (long *) GetPixBaseAddr(srcPixMap);
+
+        /* Get the row increment. */
+        srcRowBytes = (**srcPixMap).rowBytes &amp; 0x7fff;
+        width = (**srcPixMap).bounds.right-(**srcPixMap).bounds.left;
+        height =
+            (**srcPixMap).bounds.bottom-(**srcPixMap).bounds.top;
+        mmuMode = true32b;
+        SwapMMUMode(&amp;mmuMode);  /* Set the MMU to 32-bit mode. */
+        for (row = 0; row &lt; height; row++)
+        {
+            srcAddr1 = srcBaseAddr;
+            for (column = 0; column &lt; width; column++)
+            {
+                /* Invert the red and green. Note that for 32-bit
+                    pixels, pixel memory is organized as XRGB, where
+                    each component is 8 bits. */
+                *srcAddr1++ ^= 0x00ffff00;  /* Bump to next pixel. */
+            }
+            /* Go to the next row. */
+            srcBaseAddr =
+                (long *) ((char *) srcBaseAddr + srcRowBytes);
+        }
+        SwapMMUMode(&amp;mmuMode);  /* Restore the previous MMU mode. */
+        UnlockPixels(srcPixMap);    /* Unlock the pixMap. */
+    }
+}</pre>
+<p>
+Using the RedGreenInvert routine, our sample image now takes 1 tick or 1/60th of a<br>
+second to process. This is nearly 624 times faster than the original version! Even<br>
+greater performance gains can be made by rewriting this routine in assembly, but<br>
+that's left as an exercise for you. 
+</p>
+<p>
+<b>The price you pay. </b>Note that as performance increases, the flexibility of the code<br>
+decreases. In our example, the original version of the code, which calls GetCPixel and<br>
+SetCPixel, works for all pixel depths, is recorded into pictures, and does the actual<br>
+drawing using QuickDraw. GWSet32PixelC works only on 32-bit off-screen pixMaps.<br>
+FastGWSet32Pixel has the additional restriction that it has to be called in 32-bit<br>
+addressing mode. And finally, RedGreenInvert performs only one specific operation on<br>
+an entire 32-bit GWorld. 
+</p>
+<p>
+We've shown you the tremendous speed improvements you can achieve by writing<br>
+custom drawing routines. Now we turn our attention to some useful code examples for<br>
+manipulating images. 
+</p>
+<h2>CUSTOM DRAWING ROUTINES TO MANIPULATE IMAGES</h2>
+<p>
+Some image transformations lend themselves to direct manipulation of GWorld data.<br>
+For example, with custom drawing routines we can transform images off-screen in<br>
+various ways, find the edges of an image, quickly scale an image for use as a mask, and<br>
+fill a rectangle in real time. We present these custom routines here and on<br>
+the<i>Developer CD Series</i> disc. 
+</p>
+<p>
+<b>A CUSTOM ROUTINE TO TRANSFORM IMAGES</b><br>
+We can obtain a variety of special effects--including rotation, stretching, perspective<br>
+transformation, and sine wave warping--by applying a mapping matrix to a source<br>
+GWorld, resulting in atransformed destination GWorld. This technique requires us to<br>
+access an image at fractional rather than integer pixel coordinates--that is, to do<br>
+subpixel sampling rather than point sampling. Let's consider subpixel sampling first<br>
+and then look at the mapping routine. 
+</p>
+<p>
+<b>Subpixel sampling. </b>In QuickDraw, pixels are defined only for integer coordinates<br>
+and undefined elsewhere. The location of each pixel is defined by the pair of integer<br>
+coordinates at its upper left corner. To determine the value a pixel has at a fractional<br>
+location in the pixMap, we must use a filter function. The routine we provide to do<br>
+subpixel sampling, called GetFractionalPixel, can use either of two types of filters: a<br>
+box filter or a tent filter. If use_box_filter is defined in the GetFractionalPixel<br>
+routine, a box filter is used; otherwise a tent filter is used. 
+</p>
+<p>
+Here's how the filters work. Suppose the grid with corners at (0,0) and (6,4)<br>
+represents part of an image, which we want to sample at fractional position<br>
+(2.667,1.75). We can visualize each filter as a geometric solid whose base covers the<br>
+pixel(s) on the grid to be sampled and whose height represents the weight to assign to<br>
+the sampled pixel(s).
+</p>
+<p>
+The box filter can be visualized as a 1-pixel x 1-pixel x 1-pixel cube that we plop<br>
+down on the grid with its bottom right corner at the fractional coordinates, as shown in<br>
+Figure 2. The box filter merely chooses the value of the pixel whose integer<br>
+coordinates are covered by its base--in this case (2,1)-- and gives this value a<br>
+weight of 1, since the box is 1 pixel high above the integer coordinates. This value is<br>
+then used to represent the image at the requested fractional position.
+</p>
+<p>
+While the box filter takes the value of one integer pixel location in the source to<br>
+represent a fractional pixel location, the tent filter averages the weighted values of up<br>
+to four adjacent pixels in the source to represent a fractional pixel location. The tent<br>
+filter can be visualized as a tent with a 2- pixel-square base that we plop down on the<br>
+grid with the exact center of its base at the fractional coordinates, as shown in Figure<br>
+3. The tent filter takes the values of the one, two, or four pixels whose integer<br>
+coordinates are covered by its base--in this case (2,1), (3,1), (2,2), and<br>
+(3,2)--and gives each value a different weight. As with the box filter, the weighting<br>
+for each value is determined by the height of the solid above each integer pixel<br>
+coordinate. The average of these weighted values is then used to represent the image at<br>
+the requested fractional position.
+</p>
+<p>
+<img src="img/185.gif" width="402 px"></img>
+</p>
+<p>
+<b>Figure 2</b> Subpixel Sampling Using a Box Filter
+</p>
+<p>
+<img src="img/186.gif" width="423 px"></img>
+</p>
+<p>
+<b>Figure 3</b> Subpixel Sampling Using a Tent Filter
+</p>
+<p>
+&nbsp;Note in Figure 3 that the edge from the center of the side of the tent base to the top is<br>
+linear (z = x), while the edge from the corner of the tent base to the top is quadratic<br>
+(z = x2). Note also that in two dimensions our tent filter is equivalent to imposing on<br>
+the grid a pixel with its upper left corner at the fractional location, calculating what<br>
+percentage of each of four integer coordinate pixels it overlaps, multiplying the value<br>
+of each overlapped pixel by this respective percentage, and then averaging these<br>
+values, as shown in Figure 4. 
+</p>
+<p>
+<img src="img/187.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 4</b> Two-Dimensional Equivalent of Our Tent Filter
+</p>
+<p>
+<img src="img/188.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 5</b> The 32-Bit QuickDraw Icon, Scaled With a Tent Filter Versus a Box Filter
+</p>
+<p>
+&nbsp;The box filter approximation makes the pixel value calculation easy, but results in<br>
+some blurring of the image. The tent filter produces much better images than the box<br>
+filter, but the calculation time for each pixel is considerably longer. Figure 5<br>
+illustrates the difference between an image scaled with a tent filter and with a box<br>
+filter. 
+</p>
+<p>
+&nbsp;The GetFractionalPixel routine does all the work. The code first determines whether<br>
+the requested pixel lies within the bounds of the source pixMap and returns false if it<br>
+doesn't. Next, the code truncates pixels that lie off the right or bottom to fit wholly<br>
+within the source. Finally, the pixels touched by the requested location are weighted<br>
+and averaged (depending on the filter function) and the result is returned.
+</p>
+<pre>static Boolean GetFractionalPixel(long *srcBaseAddr,
+    long srcRowLongs, Rect *srcBounds, Fixed fx, Fixed fy,
+    long *dstLong)
+{
+unsigned long       tempBlue, tempGreen, tempRed;
+long                    srcPixel[2][2];
+shortFrac               scale[2][2];
+Point                   p;
+    SetPt(&amp;p, fx >> 16, fy >> 16);
+    /*  ModelessPtInRect is a version of QuickDraw's PointInRect
+        routine that works in either 24-bit or 32-bit addressing
+        mode. */
+    if (!ModelessPtInRect(p, srcBounds))
+        return false;
+
+    if (p.h == srcBounds-&gt;right - 1)
+        fx = ff(p.h);   /* ff() is a macro that given a short,
+                                returns a fixed. */
+    if (p.v == srcBounds-&gt;bottom - 1)
+        fy = ff(p.v);
+
+    /* Compute the address of the first source pixel. */
+    {
+        long *srcAddr = srcBaseAddr + p.v * srcRowLongs + p.h;
+
+#if use_box_filter
+        *dstLong = *srcAddr;
+        return true;
+#endif
+        srcPixel[0][0] = *srcAddr++;
+        srcPixel[0][1] = *srcAddr++;
+        srcAddr += srcRowLongs;
+        srcPixel[1][1] = *--srcAddr;
+        srcPixel[1][0] = *--srcAddr;
+    }
+
+    /* Precompute the scales for each pixel. ShortFracMul multiplies
+        two short fractions and returns a short fraction. */
+    {  
+        shortFrac xFrac = Fixed2ShortFrac((unsigned short)fx);
+        shortFrac yFrac = Fixed2ShortFrac((unsigned short)fy);
+   
+        scale[0][0] = ShortFracMul(oneShortFrac - xFrac,
+            oneShortFrac - yFrac);
+        scale[0][1] = ShortFracMul(xFrac, oneShortFrac - yFrac);
+        scale[1][0] = ShortFracMul(oneShortFrac - xFrac, yFrac);
+        scale[1][1] = ShortFracMul(xFrac, yFrac);
+    }
+
+    /* Now scale each component of each corner by the percentage of
+        the "real" pixel covered by the fractional pixel
+        (the area covered by the filter). */
+    tempBlue = ShortFracMulByte(scale[0][0], srcPixel[0][0]) +
+               ShortFracMulByte(scale[0][1], srcPixel[0][1]) +
+               ShortFracMulByte(scale[1][0], srcPixel[1][0]) +
+               ShortFracMulByte(scale[1][1], srcPixel[1][1]);
+    if (tempBlue == 256) tempBlue = 255;
+   
+    tempGreen = ShortFracMulByte(scale[0][0], srcPixel[0][0] >> 8) +
+                ShortFracMulByte(scale[0][1], srcPixel[0][1] >> 8) +
+                ShortFracMulByte(scale[1][0], srcPixel[1][0] >> 8) +
+                ShortFracMulByte(scale[1][1], srcPixel[1][1] >> 8);
+    if (tempGreen == 256) tempGreen = 255;
+   
+    tempRed = ShortFracMulByte(scale[0][0], srcPixel[0][0] >> 16) +
+              ShortFracMulByte(scale[0][1], srcPixel[0][1] >> 16) +
+              ShortFracMulByte(scale[1][0], srcPixel[1][0] >> 16) +
+              ShortFracMulByte(scale[1][1], srcPixel[1][1] >> 16);
+    if (tempRed == 256) tempRed = 255;
+
+    *dstLong = (tempRed << 16) | (tempGreen << 8) | tempBlue;
+    return true;
+}</pre>
+<p>
+<b>The mapping routine. </b>Our custom routine to transform images by applying a<br>
+mapping matrix makes use of the GetFractionalPixel routine. The mapping routine sets<br>
+up a mapping matrix and then calls MapGWorld. MapGWorld takes a GWorld and<br>
+applies the mapping matrix to it, resulting in a transformed GWorld. MapGWorld also<br>
+takes a VAR mask parameter. If this parameter is set to nil, it's unused. Otherwise,<br>
+MapGWorld returns a 1-bit mask that indicates which destination pixels were set.<br>
+This mask can be passed as a parameter to CopyMask or CopyDeepMask to transfer the<br>
+results onto the screen.
+</p>
+<p>
+Figure 6 diagrams how MapGWorld works. The matrix shown there is the one that<br>
+rotates an image 35 degrees from the x-axis toward the y-axis. 
+</p>
+<pre>static GWorldPtr MapGWorld(GWorldPtr srcWorld, mapping *dstMapping,
+    GWorldPtr *maskWorld)
+{
+GWorldPtr       dstWorld;
+PixMapHandle    srcPixMap, dstPixMap;
+long            *srcBaseAddr, *dstBaseAddr, srcRowLongs, dstRowLongs;
+Rect            srcRect, dstRect;
+mapping         inverseMapping;
+char            x, y, mmuMode;
+
+    /* Create the dstWorld sized to hold the transformed srcWorld. */
+    dstRect = srcRect = srcWorld-&gt;portRect;
+    MapRectangle(dstMapping, &amp;dstRect);
+    if (NewGWorld(&amp;dstWorld, 32, &amp;dstRect, 0, 0, 0))
+        return 0;
+    /* Optionally, create a maskWorld with the same bounds as
+        the dstWorld. */
+    if (maskWorld)
+    {  
+        if (NewGWorld(maskWorld, 1, &amp;dstRect, 0, 0, 0))
+        {  
+            DisposeGWorld(dstWorld);
+            return 0;
+        }
+        EraseGWorld(*maskWorld, &amp;dstRect);
+    }
+
+    /* Set up for fast walking of the src and dst. Need to swap
+        MMU mode to look at the baseAddr. */
+    srcPixMap = GetGWorldPixMap(srcWorld);
+    dstPixMap = GetGWorldPixMap(dstWorld);
+    /* Get the address of the pixMap. */
+    srcBaseAddr = (long *) GetPixBaseAddr(srcPixMap);
+    /* Get the row increment. */
+    srcRowLongs = ((**srcPixMap).rowBytes &amp; 0x7fff) >> 2;
+    /* Get the address of the pixMap. */
+    dstBaseAddr = (long *) GetPixBaseAddr(dstPixMap);
+    /* Get the row increment. */
+    dstRowLongs = ((**dstPixMap).rowBytes &amp; 0x7fff) >> 2;
+
+    inverseMapping = *dstMapping;  
+    InvertMapping(&amp;inverseMapping);
+
+    mmuMode = true 32b;
+    SwapMMUMode(&amp;mmuMode);      /* Set the MMU to 32-bit mode. */
+    for (y = dstRect.top; y &lt; dstRect.bottom; y++)
+    {
+        long *dstAddr = dstBaseAddr;
+
+        for (x = dstRect.left; x &lt; dstRect.right; x++)
+        {
+            Fixed srcX = ff(x);
+            Fixed srcY = ff(y);
+           
+            MapXY(&amp;inverseMapping, &amp;srcX, &amp;srcY);
+            if (GetFractionalPixel(srcBaseAddr, srcRowLongs,
+                    &amp;srcRect, srcX, srcY, dstAddr++) &amp;&amp;
+                    maskWorld)
+                SetGWorldPixel(*maskWorld, x, y);
+        }
+        dstBaseAddr += dstRowLongs;
+    }
+    SwapMMUMode(&amp;mmuMode);   /* Restore the previous MMU mode. */
+    return dstWorld;
+}</pre>
+<p>
+The first thing MapGWorld does is call MapRectangle, which computes the size of the<br>
+destination GWorld. (This and other subroutines can be found on the<i>Developer CD</i><br>
+<i>Series</i> disc.) It does this by applying the matrix transformation to the coordinates of<br>
+the rectangle's four corners and then finding the tightest-fitting rectangle that<br>
+contains the four points. It uses the same rectangle to make a 1-bit mask world, if<br>
+needed. 
+</p>
+<p>
+Next, the matrix is inverted by calling InvertMapping, which establishes the inverse<br>
+mapping--that is, the mapping from the destination to the source. Therefore, the<br>
+matrix passed into MapGWorld must be invertible. (A commercial version of our<br>
+routine would check for noninvertible matrixes and report an error.) If a transform<br>
+that expands the source pixMap by 2 is used to map the source to the destination, only<br>
+every other pixel in the destination is touched. So we walk the destination and use an<br>
+inverse transform to find the source pixel location that maps to each destination<br>
+location. This guarantees that each pixel in the destination is touched. 
+</p>
+<p>
+This brings us to an interesting observation: geometries, such as the bounding<br>
+rectangle, are transformed from the source to the destination, but pixMaps use the<br>
+inverse transform to walk the destination and map coordinates back to the source.
+</p>
+<p>
+The next section of code walks the destination pixMap, performs the inverse mapping,<br>
+and then calls GetFractionalPixel to put the pixel value directly in the destination<br>
+GWorld. The corresponding entry in the mask pixMap is set if the requested pixel was<br>
+in the range of the source pixMap and the mask GWorld exists.&nbsp;&nbsp;&nbsp;
+</p>
+<p>
+<img src="img/189.gif" width="365 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 6</b> How MapGWorld Works
+</p>
+<p>
+A couple of the transformations that can be achieved with the MapGWorld routine are<br>
+shown in Figure 7. The rotation is achieved by applying the matrix given in Figure 6.<br>
+The stretching is achieved by scaling the mapping by 2 in the x direction. Included in<br>
+the code on the<i>Developer CD Series</i> disc are routines for setting up the mapping<br>
+matrix. RotateMapping sets up a matrix to perform rotation, as in
+</p>
+<pre>RotateMapping(&amp;map, ff(35), ff(center.h), ff(center.v));</pre>
+<p>
+which rotates an image 35 degrees about some point specified by<b>center</b>. ScaleMapping<br>
+sets up a matrix that performs stretching about a center, as in
+</p>
+<pre>ScaleMapping(&amp;aMapping, ff(2), ff(1), ff(center.h), ff(center.v));</pre>
+<p>
+Note that MapGWorld is slow for the reasons discussed earlier. It's left as an exercise<br>
+for you to optimize all or part of this code. Optimized assembly code for rotation can<br>
+rotate a 400 x 400 8-bit pixMap at about five frames a second on a Macintosh II. 
+</p>
+<p>
+<img src="img/190.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 7</b> A Couple of Crazy Guys, Transformed With MapGWorld
+</p>
+<p>
+<img src="img/191.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 8</b> A Couple of Crazy Guys, Transformed Nonlinearly
+</p>
+<p>
+<b>&nbsp;More tricks. </b>We can perform nonlinear transformations as well. Consider the<br>
+image in Figure 8. This sine wave warp was generated by transforming the coordinates<br>
+of the source GWorld<i>after</i>&nbsp;&nbsp;they had been computed by sending the destination<br>
+coordinates through the inverse of the mapping. The routine FancyMap performs a<br>
+simple trigonometric transformation of the y coordinate. It's not meant to be efficient,<br>
+only to illustrate the flexibility provided by our MapGWorld routine. 
+</p>
+<pre>static void FancyMap(const Rect *srcR, Fixed *xPtr, Fixed *yPtr)
+{
+    double x = *xPtr / 65536.0;
+    double dx = 2 * pi() * (x - (srcR-&gt;right + srcR-&gt;left >> 1)) /
+        (srcR-&gt;right - srcR-&gt;left);
+    double amp = srcR-&gt;right - srcR-&gt;left >> 3;
+    double delta = sin(dx) * amp;
+    *yPtr += delta * 65536.0;
+}</pre>
+<p>
+&nbsp;Other variations are easy to add. For example, sine and cosine can be used in<br>
+combination to map an image onto a circle. If you expand the mapping to a full 3 x 3<br>
+matrix, you can draw images in perspective. 
+</p>
+<p>
+<b>A CUSTOM ROUTINE TO FIND EDGES</b><br>
+Another example that lends itself to direct manipulation of GWorld data is finding edges<br>
+by calculating the change in pixel values across a pixMap. Our CalculateDeltas routine<br>
+does just that.&nbsp;&nbsp;&nbsp;First it copies the 32-bit pixMap down to a preallocated 8-bit<br>
+gray-scale pixMap via CopyBits. This precalculates the luminance of each pixel in the<br>
+source, rather than doing this individually on the fly.&nbsp;&nbsp;&nbsp;Next the routine calculates the<br>
+difference between horizontally adjoining pixels and writes the result back out in<br>
+place. 
+</p>
+<pre>CalculateDeltas(GWorldPtr src, GWorldPtr dst)
+{
+PixMapHandle        srcPixMap, dstPixMap;
+short               srcRowBytes, dstRowBytes;
+long                *srcBaseAddr, *dstBaseAddr, *dstAddr;
+unsigned char       *srcAddr1;
+char                mmuMode;
+short               row, column;
+unsigned char       lum1,lum2;
+unsigned long       dstLong;
+short               width, height;
+GDHandle            oldGD;
+GWorldPtr           oldGW;
+
+    srcPixMap = GetGWorldPixMap(src);
+    dstPixMap = GetGWorldPixMap(dst);
+
+    /* Lock the pixMaps. */
+    if (LockPixels(srcPixMap) &amp;&amp; LockPixels(dstPixMap))
+    {
+        GetGWorld(&amp;oldGW, &amp;oldGD);
+        SetGWorld(dst, nil);
+        CopyBits((BitMap*)*srcPixMap, (BitMap*)*dstPixMap,
+            &amp;(**srcPixMap).bounds, &amp;(**dstPixMap).bounds,
+            srcCopy, 0L);
+        SetGWorld(oldGW, oldGD);
+
+        srcBaseAddr = (long *) GetPixBaseAddr(srcPixMap);
+        srcRowBytes = (**srcPixMap).rowBytes &amp; 0x7fff; 
+        dstBaseAddr = (long *) GetPixBaseAddr(dstPixMap);
+        dstRowBytes = (**dstPixMap).rowBytes &amp; 0x7fff;     
+        width =
+            (**srcPixMap).bounds.right - (**srcPixMap).bounds.left;
+        height =
+            (**srcPixMap).bounds.bottom - (**srcPixMap).bounds.top;
+   
+        mmuMode = true32b;
+        SwapMMUMode(&amp;mmuMode);     /* Set the MMU to 32-bit mode. */
+        for (row = 0; row &lt; height; row++)
+        {
+            srcAddr1 = (unsigned char *) dstBaseAddr;
+            dstAddr = dstBaseAddr;
+            lum1 = *srcAddr1++;    /* Get luminance of src pixel. */
+            for (column = 0; column &lt; ((width-1)/4); column++)
+            {
+                /* Do a long in the destination (4 pixels). This is
+                   OK since memory blocks are always long word
+                   aligned. Thus, we will never write over the right
+                   edge. */
+                dstLong = 0;
+                lum2 = *srcAddr1++;
+                dstLong =
+                    (unsigned char) ((0x100 + lum1 - lum2)>>1);
+                dstLong = dstLong << 8;
+                lum1 = *srcAddr1++;
+                dstLong |=
+                    (unsigned char) ((0x100 + lum2 - lum1)>>1);
+                dstLong = dstLong << 8;
+                lum2 = *srcAddr1++;
+                dstLong |=
+                    (unsigned char) ((0x100 + lum1 - lum2)>>1);
+                dstLong = dstLong << 8;
+                lum1 = *srcAddr1++;
+                dstLong |=
+                    (unsigned char) ((0x100 + lum2 - lum1)>>1);
+                *dstAddr++ = dstLong;
+            }
+            /* Next row. */
+            srcBaseAddr =
+                (long *) ((char *) srcBaseAddr + srcRowBytes);
+            /* Next row. */
+            dstBaseAddr =
+                (long *) ((char *) dstBaseAddr + dstRowBytes);
+        }
+        SwapMMUMode(&amp;mmuMode);  /* Restore the previous MMU mode. */
+        UnlockPixels(srcPixMap);
+        UnlockPixels(dstPixMap);
+    }
+}</pre>
+<p>
+Notice that the routine assumes the 8-bit gray-scale color table is linear.<br>
+Furthermore, the routine does not deal with the right edge correctly. The problem is<br>
+that if there are<i>n</i>&nbsp;&nbsp;pixels per row, there are<i> n</i> -1 deltas, so the resulting figure is one<br>
+pixel narrower than the source. This routine puts garbage in the last pixel position in<br>
+each row. When the image is displayed, you should shrink the image's bounds rectangle<br>
+by one pixel on the right.
+</p>
+<p>
+Figure 9 shows the result of applying the CalculateDeltas routine to one of our favorite<br>
+images. 
+</p>
+<p>
+<b>A CUSTOM ROUTINE TO SCALE IMAGES FOR MASK GENERATION</b><br>
+In our "Scoring Points With TrueType" article in Issue 7 of<i>develop</i> , we discuss a<br>
+technique for drawing antialiased text using CopyDeepMask. There the mask for<br>
+CopyDeepMask is created by (1) drawing the text at four times the target size into a<br>
+1-bit GWorld and (2) using a dithered CopyBits to shrink the text to the target size in<br>
+a 4-bit gray-scale GWorld.
+</p>
+<p>
+<b>&nbsp;Figure 9</b> A Couple of Pool Sharks, Before and After Deltas Calculated
+</p>
+<p>
+<b>&nbsp;Figure 10</b> A "Hello, World" Mask Created With a Dithered CopyBits
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;While this technique produces very nice results, as shown in Figure 10, it's<br>
+somewhat slow. One of the easiest ways to speed the routine up is to replace the<br>
+dithered CopyBits with a custom routine that shrinks a 1-bit GWorld into a four times<br>
+smaller 4-bit GWorld. Scale1BitTo4Bit is the routine we need. 
+</p>
+<pre>Scale1BitTo4Bit(GWorldPtr src, GWorldPtr dst)
+{
+PixMapHandle        srcPixMap, dstPixMap;
+short               srcRowBytes, dstRowBytes;
+long                *srcBaseAddr, *srcAddr1, *srcAddr2, *srcAddr3,
+                    *srcAddr4;
+long                *dstBaseAddr, *dstAddr;
+long                thirtyTwoPixels1, thirtyTwoPixels2,
+                    thirtyTwoPixels3, thirtyTwoPixels4;
+char                mmuMode;
+short               row, column;
+short               TranslationTable[256];
+unsigned short      RemapTable[0x211];
+                               /* See later comment on RemapTable. */
+short               dstTenBits;
+unsigned char       dstChar;
+unsigned long       dstLong;
+short               width, height;
+short               index, index1;
+   
+    for (index = 0; index &lt; 256; index++)
+    {
+        /* The translation table takes an index and counts the number
+            of bits set. TranslationTable format:
+       
+            Low 5 bits contain number of bits set in low nibble of
+            index.
+            Next 5 bits contain number of bits set in high nibble.
+            Top 6 bits always zero. */
+        TranslationTable[index] =
+            ((index &amp; 1) != 0) + ((index &amp; 2) != 0) +
+            ((index &amp; 4) != 0) + ((index &amp; 8) != 0) +
+            0x20 * ((index &amp; 0x10) != 0) +
+            0x20 * ((index &amp; 0x20) != 0) +
+            0x20 * ((index &amp; 0x40) != 0) +
+            0x20 * ((index &amp; 0x80) != 0);
+    }
+    /* The RemapTable converts a 10-bit number into an 8-bit value.
+        The 10-bit number is a composite of two 5-bit numbers that
+        can have values from 0-16.
+        The result for each 5-bit input is:
+
+        0-7         -&gt;       0-7
+        8           -&gt;       7
+        9-$10       -&gt;       8-$F */
+    for (index = 0; index &lt;= 0x10; index++)
+    {
+        for (index1 = 0; index1 &lt;= 0x10; index1++)
+            RemapTable[(index << 5) + index1] =
+                (char) ((index - index/8 + index/16) << 4) +
+                (index1 - index1/8 + index1/16);
+    }  
+    srcPixMap = GetGWorldPixMap(src);
+    dstPixMap = GetGWorldPixMap(dst);
+    /* Lock the pixMaps. */
+    if (LockPixels(srcPixMap) &amp;&amp; LockPixels(dstPixMap))
+    {
+        /* Get the address of the pixMap. */
+        srcBaseAddr = (long *) GetPixBaseAddr(srcPixMap);
+        /* Get the row increment. */
+        srcRowBytes = (**srcPixMap).rowBytes &amp; 0x7fff;
+        /* Get the address of the pixMap. */
+        dstBaseAddr = (long *) GetPixBaseAddr(dstPixMap);
+        /* Get the row increment. */
+        dstRowBytes = (**dstPixMap).rowBytes &amp; 0x7fff;
+        width = (**srcPixMap).bounds.right-(**srcPixMap).bounds.left;
+        height =
+            (**srcPixMap).bounds.bottom-(**srcPixMap).bounds.top;
+        mmuMode = true32b;
+        SwapMMUMode(&amp;mmuMode);    /* Set the MMU to 32-bit mode. */
+
+        for (row = 0; row &lt; (height/4); row++)
+        {
+            /* Get addresses of first pixels in four rows of
+               pixMap. */
+            srcAddr1 = srcBaseAddr;
+            srcAddr2 = (long *) ((char *) srcAddr1 + srcRowBytes);
+            srcAddr3 = (long *) ((char *) srcAddr2 + srcRowBytes);
+            srcAddr4 = (long *) ((char *) srcAddr3 + srcRowBytes);
+            dstAddr = dstBaseAddr;
+            for (column = 0; column &lt; ((width+31)>>5); column++)
+            {
+                thirtyTwoPixels1 = *srcAddr1++;
+                                        /* Get four longs of src. */
+                thirtyTwoPixels2 = *srcAddr2++;
+                thirtyTwoPixels3 = *srcAddr3++;
+                thirtyTwoPixels4 = *srcAddr4++;
+                dstLong = 0;
+
+                /* Do eight bits of source. */
+                dstTenBits  =
+                    TranslationTable[thirtyTwoPixels1 &amp; 0x000000FF];
+                dstTenBits +=
+                    TranslationTable[thirtyTwoPixels2 &amp; 0x000000FF];
+                dstTenBits +=
+                    TranslationTable[thirtyTwoPixels3 &amp; 0x000000FF];
+                dstTenBits +=
+                    TranslationTable[thirtyTwoPixels4 &amp; 0x000000FF];
+                dstChar = RemapTable[dstTenBits];
+                dstLong = dstChar;
+
+                /* Do second eight bits of source. */
+                thirtyTwoPixels1 >>= 8; /* Move to second byte. */
+                thirtyTwoPixels2 >>= 8;
+                thirtyTwoPixels3 >>= 8;
+                thirtyTwoPixels4 >>= 8;
+
+                dstTenBits  =
+                    TranslationTable[thirtyTwoPixels1 &amp; 0x000000FF];
+                dstTenBits +=
+                    TranslationTable[thirtyTwoPixels2 &amp; 0x000000FF];
+                dstTenBits +=
+                    TranslationTable[thirtyTwoPixels3 &amp; 0x000000FF];
+                dstTenBits +=
+                    TranslationTable[thirtyTwoPixels4 &amp; 0x000000FF];
+                dstChar = RemapTable[dstTenBits];
+                dstLong += (dstChar << 8);
+                   /* No need to cast since C makes char into int. */
+
+                /* Do third eight bits of source. */
+                thirtyTwoPixels1 >>= 8;   /* Move to third byte. */
+                thirtyTwoPixels2 >>= 8;
+                thirtyTwoPixels3 >>= 8;
+                thirtyTwoPixels4 >>= 8;
+
+                dstTenBits  =
+                    TranslationTable[thirtyTwoPixels1 &amp; 0x000000FF];
+                dstTenBits +=
+                    TranslationTable[thirtyTwoPixels2 &amp; 0x000000FF];
+                dstTenBits +=
+                    TranslationTable[thirtyTwoPixels3 &amp; 0x000000FF];
+                dstTenBits +=
+                    TranslationTable[thirtyTwoPixels4 &amp; 0x000000FF];
+                dstChar = RemapTable[dstTenBits];
+                dstLong += (long) ((long)dstChar << 16);
+
+                /* Do fourth eight bits of source. */
+                thirtyTwoPixels1 >>= 8;   /* Move to fourth byte. */
+                thirtyTwoPixels2 >>= 8;  
+                thirtyTwoPixels3 >>= 8;
+                thirtyTwoPixels4 >>= 8;
+
+                dstTenBits  =
+                    TranslationTable[thirtyTwoPixels1 &amp; 0x000000FF];
+                dstTenBits +=
+                    TranslationTable[thirtyTwoPixels2 &amp; 0x000000FF];
+                dstTenBits +=
+                    TranslationTable[thirtyTwoPixels3 &amp; 0x000000FF];
+                dstTenBits +=
+                    TranslationTable[thirtyTwoPixels4 &amp; 0x000000FF];
+                dstChar = RemapTable[dstTenBits];
+                dstLong += (long) ((long)dstChar << 24);
+
+                *dstAddr++ = dstLong;
+            }
+            srcBaseAddr = (long *) ((char *) srcBaseAddr + 4 *
+                srcRowBytes);           /* Next four rows. */
+            dstBaseAddr = (long *) ((char *) dstBaseAddr +
+                dstRowBytes);           /* Next row. */
+        }
+        SwapMMUMode(&amp;mmuMode);  /* Restore the previous MMU mode. */
+        UnlockPixels(srcPixMap);
+        UnlockPixels(dstPixMap);
+    }
+}</pre>
+<p>
+Notice that the routine assumes the 4-bit destination pixMap is already allocated and<br>
+has a linear gray-scale color table. Second, observe the use of a remapping table. This<br>
+is necessary since each 1- bit x 4 x 4 patch in the source maps to a single 4-bit pixel<br>
+in the destination. A 4 x 4 patch can have any value between 0 and 16, a total of 17<br>
+possibilities. Since a 4-bit pixel can hold only 16 different values, the code maps both<br>
+values 7 and 8 in the source to a value of 7 in the destination via the remapping table. 
+</p>
+<p>
+<b>A CUSTOM ROUTINE TO FILL RECTANGLES</b><br>
+Have you ever seen on TV the special effect of blocking out someone's face to preserve<br>
+anonymity?&nbsp;&nbsp;&nbsp;We can create this effect ourselves with a custom drawing routine that<br>
+simply undersamples the source image. While our custom drawing routine turns the<br>
+whole image into blocks, it's easy for an application to block out just part of an image.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Our BlastRect routine simply fills a rectangle at a given x, y coordinate with the<br>
+specified color in the prescribed GWorld. Note that this routine is a simple extension<br>
+of the GWSet32PixelC routine we looked at earlier. Also note that we must make sure<br>
+we don't fill beyond the right edge or the bottom of the pixMap. 
+</p>
+<pre>void BlastRect(long value, Rect *rect, short x, short y,
+    GWorldPtr dst)
+{
+PixMapHandle        dstPixMap;
+short               dstRowBytes;
+long                dstBaseAddr, dstAddr;
+char                mmuMode;
+short               row, column;
+short               width, height;
+    dstPixMap = GetGWorldPixMap(dst);
+    /* Get the address of the pixMap. */
+    dstBaseAddr = (long) GetPixBaseAddr(dstPixMap); 
+    /* Get the row increment. */
+    dstRowBytes = (**dstPixMap).rowBytes &amp; 0x7fff; 
+
+    if ((x + rect-&gt;right) &lt; (**dstPixMap).bounds.right)
+        width = rect-&gt;right - rect-&gt;left;
+    else
+        width = (**dstPixMap).bounds.right - (x + rect-&gt;left);
+
+    if ((y + rect-&gt;bottom) &lt; (**dstPixMap).bounds.bottom)
+        height = rect-&gt;bottom - rect-&gt;top;
+    else
+        height = (**dstPixMap).bounds.bottom - (y + rect-&gt;top);
+
+    /* Make x and y bounds relative. */
+    x -= (**dstPixMap).bounds.left;
+    y -= (**dstPixMap).bounds.top;
+
+    dstBaseAddr = dstBaseAddr + (long) y*dstRowBytes + (x << 2);
+    mmuMode = true32b;
+    SwapMMUMode(&amp;mmuMode);      /* Set the MMU to 32-bit mode. */
+    for (row = 0; row &lt; height; row++)
+    {
+        dstAddr = dstBaseAddr;
+        for (column = 0; column &lt; width; column++)
+        {
+            *(long *) dstAddr = value;
+            dstAddr += 4;
+        }       /* Go to the next row. */
+        dstBaseAddr = (long) ((char *) dstBaseAddr + dstRowBytes);
+    }
+    SwapMMUMode(&amp;mmuMode);    /* Restore the previous MMU mode. */
+}</pre>
+<p>
+Our UnderSampleGWorld routine, given a GWorld and a rectangle, undersamples the<br>
+GWorld's pixMap at the resolution of the supplied rectangle. The performance of this<br>
+routine isn't too bad for large rectangle sizes since most of the time is then spent in<br>
+the inner loop of the BlastRect routine.&nbsp;&nbsp;&nbsp;When the image is only slightly<br>
+undersampled, most of the time is spent doing overhead: recalculating the address<br>
+where the fill starts, calling traps such as GetPixBaseAddr and SwapMMUMode, and<br>
+calling a subroutine. The UnderSampleGWorld routine was used to hide the identity of<br>
+the two people shown in Figure 11.
+</p>
+<pre>void UnderSampleGWorld(Rect *rect, GWorldPtr dst)
+{
+short               x, y;
+PixMapHandle        dstPixMap;
+long                value;
+
+    dstPixMap = GetGWorldPixMap(dst);
+    for (y = (**dstPixMap).bounds.top;
+        y &lt; (**dstPixMap).bounds.bottom;
+        y += rect-&gt;bottom)
+    {
+        for (x = (**dstPixMap).bounds.left;
+            x &lt; (**dstPixMap).bounds.right;
+            x += rect-&gt;right)
+        {
+            value = GWGet32PixelAsm(dst, x, y);
+            BlastRect(value, rect, x, y, dst);
+        }
+    }
+}</pre>
+<p>
+<img src="img/192.gif" width="189 px"></img>
+</p>
+<p>
+<img src="img/193.gif" width="189 px"></img>
+</p>
+<p>
+<b>Figure 11</b>A Couple of Blockheads, Before and After UnderSampleGWorld
+</p>
+<p>
+Again, it's left to you as an exercise to speed up this routine. With a little work, you<br>
+should be able to munge an image in real time on a Macintosh II. 
+</p>
+<h2>TO WRAP IT ALL UP</h2>
+<p>
+Now you know how to optimize code and manipulate images in various ways in GWorlds.<br>
+You've learned how to design custom drawing routines to maximize speed rather than<br>
+flexibility by cutting out unnecessary overhead. You've seen basic routines to do<br>
+subpixel sampling, transform images by applying a mapping matrix to a source<br>
+GWorld, calculate deltas, scale images for mask generation, and fill rectangles in<br>
+close-to-real time. Now go exercise your new knowledge by optimizing those routines<br>
+and have fun with some images of your own. 
+</p>
+<h2>FURTHER READING</h2>
+<ul>
+<li><i>Computer Graphics: Principles and Practice,</i>  2nd ed., by J. D. Foley, A.<br>
+Van Dam, S. K. Feiner, and J. F. Hughes (Addison-Wesley, 1990). The<br>
+standard text on computer graphics, offering a solid discussion of the basics.</li>
+<li>"Filters for Common Resampling Tasks" by Ken Turkowski, in <i> Graphics</i><br>
+<i>Gems,</i> Vol. 1 (pages 147-165), edited by A. S. Glassner (Academic Press,<br>
+1990). Describes filters that offer quality beyond that afforded by box and<br>
+tent filters.</li>
+<li><i>Digital Image Warping</i>  by George Wolberg (IEEE Computer Society Press,<br>
+1990). All about different image processing effects, especially those used in<br>
+movies. The discussion is very technical, very mathematical, really good on<br>
+theory, and full of great ideas.</li>
+<li><i>The Elements of Seven Card Stud</i>  by Konstantin Othmer (Strategy One<br>
+Publishing, 1989). Advanced strategy for seven card stud and psychology<br>
+useful for all forms of poker. Contains numerous charts, tables, and graphs<br>
+produced on the Macintosh. The strategies were developed through many hours<br>
+of play as well as computer analysis of specific hands and situations. Available<br>
+from Strategy One Publishing, P.O. Box 161544, Cupertino, CA<br>
+95016-1544, for $24.95 plus $2 shipping and 7% sales tax for California<br>
+residents.</li>
+</ul>
+<p>
+<b>KONSTANTIN OTHMER AND MIKE REED</b>are on the lam again. Kon was recently<br>
+spotted toting a padded canvas carrying case the size and shape of a PowerBook 170 on<br>
+board a camel en route to the Pyramids of Giza. A source close to Kon reports that he<br>
+neglected to bring a charger and had to spend extended hours inside a pyramid letting<br>
+pyramid power recharge his PowerBook. Mike was last seen working his way across<br>
+India as a caddy for the Dalai Lama. Our sources say he's picking up spiritual<br>
+enlightenment, total consciousness, and a steady downstroke with his five iron.<br>
+Exercise caution if you encounter either of these guys; they've corrupted system heaps<br>
+in the past and could do so again. *
+</p>
+</body>
+</html>

@@ -1,0 +1,679 @@
+<html>
+<head>
+<!-- Article ID: 41 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>December 92 - MACINTOSH Q & A</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH Q &amp; A</h2>
+<h2>MACINTOSH DEVLOPER TECHNICAL SUPPORT</h2>
+<p>
+<b>Q</b><i> Here's a tidbit I stumbled across in Inside Macintosh Volume VI, page 3-10: the four</i><br>
+<i>Dialog Manager procedures CouldDialog, CouldAlert, FreeDialog, and FreeAlert are no</i><br>
+<i>longer supported. I use CouldDialog, and I happened to notice that it didn't work right</i><br>
+<i>when I tested it under System 7, but I reported it as a bug. Now you tell us that it's not</i><br>
+<i>guaranteed to work in System 7. I can't recall a trap ever becoming suddenly</i><br>
+<i>unsupported like this. What's the story?</i>
+</p>
+<p>
+<b>A </b> The system software engineers felt that CouldDialog, CouldAlert, FreeDialog, and<br>
+FreeAlert didn't do much good under System 6, since the Could calls never completely<br>
+guaranteed that all dialog items were loaded in. These calls also caused problems in the<br>
+beta versions of System 7. Relatively little software uses those traps anymore; like<br>
+many things in <i> Inside Macintosh</i>&nbsp;&nbsp;Volume I, they're relics of the days when Macintosh<br>
+programmers had to deal with desk accessory and floppy disk support issues. So these<br>
+calls were simply patched out. In the final System 7, the traps return without doing<br>
+anything.
+</p>
+<p>
+<b>Q</b><i> I can't get the black-and-white version of my lasso-type tool to work correctly with</i><br>
+<i>CalcMask and CopyMask. With CalcCMask it seems to work fine. What could I be doing</i><br>
+<i>wrong?</i>
+</p>
+<p>
+<b>A </b> CalcMask and CalcCMask are similar in that they both generate a one-bit mask<br>
+given a source bitmap. With CalcCMask, though, a pixMap can be used in place of the<br>
+source bitmap; the seedRGB determines which color sets the bits in the mask image. An<br>
+easy mistake to make is to forget that CalcCMask expects a pointer to a BitMap data<br>
+structure while CalcMask expects a pointer to the actual bit image. And unlike<br>
+CalcCMask, which uses bounding rectangles for the image's dimensions, CalcMask uses<br>
+the bitmap's rowBytes and pixel image offsets to determine the bounding Rects for the<br>
+image. A typical call to these routines is as follows:
+</p>
+<pre>BitMap      source, mask;
+CalcMask (source.baseAddr, mask.baseAddr, source.rowBytes,
+        mask.rowBytes, source.bounds.bottom-source.bounds.top,
+        source.rowBytes>>1);
+CalcCMask (&amp;source, &amp;mask, &amp;(*source).bounds, &amp;(*mask).bounds,
+        &amp;seedRGB, nil, 0);</pre>
+<p>
+&nbsp;One last thing to note when using CalcMask is that the width of the image is in words<br>
+and not bytes. To learn more about these routines, see page 24 of <i> Inside Macintosh</i> <br>
+Volume IV and page 72 of <i>Inside Macintosh</i>&nbsp;&nbsp;Volume V. Also, the <i> Developer CD Series</i> <br>
+disc contains a sample, CalcCMask&amp;CalcMask, that shows how to use these routines.
+</p>
+<p>
+<b>Q</b><i> How do I update the color table of my off-screen graphics world without destroying</i><br>
+<i>the picture?</i>
+</p>
+<p>
+<b>A </b> The recommended approach for changing the color table of an existing GWorld<br>
+involves calling UpdateGWorld, passing either clipPix or stretchPix for gWorldFlags.<br>
+When passed either of these constants, QuickDraw knows to update the pixels of the<br>
+pixMap image. Even though the actual image isn't changed, the flags are still needed to<br>
+remap the pixels to their new colors.
+</p>
+<p>
+<b>Q</b><i> Are there any C++ or C compilation flags that will optimize performance of the</i><br>
+<i>Macintosh Quadra computers? Even when I use the "-NeedsMC68030" flag in MacApp,</i><br>
+<i>an investigation of the MABuild source files reveals that it sets compiler flags only for</i><br>
+<i>the 68020 optimization. If Quadra-specific compilation flags don't exist, do you have</i><br>
+<i>any Quadra performance optimization suggestions?</i>
+</p>
+<p>
+<b>A </b> The current MPW compilers don't have a 68040 performance optimization flag,<br>
+though Apple's future compilers will optimize code for the best possible '040<br>
+performance. In the meantime, here are some tips on '040 performance tuning:
+</p>
+<ul>
+<li>Cache management for the '040 can give you the biggest performance<br>
+boost. Keep program loops inside the cache space, and flush the cache as seldom<br>
+as possible. In most cases you'll have small loops inside the 4K instruction<br>
+cache.</li>
+<li>You might get better performance by not calling BlockMove, because the<br>
+system flushes the cache when you call it in case you're moving code. If you're<br>
+moving data, the cache doesn't need to be flushed, but the system can't tell<br>
+from the BlockMove call whether you're moving code or data. Testing will help<br>
+you determine whether you should call BlockMove or write your own transfer<br>
+routine. The new MOVE16 opcode is used by the BlockMove trap when the<br>
+system is running on an '040 processor, but because of problems with this<br>
+opcode in early '040 processors, it requires special handling. For details, see<br>
+the Macintosh Technical Note "Cache As Cache Can" (formerly #261).</li>
+<li>Transcendental functions aren't implemented in the 68040 hardware as<br>
+they are in the 68881 chip used with the 68020 and 68030. Consequently,<br>
+the functions are emulated in software, resulting in slower performance. If<br>
+you suspect that your floating point performance is less than optimal,<br>
+consider modifying your code to use functions supported by the internal '040<br>
+FPU. See the Macintosh Technical Note "FPU Operations on Macintosh Quadra<br>
+Computers" (formerly #317) for more information about this performance<br>
+factor. Future MPW compiler and library releases will support faster<br>
+transcendental operations and floating point-to-integer conversions.</li>
+</ul>
+<p>
+<b>Q</b><i> In the past we had heard of a problem using calloc and NewPtr in the same program.</i><br>
+<i>Is this true?</i>
+</p>
+<p>
+<b>A </b> There are a few difficulties, which you can deal with if you need to. The primary<br>
+problem is that calloc and all the other malloc routines weren't designed for the<br>
+Macintosh platform. Macintosh memory management is designed around trying to<br>
+squeeze as much as possible out of a limited memory area, which is why handles are<br>
+the primary storage scheme in a Macintosh; they can move, and so greatly reduce<br>
+memory fragmentation. Because the malloc tools return a pointer, they have to be<br>
+located in a locked block, so they tend to lead to fragmentation if used with any other<br>
+memory allocation calls (such as NewPtr). For this reason, any use of the malloc suite<br>
+of allocation calls isn't recommended for Macintosh programs. The only good reason to<br>
+use them is if you're porting a large body of code from other platforms; in this case, it<br>
+may be a reasonable tradeoff to keep the old allocation code.
+</p>
+<p>
+&nbsp;You should also be aware that most of the Macintosh malloc routines never free up<br>
+memory. When you malloc some space, the routine must first allocate it from the<br>
+Memory Manager. It allocates a large block of space using NewPtr and divides it<br>
+internally for distribution in response to malloc calls. If, however, you eventually<br>
+free all the blocks you allocated from this NewPtr block, the block won't be released to<br>
+the Memory Manager with the DisposPtr call. This means that once you allocate some<br>
+memory with malloc, you won't be able to free it and then use that memory from a<br>
+Macintosh allocation call. Thus, if you had two phases to your program, one of which<br>
+used the malloc calls extensively and the second which used Toolbox calls, the second<br>
+phase wouldn't be able to use memory freed by the first phase. That memory is still<br>
+available in the malloc pool, of course; it simply can't be used by NewPtr or<br>
+NewHandle. The malloc routines supplied by THINK C work similarly, as described in<br>
+their <i> Standard Libraries Reference</i> . Thus, mixing the C and Macintosh allocation<br>
+routines requires special care.
+</p>
+<p>
+<b>Q</b><i> Why do I get error -903 (a PPC Toolbox noPortErr) when I send an Apple event to a</i><br>
+<i>running application with AESend?</i>
+</p>
+<p>
+<b>A </b> The isHighLevelEventAware bit of the sending application's SIZE -1 resource (and<br>
+SIZE 0 resource, if any) must be set.
+</p>
+<p>
+<b>Q</b><i> Sometimes the Alias Manager mistakes one volume for another. In particular, we're</i><br>
+<i>experiencing problems getting aliases to volumes to work correctly with our</i><br>
+<i>AppleTalk Filing Protocol (AFP) server volumes. Here's how I can duplicate the</i><br>
+<i>problem:</i>
+</p>
+<ol>
+<li><i>I mount two server volumes from my AFP server: VolA and VolB.</i></li>
+<li><i>I use the Finder to create an alias file for each volume.</i></li>
+<li><i>I unmount VolA.</i></li>
+<li><i>I open the alias file for VolA. However, when I do this, VolB (which is still</i><br>
+<i>mounted) is opened.</i></li>
+</ol>
+<p>
+<i>&nbsp;Is this a bug in the Alias Manager or did we implement something the wrong way in</i><br>
+<i>our server?</i>
+</p>
+<p>
+<b>A </b> As noted in the Alias Manager chapter of <i> Inside Macintosh</i>&nbsp;&nbsp;Volume VI, the Alias<br>
+Manager uses three criteria to identify a volume: the volume's name, the volume's<br>
+creation date, and the volume's type. If the Alias Manager can't find a mounted volume<br>
+that matches all three criteria, it tries again with just the volume's creation date and<br>
+the volume's type. This second attempt finds volumes that have been renamed. If that<br>
+attempt fails, the Alias Manager tries one last time on mounted volumes with the<br>
+volume's name and the volume's type. If it can't find a mounted volume with those three<br>
+attempts and the alias is to an AFP volume (a file server), the Alias Manager assumes<br>
+the volume is unmounted and attempts to mount it.
+</p>
+<p>
+&nbsp;The problem you're having is probably happening because both volumes have the same<br>
+creation date and type. That will cause the Alias Manager to mistake VolA for VolB and<br>
+VolB for VolA when it attempts to match by volume creation date and volume type. You<br>
+can prevent the Alias Manager from making this mistake by making sure your server<br>
+volumes all have unique volume creation dates.
+</p>
+<p>
+&nbsp;This same behavior can be observed when partitioned hard disks use the same volume<br>
+creation date for all partitions. If one partition isn't mounted, the Alias Manager can<br>
+mistake one disk partition for another.
+</p>
+<p>
+<b>Q</b><i> I'm looking for a Macintosh Toolbox routine that will allow me to turn down the</i><br>
+<i>backlight on a Macintosh PowerBook from within a screen saver to prevent screen</i><br>
+<i>burn and save battery life. Is there such a thing?</i>
+</p>
+<p>
+<b>A </b> Turning down the backlight won't prevent screen burn. Screen burn can be<br>
+prevented only by either shutting the system off or letting the PowerBook enter its<br>
+native sleep mode.
+</p>
+<p>
+&nbsp;In an RGB monitor the phosphor that illuminates each pixel is what causes screen<br>
+burn. By setting the pixels to black (the phosphor isn't active) or rapidly changing the<br>
+colors of an RGB screen (as with a screen saver), you can prevent screen burn. While<br>
+effective on an RGB display, setting the pixels to black may actually <i> cause</i>&nbsp;&nbsp;screen<br>
+burn on a PowerBook. The reason is that all the PowerBooks have a liquid crystal<br>
+display (LCD), which can be burned by white pixels, black pixels, or repeating<br>
+patterns on the screen over a period of time. For this type of display the only good way<br>
+to save the screen is to power it off.
+</p>
+<p>
+&nbsp;Only the Power Manager has access to the chip that shuts the screen off. After a<br>
+certain amount of time, the Power Manager makes the function calls to put the system<br>
+to sleep. (These calls are documented in Chapter 31 of <i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI.) At<br>
+this time the Power Manager signals the chip to turn the screen off. There's no direct<br>
+interface between the user and the chip to achieve this. It's best to let the PowerBook's<br>
+native screen-saving mechanism (sleep mode, which shuts off the screen) work as is.<br>
+This also has the benefit of saving the precious battery power that would be used by the<br>
+screen saver.
+</p>
+<p>
+&nbsp;By the way, if your PowerBook screen has ghost images because you've left it on too<br>
+long without going into sleep mode, letting the screen sleep or shutting down your<br>
+computer for at least 24 hours will probably make the ghost images go away. Although<br>
+there's no hard and fast rule, usually ghost images caused by your system being on for<br>
+less than 24 hours won't be permanent if the screen is rested for an equal amount of<br>
+time. Any ghost images caused by the system being on for greater than 24 hours may<br>
+be permanent.
+</p>
+<p>
+<b>Q</b><i> How can I call Connect in AppleTalk Remote Access without an existing ARA</i><br>
+<i>connection file created by the Remote Access application?</i>
+</p>
+<p>
+<b>A </b> This isn't directly possible, because without the ARA connection file your program<br>
+becomes tied to the underlying link tool. The file was implemented so that in the<br>
+future, when there are different link tools for the different link types, the program<br>
+will know the link type and tool, plus associated link-specific data to use. To connect<br>
+without the ARA connection file requires knowledge of the link tool data structures<br>
+used by each individual link tool. Because these may change, your code may break.
+</p>
+<p>
+&nbsp;However, there's a roundabout way of calling Connect. It requires that you first<br>
+establish a connection using a document created by the ARA application. Next, make the<br>
+IsRemote call, setting the optionFlags to ctlir_getConnectInfo (see page 11 of the <br>
+<i>AppleTalk Remote Access Application Programming Interface Guide).</i>&nbsp;&nbsp;This will cause<br>
+the information necessary to create the remote connection (connectInfoPtr) to be<br>
+returned. You would then save this connectInfo data in your application, and when you<br>
+want to connect sometime later, you would pass this data to the Connect call (in the<br>
+connectInfo field).
+</p>
+<p>
+<b>Q</b><i> When we allocate space for a new file using AllocContig with an argument in</i><br>
+<i>multiples of clump size, we should be grabbing whole clumps at a time so that file</i><br>
+<i>length (and physical EOF) will be a multiple of clump size. What happens if we</i><br>
+<i>truncate a file by moving the logical EOF somewhere inside a clump? Inside Macintosh</i><br>
+<i>says disk sectors are freed at the allocation block level, so we could have a file whose</i><br>
+<i>physical EOF isn't a multiple of clump size, right? Does AllocContig guarantee that the</i><br>
+<i>new bytes added are contiguous with the end of the existing file, or only that the newly</i><br>
+<i>added bytes are contiguous among themselves? If the logical and physical EOFs aren't</i><br>
+<i>the same, does AllocContig subtract the difference before grabbing the new bytes, or do</i><br>
+<i>we get the extra bytes (between EOFs) as a bonus?</i>
+</p>
+<p>
+<b>A </b> You can create a file whose physical size isn't a multiple of the clump size, if you<br>
+try. When the file shrinks, the blocks are freed at the allocation level, without regard<br>
+for the clump size. Therefore, if you set the logical EOF to a smaller value, you can<br>
+create a file of any physical length.
+</p>
+<p>
+&nbsp;There's no guarantee that the allocated bytes will be contiguous with the current end<br>
+of the file. The decisions that file allocation makes are as follows:
+</p>
+<ul>
+<li>It always attempts to allocate contiguously, regardless of whether you're<br>
+explicitly doing a contiguous allocation. (If it can't, it fails rather than<br>
+proceeding if doing an AllocContig.)</li>
+<li>It always attempts to keep the added space contiguous with the existing<br>
+space, but it will forgo this before it will fragment the current allocation<br>
+request (regardless of whether you're calling Allocate or AllocContig).</li>
+</ul>
+<p>
+&nbsp;So these are the actions that file allocation will take:
+</p>
+<ol>
+<li>Allocate contiguous space immediately after the current physical end of<br>
+file.</li>
+<li>Allocate contiguous space separated from the current physical EOF.</li>
+<li>Fail here if allocating contiguously.</li>
+<li>Allocate fragmented space, where the first fragment follows the physical<br>
+EOF.</li>
+<li>Allocate fragmented space somewhere on the volume.</li>
+</ol>
+<p>
+&nbsp;You don't get "extra" space with AllocContig. It just does a basic allocation but makes<br>
+sure any added blocks are contiguous. PBAllocContig does <i>not</i>&nbsp;&nbsp;guarantee that the space<br>
+requested will be allocated contiguously. Instead, it first grabs all the room remaining<br>
+in the current extent, and then guarantees that the remaining space will be contiguous.<br>
+For example, if you have a 1-byte file with a chunk size of 10K and you try to allocate<br>
+20K, 10K-1 bytes will be added to the current file; the remaining 10K+1 bytes are<br>
+guaranteed to be contiguous.
+</p>
+<p>
+<b>Q</b><i> Inside Macintosh says that ROM drivers opened with OpenDriver shouldn't be closed.</i><br>
+<i>However, it seems that any driver opened with OpenDriver should be closed when the</i><br>
+<i>application is done. Should our application close the serial port after using it?</i>
+</p>
+<p>
+<b>A </b> As a general rule, applications that open the serial driver with OpenDriver should<br>
+do so only when they're actually going to use it, and they should close it when they're<br>
+done. (Note that it's important to do a KillIO on all I/O before closing the serial port!)<br>
+There are a couple of reasons for closing the port when you're finished using it. First,<br>
+it conserves power on the Macintosh portable models; while the serial port is open the<br>
+SCC drains the battery. Second, closing the serial port avoids conflicts with other<br>
+applications that use it. <i> Inside Macintosh</i>&nbsp;&nbsp;is incorrect in stating that you shouldn't<br>
+close the port after issuing an OpenDriver call.
+</p>
+<p>
+&nbsp;Most network drivers shouldn't be closed when an application quits, on the other hand,<br>
+since other applications may still be accessing the driver.
+</p>
+<p>
+<b>Q</b><i> We've tried to put old CDs to productive use. We use them for coasters, but you can</i><br>
+<i>only drink so many Mountain Dews at once. We've even resorted to using them for</i><br>
+<i>skeet-shooting practice. Can you suggest other good uses for my old CDs?</i>
+</p>
+<p>
+<b>A </b> It's not well known that stunning special effects in some films, such as <i> Terminator</i><br>
+<i>2, </i> were produced with the aid of compact disc technology. For example, the "liquid<br>
+metal" effect used for the evil terminator was nothing more than 5000 remaindered<br>
+Madonna CDs, carefully sculpted into the shape of an attacking android. And did you<br>
+know that dropping a CD into a microwave oven for five seconds or so produces an<br>
+incredible "lightning storm" effect? (Kids, don't try this at home; we're trained<br>
+professionals.) For ideas of what <i> you </i> can do with old CDs, see the letter on page 5.
+</p>
+<p>
+<b>Q</b><i> I need to launch an application remotely. How do I do this? The Process Manager</i><br>
+<i>doesn't seem to be able to launch an application on another machine and the Finder</i><br>
+<i>Suite doesn't have a Launch Apple event.</i>
+</p>
+<p>
+<b>A </b> What you need to do is use the OpenSelection Finder event. Send an OpenSelection to<br>
+the Finder that's running on the machine you want to launch the other application on,<br>
+and the Finder will resolve the OpenSelection into a launch of the application.
+</p>
+<p>
+&nbsp;As you can see if you glance at the OpenSelection event in the Apple Event Registry,<br>
+there's one difficulty with using it for remote launching: You have to pass an alias to<br>
+the application you want to launch. If the machine you want to launch the application on<br>
+is already mounted as a file server, this isn't important, since you can create an alias<br>
+to that application right at that moment. Or, if you've connected in the past (using that<br>
+machine as a server) you can send a previously created alias and it will be resolved<br>
+properly by the Finder on the remote machine.
+</p>
+<p>
+&nbsp;However, if you want to launch a file without logging on to the other machine as a<br>
+server, you'll need to use the NewAliasMinimalFromFullPath routine in the Alias<br>
+Manager. With this, you'll pass the full pathname of the application on the machine you<br>
+want to launch on, and the Alias Manager will make an alias to it in the same way it<br>
+does for unmounted volumes. The obvious drawback here is that you'll need to know the<br>
+full pathname of the application -- but there's a price to pay for everything. The<br>
+FinderOpenSel sample code on the <i> Developer CD Series</i>&nbsp;&nbsp;disc illustrates this use of the<br>
+NewAliasMinimalFromFullPath routine.
+</p>
+<p>
+<b>Q</b><i> When I try to link my driver in MPW 3.2, it tells me</i>
+</p>
+<pre>### Link: Error : Output must go to exactly one segment when using
+"-rt" (Error 98)
+### Link: Errors prevented normal completion.</pre>
+<p>
+<i>&nbsp;In all my source files I have #pragma segment Main {C} and SEG 'Main' {Asm}</i><br>
+<i>directives. Why is it doing this? What factors determine how segments are assigned</i><br>
+<i>(besides the #pragma stuff)? How can I get it to work?</i>
+</p>
+<p>
+<b>A </b> The problem is probably that you're including modules from the libraries that are<br>
+marked for another segment. Usually the culprit here is that some of the routines in<br>
+StdCLib or some other library are marked for the StdIO segment. You can generally fix<br>
+this by using the -sg option to merge segments, either explicitly by naming all the<br>
+segments you want to merge, or implicitly by just putting everything into one<br>
+segment. You probably want to do the latter, because you only want one segment<br>
+anyway. Thus, what you should do is add the option "-sg Main" to your link line in<br>
+place of the "-sn Main=segment" option. This will merge all segments into the Main<br>
+segment, making it possible to link.
+</p>
+<p>
+<b>Q</b><i> How do I count the number of items in a dialog without System 7's CountDITL? My</i><br>
+<i>solutions are either messy or dangerous: (1) Fiddle with the dialog's item list, (2)</i><br>
+<i>Try to find out which DITL the dialog used and read the count from the DITL resource,</i><br>
+<i>or (3) Repeatedly call GetDItem until garbage is returned. :-(</i>
+</p>
+<p>
+<b>A </b> It's possible to use the CountDITL function with system software version 6.0.4 or<br>
+later if the Macintosh Communications Toolbox is installed, because it's included as a<br>
+part of the Toolbox. It's also possible, as you've found, to use the first two bytes of the<br>
+DITL resource to get the number of items in the item list (see <i> Inside Macintosh</i> <br>
+Volume I, page 427). If the handle to your DITL resource is defined as ditlHandl, for<br>
+example, you can get at the number of items as follows:
+</p>
+<pre>short **ditlHandl;
+ditlHandl = (short **)ditlRez;
+itemcount = (**ditlHandl) + 1;</pre>
+<p>
+<b>Q</b><i> How does Simple Player determine whether a movie is set to loop or not? Movie files</i><br>
+<i>that are set to loop seem to have a string of 'LOOP' at the end of the 'moov' resource.</i><br>
+<i>Does Simple Player check 'LOOP'?</i>
+</p>
+<p>
+<b>A </b> Simple Player identifies whether movies are set to loop by looking within the user<br>
+data atoms for the 'LOOP' atom, as you've noticed. It's a 4-byte Boolean in which a<br>
+value of 1 means standard looping and a value of 0 means palindrome looping. Your<br>
+applications should add the user data 'LOOP' atom to the end of the movie when a user<br>
+chooses to loop. We recommend this method as a standard mechanism for determining<br>
+the looping status of a movie. If the 'LOOP' atom doesn't exist, there's no looping. The<br>
+calls you need to access this information are GetMovieUserData, GetUserData,<br>
+AddUserData, and RemoveUserData, as defined in the Movie Toolbox chapter of the<br>
+QuickTime documentation. For more information see the Macintosh Technical Note<br>
+"Movies 'LOOP' Atom."
+</p>
+<p>
+<b>Q</b><i> Calling SetFractEnable seems to force the width tables to be recalculated regardless</i><br>
+<i>of the setting of the low-memory global FractEnable. We're calling this routine at a</i><br>
+<i>central entry point for any document, as it's a document-by-document attribute. We</i><br>
+<i>then unconditionally call SetFractEnable(false) on exit back to the event loop, to be</i><br>
+<i>nice to other applications. Calling SetFractEnable(false) seems to trigger the</i><br>
+<i>recalculation even though FractEnable is false. What's the best way to get around this?</i>
+</p>
+<p>
+<b>A </b> Your observation is correct. The SetFractEnable call stuffs the Boolean parameter<br>
+(as a single byte) into the low-memory global $BF4 and indiscriminately invalidates<br>
+the cached width table by setting the 4-byte value at $B4C (LastSpExtra, a Fixed<br>
+value) to -1. Obviously, it wasn't anticipated that SetFractEnable could be called<br>
+regularly with a parameter that often doesn't change the previous setting. (By the<br>
+way, the same observation applies to SetFScaleDisable.)
+</p>
+<p>
+&nbsp;In your case, you may want to keep track of the fractEnable setting in your application<br>
+and avoid redundant SetFractEnable calls. (Note that it's not a good idea to use the above<br>
+insider information and poke at $BF4 and $B4C on your own!)
+</p>
+<p>
+&nbsp;You don't need to think of other applications when resetting fractEnable; it belongs to<br>
+those low-memory globals that are swapped in and out during context switches to other<br>
+applications.
+</p>
+<p>
+<b>Q</b><i> It looks as though the Event Manager routine PostHighLevelEvent could be (ab)used</i><br>
+<i>to send low-level messages, like phony mouse clicks and keystrokes. Would this work?</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>A </b> No; unfortunately, this won't work. A few reasons why:
+</p>
+<ul>
+<li>The only applications that will receive high-level events (and their<br>
+descendants, like Apple events) are applications that have their HLE bit set in<br>
+their SIZE resource. If you try to send (or post) an HLE to an older application<br>
+you'll get an error from the PPC Toolbox telling you that there's no port<br>
+available.</li>
+<li>There's no system-level translator to convert these things. There are<br>
+currently translators to change <i>some</i>&nbsp;&nbsp;Apple events. Specifically, the Finder<br>
+will translate any "puppet string" event into puppet strings for non-System 7<br>
+applications (odoc, pdoc, and quit), but these are <i> very</i>&nbsp;&nbsp;special.</li>
+<li>The only way to send user-level events such as mouse clicks through HLEs<br>
+is to use the Apple events in the MiscStndSuite shown in the Apple Event<br>
+Registry. And all those events<i> assume</i>&nbsp;&nbsp;that the receiving application will do<br>
+the actual translations to user actions themselves.</li>
+<li>HLEs come in through the event loop. So even if it were possible (through<br>
+some very nasty patching to WaitNextEvent) to force an HLE into a<br>
+non-HLE-aware application, the event would come in with an event code of 23<br>
+(kHighLevel) and the targeted application would just throw it away.</li>
+</ul>
+<p>
+&nbsp;So the answer is that you can't send user-level events to an HLE-aware application. If<br>
+you want to drive the interface of an old application in System 7, you have to use the<br>
+same hacky method you used under all previous systems. This, by the way, is one of the<br>
+main reasons why MacroMaker wasn't revised for System 7. Apple decided that it<br>
+wasn't supportable and that we would wait for applications to update to System 7 and<br>
+take advantage of third-party Apple event scripting systems.
+</p>
+<p>
+<b>Q</b><i> What's the recommended method for allowing an AppleTalk node to send packets to</i><br>
+<i>itself using AppleTalk's self-send mode (intranode delivery), assuming customers are</i><br>
+<i>running various versions of AppleTalk? There used to be a control panel called</i><br>
+<i>SetSelfSend that would turn on AppleTalk self-send mode at startup time. Should we</i><br>
+<i>use that control panel or should we use the PSetSelfSend function in our program to set</i><br>
+<i>the self-send flag ourselves?</i>
+</p>
+<p>
+<b>A </b> AppleTalk self-send mode requires AppleTalk version 48 or greater. You can check<br>
+the AppleTalk version with Gestalt or SysEnvirons. All Macintosh models except for<br>
+the Macintosh XL, 128, 512, and Plus have AppleTalk version 48 or greater in ROM.
+</p>
+<p>
+&nbsp;The SetSelfSend control panel is still available on the <i> Developer CD Series</i>&nbsp;&nbsp;disc<br>
+(Tools &amp; Apps:Intriguing Inits/cdevs/DAs:Pete's hacks-Moof!:SetSelfSend). However,<br>
+we don't recommend it as a solution if you need to use self-send mode in your program.<br>
+Instead, you should use the PSetSelfSend function to turn self-send mode on with your<br>
+program.
+</p>
+<p>
+&nbsp;AppleTalk's self-send mode presents a problem. Any changes made to the state of<br>
+self-send will affect all other programs that use AppleTalk. That is, self-send mode is<br>
+global to the system. Because of this, programs using self-send should follow these<br>
+guidelines:
+</p>
+<ul>
+<li>If you need self-send for only a brief period of time (for example, to<br>
+perform a PLookupName on your own node), you should turn it on with<br>
+PSetSelfSend (saving the current setting returned in oldSelfFlag), make the<br>
+call(s) that require self-send, and restore self-send to its previous state.</li>
+<li>If you need self-send for an extended period of time (for example, the life<br>
+of your application) in which your program will give up time to other<br>
+programs, you should turn self-send on and leave it on -- do not restore it to<br>
+its previous state! Since other programs running on your system (that aren't<br>
+well-behaved) may turn off self-send at any time, programs that require<br>
+self-send should periodically check to make sure it's still on with either<br>
+PSetSelfSend or PGetAppleTalkInfo. Apple's system software has no<br>
+compatibility problems with self-send -- that is, it doesn't care if it's on or<br>
+off -- so leaving it on won't hurt anything.</li>
+</ul>
+<p>
+<b>Q</b><i> In a version 2 picture, the picFrame is the rectangular bounding box of the picture,</i><br>
+<i>at 72 dpi. I would like to determine the bounding rectangle at the stored resolution or</i><br>
+<i>the resolution itself. Is there a way to do this without reading the raw data of the PICT</i><br>
+<i>resource itself?</i>
+</p>
+<p>
+<b>A </b> With regular version 2 PICTs (or any pictures), figuring out the real resolution of<br>
+the PICT is pretty tough. Applications use different techniques to save the information.<br>
+But if you make a picture with OpenCPicture, the resolution information is stored in<br>
+the headerOp data, and you can get at this by searching for the headerOp opcode in the<br>
+picture data (it's always the second opcode in the picture data, but you still have to<br>
+search for it in case there are any zero opcodes before it). Or you can use the Picture<br>
+Utilities Package to extract this information.
+</p>
+<p>
+&nbsp;With older picture formats, the resolution and original bounds information is<br>
+sometimes not as obvious or easily derived. In fact, in some applications, the PICT's<br>
+resolution and original bounds aren't stored in the header, but rather in the pixel map<br>
+structure(s) contained within the PICT.
+</p>
+<p>
+&nbsp;To examine these pixMaps, you'll first need to install your own bitsProc, and then<br>
+manually check the bounds, hRes, and vRes fields of any pixMap being passed. In most<br>
+cases the hRes and vRes fields will be set to the Fixed value 0x00480000 (72 dpi);<br>
+however, some applications will set these fields to the PICT's actual resolution, as<br>
+shown in the code below.
+</p>
+<pre>Rect    gPictBounds;
+Fixed   gPictHRes, gPictVRes;
+
+pascal void ColorBitsProc (srcBits, srcRect, dstRect, mode, maskRgn)
+BitMap      *srcBits;
+Rect        *srcRect, *dstRect;
+short       mode;
+RgnHandle   maskRgn;
+{
+    PixMapPtr   pm;
+    pm = (PixMapPtr)srcBits;
+    gPictBounds = (*pm).bounds;
+    gPictHRes = (*pm).hRes; /* Fixed value */
+    gPictVRes = (*pm).vRes; /* Fixed value */
+}
+void FindPictInfo(picture)
+PicHandle   picture;
+{
+    CQDProcs    bottlenecks;
+    SetStdCProcs (&amp;bottlenecks);
+    bottlenecks.bitsProc = (Ptr)ColorBitsProc;
+    (*(qd.thePort)).grafProcs = (QDProcs *)&amp;bottlenecks;
+    DrawPicture (picture, &amp;((**picture).picFrame));
+    (*(qd.thePort)).grafProcs = 0L;
+}</pre>
+<p>
+<b>Q</b><i> The code I added to my application's MDEF to plot a small icon in color works except</i><br>
+<i>when I hold the cursor over an item with color. The color of the small icon is wrong</i><br>
+<i>because it's just doing an InvertRect. When I drag over the Apple menu, the menu</i><br>
+<i>inverts behind the icon but the icon is untouched. Is this done by brute force,</i><br>
+<i>redrawing the small icon after every InvertRect?</i>
+</p>
+<p>
+<b>A </b> The Macintosh system draws color icons, such as the Apple icon in the menu bar,<br>
+every time the title has to be inverted. First InvertRect is called to invert the menu<br>
+title, and then PlotIconID is called to draw the icon in its place. The advantage of using<br>
+PlotIconID is that you don't have to worry about the depth and size of the icon being<br>
+used. The system picks the best match from the family whose ID is being passed, taking<br>
+into consideration the target rectangle and the depth of the device(s) that will contain<br>
+the icon's image.
+</p>
+<p>
+&nbsp;The Icon Utilities call PlotIconID is documented in the Macintosh Technical Note<br>
+"Drawing Icons the System 7 Way" (formerly #306); see this Note for details on<br>
+using the Icon Utilities calls.
+</p>
+<p>
+<b>Q</b><i> The cursor flashes when the user types in TextEdit fields in my Macintosh</i><br>
+<i>application. This is done in TEKey. I notice that most programs hide the cursor once a</i><br>
+<i>key is pressed. I don't care for this because then I have to move the mouse to see where</i><br>
+<i>I am. Is this a typical fix for this problem and an accepted practice?</i>
+</p>
+<p>
+<b>A </b> There's very little you can do to avoid this. The problem is that every time you draw<br>
+anything to the screen, if the cursor's position intersects the rectangle of the drawing<br>
+being done, QuickDraw hides the cursor while it does the drawing, and then shows it<br>
+again to keep it from affecting the image being drawn beneath it. Every time you enter<br>
+a character in TextEdit, the nearby characters are redrawn. Usually this is invisible<br>
+because the characters just line up on top of their old images, but if the cursor is<br>
+nearby and visible, it will flicker while it's hidden to draw the text. This is why<br>
+virtually all programs call ObscureCursor when the user types. Also, most users don't<br>
+want the image of the cursor obscuring text they might be referring to, yet they don't<br>
+want to have to move it away and then move it back to make selections. Because it's so<br>
+commonplace, hiding the cursor probably won't bother your users; in fact, they might<br>
+very well prefer the cursor hidden. This, combined with the fact that there's very<br>
+little you can do to help the flickering, suggests that you should obscure the cursor<br>
+while the user types.
+</p>
+<p>
+<b>Q</b><i> We're using Apple events with the PPC Toolbox. We call StartSecureSession after</i><br>
+<i>PPCBrowser to authenticate the user's identity. The user identity dialog box is</i><br>
+<i>displayed and everything looks good. However, in the first AESend call we make, the</i><br>
+<i>user identity dialog is displayed again. (It isn't displayed after that.) Why is this</i><br>
+<i>dialog being displayed from AESend when I've already authenticated the user identity</i><br>
+<i>with StartSecureSession?</i>
+</p>
+<p>
+<b>A </b> First, a few PPC facts: * When a PPC session is started, StartSecureSession lets the<br>
+user authenticate the session (if the session is with a program on another Macintosh)<br>
+and returns a user reference number for that connection in the userRefNum field of<br>
+the PPCStartPBRec. That user reference number can be used to start another<br>
+connection (using PPCStart instead of StartSecureSession) with the same remote<br>
+Macintosh, bypassing the authentication dialogs. * User reference numbers are valid<br>
+until either they're deleted with the DeleteUserIdentity function or one of the<br>
+Macintosh systems is restarted. * If the name and password combination used to start a<br>
+session is the same as that of the owner of the Macintosh being used, the user reference<br>
+number returned refers to the default user. The default user reference number<br>
+normally is never deleted and is valid for connections to the other Macintosh until it's<br>
+deleted with DeleteUserIdentity or one of the Macintosh systems is restarted.
+</p>
+<p>
+&nbsp;With that out of the way, here's how user reference numbers are used when sending<br>
+high-level events and Apple events: When you first send a high-level event or an Apple<br>
+event to another Macintosh, the code that starts the session with the other system<br>
+doesn't attempt to use the default user reference number or any other user reference<br>
+number to start the session, and it doesn't keep the user reference number returned to<br>
+it by StartSecureSession. The session is kept open for the life of the application, or<br>
+until the other side of the session or a network failure breaks the connection. When<br>
+you started your PPC session, StartSecureSession created a user reference number<br>
+that could be used to start another PPC session without authentication. However, the<br>
+Event Manager knows nothing of that user reference number, so when you send your<br>
+first Apple event, the Event Manager calls StartSecureSession again to authenticate the<br>
+new session. Since there isn't any way for you to pass the user reference number from<br>
+the PPC session to the Event Manager to start its session, there's nothing you can do<br>
+about this behavior.
+</p>
+<p>
+<b>Q</b><i> How can I make my ImageWriter go faster?</i>
+</p>
+<p>
+<b>A </b> To make your ImageWriter go blazingly fast, securely tie one end of a 12-foot nylon<br>
+cord around the printer and the other end around your car's rear axle. If your car has<br>
+a manual transmission, hold the clutch in and race your car's engine until the<br>
+tachometer is well into the red zone. Slip the clutch and off you go! If your car has an<br>
+automatic transmission, you can approach the same results by leaving plenty of slack<br>
+in the rope before peeling out.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Kudos to our readers </b> who care enough to ask us terrific and well thought-out<br>
+questions. The answers are supplied by our teams of technical gurus; our thanks to all.<br>
+Special thanks to Chris Berarducci, Tim Dierks, Steve Falkenburg, Marcie "M. G."<br>
+Griffin, Charles Grosjean, Bill Guschwan, C. K. Haun, Dave Hersey, Dennis Hescox,<br>
+Rich Kubota, Scott Kuechle, Edgar Lee, Jim Luther, Joseph Maurer, Kevin Mellander,<br>
+Guillermo Ortiz, Dave Radcliffe, Greg Robbins, Kent Sandvik, Eric Soldan, Brigham<br>
+Stevens, Dan Strnad, Forrest Tanaka, and John Wang for the material in this Q &amp; A<br>
+column. *
+</p>
+<p>
+<b>Have more questions? </b>Need more answers? Take a look at the Q &amp; A Technical<br>
+Notes on the <i> Developer CD Series </i> disc and the Dev Tech Answers library on<br>
+AppleLink.*
+</p>
+</body>
+</html>

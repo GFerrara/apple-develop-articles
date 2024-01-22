@@ -1,0 +1,154 @@
+<html>
+<head>
+<!-- Article ID: 6 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>Winter 92 - BE OUR GUEST</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>BE OUR GUEST</h1>
+<h1>BACKGROUND-ONLY APPLICATIONS IN SYSTEM 7</h1>
+<h2>C. K. HAUN</h2>
+<p>
+<img src="img/131.gif" width="216 px"></img>
+</p>
+<p>
+One of the least heralded new features of System 7, but nonetheless a very important<br>
+one, is full support for faceless background applications (FBAs). An FBA is a<br>
+full-fledged application that's invisible to the user. It has its own event loop, and it<br>
+receives time and some events like any other application, but it doesn't have a menu<br>
+bar, windows, dialogs, or other graphic components. An FBA is a normal file of type<br>
+'APPL'. 
+</p>
+<p>
+FBAs are, by a stretch of the imagination, similar to UNIX&#174; daemons. The purpose of<br>
+an FBA is to provide services to other applications or to monitor the system. For<br>
+instance, an application that periodically checks your hard drive for files that haven't<br>
+been backed up lately is a perfect candidate for FBA status. Thus, an FBA can be a silent<br>
+partner to your application, INIT, cdev, desk accessory, or driver.
+</p>
+<p>
+An FBA is the best way to provide certain services. For example, an FBA paired with a<br>
+desk accessory can enable the DA to send Apple events, something a DA cannot usually<br>
+do. (See the AECDEV/AEDAEMON sample in the snippets provided with the DTS Sample<br>
+Code on the<i>Developer CD Series</i> disc.) An FBA can replace an INIT that patches traps to<br>
+get time and provides services, or it can replace a driver that depended on periodic run<br>
+messages to operate. Converting to an FBA not only frees you from having to patch to<br>
+get the time you need, but also gives you a fully supported and documented interface<br>
+and design. You get all the advantages of a full application, without the overhead of a<br>
+user interface. 
+</p>
+<p>
+An FBA can also be an application manager for a suite of applications. With an FBA, you<br>
+can control the launching of and communication between applications, using<br>
+LaunchApplication and Apple events. 
+</p>
+<p>
+Writing an FBA is simple. An FBA is a subset of a standard Macintosh application,<br>
+consisting of a minimal event loop and the code to handle two types of events, null<br>
+events and high-level events. No other events are sent to an FBA. This makes a great<br>
+deal of sense, since every other event (keystroke, mouse click, and such) is designed<br>
+for foreground applications. 
+</p>
+<p>
+The SmallDaemon backgrounder shell included on the<i>Developer CD Series</i> disc shows<br>
+just how simple the basics of an FBA are:
+</p>
+<pre>Boolean         gQuit = false;
+EventRecord     gERecord;
+unsigned long   gMySleep = 50000; /* A long, long time */
+main()
+{
+    /* Routine for installing my Apple event handlers.
+       Need to install the four required
+       handlers, plus handlers for any other events
+       I want to accept. */
+    InitAEStuff();
+    while (gQuit == false) {
+        /* A normal call to WaitNextEvent. I want
+           only highLevelEvents, since all other
+           events relate to interface actions, and I
+           have no interface. */
+        if (WaitNextEvent(highLevelEventMask, &amp;gERecord, gMySleep,
+               0)) {
+            /* I'll get only null and high-level events. */
+            switch (gERecord.what) {
+            case nullEvent:
+            /* No null processing in this sample. */
+            break;
+           
+            case kHighLevelEvent:
+            /* Get a high-level event (an Apple event) and process */
+            /* it. */
+            DoHighLevel(&amp;gERecord);
+            break;
+            }
+        }
+    }
+}</pre>
+<p>
+As you can see, there's not much there. The first thing you'll notice is that an FBA<br>
+doesn't start up any managers. All the managers you normally start are based on user<br>
+interface actions. Thus, they should<i> not</i>&nbsp;&nbsp;be called in an FBA--in fact, calling them will<br>
+cause your FBA to crash. There's one exception to this rule: you can initialize<br>
+QuickDraw, but<i>only</i> to provide yourself with off-screen grafPorts or to use some<br>
+QuickDraw functions. Do not do any actual screen drawing from an FBA.
+</p>
+<p>
+You'll also notice that you don't pass a mouse region to WaitNextEvent. That's obvious,<br>
+since you're never in the foreground and have no windows or mouse control to track.<br>
+And the only events you'll be handling are null events and high-level events (Apple<br>
+events). 
+</p>
+<p>
+The next step is to make sure the system knows that you're a background-only<br>
+application. You do this with a SIZE resource, by setting the canBackground and<br>
+onlyBackground bits to true. When the Finder launches your FBA, it checks these bits<br>
+and finds that you're a background-only application. 
+</p>
+<p>
+Some tips and techniques to keep in mind:
+</p>
+<ul>
+<li>Always remember that an FBA is invisible to the user. An FBA does<i>not</i> <br>
+show up in the Process menu or in the Finder About window. Also, its heap<br>
+memory is added to the system size thermometer bar in the Finder About<br>
+window, even though it has its own application heap. The user often will have<br>
+no idea that it's running, so be friendly. </li>
+<li>Being friendly means yielding time. Have a very large sleep time when<br>
+you're not actually doing some processing. If you don't, users will think that<br>
+their machine has slowed down inexplicably.&nbsp;&nbsp;&nbsp;You can always use the new<br>
+Process Manager call WakeUpProcess to get yourself back into fast processing<br>
+when you need to. </li>
+<li>Being friendly also means making sure you're occupying the<i>smallest</i>  heap<br>
+size you can possibly run in. Again, users may never know that your FBA<br>
+exists, so if you eat up a bunch of memory in your FBA, users will not<br>
+understand why they've lost so much memory. Be conservative. </li>
+<li>Putting your FBA in the Startup Items folder in the System Folder is also<br>
+a good idea. That will ensure that your FBA is launched right after Finder<br>
+startup and will put the FBA high in the Process Manager's heap, preventing<br>
+fragmentation of application memory space. </li>
+<li>Use WakeUpProcess to get your FBA running. Keep your sleep time at<br>
+maximum normally, and when you need to start doing null processing (in<br>
+response to an Apple event or PPC completion routine, for example) use the<br>
+Process Manager to wake yourself up. WakeUpProcess can be called at<br>
+interrupt time. Then, when you've finished processing, drop back to a<br>
+maximum sleep time.</li>
+</ul>
+<p>
+For further information and help with writing an FBA, refer to the Process Manager<br>
+chapter of<i>Inside Macintosh</i> Volume VI. Then try it--you'll like it! 
+</p>
+<p>
+<b>C. K. HAUN </b>has been programming Apple computers since 1979, writing<br>
+commercial education, utility, and game applications for the Apple II, IIGS, and<br>
+Macintosh, with some occasional dark forays into the Big Blue world. (It paid the<br>
+rent.) He currently works in Developer Technical Support and focuses mainly on<br>
+Apple events and the Edition Manager. Besides working to provide the best possible<br>
+support to developers, he's been trying to organize the Silicon Valley chapter of Heck's<br>
+Moofers, a motorcycle club devoted to the precept that computer nerds on bikes can<br>
+raise heck too, darn it. And yes, that really <i>is</i>&nbsp;&nbsp;his mustache.*
+</p>
+</body>
+</html>

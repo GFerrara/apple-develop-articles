@@ -1,0 +1,603 @@
+<html>
+<head>
+<!-- Article ID: 22 - Extracted from develop-1992 -->
+<!-- on 2024-01-22 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>May 92 - MACINTOSH Q & A</title>
+<link href="styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH Q &amp; A</h2>
+<h1>MACINTOSH DEVELOPER TECHNICAL SUPPORT</h1>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Q</b><i> Our application uses the movie poster as a still frame in a cell, similar to using a</i><br>
+<i>PICT. If a user sizes the cell width so that it's narrower than the poster, even though</i><br>
+<i>we clip the drawing to the cell size, QuickTime posters draw their full width, writing</i><br>
+<i>over whatever is in the way. Pictures clip through DrawPicture; why doesn't</i><br>
+<i>ShowMoviePoster stay within the clipping region?</i>
+</p>
+<p>
+<b>A </b> ShowMoviePoster, as well as the movie and preview showing calls, uses the movie<br>
+clipping characteristics rather than the destination port's clipping region. You must<br>
+set the movie's clipping region to obtain the results you want. An easier way to do this<br>
+is to get the picture for the poster by calling GetMoviePosterPict, and then simply use<br>
+DrawPicture to display the poster. Because this is just a picture, the clipping region<br>
+of the port is honored. This way you don't need different code for movies and pictures.
+</p>
+<p>
+<b>Q</b><i> Our QuickTime application gets a Sound Manager error -201 after playing movies in</i><br>
+<i>succession, apparently because sound channels used in the previous movies have not</i><br>
+<i>been reclaimed. How does QuickTime decide to deallocate sound channels? It doesn't</i><br>
+<i>seem to happen in my "while (!IsMovieDone(theMovie) &amp;&amp; !Button())" play loop.</i>
+</p>
+<p>
+<b>A </b> Sound channels are released by active movies when they notice that some other<br>
+movie needs them. This is currently done only at MoviesTask time. Before entering<br>
+your loop to play a single movie, you can do one or both of the following:
+</p>
+<ul>
+<li>Preroll the movie you're about to play and check the error. If preroll<br>
+returns -201, call MoviesTask(0,0) to give the other active movies a chance<br>
+to give up their sound channels. A subsequent preroll of theMovie should<br>
+return noErr.</li>
+<li>Call SetMovieActive(otherMovies, FALSE). Deactivate the movies that you<br>
+aren't playing to force them to give up their resources.</li>
+</ul>
+<p>
+<b>Q</b><i> When I select all frames in QuickTime and then do an MCCut or MCClear, the</i><br>
+<i>standard controller gets larger and redraws itself at the top of the movie. Is this a</i><br>
+<i>situation I should be prepared to handle or a bug? Does the controller behave strangely</i><br>
+<i>when the selectionTime of a movie is -1 or when the duration of the movie is 0?</i>
+</p>
+<p>
+<b>A </b> The behavior you're observing is to be expected if the controller is attached to the<br>
+movie. In this case, the controller goes to wherever the bottom left corner of the movie<br>
+box takes it. If the movie loses all its "visible" parts, the movie controller will jump<br>
+to the top of the window. The only way to get around this is to detach the controller<br>
+when the movie box is empty; this is also something to keep in mind for the cases when<br>
+the movie contains only sound, since pure sound movies have no dimensions. You can<br>
+find sample code showing how to do this on the <i> Developer CD Series</i>&nbsp;&nbsp;disc, in the<br>
+SimpleInMovies example that accompanies the QuickTime article in<i> develop</i>&nbsp;&nbsp;Issue 7.
+</p>
+<p>
+<b>Q</b><i> Stepping through QuickTime movie video frames in the order they appear in the</i><br>
+<i>movie is simple using GetMovieNextInterestingTime, except for getting the first</i><br>
+<i>frame. If I set the time to 0 and rate to 1, I get the second frame, not the first. In</i><br>
+<i>addition, the video may start later than at 0. How do you suggest finding this first</i><br>
+<i>frame of video?</i>
+</p>
+<p>
+<b>A </b> To get the first frame under the conditions you describe, you have to pass the flag<br>
+nextTimeEdgeOK = $2000 to GetMovieNextInterestingTime. What this flag does is<br>
+make the call return the current interesting time instead of the next, if the current<br>
+time is an interesting time. You need to do this because there's no way to go negative<br>
+and then ask for the next interesting time.<b>Q</b><i> I save PICTs to my document's data fork by</i><br>
+<i>writing the contents of the PicHandle. To save movies, do I convert the movie to a</i><br>
+<i>handle, and then save that as I would with PICTs? I just want the file references, not</i><br>
+<i>the data itself.</i>
+</p>
+<p>
+<b>A </b> To save movies that are suitable for storage in a file, use PutMovieIntoHandle. The<br>
+result of this call can be saved in the data fork of your files, and then you can call<br>
+NewMovieFromHandle to reconstruct the movie for playback or editing.
+</p>
+<p>
+&nbsp;You should also read the documentation regarding the Movie Toolbox FlattenMovie<br>
+procedure, which creates a file that contains the 'moov' resource and the data all in the<br>
+data fork. The advantage here is that the movie file you create using FlattenMovie can<br>
+be read by any other QuickTime-capable application.
+</p>
+<p>
+<b>Q</b><i> How can I identify the sender of an Apple event?</i>
+</p>
+<p>
+<b>A </b> If your application is just sending a reply, it should not be creating an Apple event<br>
+or calling AESend. Instead, the Apple event handler should stuff the response<br>
+information into the reply event, as shown on page 6-50 of <i> Inside Macintosh</i>&nbsp;&nbsp;Volume<br>
+VI. The Apple Event Manager takes care of addressing and sending the event.
+</p>
+<p>
+&nbsp;To find the target ID or process serial number of the sender of an Apple event, use<br>
+AEGetAttributePtr to extract the address attribute, as follows:
+</p>
+<pre>retCode := AEGetAttributePtr(myAppleEvent, keyAddressAttr,
+                                  typeWildCard, senderType,
+@senderBuffer,
+                                  sizeof(senderBuffer), senderSize)</pre>
+<p>
+&nbsp;The senderBuffer can later be used with AECreateDesc to create an address to be passed<br>
+to AESend. The buffer should be at least as large as data type TargetID. See <i> Inside</i><br>
+<i>Macintosh</i>&nbsp;&nbsp;Volume VI, page 5-22, for a description of TargetID.
+</p>
+<p>
+<b>Q</b><i> When I resize my real-time animation window in System 6, I call UpdateGWorld</i><br>
+<i>with the new size, and after that any drawing into the GWorld has no effect. This same</i><br>
+<i>code works perfectly in System 7. What could cause this?</i>
+</p>
+<p>
+<b>A </b> You probably can't draw anything into your GWorld after using UpdateGWorld to<br>
+resize it because of the clipping region of your GWorld. In system software versions<br>
+before 7.0, UpdateGWorld always resizes the GWorld's clipping region proportional to<br>
+the amount that the GWorld itself is resized. Unfortunately, NewGWorld initializes the<br>
+clipping region of the GWorld to the entire QuickDraw coordinate plane, [T:-32767<br>
+L:-32767 B:32767 R:32767]. If UpdateGWorld resizes any of these coordinates so<br>
+that they fall outside this range, the coordinates wrap around to the other end of the<br>
+signed integer space, and that makes the clipping region empty. Empty clipping regions<br>
+stop any drawing from happening.
+</p>
+<p>
+&nbsp;The change in System 7 is that UpdateGWorld explicitly checks for the clipping region<br>
+[T:- 32767 L:-32767 B:32767 R:32767]. If it finds this, it doesn't resize the<br>
+clipping region. Otherwise, UpdateGWorld acts the same way that it did before System<br>
+7.
+</p>
+<p>
+&nbsp;One of our mottos is, "Never give QuickDraw a chance to do the wrong thing." In<br>
+keeping with that, we always explicitly set the clipping region of a GWorld whenever<br>
+we change the size of the GWorld. So after calling NewGWorld, set its clipping region to<br>
+be coincident with its portRect. After calling UpdateGWorld to resize the GWorld, set<br>
+its clipping region to be coincident with its new portRect. That way, you'll always have<br>
+a known environment and you won't have to worry about the change that was made in<br>
+System 7--and you'll be less susceptible to bugs in this area in the future.</p><p><b>Q</b>
+<i>UpdateGWorld doesn't seem to respond to the ditherPix flag unless color depth changes.</i><br>
+<i>The return flag after changing my color table is 0x10000, indicating that color</i><br>
+<i>mapping happened but not dithering. Is this a bug?</i>
+</p>
+<p>
+<b>A </b> Yes, this is a bug. UpdateGWorld ignores dithering if no depth change is made. It<br>
+probably won't be changed in the near future. The workaround is as follows:
+</p>
+<ol>
+<li>Create a new pixMap with the new color table.</li>
+<li>Call CopyBits to transfer your image to the newly created pixMap with<br>
+dithering from the original GWorld's pixMap.</li>
+<li>Update the GWorld with the new color table without using ditherPix.</li>
+<li>Use CopyBits from the newly created pixMap without dithering back to the<br>
+GWorld.</li>
+</ol>
+<p>
+&nbsp;This will give you the same effect as UpdateGWorld with ditherPix.
+</p>
+<p>
+<b>Q</b><i> Can I create, open, write, and close a file completely at interrupt time? I need to be</i><br>
+<i>compatible with both System 6 and System 7.</i>
+</p>
+<p>
+<b>A </b> All these operations (and more) can be done completely at interrupt time. Any call<br>
+that can be made asynchronously can be safely made at interrupt time, provided it's<br>
+made asynchronously. Glancing through <i>Inside Macintosh</i>&nbsp;&nbsp;Volume IV, we can see that<br>
+this includes just about all of the File Manager, except for the calls to mount and<br>
+unmount volumes, which must be made at a time when it is safe to move or purge<br>
+memory.
+</p>
+<p>
+&nbsp;One caveat: Making a call asynchronously here means <i> really</i>&nbsp;&nbsp;making it<br>
+asynchronously; making the call and then sitting in a little loop waiting for the<br>
+ioResult field to change does not qualify. Either you must use completion routines to<br>
+determine when a call has completed, or you must check the ioResult from time to<br>
+time, never waiting for it at interrupt time (and in this case, a deferred task does<br>
+qualify as being at interrupt time).
+</p>
+<p>
+<b>Q</b><i> How can I tell whether a window is a Balloon Help window?</i>
+</p>
+<p>
+<b>A </b> First, call the Help Manager procedure HMIsBalloon to determine whether a balloon<br>
+is being displayed at all. Then call HMGetBalloonWindow to get the help window's<br>
+window pointer, and compare that to the window pointer of the window you've got.
+</p>
+<p>
+&nbsp;Note that if HMIsBalloon returns TRUE and HMGetBalloonWindow returns a window<br>
+pointer of NIL, it means that the balloon "window" that's displayed really isn't a<br>
+window at all; this will happen, for instance, if the balloon is being displayed on top of<br>
+a pulled-down menu (we call this "to boldly go where no window has gone before").
+</p>
+<p>
+<b>Q</b><i> How can I tell whether a font is monospaced or proportional? The FontRec record's</i><br>
+<i>fontType field doesn't correctly tell me whether the font is fixed width as Inside</i><br>
+<i>Macintosh Volume V says it should. All system fonts appear to have the same fontType</i><br>
+<i>regardless of whether they're fixed or proportional. Currently I test whether the</i><br>
+<i>width of the characters "m" and "i" are equal and if they are, I consider the font to be</i><br>
+<i>fixed width. Is there an easier (and faster!) way?</i>
+</p>
+<p>
+<b>A </b> The Font Manager documentation is not explicit enough about the fact that bit 13<br>
+(0x2000) of the fontType field is useless. The Font Manager doesn't check the setting<br>
+of this bit, nor does QuickDraw (or any printer driver). As you observed, monospaced<br>
+fonts like Monaco or Courier don't have the bit set; the bit is meaningless. In addition,<br>
+the fontType field is available only for 'FONT' and 'NFNT' resources; it does not exist in<br>
+'sfnt' resources, and you would have to check separately for the resource type of the<br>
+font. Your idea of comparing the widths of "m" and "i" (or any other characters that<br>
+are extremely unlikely to have the same widths in a proportionally spaced font) is<br>
+indeed the only reasonable way of figuring out whether a font is monospaced.</p><p><b>Q</b><i> The</i>
+<i>TrueType system extension (INIT) apparently renders glyphs differently with System</i><br>
+<i>6 than with System 7. For example, our "abc" string in 160-point Helvetica &#174; is</i><br>
+<i>almost half as many pixels under System 7, so the styled text no longer lines up with</i><br>
+<i>the bitmapped graphics underneath. Any way to avoid this?</i>
+</p>
+<p>
+<img src="img/181.gif" width="416 px"></img>
+</p>
+<p>
+System 6
+</p>
+<p>
+<img src="img/182.gif" width="422 px"></img>
+</p>
+<p>
+System 7
+</p>
+<p>
+<b>A </b> Your System 6 configuration probably has the specific Helvetica Bold TrueType<br>
+outlines available, while this Helvetica Bold TrueType version is missing in your<br>
+System 7. When the Font Manager gets a request for Helvetica, txSize 160, txFace<br>
+bold, it looks in the font association table of the Helvetica FOND (font family record;<br>
+see page 37 of <i> Inside Macintosh</i>&nbsp;&nbsp;&nbsp;Volume IV). First, it looks for the right size (yes,<br>
+there's a TrueType outline font: size requirement fulfilled), then it looks for the style<br>
+(oops, no Bold variant of the font available; must ask QuickDraw to apply its<br>
+algorithmic "smearing" to produce a bold version of it).
+</p>
+<p>
+&nbsp;Unfortunately, the QuickDraw emboldening always works the same way, regardless of<br>
+the size of the character: it just smears the character horizontally by one<br>
+pixel--which is rather ineffective for big point sizes and, of course, quite different<br>
+from the typographically truly bold outline of the Helvetica Bold font.
+</p>
+<p>
+&nbsp;By the way, if you choose the stylistic variants outline or shadow, the result is<br>
+equally disappointing, because there are no specific TrueType versions available for<br>
+Helvetica Outline or Helvetica Shadow.
+</p>
+<p>
+&nbsp;In conclusion, the only way to avoid this problem is to make sure your users have the<br>
+required font versions in their system. You may want to include this as a<br>
+recommendation in the manual, or even to come up with an alert in your application if<br>
+there's no Helvetica Bold in the system. Unfortunately, there's no easy, built-in way<br>
+to check for this; IsOutline returns TRUE even when there's no Helvetica Bold, because<br>
+the Helvetica TrueType font is used to render the character in the first place; the<br>
+QuickDraw smearing is applied in a second step, and is not considered for the result of<br>
+IsOutline. You would have to take the Helvetica FOND and walk its font association table<br>
+"by hand."
+</p>
+<p>
+<b>Q</b><i> My application calls SetOutlinePreferred so that TrueType fonts are used if both</i><br>
+<i>bitmapped and TrueType fonts are in the system. It was reported to me, however, that</i><br>
+<i>some international TrueType fonts look really bad at small point sizes on the screen.</i><br>
+<i>Should I avoid calling this function?</i>
+</p>
+<p>
+<b>A </b> SetOutlinePreferred is best used as a user-selectable option. Along the same lines,<br>
+you might want to include the SetPreserveGlyph call (<i> Inside Macintosh</i>&nbsp;&nbsp;Volume VI,<br>
+page 12-21)--again, as a user-selectable option.
+</p>
+<p>
+&nbsp;Currently, the default for outlinePreferred is FALSE for compatibility reasons<br>
+(existing documents don't get reflowed if the bitmapped fonts are still around) and for<br>
+aesthetic and performance reasons (users are free to maintain bitmapped fonts in the<br>
+smaller point sizes if the TrueType version isn't satisfying for small sizes or is too<br>
+slow). On the other hand, as soon as a bitmapped font is <i>unavailable</i>&nbsp;&nbsp;for a requested<br>
+point size, and a TrueType font is present, the TrueType font is used even with<br>
+outlinePreferred = FALSE. Setting outlinePreferred = TRUE makes a difference only<br>
+for point sizes where a bitmapped font strike is present along with an 'sfnt' in the<br>
+same family. TrueType fonts might be preferable even for small point sizes if linearly<br>
+scaled character widths are more important than screen rendering: if the main<br>
+purpose of a program is preprint processing for a high-resolution output device,<br>
+outlinePreferred = TRUE may give better line layout results on the printer, at the<br>
+price of "not so great" type rendering on a 72 dpi screen. (An example of the conflict<br>
+between linearly scaled TrueType and nonlinearly scaled bitmapped fonts is Helvetica:<br>
+StringWidth('Lilli') returns 19 for the 12-point bitmapped font, and 15 for the<br>
+13-point size from TrueType!)
+</p>
+<p>
+&nbsp;All this boils down to the recommendation stated initially: the user should be given the<br>
+flexibility to decide whether to use the existing bitmaps (using TrueType only for<br>
+bigger point sizes and high-resolution printers), or to go with TrueType even if the<br>
+result on the screen is not optimal. (By the way, it's likely that TrueType development<br>
+will substantially reduce this conflict in the future.)
+</p>
+<p>
+<b>Q</b><i> When you bring up the Finder windows under System 7 on a color system and click a</i><br>
+<i>control panel item icon, it paints itself that fancy gray. How can I get that effect?</i>
+</p>
+<p>
+<b>A </b> To get the fancy System 7 icon dimming to work in your program, read Macintosh<br>
+Technical Note #306, "Drawing Icons the System 7 Way," and use the icon-drawing<br>
+routines contained in it. The routines show how to use the Icon Toolkit, which is what<br>
+the Finder uses. If you want the same effect under System 6, you'll have to emulate the<br>
+dimming of the icons via QuickDraw; the IconDimming sample code in the Snippets<br>
+folder on the <i> Developer CD Series</i>&nbsp;&nbsp;disc shows how to do this.
+</p>
+<p>
+<b>Q</b><i> When the OK button is disabled in the System 7 Standard File dialog box, it's drawn</i><br>
+<i>in gray. I was looking for sample code on how to do this in a way that's appropriate for</i><br>
+<i>multiple screens at various color depths. For example, how should you draw the</i><br>
+<i>outline if you have an OK button in a movable modal dialog box with half the OK button</i><br>
+<i>on an 8-bit color screen and the other half on a 1-bit monochrome screen?</i>
+</p>
+<p>
+<b>A </b> There are two ways to draw the gray (dimmed) outline across several screens in<br>
+different depths: one uses MakeRGBPat <i>(Inside Macintosh</i>&nbsp;&nbsp;Volume V, page 73), the<br>
+other uses DeviceLoop (<i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI, page 21-23). Look for<br>
+GrayishOutline.p in the Snippets folder on the <i>Developer CD Series</i>&nbsp;&nbsp;disc for a code<br>
+sample that demonstrates both ways.
+</p>
+<p>
+<b>Q</b><i> If the Epcot Center building "Spaceship Earth" were a golf ball and you were</i><br>
+<i>proportionally tall enough to hit it, where would it land?</i>
+</p>
+<p>
+<b>A </b> Zimbabwe.
+</p>
+<p>
+<b>Q</b><i> How do you determine whether the Picture Utilities Package function GetPictInfo is</i><br>
+<i>available? Gestalt doesn't seem to have the right stuff!</i>
+</p>
+<p>
+<b>A </b> To determine whether the GetPictInfo routine is available, check the system version<br>
+number with the Gestalt function. GetPictInfo is available in system software version<br>
+7.0 and later. Use the Gestalt selector gestaltSystemVersion to determine the version<br>
+of the system currently running. Usually it's best not to rely on the system version to<br>
+determine whether features are available, but in this case, it's the only way to<br>
+determine whether the Picture Utilities Package is available.
+</p>
+<p>
+&nbsp;For example, the following C function will determine whether the GetPictInfo call is<br>
+available:
+</p>
+<pre>#include &lt;GestaltEQU.h&gt;
+Boolean IsGetPictInfoAvail()
+{
+    OSErr err;
+    long feature; err = Gestalt(gestaltSystemVersion,&amp;feature);
+    /* Check for System 7 and later */
+    return (feature &gt;= 0x00000700);
+}</pre>
+<p>
+&nbsp;In <i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI, see page 3-42 for information on using Gestalt to<br>
+check the system version number, and see page 18-3 for information on the Picture<br>
+Utilities Package.
+</p>
+<p>
+<b>Q</b><i> How can I directly access the alpha channel (the unused 8 bits in a 32-bit direct</i><br>
+<i>pixel using QuickDraw) under System 7? Under System 6 it was easy, but under</i><br>
+<i>System 7's CopyBits the alpha channel works with srcXor but not with srcCopy.</i>
+</p>
+<p>
+<b>A </b> With the System 7 QuickDraw rewrite, all "accidental" support for the unused byte<br>
+was removed, because QuickDraw isn't supposed to operate on the unused byte of each<br>
+pixel. QuickDraw has never officially supported use of the extra byte for such<br>
+purposes as an alpha channel. As stated in <i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI, page 17-5, "8<br>
+bits in the pixel are not part of any component. These bits are unused: Color<br>
+QuickDraw sets them to 0 in any image it creates. If presented with a 32-bit<br>
+image--for example, in the CopyBits procedure--it passes whatever bits are there."
+</p>
+<p>
+&nbsp;Therefore, you cannot rely on any QuickDraw procedure to preserve the contents of<br>
+the unused byte, which in your case is the alpha channel. In fact, even CopyBits may<br>
+alter the byte, if stretching or dithering is involved in the CopyBits, by setting it to 0.<br>
+Your alternatives are not to use the unused byte for alpha channel storage since the<br>
+integrity of the data cannot be guaranteed, or not to use QuickDraw drawing routines<br>
+that can alter the unused byte.
+</p>
+<p>
+<b>Q</b><i> When used from MPW C++, </i><b><i> pragma unused, pragma force_active,</i></b><i> and</i><br>
+<b><i>pragma once</i></b><i> don't appear to work. In fact, </i><b><i>pragma unused</i></b><i> actually causes a C</i><br>
+<i>compile-time error. Why does this occur in spite of assurances in release notes that</i><br>
+<i>all pragmas are passed on to the C compiler?</i>
+</p>
+<p>
+<b>A </b> The problem with pragmas and C++ is that the CFront compiler generates C code,<br>
+and during this phase it also shuffles around the source code lines, so the pragma<br>
+doesn't end up in the same place as originally intended. Also, CFront moves any<br>
+pragmas inside the function body outside, because it can't do much with the pragmas,<br>
+and the best bet is to move them just outside the body for the C compiler. This means<br>
+that any pragmas stated inside the function body are unusable in real life.
+</p>
+<p>
+&nbsp;Here's a summary of how pragmas work with C++:
+</p>
+<ul>
+<li><b> pragma segment</b>, <b>pragma parameter</b>, and <b>pragma processor</b><br>
+should work OK.</li>
+<li><b> pragma force_active</b> may or may not work, depending on the code<br>
+case.</li>
+<li><b> pragma warnings</b> and <b>pragma pop/push</b> should work in most cases,<br>
+depending on the code movement.</li>
+<li><b> pragma trace</b> should also work, especially if it's defined just before a<br>
+function or member function.</li>
+<li><b> pragma unused</b> and <b>pragma once</b> won't work, alas.</li>
+</ul>
+<p>
+&nbsp;For more information about pragmas and C++, please consult the MPW 3.2 C++<br>
+documentation.
+</p>
+<p>
+<b>Q</b><i> Inside Macintosh Volume II, page 33, states that _GetHandleSize returns D0.L &gt;= 0 if</i><br>
+<i>the trap is successful or D0.W &lt; 0 if the trap is unsuccessful. What happens if the</i><br>
+<i>handle size is 0xFFFF, for instance? A TST.W will indicate an error when in fact there</i><br>
+<i>is none. How should I check for this condition?</i>
+</p>
+<p>
+<b>A </b><i> Inside Macintosh</i>&nbsp;&nbsp;is correct (although confusing) regarding the determination of an<br>
+error condition. The way to do it is first test the long to see if it's valid&nbsp;&nbsp;(D0 &gt;= 0). If<br>
+the long is valid, you can continue with confidence that no error occurred. If, however,<br>
+the long in D0 is negative, the low word contains the error (and currently the high<br>
+word contains $FFFF, the sign extension). The reason the manual highlights the fact<br>
+that only the low word contains the error is to allow you to save the error in standard<br>
+fashion since all other errors are word sized, and also to caution you against using the<br>
+processor status on exit from GetHandleSize since it will be based on the low word<br>
+only. In other words, if the long is negative, simply ignore the high word. Here's some<br>
+assembly code that will work:
+</p>
+<pre>    move.L      theHandle(a6),A0
+    _GetHandleSize
+    tst.L D0
+    bpl.s @valueOK
+    move.W      D0,theError(A5)
+    moveQ #0,D0
+@valueOK</pre>
+<p>
+<b>Q</b><i> What are recommended values for retry interval and retry count when using the</i><br>
+<i>AppleTalk NBP call PLookupName on a complicated internet?</i>
+</p>
+<p>
+<b>A </b> You might want to start with the NBP retry interval and retry count values Apple<br>
+uses for its Chooser PRER and RDEV device resource files. The Chooser grabs these<br>
+values from the PRER's or RDEV's GNRL resource&nbsp;&nbsp;-4096:
+</p>
+<p><table border="0"><tr><td><b>Device</b></td><td><b></b><b>Interval</b></td><td><b></b><b>Count</b></td></tr>
+<tr><td>LaserWriter</td><td>$0B</td><td>$05</td></tr>
+<tr><td>AppleTalk ImageWriter</td><td>$07</td><td>$02</td></tr>
+<tr><td>AppleShare</td><td>$07</td><td>$05</td></tr>
+<tr><td>If no GNRL resource</td><td>$0F</td><td>$03</td></tr></table></p>
+
+<p>
+&nbsp;The count value should be based on how likely it is for the device to miss NBP lookup<br>
+requests. For example, the AppleTalk ImageWriter has a dedicated processor on the<br>
+LocalTalk option card just to handle AppleTalk, so its count value is low; most<br>
+Macintosh models and LaserWriter printers depend on their 680x0 processor to<br>
+handle AppleTalk along with everything else in the system (the Macintosh IIfx and<br>
+Macintosh Quadra models are exceptions to this), so their count value is higher.
+</p>
+<p>
+&nbsp;The interval value should be based on the speed of the network and how many devices<br>
+of this type you expect there to be on the network. On a network with very slow<br>
+connections (for example, one using a modem bridge), or in cases where there are so<br>
+many devices of a particular type that lots of collisions occur during lookups, the<br>
+interval value should be increased.
+</p>
+<p>
+&nbsp;Apple puts these values in a resource because not all networks and devices are alike.<br>
+You should do the same (put your interval and count in a resource so that it can be<br>
+configured).
+</p>
+<p>
+<b>Q</b><i> I'd like to use the same names that the system uses to identify itself on the AppleTalk</i><br>
+<i>network in my program. Where can I find those names?</i>
+</p>
+<p>
+<b>A </b> The names used by the system for network services are stored in two 'STR '<br>
+resources in the System file. Your program can retrieve those names with the<br>
+Resource Manager's GetString function. Only one of the names is available in systems<br>
+before System 7: the name set by the Chooser desk accessory. That name is stored in<br>
+'STR ' resource ID -16096. With System 7, the Sharing Setup control panel lets the<br>
+user assign two names for network services: the Owner name and the Computer name.
+</p>
+<p>
+&nbsp;The Owner name is the name stored in 'STR ' resource ID -16096; it identifies the<br>
+user of the Macintosh. The Owner name is used by System 7 for two primary purposes:<br>
+to identify the owner of the system when accessing the system remotely through<br>
+System 7 file sharing or through the user identity dialog used by the PPC Toolbox (and<br>
+Apple Event Manager), and to serve as the default user name when logging on to other<br>
+file servers with the Chooser.
+</p>
+<p>
+&nbsp;The Computer name (also known as the Flagship name) is the name stored in 'STR '<br>
+resource ID -16413; it identifies the Macintosh. The Computer name is the name used<br>
+by system network services to identify themselves on the AppleTalk network. For<br>
+example, if your system's Computer name is "PizzaBox," the PPC Toolbox registers<br>
+the name "PizzaBox:PPCToolBox@*" when you start program linking, and file sharing<br>
+registers the name "PizzaBox:AFPServer@*" when you start file sharing.
+</p>
+<p>
+<b>Q</b><i> What's the recommended technique for telling whether the user has turned off</i><br>
+<i>AppleTalk?</i>
+</p>
+<p>
+<b>A </b> The best way to determine whether AppleTalk has been turned off is to use the<br>
+AppleTalk Transition Queue to alert you to .MPP closures. (This is one of the reasons<br>
+why the AppleTalk Transition Queue was implemented.) The AppleTalk Transition<br>
+Queue is available only in AppleTalk version 53 or later, and is documented in the<br>
+AppleTalk chapter of <i> Inside Macintosh</i>&nbsp;&nbsp;Volume VI, starting on page 32-17. There's<br>
+also a code snippet, Transition Queue, in the Snippets folder on the <i>Developer CD</i><br>
+<i>Series</i>&nbsp;&nbsp;disc.
+</p>
+<p>
+<b>Q</b><i> Sometimes when my system extension (INIT) starts executing, the current zone is</i><br>
+<i>the system zone rather than the application zone. Should I call SetZone(ApplicZone)</i><br>
+<i>before allocating memory in the system extension?</i>
+</p>
+<p>
+<b>A </b> The system does not set the zone to the application zone before loading each system<br>
+extension, so if a previous extension left the zone set to the system zone, it's possible<br>
+that an extension could unintentionally be loaded into the system heap and have the<br>
+current zone be the system zone.
+</p>
+<p>
+&nbsp;To ensure that nonpermanent memory requested by a system extension is allocated in<br>
+the application heap, do a SetZone(ApplicZone) before calling NewHandle or NewPtr.<br>
+Any system extension that calls SetZone should restore the current zone to what it was<br>
+upon entry.
+</p>
+<p>
+&nbsp;Any permanent memory allocation by a system extension should be made in the system<br>
+heap with NewPtrSys or NewHandleSys. Use a 'sysz' resource if the system heap<br>
+allocations will exceed 16K.
+</p>
+<p>
+<b>Q</b><i> Are there any new rules regarding SCSI driving with virtual memory? My System 6</i><br>
+<i>driver doesn't work with System 7.</i>
+</p>
+<p>
+<b>A </b> It's important to remember that VM usually uses a SCSI device for its backing store.<br>
+As such, if VM needs to use your driver it can't tolerate a driver's page swap in the<br>
+middle of a page swap. This means if your driver's code is not in the system heap, it<br>
+needs to be held when called, and your buffers also need to be held if your driver is<br>
+entered by a Control or Status call. Buffers are automatically held by the system if<br>
+your driver is entered by a Read or Write call. The following documents provide a good<br>
+overview of what you need to do to revise a SCSI driver for VM compatibility. *<i> Inside</i><br>
+<i>Macintosh</i>&nbsp;&nbsp;Volume VI, which contains new information specific to virtual memory as<br>
+it relates to drivers and especially SCSI
+</p>
+<ul>
+<li>Macintosh Technical Note #285, "Coping with VM and Memory Mappings"</li>
+<li>"VM Paper" from the System 7 CD in the VM Goodies folder</li>
+</ul>
+<p>
+<b>Q</b><i> I discovered an interesting bug in the Macintosh LaserWriter driver. If the word</i><br>
+<i>"timeout" is in the name of a document, the LaserWriter driver will give a timeout</i><br>
+<i>error&nbsp;&nbsp;-8132. Are there similar magic words?</i>
+</p>
+<p>
+<b>A </b> PostScript error messages are sent from the LaserWriter to the driver as text<br>
+streams. The driver must check these strings to see if they contain an error message.<br>
+If a document is named something that contains the same string as a PostScript error<br>
+message, the driver may think there's an error when the printer sends the "status:<br>
+printing document XXXXX" message. Other strings cause similar problems; one of them<br>
+is "printer out of paper." If you want to see the rest of the strings, take a look at the<br>
+LaserWriter printer driver resource type 'PREC' ID = 109.
+</p>
+<p>
+<b>Q</b><i> What do the terms "maney" and "fakey" mean?</i>
+</p>
+<p>
+<b>A </b> These are slang words commonly used in California. "Fakey" means you're riding<br>
+your snowboard backwards. "Maney," often applied to snowboarding, is derived from<br>
+"maniac"; it means intense, high-energy, absorbing maximum consciousness. It also<br>
+has allusions to the mane of a lion, as in the pride of the lion. Nietzsche might have<br>
+equated "maney" with "will to power."
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Kudos to our readers </b> who care enough to ask us terrific and well thought-out<br>
+questions. The answers are supplied by our teams of technical gurus; our thanks to all.<br>
+Special thanks to Pete ("Luke") Alexander, Tim Dierks, Steve Falkenburg, Bill<br>
+Guschwan, C. K. Haun, Dave Hersey, Dennis Hescox, Rich Kubota, Edgar Lee, Jim<br>
+Luther, Joseph Maurer, Kevin Mellander, Jim Mensch, Guillermo Ortiz, Craig<br>
+Prouse, Dave Radcliffe, Greg Robbins, Kent Sandvik, Gordon Sheridan, Bryan<br>
+("Stearno") Stearns, Brigham Stevens, Sriram Subramaniam, Forrest Tanaka, John<br>
+Wang, and Scott ("Zz") Zimmerman for the material in this Q &amp; A column. Thanks also<br>
+to developer Bruce Ballard for his graphics sample. *
+</p>
+<p>
+<b>Looking for the Apple II Q &amp; A section?</b> It's gone. See the Editorial for details.*
+</p>
+<p>
+<b>Have more questions?</b> Need more answers? Take a look at the Dev Tech Answers<br>
+library on AppleLink (updated weekly) or at the Q &amp; A stack on the <i> Developer CD</i><br>
+<i>Series </i> disc.*
+</p>
+</body>
+</html>
