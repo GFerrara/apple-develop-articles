@@ -1,0 +1,530 @@
+<html>
+<head>
+<!-- Article ID: 47 - Extracted from develop-1993 -->
+<!-- on 2024-02-21 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>December 93 - MACINTOSH Q & A</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH Q &amp; A</h2>
+<h1>Macintosh Developer Technical Support</h1>
+<p>
+<b>Q </b><i>I want to write an application that can open incoming PowerTalk letters</i><br>
+<i>automatically. How can my PowerTalk-savvy application access the letters stored in</i><br>
+<i>the in-tray?</i>
+</p>
+<p>
+<b>A </b> Currently, there are only two ways of accessing in-tray letters from your<br>
+application. The most common method is to receive an open document ('odoc') Apple<br>
+event when a letter is opened from the Finder. In addition, calling SMPGetNextLetter<br>
+allows you to open letters from your application. It isn't possible, however, for your<br>
+application to access the in-tray from Standard File or to automatically open<br>
+arbitrary letters without user intervention.
+</p>
+<p>
+<b>Q </b><i>When I open a letter in my PowerTalk-savvy application, I can obtain FSSpec</i><br>
+<i>records referencing folders or files enclosed in the letter, but the files don't appear to</i><br>
+<i>be copied to my hard drive. Where do these files reside on my system?</i>
+</p>
+<p>
+<b>A </b> PowerTalk maintains an external file system for enclosures of letters. If you<br>
+closely examine the FSSpec records returned to you, you'll see that the enclosed files<br>
+and folders reside on this external file system, named "Mail Enclosures." This is a<br>
+read-only file system, and the enclosures are available only while the letter is open.<br>
+Therefore, these FSSpecs should be used only to copy the enclosed items to your local<br>
+disk, and all references to them should be discarded by the time you call<br>
+SMPDisposeMailer.
+</p>
+<p>
+<b>Q </b><i>When I call FrontWindow from within a VBL task, my system occasionally freezes at</i><br>
+<i>this call. Is there any chance that it moves memory?</i>
+</p>
+<p>
+<b>A </b> No, but FrontWindow is not reentrant. It's been patched out since MultiFinder, and<br>
+ought to be on the list of routines that shouldn't be called at interrupt time. You'll have<br>
+to come up with another method of getting the front window from your VBL task. You<br>
+may want to keep a shadow copy of your application's window list in your application<br>
+global area where your VBL task can get to it.
+</p>
+<p>
+<b>Q </b><i>We want a general extension for all PAP-capable printer drivers, to allow for user</i><br>
+<i>authentication at print time. It would conduct a user authentication dialog with a</i><br>
+<i>spooler on the order of the one described in Chapter 14, "Print Spooling</i><br>
+<i>Architecture," of Inside AppleTalk, Second Edition. Is it possible to do this in the</i><br>
+<i>QuickDraw GX printing architecture? Would we do anything different for</i><br>
+<i>PostScript-savvy print spoolers to insert the right document-structuring comments?</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>A </b> For spoolers that are PostScript-savvy, you can override the message<br>
+GXPostScriptDoDocumentHeader from a printing extension and insert your password<br>
+information in the PostScript header at that point, including password, user name, and<br>
+so on. When your spooler receives the job, it can check this data and see if it denotes a<br>
+valid user. By overriding this message you'll work with any PostScript driver, as long<br>
+as your spooler supports it. (You're actually talking only to your spooler, not to the<br>
+different drivers.)
+</p>
+<p>
+&nbsp;For the authentication, you'll need to override GXOpenConnection to get the user's<br>
+name and password, since that's when you actually try to connect to the device or<br>
+spooler. You could use cool alerts (status dialogs) to get the information from the user<br>
+at that time. Be sure not to put up a "Type in your password, please" dialog except at<br>
+device communication time. At other times, the user won't be trying to connect to the<br>
+device and shouldn't need to provide authentication.
+</p>
+<p>
+<b>Q </b><i>We plan to convert all our QuickDraw objects to QuickDraw GX objects when we</i><br>
+<i>print, then use a QuickDraw GX printing loop to print our objects. We print bitmaps at</i><br>
+<i>the printer's maximum resolution, through PrGeneral. How do we print bitmaps at the</i><br>
+<i>printer's maximum resolution in QuickDraw GX? How do we find the printer's</i><br>
+<i>maximum resolution?</i>
+</p>
+<p>
+<b>A </b> To print bitmaps at the printer's maximum resolution in QuickDraw GX, create the<br>
+bitmaps at the desired resolution (like 300 dpi) and then put a transform on the shape<br>
+to scale it by 72 divided by the bitmap's resolution. This method makes the bitmap<br>
+show up with the correct dimensions, whether it's drawn on a 72-dpi screen or a<br>
+300-dpi printer. And, on the 300-dpi printer, the bitmap will not be scaled at all --<br>
+it will render at 300 dpi. This works because, before drawing, the shape's scaling is<br>
+multiplied by the device's resolution divided by 72, to convert the shape to device<br>
+resolution.
+</p>
+<p>
+&nbsp;To find a printer's maximum resolution, use the calls to get the information from the<br>
+printer's view device list (get the printer from the job via GXGetJobPrinter), pick<br>
+the highest-resolution printing device, and voil&#224;!
+</p>
+<p>
+<b>Q </b><i>My application won't print to a StyleWriter II although it works fine on all other</i><br>
+<i>printers, including the original StyleWriter. Can you give me any suggestions? What's</i><br>
+<i>different about the StyleWriter II?</i>
+</p>
+<p>
+<b>A </b> The StyleWriter II driver is a member of the "GrayShare" driver family, with new<br>
+features such as support for grayscale printing (if Color QuickDraw is available) and<br>
+printer sharing over the network. Its internal architecture is very different from<br>
+previous printer drivers. In spite of thorough compatibility testing, some problems<br>
+have shown up since the first release. In many cases, the driver revealed weaknesses<br>
+in the applications themselves; for some other problems, a solution will be<br>
+incorporated in the next release of the driver. Here are some identified problem areas<br>
+with GrayShare drivers (note that these don't necessarily represent bugs in the<br>
+drivers, but are differences in the system's configuration at print time):
+</p>
+<ul>
+<li>GrayShare drivers handle memory differently. For example, if an<br>
+application has a dereferenced handle to an unlocked block while doing a<br>
+CopyBits into the printing port, this may work fine on other printer drivers,<br>
+but the block is likely to move with a GrayShare driver and the results are<br>
+unpredictable.</li>
+<li>GrayShare drivers maintain their own A5 world internally. If an<br>
+application installs a growZone proc and forgets to set up its own A5 in the<br>
+growZone proc -- ignoring the Macintosh Technical Note "Register A5 Within<br>
+GrowZone Functions" (Memory 1) -- the growZone proc may get called with a<br>
+GrayShare driver's A5, which obviously is bad for the survival of both the<br>
+application and the printer driver.</li>
+<li>GrayShare drivers call the pIdleProc (in the job subrecord of the print<br>
+record) more often than other printer drivers; in particular, it may be called<br>
+during execution of PrOpenDoc. If an application reloads a previously used<br>
+print record containing an old (now invalid) pointer to a pIdleProc and doesn't<br>
+update the pIdleProc field before calling PrOpenDoc, disaster is very likely.<br>
+Note that Macintosh Technical Note "pIdle Proc (or how to let users know<br>
+what's going on during print time...)" (Printing 22) recommends installing<br>
+your pIdleProc before PrOpenDoc.</li>
+<li>Like most other QuickDraw printer drivers, GrayShare drivers use<br>
+algorithms built into QuickDraw for rasterizing picture elements like ovals<br>
+and arcs, but not necessarily with the same sequence of coordinate<br>
+transformations. Because of the 360 dpi resolution, internal computations<br>
+with the transformed coordinates may hit the 16-bit integer limitation of<br>
+QuickDraw and reveal bugs in the old QuickDraw routines that have remained<br>
+hidden until now.</li>
+<li>Some GrayShare drivers (like the StyleWriter II driver, version 1.0)<br>
+contain STR# resources with positive ID numbers that may conflict with<br>
+STR# resources in an application. This will be fixed in the next release of the<br>
+drivers.</li>
+<li>Under certain circumstances, GrayShare drivers seem to have trouble<br>
+with the PmForeColor call. This is under investigation and will be fixed.</li>
+</ul>
+<p>
+<b>Q </b><i>We've been manually writing 'PAPA', 'STR ', and 'alis' resources in the System file</i><br>
+<i>and in the LaserWriter driver to change printers without using the Chooser. This</i><br>
+<i>method sometimes causes errors with LaserWriter 8. What do we need to do?</i>
+</p>
+<p>
+<b>A </b> LaserWriter 8 needs to know more about the printer than its AppleTalk name -- it<br>
+also has to have a PostScript printer description (PPD) file for that printer, parsed<br>
+and ready to be used. Since there's so little memory available in applications like the<br>
+Finder during printing, the parsing is done at Chooser time, not at print time.
+</p>
+<p>
+&nbsp;Apple has <i>always </i>said "We can't guarantee that you can change printers behind the<br>
+Chooser's back," and with LaserWriter 8 this is true. If the driver has parsed a PPD<br>
+file and has it ready, things should work OK, but everything must have been manually<br>
+set up by choosing that printer ahead of time. If you set up a LaserWriter&nbsp;&nbsp;IINTX<br>
+printer with the correct PPD file, choose a LaserWriter IIf, and then choose another<br>
+printer driver, you could probably programmatically switch back to the LaserWriter<br>
+IINTX, but the driver will use the LaserWriter IIf PPD file with it, which might or<br>
+might not produce the right behavior. Designing the driver to be switchable by other<br>
+applications simply wasn't a priority of the Adobe/Apple development team.
+</p>
+<p>
+&nbsp;As long as you try to switch to a printer that uses the same PPD file that the driver<br>
+last parsed (meaning the PPD associated with the last printer selected in the Chooser),<br>
+there shouldn't be any more problems than there were before.
+</p>
+<p>
+<b>Q </b><i>I want to create a QuickDraw GX font that will calculate check digits as the user</i><br>
+<i>types the numbers in. For example, if you type "123458723" the check digit would be</i><br>
+<i>5; if you type "098732734" the check digit would be 7; and so on. The formula is</i><br>
+<i>check digit = sum of nine numbers MOD 10; the check digit is appended as the</i><br>
+<i>number's tenth digit. Is there a way to do this using the glyph modification properties</i><br>
+<i>in QuickDraw GX? I know it can be done by creating an entry in the 'mort' table for all</i><br>
+<i>unique possibilities, but there are 9 ^9 possibilities, which comes to 387,420,489.</i><br>
+<i>Can I enter a formula instead of creating tables? If so, how?</i>
+</p>
+<p>
+<b>A </b> It's a fascinating idea, but it's not something the 'mort' tables can handle. These<br>
+tables are basically state machines; when they detect a particular state, they take some<br>
+action based on entries in the table. There's no way to add a formula or code in any<br>
+language to these tables.
+</p>
+<p>
+&nbsp;All the tables can do is take a series of glyphs and replace them with a different glyph<br>
+if a given feature is enabled by line layout. For example, you can change the two letters<br>
+"f"and "i" into the corresponding ligature"fi" (one glyph). If you wanted to do this for<br>
+check digits, you'd have to have an entry in the 'mort' table for each glyph combination<br>
+you wanted substituted. For 300000000, you'd have to have one entry that substituted<br>
+3000000003, and the substitution has to be one glyph. Since order is significant, that<br>
+means you'd have to have one billion entries in the 'mort' table and one billion glyphs<br>
+representing all the entries with their check digits added. That's where we have to<br>
+stop, because a font can't contain more than 65,536 separate glyphs. It's a really neat<br>
+idea, but it won't work.
+</p>
+<p>
+<b>Q </b><i>I've selected AppleShare volumes to mount at system startup by checking the</i><br>
+<i>volumes in the Chooser list. If I'm on a nonextended network and I call an extended</i><br>
+<i>network via AppleTalk Remote Access and log into a remote server via the Chooser and</i><br>
+<i>AppleShare, an error alert will say "The AppleShare Prep file needed some minor</i><br>
+<i>repairs. Some AppleShare startup information may be lost." All the information about</i><br>
+<i>my local nonextended network will be cleared out of the AppleShare Prep file. So I lose</i><br>
+<i>all my log- in IDs and passwords for my local servers. The same thing happens going</i><br>
+<i>back the other way (extended to nonextended). Why is this happening?</i>
+</p>
+<p>
+<b>A </b> There are several problems you can run into when you connect two networks<br>
+(which is what you're doing when you use AppleTalk Remote Access when you're<br>
+already connected to a network). The problems are usually the result of duplicate<br>
+names or duplicate node numbers.
+</p>
+<p>
+&nbsp;The "boot mount list" (BML) kept in the AppleShare Prep file stores the location of<br>
+volumes that you want mounted at boot time. Part of that location is the zone name. If<br>
+you create BML entries when you aren't on an extended network -- that is, when you<br>
+have no zones -- the zone name stored in the BML is "*" (AppleTalk's shorthand for<br>
+"this zone"); otherwise, the zone name of the server is stored in the BML.
+</p>
+<p>
+&nbsp;The boot mounting code checks the validity of the BML when the system starts up, and<br>
+the AppleShare Chooser package checks the validity of the BML when it's opened. If<br>
+there are no zones, entries with zone names other than "*" are cleared and the alert<br>
+"The AppleShare Prep file needed some minor repairs. Some AppleShare startup<br>
+information may be lost" is displayed because those entries aren't valid. If there are<br>
+zones, entries with zone names of "*" are cleared and the alert is displayed because the<br>
+"*" zone name isn't a reliable way to save the zone location of a server on an extended<br>
+network. The "*" zone isn't reliable for storing the zone name because a workstation<br>
+can easily be moved from zone to zone, keeping the same NBP object and NBP type<br>
+names. This is especially true with AppleTalk Phase 2, which supports multiple zones<br>
+on a single network (for example, multiple zones on the same piece of Ethernet cable).
+</p>
+<p>
+&nbsp;The workaround for boot-mounting volumes is to create alias files to the file servers<br>
+you want to mount at boot time and then drop those alias files into the Startup Items<br>
+folder inside your System Folder. The only drawback to this is that aliases don't save<br>
+the user's password. If you need boot-mounted volumes without the password dialog,<br>
+you'll have to use guest access.
+</p>
+<p>
+<b>Q </b><i>What is a Macintosh IIvm? One of the System Enabler files defines the computer in</i><br>
+<i>gestaltMachineType 45. Is this just another name for the Performa 600? The</i><br>
+<i>Macintosh IIvx Developer Note says that the Performa 600 returns type 45.</i>
+</p>
+<p>
+<b>A </b> Apple had planned to release a model called the Macintosh IIvm but consumer testing<br>
+showed that users thought "vm" was an abbreviation for "virtual memory." This was<br>
+about the same time Apple was about to introduce the Performa line. So, to avoid<br>
+confusion, the model became the Performa 600. There are, therefore, three models in<br>
+the "v" series: the Macintosh IIvi, Performa 600 (Macintosh IIvm), and Macintosh<br>
+IIvx. As you can see, using the nonreleased "Macintosh IIvm" designation confuses<br>
+people, so try to avoid it.
+</p>
+<p>
+<b>Q </b><i>What do those numbers at the end of System Enabler file names mean?</i>
+</p>
+<p>
+<b>A </b> If you hold down a certain modifier key combination while opening your System<br>
+Folder, the System 7.1 Finder will reward you with a special message from Apple's<br>
+Advanced Technology Group -- if and only if the current tick count (as returned by<br>
+TickCount) divided by the number at the end of the machine's enabler file name (in<br>
+decimal) is exactly equal to the model number of the Macintosh for which the enabler<br>
+is intended.
+</p>
+<p>
+&nbsp;Legal restrictions prevent us from revealing the message itself, but enterprising<br>
+techno-nerds may attempt to find it with these instructions.
+</p>
+<p>
+<b>Q </b><i>Which variables does the stack sniffer VBL task look at to determine that the stack</i><br>
+<i>has crossed over into the heap? I create stacks for my own subtasks in the heap. Will</i><br>
+<i>modifying those variables affect anything else besides the stack sniffer? What's the</i><br>
+<i>correct process to defeat the stack sniffer task (leaving it installed) or remove the</i><br>
+<i>task?</i>
+</p>
+<p>
+<b>A </b> Disabling the stack sniffer is reasonably simple -- storing four bytes of $00 in the<br>
+low-memory global StkLowPt ($110) will turn the sniffer off. However, when using<br>
+your own internal stack, be sure not to call any Toolbox routines, because many of<br>
+them rely on the stack for temporary storage, which will screw things up if you've<br>
+played with the value of register A7.
+</p>
+<p>
+&nbsp;When you're using your own stack within your heap, you should definitely save the<br>
+values in StkLowPt and A7 before changing them, so that you can reset their values<br>
+before and after any Toolbox calls.
+</p>
+<p>
+<b>Q </b><i>How can I tell whether a picture is QuickTime-compressed?</i>
+</p>
+<p>
+<b>A </b> The key to your question is "sit in the bottlenecks." If the picture contains any<br>
+QuickTime- compressed images, the images will need to pass through the StdPix<br>
+bottleneck. This is a new graphics routine introduced with QuickTime. Unlike standard<br>
+QuickDraw images, which only call StdBits, QuickTime-compressed images need to be<br>
+decompressed first in the StdPix routine. Then QuickDraw uses StdBits to render the<br>
+decompressed image. So swap out the QuickDraw bottlenecks and put some code in the<br>
+StdPix routine. If it's called when you call DrawPicture, you know you have a<br>
+compressed picture. To determine the type of compression, you can access the image<br>
+description using GetCompressedPixMapInfo. The cType field of the ImageDescription<br>
+record will give you the codec type.
+</p>
+<p>
+&nbsp;See the CollectPictColors snippet on this issue's CD and "Inside QuickTime and<br>
+Component- Based Managers" in develop Issue 13, specifically pages 46 and 47, for<br>
+more information on swapping out the bottlenecks.
+</p>
+<p>
+<b>Q </b><i>Is there a way to embed a QuickTime movie into a Macintosh file containing</i><br>
+<i>non-QuickTime stuff and get the Movie Toolbox to play the movie back correctly? If so,</i><br>
+<i>can we pass the same movie handle to QuickTime for Windows and get it to play back</i><br>
+<i>the same data from the same file?</i>
+</p>
+<p>
+<b>A </b> To add QuickTime movie data to non-QuickTime files, just store the movie data in<br>
+the file using FlattenMovieData with the flattenAddMovieToDataFork flag. Since<br>
+FlattenMovieData will simply append to a data fork of a file, you can pass it any data<br>
+file and it will append the movie data to that file. QuickTime doesn't care what's stored<br>
+before or after the movie data, as long as you don't reposition the movie data within the<br>
+data file. If you do, the movie references will be incorrect since they aren't updated<br>
+when you edit the file. The returned movie (from FlattenMovieData) will properly<br>
+resolve to that data file. You can then save this movie in the data fork with<br>
+PutMovieIntoDataFork or in the resource fork with AddMovieResource. If the movie is<br>
+saved in the data fork, it can be retrieved by both QuickTime and QuickTime for<br>
+Windows with NewMovieFromDataFork.
+</p>
+<p>
+&nbsp;You can, in fact, store multiple movies simply by calling FlattenMovieData and<br>
+PutMovieIntoDataFork several times on the same file. Each FlattenMovieData call<br>
+appends new data, assuming the createMovieFileDataCurFile flag isn't set.
+</p>
+<p>
+<b>Q </b><i>Is there a way that the action filter procedure of a QuickTime movie controller</i><br>
+<i>component can have a user reference field so that I can know which movie "object" the</i><br>
+<i>movie controller refers to? There are local variables associated with a particular</i><br>
+<i>movie that I would like to access from the action filter procedure; currently there's no</i><br>
+<i>way to reference back to the variables in my program except through globals.</i>
+</p>
+<p>
+<b>A </b>This was a difficult task under QuickTime 1.0, requiring you to stuff some sort of<br>
+pointer in the movie user data fields. The good news is that in response to developer<br>
+requests, starting with version 1.5, QuickTime includes a new call in the Movie<br>
+Controller suite allowing you to pass and receive a long value when you set up your<br>
+filter procedure, as follows:
+</p>
+<p>
+<code>pascal ComponentResult MCSetActionFilterWithRefCon(MovieController</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mc, MCActionFilterWithRefCon</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myUserPlayerFilter, long refCon) =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{0x2F3C,0x8,0x2D,0x7000,0xA82A};</code>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;The procedure is of the form
+</p>
+<p>
+<code>pascal Boolean userPlayerFilter(MovieController mc, short action,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;void *params, long refCon);</code>
+</p>
+<p>
+&nbsp;The procedure returns true if it handles the action, false if not. The action parameter<br>
+identifies the action to be executed; params is the set of potential parameters that go<br>
+with the action; and refCon is any long value passed to MCSetActionFilterWithRefCon.Q<br>
+We want to add temporal&nbsp;&nbsp;compression for our long movies with similar sequential<br>
+frames. How do I use the Compression Manager routines (CompressionSequenceBegin<br>
+and CompressSequenceFrame, for instance) in conjunction with the normal<br>
+movie-making routines (such as CompressImage)?
+</p>
+<p>
+<b>A </b> Sequence compression is useful for temporal compression, with processes like<br>
+animation. Sequence compression works by providing one description handle for a<br>
+series of frames, whereas CompressImage may use a description handle for each image.<br>
+Thus, functions such as CompressImage are normally used separately from the<br>
+sequence calls. It's a bit confusing; the Movie Construction FD sample on the QuickTime<br>
+CD should help clarify how to use the calls.
+</p>
+<p>
+&nbsp;Sequence compression performs similarly to creating a movie with CompressImage,<br>
+but the major difference is the specification of key frames. (Key frames are frames<br>
+against which all the following frames are differenced.) CompressSequenceFrame<br>
+returns a similarity value, which tells you whether&nbsp;&nbsp;the frame is a key frame (0<br>
+means key frame). Based on this value, you can tell AddMediaSample the type of frame<br>
+it is. Here's some pseudo code:
+</p>
+<p>
+<code>err = CompressSequenceFrame(seqID, ..., similarity, nil);</code><br>
+<code>err = AddMediaSample(gMedia, ..., similarity ? mediaSampleNotSync :</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0, &amp;sampTime);</code>
+</p>
+<p>
+<b>Q </b><i>When we try to digitize frames (grabbed with QuickTime) into an off-screen pixel</i><br>
+<i>map, our VDGrabOneFrame call crashes. How would you suggest we do this?</i>
+</p>
+<p>
+<b>A </b> You need to check&nbsp;&nbsp;whether the 'vdig' resource supports digitizing off-screen by<br>
+calling the PreflightDestination routine. If the PreflightDestination call with an<br>
+off-screen destination fails, you need to digitize to a window on the digitizing device<br>
+and then copy the image (using CopyBits or your own algorithm for speed) from the<br>
+window to your off-screen pixel map. Some 'vdig' resources don't support digitizing<br>
+directly to off-screen pixel maps because their hardware does the digitizing<br>
+asynchronously. You should always preflight your destination before setting it with<br>
+SetPlayThruDestination.
+</p>
+<p>
+<b>Q </b><i>Why doesn't the QuickDraw GX LaserWriter driver have a 'pdip' resource? Isn't it</i><br>
+<i>required?</i>
+</p>
+<p>
+<b>A </b> A 'pdip' resource isn't required; if it isn't present in the driver, the default<br>
+(LaserWriter Plus) preferences are used. Those preferences are currently as listed<br>
+below. They're subject to change, so don't depend on them. If you need a specific value<br>
+for any of these preferences, just include your own 'pdip' resource.
+</p>
+<p><table border="0"><tr><td>language level</td><td>1</td></tr>
+<tr><td>device color space</td><td>graySpace</td></tr>
+<tr><td>device color profile</td><td>nil</td></tr>
+<tr><td>render options</td><td>noOptions</td></tr>
+<tr><td>path limit</td><td>1496</td></tr>
+<tr><td>gsave limit </td><td>1</td></tr>
+<tr><td>operand stack limit</td><td>500</td></tr>
+<tr><td>font type</td><td>type1Stream +</td></tr>
+<tr><td></td><td>type3Stream</td></tr>
+<tr><td>printer VM</td><td>200K</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Q </b><i>Inside Macintosh: Macintosh Toolbox Essentials recommends calling CloseDialog</i><br>
+<i>instead of DisposeDialog when allocating memory for a dialog record manually instead</i><br>
+<i>of letting the Toolbox do it. But doing so causes a memory leak, because GetNewDialog</i><br>
+<i>copies the DITL resource in memory. The DITL copy isn't released by CloseDialog and</i><br>
+<i>isn't purgeable, even if the original DITL was purgeable. What's the official method of</i><br>
+<i>completely getting rid of a dialog whose storage you've allocated by hand?</i>
+</p>
+<p>
+<b>A </b> CloseDialog was intended to mirror NewDialog; it allows you to close a dialog that<br>
+you provided the storage for, including the item list. Page 6-119 of&nbsp;&nbsp;Inside Macintosh:<br>
+Macintosh Toolbox Essentials states that the item list is specifically not disposed of by<br>
+CloseDialog, so it's acting as documented. It does this so that it won't dispose of a dialog<br>
+item list you might be planning to use again. If you do want to dispose of the item list,<br>
+just do so after calling CloseDialog.
+</p>
+<p>
+<b>Q </b><i>As a MacApp developer, am I supposed to be using the .h files in the MPW:Interfaces</i><br>
+<i>folder, or the ones in the {MacApp}CPlusIncludes folder?</i>
+</p>
+<p>
+<b>A </b> As a default, MacApp 3.0 first searches through the {MacApp}CPlusIncludes folder<br>
+for header files specified in your source, so we suggest using the CPlusIncludes<br>
+headers. The path to these include files is defined in the {MacApp}Startup<br>
+Items:Startup folder. MacApp 3.1 uses the universal interfaces for both 680x0 and<br>
+PowerPC development. It no longer uses its own custom headers in the<br>
+{MacApp}CPlusIncludes folder. MacApp 3.1 searches MPW's {CIncludes} folder for its<br>
+headers.
+</p>
+<p>
+<b>Q </b><i>When starting a new MacApp program, I get the message "Couldn't create new</i><br>
+<i>document because an internal component is missing. Please contact the developer." How</i><br>
+<i>do I find out which component is missing?</i>
+</p>
+<p>
+<b>A </b> When building an application, the linker strips out any unused code from the final<br>
+application. The problem is that it determines which code is to be stripped out by<br>
+finding all objects that are constructed with the&nbsp;&nbsp;new operator. Because objects derived<br>
+from TView might instead be instantiated through calls to TViewServer methods, the<br>
+linker thinks that calls to your derived TView objects aren't used, so those objects are<br>
+stripped from the build. To circumvent this, you have to fool the linker into not<br>
+stripping out this code. MacApp defines a macro that makes it easy for you to trick the<br>
+linker. Place this line of code in your implementation of<br>
+TSomeApplication::ISomeApplication:
+</p>
+<p>
+<code>macroDontDeadStrip(TSomeView);</code>
+</p>
+<p>
+&nbsp;Do this for any subclass of TView defined in your program. Good examples of the use of<br>
+this routine can be found throughout the MacApp C++ code.
+</p>
+<p>
+&nbsp;MacApp takes care of this for you for any TView subclasses defined by MacApp,<br>
+provided you call InitUDialogs, InitUTEView, and so on in your main routine. The exact<br>
+set of routines you have to call depends on the TView classes you use in your<br>
+application. All of these routine names begin with "InitU."
+</p>
+<p>
+&nbsp;MacApp uses two alerts to indicate that you're missing components. The first one ends<br>
+with "because an internal component is missing. Please contact the developer." The<br>
+second one is identical except that it's preceded by the class name of the missing<br>
+component. In the former case it's very likely you forgot one of the "InitU" calls; in<br>
+the latter case you're very likely missing a macroDontDeadStrip on one of your TView<br>
+subclasses. If you need to find out more precisely which components are missing, you<br>
+can break on the Failure routine with a debugger.
+</p>
+<p>
+<b>Q </b><i>How many new Inside Macintosh books will there be by the time all the new</i><br>
+<i>technologies are documented?</i>
+</p>
+<p>
+<b>A </b> How much shelf space do you have?
+</p>
+<p>
+These answers are supplied by the technical gurus in Apple's Developer Support<br>
+Center. Special thanks to Sonya Andreae, Mark Baumwell, Brian Bechtel, Chris<br>
+Berarducci, Matt Deatherage, Tim Dierks, Steve Falkenburg, Nitin Ganatra, Bill<br>
+Guschwan, Dave Hersey, Jim Luther, Joseph Maurer, Kevin Mellander, Martin<br>
+Minow, Eric Mueller, Ed Navarrete, Mike Neil, Guillermo Ortiz, Jeroen Schalk,<br>
+Brigham Stevens, Dan Strnad, and John Wang for the material in this&nbsp;&nbsp;Q &amp; A column.
+</p>
+<p>
+Extra special thanks and a fond farewell to Rilla Reynolds, who took a thankless job and<br>
+made it work for all of us. *
+</p>
+<p>
+For more information on LaserWriter 8, see this issue's "Print Hints" column. *
+</p>
+<p>
+For more information on universal interfaces,&nbsp;&nbsp;see the article "Making the Leap to<br>
+PowerPC" in this issue. *
+</p>
+<p>
+Have more questions? Need more answers? Take a look at the Macintosh Q&amp;A Technical<br>
+Notes on this issue's CD and in the Dev Tech Answers library on AppleLink. *
+</p>
+</body>
+</html>

@@ -1,0 +1,1292 @@
+<html>
+<head>
+<!-- Article ID: 26 - Extracted from develop-1993 -->
+<!-- on 2024-02-19 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>June 93 - WRITING LOCALIZABLE APPLICATIONS</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>WRITING LOCALIZABLE APPLICATIONS</h2>
+<h1>JOSEPH TERNASKY AND BRYAN K. ("BEAKER")<br>
+RESSLER</h1>
+<p>
+<img src="img/197.gif" width="180 px"></img>
+</p>
+<p>
+<b>JOSEPH TERNASKY AND BRYAN K. ("BEAKER") RESSLER</b><i>More and more</i><br>
+<i>software companies are finding rich new markets overseas. Unfortunately, many of</i><br>
+<i>these developers have also discovered that localizing an application involves a lot more</i><br>
+<i>than translating a bunch of STR# resources. In fact, localization often becomes an</i><br>
+<i>unexpectedly long, complex, and expensive development cycle. This article describes</i><br>
+<i>some common problems and gives proactive engineering advice you can use during</i><br>
+<i>initial U.S. development to speed your localization efforts later on.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Most software localization headaches are associated with text drawing and character<br>
+handling, so that's what this article stresses. Four common areas of difficulty are:
+</p>
+<ul>
+<li>keyboard input (specifically for two-byte scripts)</li>
+<li>choice of fonts and sizes for screen display</li>
+<li>date, time, number, and currency formats and sorting order</li>
+<li>character encodings</li>
+</ul>
+<p>
+We discuss each of these potential pitfalls in detail and provide data structures and<br>
+example code.
+</p>
+<h2>PRELIMINARIES</h2>
+<p>
+Throughout the discussion, we assume you're developing primarily for the U.S.<br>
+market, but you're planning to publish internationally eventually (or at least you're<br>
+trying to keep your options open). As you're developing your strategy, here are a few<br>
+points to keep in mind:
+</p>
+<ul>
+<li>Don't dismiss any markets out of hand -- investigate the potential<br>
+rewards for entry into a particular market and the features required for that<br>
+market. </li>
+<li>The amount of effort required to support western Europe is relatively<br>
+small.&nbsp;&nbsp;&nbsp;Depending on the type of application you're developing, the additional<br>
+effort required for other countries isn't that much more. There's also a<br>
+growing market for non-Roman script systems inside the U.S. </li>
+<li>The labor required to build a<i>truly global</i>program is much less if you do<br>
+the work up front, rather than writing quick-and-dirty code for the U.S. and<br>
+having to rewrite it later. </li>
+<li>Consider market growth trends. A market that's small now may be big<br>
+later. </li>
+</ul>
+<p>
+This article concentrates on features for western Europe and Japan because those are<br>
+the markets we're most familiar with. We encourage you to investigate other markets<br>
+on your own. 
+</p>
+<p>
+<b>LINGO LESSON 101</b><br>
+This international software thing is rife with specialized lingo. For a complete<br>
+explanation of all the terms, see the hefty "Worldwide Software Overview," Chapter<br>
+14 of<i>Inside Macintosh</i>Volume VI. But we're not here to intimidate, so let's go over a<br>
+few basic terms. 
+</p>
+<p>
+<b>Script. </b>A writing system that can be used to represent one or more human languages.<br>
+For example, the Roman script is used to represent English, Spanish, Hungarian, and<br>
+so on. Scripts fall into several categories, as described in the next section, "Script<br>
+Categories."
+</p>
+<p>
+<b>Script code. </b>An integer that identifies a script on the Macintosh. 
+</p>
+<p>
+<b>Encoding. </b>A mapping between characters and integers. Each character in the<br>
+character set is assigned a unique integer, called its<i>character code</i>. If a character<br>
+appears in more than one character set it may have more than one encoding, a situation<br>
+discussed later in the section "Dealing With Character Encodings." Since each script<br>
+has a unique encoding, sometimes the terms<i>script</i> and<i> encoding</i>are used<br>
+interchangeably. 
+</p>
+<p>
+<b>Character code. </b>An integer that's associated with a given character in a script. 
+</p>
+<p>
+<b>Glyph. </b>The displayed form of a character. The glyph for a given character code may<br>
+not always be the same -- in some scripts the codes of the surrounding characters<br>
+provide a context for choosing a particular glyph. 
+</p>
+<p>
+<b>Line orientation. </b>The overall direction of text flow within a line. For instance,<br>
+English has left-to-right line orientation, while Japanese can use either<br>
+top-to-bottom (vertical) or left-to-right (horizontal) line orientation. 
+</p>
+<p>
+<b>Character orientation. </b>The relationship between a character's baseline and the<br>
+line orientation. When the line orientation and the character baselines go in the same<br>
+direction, it's called<i>with-stream</i>character orientation. When the line orientation<br>
+differs from the character baseline direction, it's called<i> cross-stream</i> character<br>
+orientation. For instance, in Japanese, when the line orientation is left- to-right,<br>
+characters are also oriented left-to-right (with-stream). Japanese can also be<br>
+formatted with a top-to-bottom (vertical) line orientation, in which case character<br>
+baselines can be left-to-right (cross-stream) or top-to-bottom (with-stream). See<br>
+Figure 1. 
+</p>
+<p>
+<img src="img/198.gif" width="522 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1</b> Line and Character Orientation in Mixed Japanese/English Text
+</p>
+<p>
+<b>SCRIPT CATEGORIES</b><br>
+Scripts fall into different categories that require different software solutions. Here<br>
+are the basic categories:
+</p>
+<ul>
+<li><i> Simple scripts</i>have small character sets (fewer than 256 characters),<br>
+and no context information is required to choose a glyph for a given character<br>
+code. They have left-to-right lines and top-to-bottom pages. Simple scripts<br>
+encompass the languages of the U.S. and Europe, as well as many other<br>
+countries worldwide. For example, some simple scripts are Roman, Cyrillic,<br>
+and Greek. </li>
+<li><i> Two-byte scripts</i>have large character sets (up to 28,000 characters)<br>
+and require no context information for glyph choice. They use various<br>
+combinations of left-to- right or top-to-bottom lines and top-to-bottom or<br>
+right-to-left pages. Two-byte scripts include the languages of Japan, China,<br>
+Hong Kong, Taiwan, and Korea. </li>
+<li><i> Context-sensitive scripts</i>have a small character set (fewer than 256<br>
+characters) but may have a larger glyph set, since there are potentially<br>
+several graphic representations for any given character code. The mapping<br>
+from a given character code to a glyph depends on surrounding characters.<br>
+Most languages that use a context-sensitive script have left-to-right lines and<br>
+top-to-bottom pages, such as Devanagari and Bengali.</li>
+<li><i> Bidirectional scripts</i>can have runs of left-to-right and right-to-left<br>
+characters appearing simultaneously in a single line of text. These scripts<br>
+have small character sets (fewer than 256 characters) and require no context<br>
+information for glyph choice. Bidirectional scripts are used for languages such<br>
+as Hebrew that have both left-to-right and right-to-left characters, with<br>
+top-to-bottom pages.</li>
+</ul>
+<p>
+There are a few exceptional scripts that fall into more than one of these categories,<br>
+such as Arabic and Urdu. Arabic, for instance, is both context sensitive and<br>
+bidirectional.
+</p>
+<p>
+Now with the preliminaries out of the way, we're ready to discuss some localization<br>
+pitfalls. 
+</p>
+<h2>KEYBOARD INPUT</h2>
+<p>
+Sooner or later, your users are going to start typing. You can't stop them. So <i>now</i> what<br>
+do you do?&nbsp;&nbsp;&nbsp;One approach is to simply ignore keyboard input. While perfectly<br>
+acceptable to open-minded engineers like yourself, your Marketing colleagues may<br>
+find this approach unacceptable. So, let's examine what happens when two-byte script<br>
+users type on their keyboards. 
+</p>
+<p>
+Obviously, a Macintosh keyboard doesn't have enough keys to allow users of two-byte<br>
+script systems to simply press the key corresponding to the one character they want<br>
+out of 28,000. Instead, two- byte systems are equipped with a software<i>input method</i>,<br>
+also called a<i> front-end processor</i>or<i> FEP</i>, which allows users to type phonetically on a<br>
+keyboard similar to the standard U.S. keyboard. (Some input methods use strokes or<br>
+codes instead of phonetics, but the mechanism is the same.)
+</p>
+<p>
+As soon as the user begins typing, a small<i>input window</i>appears at the bottom of the<br>
+screen. When the user signals the input method, it displays various<i>readings</i>that<br>
+correspond to the typed input.&nbsp;&nbsp;&nbsp;These readings may include one or more two-byte<br>
+characters. There may be more than one valid reading of a given "clause" of input, in<br>
+which case the user must choose the appropriate reading.
+</p>
+<p>
+When satisfied, the user accepts the readings, which are then flushed from the input<br>
+window and sent to the application as key-down events. Since the Macintosh was never<br>
+really designed for two-byte characters, a two-byte character is sent to the<br>
+application as two separate one-byte key-down events.&nbsp;&nbsp;&nbsp;Interspersed in the stream of<br>
+key-down events there may also be one-byte characters, encoded as ASCII. 
+</p>
+<p>
+Before getting overwhelmed by all this, consider two important points. First,<i>the input</i><br>
+<i>method is taking the keystrokes for you</i>. The keystrokes the user types are not being<br>
+sent directly into your application -- they're being processed first. Also, since the<br>
+user can type a lot into the input method before accepting the processed input, you can<br>
+get a big chunk of key-down events at once.
+</p>
+<p>
+So let's see what your main event loop should look like in its simplest form if you want<br>
+to properly accept mixed one- and two-byte characters:
+</p>
+<p>
+<code>// Globals</code><br>
+<code>unsigned short&nbsp;&nbsp;gCharBuf;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Buffer that holds our (possibly</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// two-byte) character</code><br>
+<code>Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gNeed2ndByte;&nbsp;&nbsp;&nbsp;// Flag that tells us we're waiting</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// for the second byte of a two-byte</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// character</code><br>
+<code></code><br>
+<code>void EventLoop(void)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;EventRecord&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;event;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// The current event</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cbResult;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// The result of our CharByte call</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;unsigned char&nbsp;&nbsp;&nbsp;oneByte;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Single byte extracted from event</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;processChar;&nbsp;&nbsp;// Whether we should send our</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// application a key message</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (WaitNextEvent(everyEvent, &amp;event, SleepTime(), nil)) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch (event.what) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;. . .</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case keyDown:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case autoKey:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;. . .</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Your code checks for Command-key equivalents here.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;. . .</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;processChar = false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;oneByte = (event.message &amp; charCodeMask);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (gNeed2ndByte) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// We're expecting the second byte of a two-byte</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// character. So OR the byte into the low byte of</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// our accumulated two-byte character.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gCharBuf = (gCharBuf << 8) | oneByte;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cbResult = CharByte((Ptr)&amp;gCharBuf, 1);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (cbResult == smLastByte)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;processChar = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gNeed2ndByte = false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;} else {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// We're not expecting anything in particular. We</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// might get a one-byte character, or we might</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// get the first byte of a two-byte character.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gCharBuf = oneByte;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cbResult = CharByte((Ptr)&amp;gCharBuf, 1);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (cbResult == smFirstByte)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gNeed2ndByte = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else if (cbResult == smSingleByte)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;processChar = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Now possibly send the typed character to the rest</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// of the application.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (processChar)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AppKey(gCharBuf);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case . . .</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>}</code>
+</p>
+<p>
+CharByte returns smSingleByte, smFirstByte, or smLastByte. You use this<br>
+information to determine what to do with a given key event. Notice that the AppKey<br>
+routine takes an unsigned short as a parameter. That's very important. For an<br>
+application to be two-byte script compatible, you need to<i>always</i>pass unsigned shorts<br>
+around for a single character. This example is also completely<i>one-byte</i>compatible --<br>
+if you put this event loop in your application, it works in the U.S. 
+</p>
+<p>
+The example assumes that the grafPort is set to the document window and the port's<br>
+font is set correctly, which is important because the Script Manager's behavior is<br>
+governed by the font of the current grafPort (see "Script Manager Caveats"). Although<br>
+this event loop works fine on both one- byte and two-byte systems, it could be made<br>
+more efficient. For example, since input methods sometimes send you a whole mess of<br>
+characters at a time, you could buffer up the characters into a string and send them<br>
+wholesale to AppKey, making it possible for your application to do less redrawing on<br>
+the screen.
+</p>
+<h2>AVOIDING FONT TYRANNY</h2>
+<p>
+Have you ever written the following lines of code? 
+</p>
+<p>
+<code>void DrawMessage(short messageNum)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Str255theString;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GetIndString(theString, kMessageStrList, messageNum);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TextFont(geneva);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TextSize(9);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;MoveTo(kMessageXPos, kMessageYPos);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DrawString(theString);</code><br>
+<code>}</code>
+</p>
+<p>
+If so, you're overdue for a good spanking. While we're very proud of you for putting<br>
+that string into a resource like a good international programmer, the font, size, and<br>
+pen position are a little too, well, specific. Granted, it's hard to talk yourself out of<br>
+using all those nice constants defined in Fonts.h, but if you're trying to write a<br>
+localizable application, this is definitely the<i>wrong</i> approach. 
+</p>
+<p>
+A better approach is to do this:
+</p>
+<p>
+<code>TextFont(applFont);</code><br>
+<code>TextSize(0);</code><br>
+<code>GetFontInfo(&amp;fontInfo);</code><br>
+<code>MoveTo(kMessageXPos, kMessageYMargin + fontInfo.ascent +</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;fontInfo.leading);</code>
+</p>
+<p>
+Since applFont is always a font in the system script, and TextSize(0) gives a size<br>
+appropriate to the system script, you get the right output. Plus, you're now<br>
+positioning the pen based on the font, instead of using absolute coordinates. This is<br>
+important. For instance, on a Japanese systemTextSize(0) results in a point size of<br>
+12, so the code in the preceding example might not work if the pen-positioning<br>
+constants were set up to assume a 9-point font height. 
+</p>
+<p>
+If you want to make life even easier for your localizers, you could eliminate the<br>
+pen-positioning constants altogether. Instead, use an existing resource type (the<br>
+'DITL' type is appropriate for this example) to store the layout of the text items in the<br>
+window. Even though you're drawing the items yourself, you can still use the<br>
+information in the resource to determine the layout, and the localizers can then change<br>
+the layout using a resource editor -- which is a lot better than hacking your code. 
+</p>
+<p>
+There are some other interesting ways to approach this problem. Depending on what<br>
+you're drawing, the Script Manager may be able to tell you both which font and which<br>
+size to use. Suppose you need to draw some help text. You can use the following code:
+</p>
+<p>
+<code>void DrawHelpText(Str255 helpText, Rect *helpZone)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long fondSize;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;fondSize = GetScript(smSystemScript, smScriptHelpFondSize);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TextFont(HiWord(fondSize));</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TextSize(LoWord(fondSize));</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;NeoTextBox(&amp;helpText[1], helpText[0], helpZone, GetSysJust(),</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0, nil, nil);</code><br>
+<code>}</code>
+</p>
+<p>
+Here the Script Manager tells you the appropriate font and size for help text. On a U.S.<br>
+system, that would be Geneva 9; on a Japanese system, it's Osaka 9. NeoTextBox is a<br>
+fast, flexible replacement for the Toolbox routine TextBox and is Script Manager<br>
+compatible. You can learn more about NeoTextBox by reading "The TextBox You've<br>
+Always Wanted" in<i>develop</i>Issue 9. 
+</p>
+<p>
+The Script Manager has some other nice combinations:
+</p>
+<p>
+<code>smScriptMonoFondSize&nbsp;&nbsp;&nbsp;&nbsp;// Default monospace font and size (use when</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// you feel the urge to use Courier 12)</code><br>
+<code>smScriptSmallFondSize&nbsp;&nbsp;&nbsp;// Default small font and size (use when you</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// feel the urge to use Geneva 9)</code><br>
+<code>smScriptSysFondSize&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Default system font and size (use when you</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// feel the urge to use Chicago 12)</code><br>
+<code>smScriptAppFondSize&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Default application font and size (use as</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// default document font)</code>
+</p>
+<p>
+The various FondSize constants are available only in System 7. If you're writing for<br>
+earlier systems, you should<i>at least</i>use GetSysFont, GetAppFont, and GetDefFontSize, as<br>
+described in Chapter 17 of<i>Inside Macintosh</i>Volume V. And if you're too lazy to do even<br>
+that,<i>please</i>use TextFont(0) and TextSize(0) to get the system font, which will be<br>
+appropriate for the system script. This is, by the way, how grafPorts are initialized<br>
+by QuickDraw. In other words, if you don't touch the port, it will already be set up<br>
+correctly for drawing text in the system script. 
+</p>
+<h2>INTERNATIONAL DATING</h2>
+<p>
+Before you get too excited, you should know that we're not talking about the true-love<br>
+variety of date here. No, we're talking about something much more tedious -- input<br>
+and output of international dates, times, numbers, and currency values. First we'll<br>
+look at output formatting, and then input parsing. 
+</p>
+<p>
+<b>OUTPUT OF DATES, TIMES, NUMBERS, AND CURRENCY VALUES</b><br>
+To output dates, times, numbers, and currency values (which we'll call<i>formatted</i><br>
+<i>values</i>), you need to know the script you're formatting for. This can be a user<br>
+preference, or you can determine the script from the current font of the field<br>
+associated with the value you're formatting (use Font2Script).&nbsp;&nbsp;&nbsp;You can use these<br>
+International Utilities routines to format dates, times, and numbers:
+</p>
+<ul>
+<li>Use IUDateString for formatting a date. </li>
+<li>Use IUTimeString for formatting a time.</li>
+<li>Use NumToString for simple numbers without separators. </li>
+<li>Use Str2Format and FormatX2Str for complete number formatting with<br>
+separators.</li>
+</ul>
+<p>
+Formatting a currency value is a bit trickier. You have to format the number and then<br>
+add the currency symbol in the right place. We'll show you how to get the currency<br>
+symbol and the positioning information from the 'itl0' resource. 
+</p>
+<p>
+First, let's look at an example of date and time formatting:
+</p>
+<p>
+<code>#define kWantSeconds&nbsp;&nbsp;&nbsp;&nbsp;true&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// For IUTimeString</code><br>
+<code>#define kNoSeconds&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;false</code><br>
+<code></code><br>
+<code>unsigned long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;secs;</code><br>
+<code>Str255&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theDate, theTime;</code><br>
+<code></code><br>
+<code></code><br>
+<code>// Get the current date and time into Pascal strings.</code><br>
+<code>GetDateTime(&amp;secs);</code><br>
+<code>IUDateString(secs, shortDate, theDate);</code><br>
+<code>IUTimeString(secs, kNoSeconds, theTime);</code>
+</p>
+<p>
+Formatting a number with FormatX2Str is a little more complicated, because<br>
+FormatX2Str requires a canonical number format string (type NumFormatString)<br>
+that describes the output format. You make a NumFormatString by converting a literal<br>
+string, like
+</p>
+<p>
+<code>##,###.00;-##,###.00;0.00</code>
+</p>
+<p>
+The strings are in the format
+</p>
+<p>
+<code>positiveFormat;negativeFormat;zeroFormat</code>
+</p>
+<p>
+where the last two parts are optional. The example string would format the number<br>
+32767 as 32,767.00, -32767 as -32,767.00, and zero as 0.00. The exact format of<br>
+these strings can be quite complicated and is described in<i>Macintosh Worldwide</i><br>
+<i>Development: Guide to System Software</i>. 
+</p>
+<p>
+The following handy routine formats a number using a format read from a string list.<br>
+You provide the string list resource and specify which item in the list to use when<br>
+formatting a given number. 
+</p>
+<p>
+<code>OSErr FormatANum(short theFormat, extended theNum, Str255 theString)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;NItl4Handle&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;itl4;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;NumberParts&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;numberParts;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Str255&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textFormatStr;&nbsp;&nbsp;// "Textual" number format spec</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;NumFormatString formatStr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Opaque number format</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Load the 'itl4' and copy the NumberParts record out of it.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;itl4 = (NItl4Handle)IUGetIntl(4);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (itl4 == nil)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return resNotFound;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;numberParts = *(NumberParts *)((char *)*itl4 +</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(*itl4)-&gt;defPartsOffset);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Get the format string, convert it to a NumFormatString, and</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// then use it to format the input number.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GetIndString(textFormatStr, kFormatStrs, theFormat);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;err = Str2Format(textFormatStr, &amp;numberParts, &amp;formatStr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (err != noErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return err;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;err = FormatX2Str(theNum, &amp;formatStr, &amp;numberParts, theString);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return err;</code><br>
+<code>}</code>
+</p>
+<p>
+Given a currency value, the following routine formats the number and then adds the<br>
+currency symbol in the appropriate place. This routine assumes that you use a<br>
+particular number format for currency values, but you can easily modify it to include<br>
+an argument that specifies the format item in the string list. 
+</p>
+<p>
+<code>OSErr FormatCurrency(extended theNum, Str255 theString)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Intl0Hndl&nbsp;&nbsp;&nbsp;itl0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Str255&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;currencySymbol, formattedValue;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// First, format the number like this: ##,###.00. FormatX2Str</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// will replace the "," and "." separators</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// appropriately for the font script.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;err = FormatANum(kCurrencyFormat, theNum, formattedValue);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (err != noErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return err;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Get the currency symbol from the 'itl0' resource. The currency</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// symbol is stored as up to three bytes. If any of the bytes</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// aren't used they're set to zero. So, we use strncpy to copy</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// out the currency symbol as a C string and forcibly terminate</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// it in case it's three bytes long.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;itl0 = (Intl0Hndl)IUGetIntl(0);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (itl0 == nil)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return resNotFound;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;strncpy(currencySymbol, &amp;(*itl0)-&gt;currSym1, 3);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;currencySymbol[3] = 0x00;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;c2pstr(currencySymbol);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Now put the currency symbol and the formatted value together</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// according to the currency symbol position.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if ((*itl0)-&gt;currFmt &amp; currSymLead) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;StringCopy(theString, currencySymbol);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;StringAppend(theString, formattedValue);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;} else {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;StringCopy(theString, formattedValue);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;StringAppend(theString, currencySymbol);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return noErr;</code><br>
+<code>}</code>
+</p>
+<p>
+The 'itl0' resource also includes the decimal and thousands separators. These should be<br>
+the same values used by FormatX2Str, which gets these symbols from the<br>
+NumberParts structure in the 'itl4' resource.
+</p>
+<p>
+If using the extended type in your application makes you queasy, you can easily modify<br>
+these routines to work with the Fixed type. Just use Fix2X in the FormatX2Str call to<br>
+convert the Fixed type to extended. 
+</p>
+<p>
+<b>INPUT OF DATES, TIMES, AND NUMBERS</b><br>
+The Script Manager includes routines for parsing formatted values to retrieve a date,<br>
+time, or number. The process is logically the reverse of formatting a value for output.<br>
+Most applications don't even deal with formatted numbers. They just read raw<br>
+numbers (no thousands separators or currency symbols), locate the decimal<br>
+separator, convert the integer and fraction parts using NumToString, and then put the<br>
+integer and fraction parts back together. 
+</p>
+<h2>DEALING WITH CHARACTER ENCODINGS</h2>
+<p>
+When writing Macintosh applications, most developers make certain assumptions that<br>
+cause problems when the application is used in other countries. One of these<br>
+assumptions is that all characters are represented by a single byte; another is that a<br>
+given character code always represents the same character. The first assumption<br>
+causes immediate problems because the two-byte script systems use both one-byte<br>
+and two-byte character codes. An application that relies on one-byte character codes<br>
+often breaks up a two-byte character into two one-byte characters, rendering the<br>
+application useless for two-byte text. The second assumption causes more subtle<br>
+problems, which prevent the user from mixing text in several different scripts<br>
+together in one document. 
+</p>
+<p>
+Different versions of the Macintosh system software use a different script by default.<br>
+Systems sold in the U.S. and Europe use the Roman script. Those sold in Japan, Hong<br>
+Kong, or Korea use the Japanese, traditional Chinese, or Korean script, respectively.<br>
+In addition, some sophisticated users have several script systems installed at one time,<br>
+and System 7.1 makes this even easier. Actually, even unsophisticated users can have<br>
+two script systems installed at one time. All systems have the Roman script installed,<br>
+so Japanese users, for example, have both the Japanese and the Roman script<br>
+available.
+</p>
+<p>
+For an application to work correctly with any international system software, it must<br>
+be able to handle different character encodings simultaneously. That is, the user should<br>
+be able to enter characters in different scripts and edit the text without damaging the<br>
+associated script information. This section discusses three ways to handle character<br>
+encodings. These methods require different amounts of effort to implement and provide<br>
+different capabilities. Of course, those that require the most effort also provide the<br>
+most flexibility and power for your users. Before we discuss these methods, let's<br>
+define some more terms. 
+</p>
+<p>
+<b>Language. </b>A human language that's written using a particular script. Several<br>
+languages can share the same script. For example, the Roman script is used by<br>
+English, French, German, and so on. It's also possible for the same language to be<br>
+written in more than one script, although that's a rare exception. 
+</p>
+<p>
+<b>Alphabet, syllabary, ideograph set. </b>A collection of characters used by a<br>
+language. Some scripts include more than one of these collections. As a simple example,<br>
+the Roman script includes both an uppercase and a lowercase alphabet. As a more<br>
+complicated example, the Japanese script includes the Roman alphabet, the Hiragana<br>
+and Katakana syllabaries, and the Kanji ideograph set. An alphabet, syllabary, or<br>
+ideograph set isn't necessarily encoded in the same way in two different scripts. For<br>
+example, the Roman alphabet in the Roman script uses one-byte codes, but the Roman<br>
+alphabet in the Japanese script uses either one-byte or two-byte codes. 
+</p>
+<p>
+<b>Segment. </b>A subset of an encoding that may be shared by one or more scripts. For<br>
+example, the simple (7-bit) ASCII characters make up a segment that's shared by all<br>
+the scripts on the Macintosh.&nbsp;&nbsp;&nbsp;Characters in this segment have the same code in any<br>
+Macintosh encoding. 
+</p>
+<p>
+<b>Unicode. </b>An international character encoding that encompasses all the written<br>
+languages of the world.&nbsp;&nbsp;&nbsp;Each character is assigned a unique 16-bit integer. Unicode is<br>
+a<i>unified</i>encoding -- all characters that have the same abstract shape share a common<br>
+character code, even if they're used in more than one language. 
+</p>
+<p>
+<b>METHOD 1: NATIVE ENCODING</b><br>
+The easiest method is to simply pick one character encoding for your localization and<br>
+stick with it throughout the application. This is usually the native character encoding<br>
+for the country (and language) that you're targeting with the localized application. For<br>
+example, if you're&nbsp;&nbsp;localizing anapplication for the Japanese market, you choose the<br>
+shift-JIS (Shifted Japanese Industrial Standard) character encoding and modify all<br>
+your text-handling routines to use this encoding. 
+</p>
+<p>
+The shift-JIS encoding uses both one-byte and two-byte character codes, so you need<br>
+to use the Script Manager's CharByte routine whenever you're stepping through a<br>
+string. For a random byte in a shift-JIS encoded string, CharByte tells you if the byte<br>
+represents a one-byte character, the low byte of a two-byte character, or the high<br>
+byte of a two-byte character. You also have to handle two-byte characters on input (as<br>
+described earlier in the section "Keyboard Input") and use the native system and<br>
+application fonts for text (as described in the section "Avoiding Font Tyranny"). 
+</p>
+<p>
+To summarize, the native encoding method has a few advantages:
+</p>
+<ul>
+<li>It's very easy to implement, so most of your code will work with simple<br>
+modifications.</li>
+<li>Since you're using the native encoding, the users in the country for which<br>
+you're localizing will be able to manipulate text using the conventions of the<br>
+native language.</li>
+<li>Every encoding includes the simple (7-bit) ASCII characters, so they'll<br>
+also be able to use English. </li>
+</ul>
+<p>
+Unfortunately, this method has many disadvantages:
+</p>
+<ul>
+<li>You have to create one version of the application for every localization<br>
+that you do. Each version will use a different native encoding.</li>
+<li>Documents created with one version of the application can't necessarily be<br>
+used with another version of the application. For example, a document created<br>
+with the Japanese version that includes two-byte Japanese text will be<br>
+displayed incorrectly when opened with the French version.</li>
+<li>The user doesn't have access to all the characters in the Roman script<br>
+(extended ASCII encoding) because these are also used by the native encoding.<br>
+For example, the ASCII accented characters and extended punctuation use<br>
+character codes that are also used by the one-byte Katakana syllabary in the<br>
+shift-JIS encoding.&nbsp;&nbsp;&nbsp;Remember, even the simple international systems really<br>
+use two scripts -- the native script and the Roman script. </li>
+</ul>
+<p>
+<b>METHOD 2: MULTIPLE ENCODINGS</b><br>
+The most complete method for handling character encodings is to keep track of the<br>
+encoding for every bit of text that your application stores. In this method the encoding<br>
+(or the script code) is stored with a run of text just like a font family, style, or point<br>
+size. The first step is to determine which languages you may want to support. Once this<br>
+is determined, you can decide which encodings are necessary to implement support for<br>
+those languages. For example, suppose your Marketing department wants to do<br>
+localized versions for French, German, Italian, Russian, Japanese, and Korean.<br>
+French, German, and Italian all use the Roman script. Russian uses the Cyrillic script;<br>
+Japanese uses the Japanese script; and Korean uses the Korean script. To support these<br>
+languages, you have to handle the Roman, Cyrillic, Japanese, and Korean encodings. 
+</p>
+<p>
+In general, each script that you include requires support for its encoding and,<br>
+possibly, additional features that are specific to that script. For example, Japanese<br>
+script can be drawn left-to-right or top- to-bottom, so a complete implementation<br>
+would handle vertical text. There are other features specific to the Japanese script<br>
+(amikake, furigana, and so on) that you may also want to implement. 
+</p>
+<p>
+If any of the encodings include two-byte characters, the data structures that you use to<br>
+represent text runs must be able to handle two-byte codes. When you're processing a<br>
+text run, the encoding of that run determines how you can treat the characters in the<br>
+run. For example, you can munge a Roman text run in the usual way, safe and secure in<br>
+the familiar world of one-byte character codes. In contrast, your dealings with<br>
+Japanese text runs may be wrought with angst since these runs can include both<br>
+one-byte and two-byte characters in any combination.&nbsp;&nbsp;The Script Manager is designed<br>
+to support applications that tag text runs with a script code. As long as the font of the<br>
+current grafPort is set correctly, all the Script Manager routines work with the<br>
+correct encoding for that script. For example, if you specify a Japanese font in the<br>
+current grafPort, the Script Manager routines assume that any text passed to them is<br>
+stored in the shift-JIS encoding. 
+</p>
+<p>
+<b>Keyboard script. </b>During this discussion of the multiple encodings method, we've<br>
+been assuming that you already know the script (and therefore the encoding) of text<br>
+that the user has entered. How exactly do you know this? The Script Manager keeps<br>
+track of the script of the text being entered from the keyboard in a global variable.<br>
+Your application should read this variable programmatically after receiving a<br>
+keyboard event, as follows:
+</p>
+<p>
+<code>short keyboardScript;</code>
+</p>
+<p>
+<code>keyboardScript = GetEnvirons(smKeyScript);</code>
+</p>
+<p>
+Once you know the keyboard script, make sure that this information stays with the<br>
+character as it becomes part of a text run. If the keyboard script is the same as the<br>
+script of the text run, you can just add this character to the text run. Otherwise, you<br>
+must create a new text run, tag it with the keyboard script, and place the character in<br>
+it. 
+</p>
+<p>
+You can also set the keyboard script directly when the user selects text with the mouse<br>
+or changes the current font. The question is, which script do you set the keyboard to<br>
+use? That depends on the font of the selected text or the new font the user has chosen.<br>
+The first step is to convert the font into a script and then use the resulting script code<br>
+to set the keyboard script. This process is known as<i>keyboard forcing</i>. 
+</p>
+<p>
+<code>short fontScript;</code>
+</p>
+<p>
+<code>fontScript = Font2Script(myFontID);</code><br>
+<code>KeyScript(fontScript);</code>
+</p>
+<p>
+The user can always change the keyboard script by clicking the keyboard icon (in<br>
+System 6) or by choosing a keyboard layout from the Keyboard menu (in System 7).<br>
+As a result, you're no longer sure that the keyboard script and the font script agree<br>
+when the user actually types something. You should always check the keyboard script<br>
+against the font script before entering a typed character into a text run. If the<br>
+keyboard script and the font script don't agree, a new current font is derived from the<br>
+keyboard script. This process is known as<i>font forcing</i>. 
+</p>
+<p>
+<code>short fontScript, keyboardScript;</code>
+</p>
+<p>
+<code>fontScript = Font2Script(myFontID);</code><br>
+<code>keyboardScript = GetEnvirons(smKeyScript);</code><br>
+<code>if (fontScript != keyboardScript)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myFontID = GetScript(keyboardScript, smScriptAppFond);</code>
+</p>
+<p>
+The combination of keyboard forcing and font forcing is called<i>font/keyboard</i><br>
+<i>synchronization</i>. Both keyboard and font forcing should be optional; the user should be<br>
+able to turn these features off with a preferences setting. 
+</p>
+<p>
+<b>Changing fonts. </b>An application that works with multiple encodings must pay special<br>
+attention to font changes. For each text run in the selection, the application should<br>
+check the script of the text run against the script of the new font. If the scripts agree,<br>
+the text run can use the new font. If the scripts don't agree, the application can either<br>
+ignore the new font for that text run or apply some special processing. 
+</p>
+<p>
+<code>short fontScript;</code><br>
+<code>short textRunIndex, textRunCount;</code><br>
+<code></code><br>
+<code>fontScript = Font2Script(myNewFontID);</code><br>
+<code>for (textRunIndex = 0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textRunIndex &lt; textRunCount;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textRunIndex++) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (textRunStore[textRunIndex].script == fontScript)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textRunStore[textRunIndex].fontID = myNewFontID;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SpecialProcessing(&amp;textRunIndex, &amp;textRunCount, myNewFontID);</code><br>
+<code>}</code>
+</p>
+<p>
+All the encodings used by the Macintosh script systems include the simple (7-bit)<br>
+ASCII characters, so it's often possible to convert these characters from one script to<br>
+another. The special processing consists of these two steps: 1.&nbsp;&nbsp;Breaking a text run into<br>
+pieces, some of which contain only simple ASCII characters and others that contain all<br>
+the characters not included in simple ASCII 2.&nbsp;&nbsp;Applying the new font to the runs that<br>
+contain only simple ASCII characters and leaving the other runs with the old font
+</p>
+<p>
+<code>Boolean FindASCIIRun(unsigned char *textPtr, long textLength,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long *runLength)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;*runLength = 0;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (*textPtr &lt; 0x80) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// We know that this character is simple ASCII, since values</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// less than 128 can't be the first byte of a two-byte</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// character, and they're shared among all scripts. So, let's</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// block up a run of simple ASCII.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;while (*textPtr++ &lt; 0x80 &amp;&amp; textLength-- &gt; 0)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*runLength++;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return true;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Run is simple ASCII.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;} else {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// We know this character is not simple ASCII. It may be</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// two-byte or it may be some character in a non-Roman</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// script. So, let's block up a run of non-simple-ASCII</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// characters.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;while (textLength &gt; 0) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (CharByte(textPtr, 0) == smFirstByte) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Skip over two-byte character.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textPtr += 2;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textLength -= 2;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*runLength += 2;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;} else if (*textPtr &gt;= 0x80) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Skip over one-byte character.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textPtr++;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textLength--;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*runLength++;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;} else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return false;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Run is NOT simple ASCII.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>}</code><br>
+<code></code><br>
+<code>void SpecialProcessing(short *runIndex, short *runCount,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short myNewFontID)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TextRunRecord&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;originalRun, createdRun;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;unsigned char&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*textPtr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textLength, runLength, runFollow;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;simpleASCII;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Retrieve this run and remove it from the run list.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GetTextRun(*runIndex, &amp;originalRun);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;RemoveTextRun(*runIndex);</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Get the pointer and length of the original text.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;textPtr = originalRun.text;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;textLength = originalRun.count;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Loop through all of the sub-runs in this run.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;runFollow = *runIndex;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;while (textLength &gt; 0) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Find the length of the sub-run and its type.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TextFont(originalRun.fontID);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;simpleASCII= FindASCIIRun(textPtr, textLength, &amp;runLength);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Create the sub-run and duplicate the characters.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;createdRun = originalRun;&nbsp;&nbsp;&nbsp;// Same formats.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;createdRun.text = NewPtr(runLength);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Real programs check for nil pointer here.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;createdRun.length = runLength;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BlockMove(textPtr, createdRun.text, runLength);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Roman runs can use the new font.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (simpleASCII)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;createdRun.fontID = myNewFontID;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Add the new sub-run and advance the run index.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AddTextRun(runFollow++, createdRun);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Advance over this sub-run and continue looping.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textPtr += runLength;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textLength -= runLength;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Dispose of the original run information.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DisposeTextRun(originalRun);</code><br>
+<code>}</code>
+</p>
+<p>
+<b>Searching and sorting. </b>Applications that work with multiple encodings must also<br>
+take care during searching or sorting operations. An application that uses only the<br>
+native encoding can assume that character codes are unique and that any two text runs<br>
+can be compared directly using the sorting routines in the International Utilities<br>
+Package. On the other hand, an application that uses multiple encodings must always<br>
+consider a character code within the context of a text run and its associated script. In<br>
+this case, character codes are unique only within a script, not across script<br>
+boundaries, so text runs can't be compared directly using International Utilities<br>
+routines unless they have the same script. If the script codes are different, the<br>
+International Utilities routines provide a mechanism for first ordering the scripts<br>
+themselves (IUScriptOrder). 
+</p>
+<p>
+You have the same problems with searching as with sorting. In addition, search<br>
+commands usually include options for case sensitivity that could be extended in a<br>
+multiple encodings application. For example, the Japanese script includes both<br>
+one-byte and two-byte versions of the Roman characters.&nbsp;&nbsp;&nbsp;For purposes of searching,<br>
+the user might want to consider these equivalent. The simplified Chinese script also<br>
+includes both one-byte and two-byte versions of the Roman characters, and these<br>
+should also be equivalent to Roman characters in the Roman script and in the Japanese<br>
+script. Just like case sensitivity, considering one- and two-byte versions of a<br>
+character as equivalent should be an option in your search dialog box.&nbsp;&nbsp;You can use the<br>
+Script Manager's Transliterate routine to implement a byte-size insensitive<br>
+comparison. Use Transliterate to convert both the source and the target text into<br>
+one-byte characters, then compare the resulting strings. Because all the scripts share<br>
+the same simple (7-bit) ASCII character codes, this mechanism treats all the Roman<br>
+characters, both one-byte and two-byte, in every script as equivalent. 
+</p>
+<p>
+<b>Summary. </b>The multiple encodings method has several advantages:
+</p>
+<ul>
+<li>The user can mix text in any number of scripts within one document.</li>
+<li>You can produce several localized versions of the application from a single<br>
+code base.</li>
+<li>Users in a particular region can use features intended for users in a<br>
+different region, even if the product isn't advertised to provide those features.</li>
+</ul>
+<p class="spacer">&nbsp;</p>
+<p>
+The disadvantages of this method are apparent from the examples:
+</p>
+<ul>
+<li>It's much more difficult to implement than the native encoding method. </li>
+<li>The two-byte scripts use mixed one-byte and two-byte encodings, so even<br>
+though you're keeping track of the script of each text run, you still need to<br>
+worry about mixed character sizes within a run.</li>
+<li>Because some characters are duplicated between scripts, you need to treat<br>
+their corresponding character codes as equivalent. This further complicates<br>
+the basic algorithms you use for text editing, searching, sorting, and so on. </li>
+</ul>
+<p>
+<b>METHOD 3: POOR MAN'S UNIFICATION</b><br>
+Our favorite method combines the power of the multiple encodings method with the<br>
+simplicity of the native encoding method. The idea is to create a single "native"<br>
+encoding that encompasses all the scripts included in the multiple encodings method. In<br>
+the multiple encodings method, some characters are encoded several times: a character<br>
+can have the same code value in different scripts, or it can have different code values<br>
+in the same script. For example, the letter<i>A</i> has the code value 0x41 in the Roman<br>
+script and the same one-byte code value in Japanese and traditional Chinese. However,<br>
+Japanese also encodes the letter<i>A</i> as the two-byte value 0x8260, and traditional<br>
+Chinese also encodes it as the two-byte value 0xA2CF. A unified encoding would map all<br>
+of the identical characters in the multiple encodings to one unique code value. 
+</p>
+<p>
+You might have noticed that this method has some of the same goals as the Unicode<br>
+scheme -- a single character encoding for all languages with one unique code for every<br>
+character. Unicode extends this goal to the unification of the two-byte scripts.<br>
+Characters that have the same abstract shape in the simplified Chinese, traditional<br>
+Chinese, Japanese, and Korean scripts have been grouped together as a single character<br>
+under Unicode. Our method doesn't go that far. We unify the simple ASCII characters<br>
+from all scripts but leave the various two-byte scripts to their unique encodings.&nbsp;&nbsp;<br>
+Thus the name for this method -- poor man's unification. 
+</p>
+<p>
+<b>Segments. </b>The poor man's unification method relies on the concept of a segment.&nbsp;&nbsp;A<br>
+segment is a subset of an encoding with characters that are all the same byte size. For<br>
+example, the Roman script is divided into two segments -- the simple ASCII segment<br>
+and the extended ASCII/European segment. The Japanese script has three segments --<br>
+the simple ASCII segment, the one-byte Katakana segment, and the two-byte segment<br>
+(including symbols, Hiragana, Katakana, Roman, Cyrillic, and Kanji). 
+</p>
+<p>
+The key to poor man's unification is the simple ASCII segment. This segment is shared<br>
+among all the scripts on the Macintosh (see Figure 2). Furthermore, poor man's<br>
+unification treats the various encodings as collections of segments that can be shared<br>
+among encodings. There's logically only one simple ASCII segment, and all the scripts<br>
+share it. In the multiple encodings method, characters in this range could be found in<br>
+each script. That is, the word "Beaker" could be stored in both a Roman text run and in<br>
+a Japanese text run (as one-byte ASCII). In contrast, an application that uses poor<br>
+man's unification would tag text runs with the segment, not the script, so these two<br>
+occurrences of "Beaker" would be indistinguishable.&nbsp;&nbsp;&nbsp;
+</p>
+<p>
+<img src="img/199.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 2</b> Scripts Sharing the ASCII Segment
+</p>
+<p>
+&nbsp;The best way to see the advantages of this method is to solve a problem we already<br>
+considered -- changing the font of the selection. With the multiple encodings method,<br>
+this entailed breaking text runs into smaller runs using our FindASCIIRun routine.<br>
+With poor man's unification, the same problem is much easier to solve because the<br>
+runs are already divided into segments and the simple ASCII segment is allowed to take<br>
+on any font. Other segments are only allowed to use fonts that belong to the same script<br>
+they do. 
+</p>
+<p>
+<code>#define asciiSegment&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0</code><br>
+<code>#define europeanSegment&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1</code><br>
+<code>#define katakanaSegment&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2</code><br>
+<code>#define japaneseSegment&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3</code><br>
+<code></code><br>
+<code>short fontScript, runSegment;</code><br>
+<code>short textRunIndex, textRunCount;</code><br>
+<code></code><br>
+<code>fontScript = Font2Script(myNewFontID);</code><br>
+<code>for (textRunIndex = 0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textRunIndex &lt; textRunCount;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textRunIndex++) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;runSegment = textRunStore[textRunIndex].segment;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (SegmentAllowedInScript(runSegment, fontScript))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textRunStore[textRunIndex].fontID = myNewFontID;</code><br>
+<code>}</code>
+</p>
+<p>
+The special processing is gone (surprise). Once you know that a segment isn't included<br>
+in the script of the font, you can't go any further. Such a segment consists entirely of<br>
+characters that aren't in the script of the font. 
+</p>
+<p>
+<code>Boolean SegmentAllowedInScript(short segment, short script)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;switch (script) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case smRoman:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch (segment) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case asciiSegment:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case europeanSegment:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case smJapanese:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch (segment) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case asciiSegment:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case katakanaSegment:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case japaneseSegment:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch (segment) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case asciiSegment:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>}</code>
+</p>
+<p>
+<b>Determining a segment from keyboard input. </b>How do you determine the<br>
+segment of a character when it's entered from the keyboard?&nbsp;&nbsp;1.&nbsp;&nbsp;First determine<br>
+which script the character belongs to by checking the keyboard script.&nbsp;&nbsp;2.&nbsp;&nbsp;Then use<br>
+the character-code value and the encoding definitions to assign the character a<br>
+particular segment. 
+</p>
+<p>
+<code>#define ksJISSpace&nbsp;&nbsp;0x8140</code><br>
+<code></code><br>
+<code>unsigned short keyboardScript;</code><br>
+<code>unsigned short charSegment;</code><br>
+<code>EventRecord&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lowByteEvent;</code><br>
+<code></code><br>
+<code>keyboardScript = GetEnvirons(smKeyScript);</code><br>
+<code>charSegment = ScriptAndByteToSegment(keyboardScript, charCode);</code><br>
+<code></code><br>
+<code>if (charSegment == japaneseSegment) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Get low byte of two-byte character from keyboard.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;do {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// You can get null events between two bytes of a two-byte</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// character.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GetNextEvent(keyDownMask | keyUpMask | autoKeyMask,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;lowByteEvent);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (lowByteEvent.what == nullEvent)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GetNextEvent(keyDownMask | keyUpMask | autoKeyMask,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;lowByteEvent);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;} while (lowByteEvent.what == keyUp);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if ((lowByteEvent.what == keyDown) ||</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(lowByteEvent.what == autoKey))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;charCode = (charCode << 8) |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(lowByteEvent.message &amp; charCodeMask);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// We've gotten a valid high byte under the Japanese keyboard</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// with no subsequent low byte forthcoming. Something serious</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// is wrong with the current input method. Return a Japanese</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// space for now. Hmmmm.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;charCode = ksJISSpace;</code><br>
+<code>}</code><br>
+<code></code><br>
+<code>#define kASCIILow&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x00</code><br>
+<code>#define kASCIIHigh&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x7f</code><br>
+<code>#define kRange1Low&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x81</code><br>
+<code>#define kRange1High&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x9f</code><br>
+<code>#define kRange2Low&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0xe0</code><br>
+<code>#define kRange2High&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0xfc</code><br>
+<code></code><br>
+<code>short ScriptAndByteToSegment(unsigned short script,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;unsigned char byte)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;switch (script) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case smRoman:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if ((byte &gt;= kASCIILow) &amp;&amp; (byte &lt;= kASCIIHigh))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return asciiSegment;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return europeanSegment;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case smJapanese:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if ((byte &gt;= kASCIILow) &amp;&amp; (byte &lt;= kASCIIHigh))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return asciiSegment;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else if ((byte &gt;= kRange1Low) &amp;&amp; (byte &lt;= kRange1High))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return japaneseSegment;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else if ((byte &gt;= kRange2Low) &amp;&amp; (byte &lt;= kRange2High))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return japaneseSegment;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return katakanaSegment;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// New scripts and segments added before this.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return asciiSegment;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>}</code>
+</p>
+<p>
+You might think this is quite a bit of effort just to get the low byte of a two-byte<br>
+character. You're right. And as for Joe's use of the antiquated GetNextEvent instead of<br>
+the more modern WaitNextEvent, Beaker notes that "It's a cooperative multitasking<br>
+world and Joe's not cooperating." Joe replies, "Yeah, but I don't want a context switch<br>
+while I'm trying to get the low byte of a two- byte character."
+</p>
+<p>
+<b>Changing fonts. </b>Applications that employ poor man's unification still have to worry<br>
+about font forcing.&nbsp;&nbsp;&nbsp;Here's an algorithm for "smart" font forcing that tries to<br>
+anticipate which fonts the user will select for text in each segment. When you find a<br>
+case where the current keyboard script and font script don't agree, instead of using the<br>
+application font for the keyboard script, search the surrounding text runs for a font<br>
+that does agree with the keyboard script. Only if you can't find a font that agrees do you<br>
+default to the application font of the keyboard script. From the user's perspective, this<br>
+is much nicer. Once the user has selected a font for each script, the application goes<br>
+back and forth between the fonts automatically as the keyboard script is changed. 
+</p>
+<p>
+<code>short fontScript, keyboardScript;</code><br>
+<code></code><br>
+<code>fontScript = Font2Script(myFontID);</code><br>
+<code>keyboardScript = GetEnvirons(smKeyScript);</code><br>
+<code>// Search backward.</code><br>
+<code>if (fontScript != keyboardScript) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;for (textRunIndex = currentRunIndex - 1;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textRunIndex &gt;= 0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textRunIndex--) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myFontID = textRunStore[textRunIndex].fontID;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fontScript = Font2Script(myFontID);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (fontScript == keyboardScript)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>}</code><br>
+<code></code><br>
+<code>// Search forward.</code><br>
+<code>if (fontScript != keyboardScript) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;for (textRunIndex = currentRunIndex + 1;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textRunIndex &lt; textRunCount;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;textRunIndex++) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myFontID = textRunStore[textRunIndex].fontID;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fontScript = Font2Script(myFontID);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (fontScript == keyboardScript)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>}</code><br>
+<code></code><br>
+<code>// Punt if we couldn't find an appropriate run.</code><br>
+<code>if (fontScript != keyboardScript)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myFontID = GetScript(keyboardScript, smScriptAppFond);</code>
+</p>
+<p>
+Applications that use font forcing also have to worry about keyboard forcing. However,<br>
+if the application includes the feature just described, keyboard forcing is not as<br>
+important. Many users will prefer to leave the keyboard completely under manual<br>
+control and allow the "smart" font forcing to choose the correct font when they start<br>
+typing. The keyboard script is always visible in the menu bar, but the current font is<br>
+not. 
+</p>
+<p>
+<b>Summary. </b>The poor man's unification method has more advantages than the other<br>
+two:
+</p>
+<ul>
+<li>All characters in a run belong to the same segment and therefore take the<br>
+same number of bytes for their code values. That is, any given run will be all<br>
+one-byte characters or all two-byte characters, which makes it easier to step<br>
+through text for deleting or cursor movement. This is in contrast to the<br>
+multiple encodings method, which can mix one-byte and two-byte characters<br>
+in a single text run. </li>
+<li>Runs of simple ASCII and European characters still take one byte per<br>
+character to store. If you're working on a word processor and plan to keep<br>
+large amounts of text in memory, this can be an advantage. </li>
+<li>Like the multiple encodings method, this method is easy to extend as you<br>
+add more scripts to the set your application supports. Each time you add a new<br>
+script, you need to define the new segments that make up that script and then<br>
+modify the classification routines to correctly handle the new script and<br>
+segment codes. Once you locate a specification for the new encoding, these<br>
+modifications should be straightforward. </li>
+</ul>
+<p>
+Unfortunately, this method has two disadvantages when compared to pure Unicode:
+</p>
+<ul>
+<li>You still have to deal with one-byte and two-byte characters, even though<br>
+they won't be mixed together (see "The Demise of One-Byte Characters"). </li>
+<li> The application needs to tag each text run with a segment code because the<br>
+character codes aren't unique across segments.</li>
+</ul>
+<p>
+Unicode does away with both of these disadvantages by making all characters two bytes<br>
+wide and insisting on one huge set of unique character codes. 
+</p>
+<h2>PAY ME NOW OR PAY ME LATER</h2>
+<p>
+Perhaps the moral of the story is "globalization, not localization," as Joe says. The<br>
+more generalizations you can build into your application during initial development,<br>
+the more straightforward your localization process is destined to be, and the less your<br>
+localized code base will diverge from your original product. 
+</p>
+<p>
+Weigh the size and growth potential of a given language market against the amount of<br>
+effort required to implement that language. Stick to the markets where your product is<br>
+most likely to flourish. This article has shown that in some cases you can dramatically<br>
+reduce code complexity by taking shortcuts -- the poor man's unification scheme in<br>
+this article is a good example. A healthy balance between Script Manager techniques<br>
+and custom code will help you bring your localized product to market fast and make it a<br>
+winner. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>SCRIPT MANAGER CAVEATS</b><br>
+When you use a char to store a character or part of a character, use an unsigned char.<br>
+In two-byte scripts, the high byte of a two-byte character often has the high bit set,<br>
+which would make a signed char negative, possibly ruining your day. The same goes for<br>
+the use of a short to store a full one- or two-byte character -- use an unsigned short.
+</p>
+<p>
+Another important point is that most Script Manager routines rely on the font of the<br>
+current grafPort for their operation. That means you should <i>always</i> be sure that&nbsp;&nbsp;the<br>
+port is set appropriately and that the font of the current port is correct before making<br>
+any Script Manager calls.
+</p>
+<p>
+A new set of interfaces has been provided for System 7.1. While the old Script<br>
+Manager's text routines still work, the new routines add flexibility. For example, you<br>
+can use CharacterByteType instead of CharByte.
+</p>
+<p>
+<b>THE DEMISE OF ONE-BYTE CHARACTERS</b><br>
+The point of poor man's unification is to simplify your life. On that theme, there's<br>
+another technique that will help. You can simply decide that <i> characters are two bytes</i>.<br>
+Period. Expand one-byte characters into an unsigned short, with the character code in<br>
+the low byte and the segment code in the high byte. Then just use unsigned shorts<br>
+everywhere instead of unsigned chars. You'll find that your code gets easier to write<br>
+and easier to understand, and that lots of special cases where you would have broken<br>
+everything out into one- and two-byte cases collapse into one case.
+</p>
+<p>
+Putting the segment code into the high byte of one-byte characters ensures that the<br>
+one-byte character codes are unique. If your program handles only one two-byte<br>
+script, the two-byte codes are also unique. When both these conditions are true,<br>
+there's no need to store the segment codes in runs, since they're implied by the high<br>
+byte of each character code.
+</p>
+<p>
+Here are a few examples using the codes from the sample segments in the section on<br>
+poor man's unification:
+</p>
+<ul>
+<li>0x0041 is the letter <i>A</i> in the asciiSegment.</li>
+<li>0x0191 is the letter <i>&#235; </i>in the europeanSegment.</li>
+<li>0x8140 is a two-byte Japanese space character.</li>
+</ul>
+<p>
+In other words, one-byte characters carry their segment code in their high byte, and<br>
+the two-byte characters all belong to the same segment. You can imagine how much<br>
+easier searching and sorting algorithms are if you know you can always advance your<br>
+pointers by two bytes instead of constantly calling CharByte to find out how big each<br>
+character is. Plus, you might as well get used to storing 16 bits per character, since<br>
+that's how Unicode works. Yes, it's an extra byte per character -- deal with it.
+</p>
+<h2>RECOMMENDED READING</h2>
+<ul>
+<li><i>Inside Macintosh</i> Volume VI (Addison-Wesley, 1991), Chapter 14,<br>
+"Worldwide Software Overview."</li>
+<li><i>Inside Macintosh</i> Volume V (Addison-Wesley, 1986), Chapter 16, "The<br>
+International Utilities Package," and Chapter 17, "The Script Manager."</li>
+<li><i>Inside Macintosh</i> Volume I (Addison-Wesley, 1985), Chapter 18, "The<br>
+Binary-Decimal Conversion Package," and Chapter 19, "The International<br>
+Utilities Package."</li>
+<li><i>Inside Macintosh: Text</i> (Addison-Wesley, 1993).</li>
+<li><i>The Unicode Standard, Version 1.0</i>, Volume 2 (Addison-Wesley, 1992).</li>
+<li><i>Macintosh Worldwide Development: Guide to System Software</i>, APDA<br>
+#M7047/B.</li>
+<li><i>Localization for Japan</i>, APDA #R0250LL/A.</li>
+<li><i>Guide to Macintosh Software Localization</i>, APDA #M1528LL/B.</li>
+<li>"The TextBox You've Always Wanted" by Bryan K. ("Beaker") Ressler, <br>
+<i>develop</i> Issue 9.</li>
+</ul>
+<p>
+<b>JOSEPH TERNASKY </b>wrote accounting software for a "Big Eight" firm until a senior<br>
+partner recruited him into the Order of the Free Masons. He showed great promise as<br>
+an Adept, and the Order sent him to the Continent to continue his studies under the<br>
+notorious Aleister Crowley, founder of the Temple of the Golden Dawn. After years of<br>
+study in the Great Art, Joseph was sent back to America to accelerate the breakdown&nbsp;&nbsp;of<br>
+civil order and the Immanentizing of the Eschaton. He resumed his former identity and<br>
+now spends his remaining years adding hopelessly complicated international features<br>
+to the Macintosh system software and various third-party applications.*
+</p>
+<p>
+<b>BRYAN K. ("BEAKER") RESSLER </b>(AppleLink ADOBE.BEAKER) had his arm<br>
+twisted by <i>develop</i> editor Caroline Rose, forcing him to write <i> develop</i> articles on<br>
+demand. He resides in a snow cave in Tibet, where he fields questions ranging from<br>
+"Master, what is the meaning of life?" to "Master, why would anyone want to live in a<br>
+Tibetan snow cave and answer questions for free?" When he's not busy answering the<br>
+queries of his itinerant clientele, he can usually be found writing some esoteric sound<br>
+or MIDI application. Back in his days of worldly endeavor, Beaker wrote some of the<br>
+tools that were used for testing Kanji TrueType fonts, and then worked on System 7 in<br>
+the TrueType group. Hence the retreat to his current colder but more enlightened and<br>
+sane environment.*
+</p>
+<p>
+<b>System 7.1 </b>provides a standard inline input interface and the system input method<br>
+supports inline input. With inline input, the input translation process can occur<br>
+within the document window, and no input window is used. *
+</p>
+<p>
+<b>Amikake </b>is a variable shading behind text. Furigana is annotation of a Kanji<br>
+character that appears in small type above the character (or to the right of the<br>
+character, in the case of vertical line orientation). *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Jeanette Cheng, Peter Edberg, Neville<br>
+Nason, Gideon Shalom-Bendor *
+</p>
+</body>
+</html>

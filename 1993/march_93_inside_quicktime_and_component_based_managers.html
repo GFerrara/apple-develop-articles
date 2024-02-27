@@ -1,0 +1,859 @@
+<html>
+<head>
+<!-- Article ID: 9 - Extracted from develop-1993 -->
+<!-- on 2024-02-12 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>March 93 - INSIDE QUICKTIME AND COMPONENT-BASED MANAGERS</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>INSIDE QUICKTIME AND COMPONENT-BASED MANAGERS</h2>
+<h1>BILL GUSCHWAN</h1>
+<p>
+<img src="img/139.gif" width="180 px"></img>
+</p>
+<p>
+<i>&nbsp;Intercepting the processing of a QuickTime routine enables you to debug the routine,</i><br>
+<i>use the routine in new ways, and better understand QuickTime architecture. To</i><br>
+<i>intercept the routine, you need to know something about its low-level implementation.</i><br>
+<i>This article discusses the low-level implementation of QuickTime routines, and also</i><br>
+<i>describes tools and programming techniques that can be used to debug, modify, and</i><br>
+<i>analyze QuickTime routines. Some of these techniques take advantage of the Component</i><br>
+<i>Manager, and their usefulness will extend beyond QuickTime as future managers</i><br>
+<i>capitalize on components.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;As QuickTime routines pass through some common locations, they're accessible to<br>
+your application or to a debugger. A QuickTime routine begins with its function name,<br>
+as used in your application and defined in the interface files. It usually compiles as an<br>
+A-trap and maybe some assembly glue.&nbsp;&nbsp;&nbsp;The routine may call other Macintosh<br>
+routines, be affected by global data structures, pass through a grafPort's bottleneck,<br>
+or pass through a component's main function. Because you have access to these<br>
+locations, you can intercept the processing of the routine, perform your own special<br>
+processing, and then allow the normal execution of the routine to continue.
+</p>
+<p>
+&nbsp;This article's examples use MacsBug and TMON Pro (TMON Professional v. 3.0.1 from<br>
+Icom Simulations, Inc.) to intercept and analyze routines. The tools discussed create<br>
+resources for both debuggers, though in some situations you'll want to use one<br>
+debugger over the other. For example, the language extensibility of TMON Pro's<br>
+built-in assembler provides capabilities that other debuggers don't provide. Now let's<br>
+get into the practical aspects of analyzing and debugging QuickTime routines. 
+</p>
+<h2>&nbsp;QUICKTIME A-TRAPS</h2>
+<p>
+&nbsp;An A-trap is a two-byte opcode that always begins with the hexadecimal numeral A.<br>
+The remaining 12 bits in the opcode identify the particular routine you're calling,<br>
+along with other information about the call. A-traps interrupt the normal processing<br>
+of the CPU and cause it to jump through a low-memory vector to the trap dispatcher.<br>
+The trap dispatcher examines the bit pattern of the opcode to determine the actual<br>
+location of the Macintosh routine in memory, and then jumps to it.&nbsp;&nbsp;&nbsp;Almost all<br>
+Macintosh Toolbox routines use the A-trap mechanism to jump to their code.
+</p>
+<p>
+&nbsp;In the early days of the Macintosh, there was one routine name per A-trap, but the<br>
+number of routines increased so dramatically that a second mechanism was introduced<br>
+to avoid exhausting all the A-traps. This mechanism uses the normal A-trap<br>
+mechanism to identify a grouping of routines(usually defined by a specific manager)<br>
+and uses selectors located on the stack or in a register to identify the specific routines<br>
+within the grouping. QuickTime uses only four A-traps:
+</p>
+<ul>
+<li>0xAAAA: Movie Toolbox</li>
+<li>0xA82A: Component Manager</li>
+<li>0xAAA3: Image Compression Manager</li>
+<li>0xABC2: Matrix routines</li>
+</ul>
+<p>
+Using four A-traps for over 500 routines is possible because the interface glue can<br>
+push routine selectors into registers or onto the stack. QuickTime picks the routine it<br>
+needs to execute from the value of the selector. For example, with the Movie Toolbox,<br>
+QuickTime uses a word in the D0 register. So 0x303C and xxxx (the two-byte<br>
+selector) appear before the A-trap in the Movies.h file.&nbsp;&nbsp;&nbsp;This disassembles into<br>
+MOVE.W #$xxxx, D0. If you want to find out what other opcodes mean, try using the<br>
+TMON Pro assembler as described in "TMON Pro Assembler Demo."
+</p>
+<p>
+On a separate note, components implement routines through selectors as well. In some<br>
+ways, a component is not unlike an A-trap. The ramifications of this are discussed<br>
+later in the section "Bottlenecks."
+</p>
+<h2>TRAPPING COMPILED APPLICATIONS</h2>
+<p>
+A QuickTime routine's A-trap provides a common location that your debugger can<br>
+interact with.&nbsp;&nbsp;&nbsp;Traditionally, Macintosh developers have used MacsBug to investigate<br>
+the flow of A-traps in compiled applications. Knowing the sequence of A-traps needed<br>
+to implement specific functionality provides invaluable information exceeding the<br>
+scope of even the best documentation.
+</p>
+<p>
+Let's see what happens when we take the simple QuickTime debugging approach of<br>
+breaking on the four A-traps. For example, start with the 0xAAAA trap. If you<br>
+perform an " atb _AAAA" and run MoviePlayer, MacsBug is continually invoked. You<br>
+can use the debugger to see the selector value that identifies the routine, but unless<br>
+you have the interface files in front of you or you memorize the selector values, you<br>
+won't be able to tell which QuickTime routine is being called. You can probably<br>
+memorize a few routines like EnterMovies, which has a selector value of 1. You could<br>
+even record all the A-trap routines (using the<b>atr</b> command), print to a file, and<br>
+compare the traps against the interface files. However, these methods leave a lot to be<br>
+desired. 
+</p>
+<p>
+Because there's no one-to-one correspondence between A-traps and routines, you need<br>
+some tools to facilitate trapping QuickTime applications. To take advantage of trapping<br>
+compiled applications, you'd like to be able to do the following:
+</p>
+<ul>
+<li>Set the A-trap break on the routine name. </li>
+<li>Easily identify the routines in the debugger. </li>
+</ul>
+<p>
+<b>USING 'MXBM' RESOURCES</b>You can set A-trap breaks on QuickTime routine names<br>
+by creating MacsBug macros in the form of 'mxbm' resources. Unfortunately, MacsBug<br>
+doesn't ship with the 'mxbm' resources for QuickTime, and creating those resources by<br>
+hand would be tedious at best. So I wrote debugit, an MPW tool that converts standard<br>
+Macintosh C headers into the resources. The tool and the 'mxbm' resources that are<br>
+needed to set QuickTime A-trap breaks are on the<i>Developer CD Series</i>disc and<br>
+the<i>QuickTime Version 1.5 for Developers</i>disc. (Also supplied are the 'mxbm'<br>
+resources for several other managers that use A-traps with routine selectors.) You<br>
+simply place the resources in your Debugger Prefs file using a resource editor and<br>
+reboot.
+</p>
+<p>
+Using MacsBug in this way is still limited because even though you can break on a<br>
+routine name, the names of the QuickTime routines aren't displayed when you're in<br>
+MacsBug -- only the assembly code is displayed.
+</p>
+<h2>TMON PRO ASSEMBLER DEMO</h2>
+<p>
+TMON Pro has an assembler/disassembler built in. You can enter TMON Pro, type<br>
+hexadecimal machine code, and watch as it's disassembled into assembly. To do this,<br>
+you need to make use of TMON Pro's typed windows, which provide alternative views of<br>
+the same location in memory. So, if you anchor an Assembly window and a Memory<br>
+window at some safe location in memory, you can type machine code in the Memory<br>
+window and watch the numbers translate into the assembly routines in the Assembly<br>
+window.
+</p>
+<p>
+TMON Pro sets aside an area of memory for you to play with, identified by the variable<br>
+PlayMem. Here's a useful alias that you can install in your TMON script (it assumes<br>
+you use the script provided with TMON Pro):
+</p>
+<p>
+<code>alias PlayTime,</code><br>
+<code>"TopWind .10 &amp;eth;n New Memory HereHP, :&#8710;playmem &amp;eth;</code><br>
+<code>BottomWind .6 &amp;eth;n New Assembly HereHP,&#8710;playmem &amp;eth;</code><br>
+<code>Open Registers #1=#0"</code>
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Now you can type "PlayTime" at the command line and have a safe area in memory for<br>
+exploring the TMON Pro assembler. The PlayTime alias anchors the two windows to the<br>
+same place in memory and swaps out the registers so that you don't harm them while<br>
+you play (see Figure 1).
+</p>
+<p>
+<img src="img/140.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1</b> TMON Pro Windows
+</p>
+<p>
+<b>USING A TMON PRO USER AREA</b><br>
+You saw (in "TMON Pro Assembler Demo") how you can type machine code in TMON<br>
+Pro and watch it disassemble. While this is fun, its practical use for developers is<br>
+limited. The real power of the TMON Pro assembler comes from the extensibility of its<br>
+language. With a little work, you canuse TMON Pro to both break on routine names and<br>
+display routine names instead of assembly code in the debugger. 
+</p>
+<p>
+To extend the vocabulary of TMON Pro's interactive assembler, you need to create<br>
+TMON Pro assembler macros for the A-traps and glue, which TMON Pro disassembles<br>
+into the QuickTime function name. TMON Pro looks many instructions ahead to<br>
+disassemble the A-trap and glue into the routine name. If you create the requisite 'Asm<br>
+' resources, the TMON Pro Assembly window can display code like
+</p>
+<p>
+<code>MOVE.W #1,D0</code><br>
+<code>_AAAA</code>
+</p>
+<p>
+as follows:
+</p>
+<p>
+<code>_EnterMovies</code>
+</p>
+<p>
+If you create the proper aliases ('mxbm' resource equivalents), you can set A-trap<br>
+breaks on QuickTime routine names as well. 
+</p>
+<p>
+Creating the 'Asm ' resources manually is impractical, so I modified debugit to create<br>
+both the assembler macros and the aliases for setting breaks on the QuickTime routine<br>
+names from a Macintosh C interface file. To load the 'Asm ' resources into TMON Pro,<br>
+you also need to create a TMON Pro user area to hold the 'Asm ' resources (see<br>
+"Creating Debugging Tools"). To keep the resources and aliases in one location, you<br>
+place the aliases in the data fork of the TMON Pro user area. TMON Pro looks there<br>
+when it's loading scripts. To use the QuickTime Angus User Area (which is on<br>
+the<i>Developer Series CD</i>disc), just drop it in your TMON folder and reboot. Remember,<br>
+this user area is large and contains an alias for every QuickTime routine. But it's easy<br>
+to pull it out if you want to run stealthily.
+</p>
+<p>
+With the QuickTime Angus User Area you can set breaks as you do with 'mxbm'<br>
+resources in MacsBug. Just type the routine name without the underscore at the<br>
+command line (type Command- space to invoke the command line). By default, typing<br>
+the name of the QuickTime routine sets an intercept action, or break, for the A-trap.<br>
+You can also specify the other four trap actions by using the trap action keywords after<br>
+the QuickTime routine name. For example, to turn on a heap trap action every time<br>
+EnterMovies is called, type
+</p>
+<p>
+<code>entermovies heap</code>
+</p>
+<p>
+You can also turn off trap actions from the command line. So, for example, if you type<br>
+"findnextcomponent," you can cancel it with "findnextcomponent nointercept." You can<br>
+shorten your commands by creating a macro such as
+</p>
+<p>
+<code>macro ni,"nointercept"</code>
+</p>
+<p>
+Several useful macros are included as a separate script on the<i>Developer Series CD</i>disc.<br>
+See the TMON Pro reference manual for more information on using macros.
+</p>
+<p>
+When you break into the debugger and look in the Memory window, TMON Pro's<br>
+interactive assembler uses the 'Asm ' resources from the resource fork of the user<br>
+area to interpret the assembly code and display routine names. Now you have the tools<br>
+you need to easily watch the flow of QuickTime routines in a compiled application (see<br>
+Figure 2).
+</p>
+<h2>SETTING A-TRAP BREAKS ON COMMON ROUTINES</h2>
+<p>
+As mentioned earlier, a Macintosh Toolbox routine's code is located via the A-trap<br>
+vector, which provides a convenient location for interaction with a debugger. While<br>
+watching the flow of A-traps can help you understand a manager, sometimes<br>
+microscopic detail is needed to understand a specific routine. Historically, Macintosh<br>
+developers have used MacsBug to investigate internal routines of Macintosh A-traps<br>
+and provide keen insight where<i>Inside Macintosh</i>leaves off. This is usually done by<br>
+setting A-trap breaks on routines called by the routine being investigated. 
+</p>
+<p>
+<b>BREAKING ON COMMON RESOURCE MANAGER ROUTINES</b><br>
+It may seem too obvious to mention that Macintosh routines use other Macintosh<br>
+routines, but it's a crucial debugging concept. Given a routine and its functionality,<br>
+good Macintosh programmers can make excellent guesses as to which other routines it<br>
+uses. For example, FlattenMovie calls an internal version of FlattenMovieData. 
+</p>
+<p>
+Because a movie is the significant data structure introduced with QuickTime, let's look<br>
+at new movie calls (NewMovie, NewMovieFromFile, NewMovieFromHandle,<br>
+NewMovieFromDataFork, and NewMovieFromScrap). Setting A-trap breaks on<br>
+Macintosh routines is best done with a small speedy debugger -- like MacsBug. So let's<br>
+use MacsBug to find out how QuickTime loads its data. As you probably know, the data<br>
+structure for a movie is undocumented. While any type of manipulation with the movie<br>
+can be done with the Movie Toolbox, leaving the movie data structure undocumented can<br>
+cause some confusion as to how a movie actually works. In fact, the movie on the disk is<br>
+different in structure from the movie in memory. While the movie on disk is<br>
+documented, the movie in memory is not, which lets the QuickTime team change the<br>
+loaded movie without affecting your application. Keep that in mind as you begin<br>
+investigating the exact nature of the movie in memory. 
+</p>
+<p>
+The target application for this investigation is MoviePlayer because it calls the<br>
+various new movie routines. MoviePlayer was created by the QuickTime team, and it's<br>
+widely distributed. If you launch the application and choose Open from the File menu,<br>
+you're presented with the CustomGetFilePreview dialog box.
+</p>
+<p>
+<img src="img/141.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 2 </b>The Flow of QuickTime Routines in TMON Pro
+</p>
+<p>
+To look at the internals of an individual routine, you need to drop into the debugger<br>
+before executing the routine. Simply set your traditional A-trap break and go:
+</p>
+<p>
+<code>atb newmoviefromfile; g</code>
+</p>
+<p>
+Next, open a movie that uses a 'moov' resource. Now you're ready to investigate<br>
+NewMovieFromFile's use of internal routines. Since QuickTime uses the Resource<br>
+Manager, you'll set a break on GetResource and expect NewMovieFromFile to load the<br>
+'moov' resource from a file.&nbsp;&nbsp;&nbsp;In MacsBug, set a break on the condition:
+</p>
+<p>
+<code>atb getresource (sp+2)^='moov'; br pc+2</code>
+</p>
+<p>
+This command lets you check for all the calls that NewMovieFromFile makes to<br>
+GetResource that load a 'moov' resource. Watch for one of the following messages in the<br>
+debugger:
+</p>
+<p>
+<code>Breakpoint at </code><i><code>address routinename</code></i>
+</p>
+<p>
+<code>A-Trap break at </code><i><code>address routinename</code></i>
+</p>
+<p>
+If you see the first message before the second, you know that NewMovieFromFile<br>
+doesn't use GetResource. As you'll see, GetResource is not called.
+</p>
+<p>
+But you don't need to give up on the GetResource idea. Some A-traps have variations,<br>
+which makes it difficult to guess which routine is called. Two obvious variations of<br>
+GetResource are Get1Resource and Get1IndResource. NewMovieFromFile can be passed<br>
+nil for the resource ID, which means it probably loads the first 'moov' resource. With<br>
+this theory in mind, break into NewMovieFromFile again, and this time set the break<br>
+on Get1xResource instead of GetResource (Get1xResource is the MacsBug equivalent of<br>
+Get1IndResource):
+</p>
+<p>
+<code>atb get1xresource (sp+2)^='moov'; br pc+2</code>
+</p>
+<p>
+When you leave MacsBug, you'll get an A-trap break and thus know how<br>
+NewMovieFromFile loads the movie. 
+</p>
+<p>
+Unfortunately, breaking on GetResource works for only one of the five new movie<br>
+calls. You don't get a break with NewMovie, because the call is similar to a NewWindow<br>
+call and doesn't bring in a resource. You may get a break with a NewMovieFromFile<br>
+call, since it does bring in the 'moov' resource from the file. It's similar to a<br>
+GetNewWindow call, but it may break on Get1IndResource or Get1Resource, depending<br>
+on whether you supplied a resource ID to the call.&nbsp;&nbsp;&nbsp;NewMovieFromHandle and<br>
+NewMovieFromDataFork will not break, because a movie doesn't have to be stored in a<br>
+resource. You don't get a break for NewMovieFromScrap, because it loads the movie<br>
+directly from the scrap. 
+</p>
+<p>
+As you've seen, although breaking on GetResource can provide some insight, it's<br>
+limited in what it can tell you about the general class of new movie calls. Breaking on<br>
+GetResource showed you how the new movie calls differ in their methods of loading the<br>
+data. However, it didn't show how they implement their common behavior. Their<br>
+similar names indicate that the calls exhibit similar behavior in loading a movie into<br>
+memory. While it's true you can break on the loading of code resources, and even code<br>
+resources of different types (WDEF, CDEF, INIT), you have limited information to<br>
+differentiate one code resource from another (other than by the resource type). Thus,<br>
+we turn to techniques for breaking on component routines. 
+</p>
+<p>
+<b>BREAKING ON COMMON COMPONENT MANAGER ROUTINES</b><br>
+Components consist of a set of routines that implement a specific type of functionality.<br>
+To identify the exact nature of the functionality, a component has an associated 'thng'<br>
+resource. (At one point in their evolution, components were called "things.") The<br>
+'thng' resource stores a reference to the component code, a ComponentDescription<br>
+record, string resources, and an icon resource. TheComponentDescription record<br>
+identifies the type of functionality that the component's set of routines implements;<br>
+for example, a media handler component is identified by the OSType 'mhlr' in the type<br>
+field of the ComponentDescription record. Thus, components make it possible to break<br>
+on the loading of functionality. 
+</p>
+<p>
+Components are identical to code resources, except that a component uses an extended<br>
+resource specification in the form of the 'thng' resource. Normal resources use a<br>
+resource type and ID for their resource specification. Because a component consists of<br>
+a typed code resource and a 'thng' resource, you can use the traditional GetResource<br>
+techniques on components, but in newer and better ways. 
+</p>
+<p>
+So let's exploit QuickTime's use of components. QuickTime depends on over 50<br>
+components. The best call to break on is FindNextComponent, which queries the<br>
+Component Manager for components and returns a reference to a component. It's<br>
+consistently called by applications that need a component, and its parameters contain<br>
+extra information about the component. Breaking on OpenComponent isn't as useful<br>
+because you have no simple way of identifying the component type.&nbsp;&nbsp;&nbsp;You break on<br>
+FindNextComponent just as you do with GetResource:
+</p>
+<p>
+<code>atb findnextcomponent</code>
+</p>
+<p>
+The first field of a ComponentDescription record is the component type. Since it's the<br>
+last parameter pushed on the stack, you can anchor a dereferenced stack pointer to the<br>
+upper left corner of MacsBug:
+</p>
+<p>
+<code>show 'sp^' a</code>
+</p>
+<p>
+By watching the status region, you can see which components QuickTime loads and<br>
+when they're loaded. This helps you understand the internal behavior of a routine.<br>
+Alternatively, in TMON Pro, you could anchor a Memory window to a dereferenced<br>
+stack pointer, as shown in Figure 3.
+</p>
+<p>
+Unfortunately, QuickTime doesn't always call the A-trap mechanism for some internal<br>
+routines. A notable example is OpenDefaultComponent, which may not call<br>
+FindNextComponent via the A-trap mechanism. It can use a direct dispatch mechanism,<br>
+which helps speed up QuickTime. One solution to this problem is to set an A-trap break<br>
+on OpenDefaultComponent as well as FindNextComponent. Another solution is to use<br>
+the<b>thing</b>dcmd and an A-trap break on OpenComponent. Even though with<br>
+OpenComponent you have no simple method of identifying the type of component, at<br>
+least OpenComponent must always be called for any component that's opened.<br>
+The<b>thing</b>dcmd lets you find out what type of component is loaded. It lists all<br>
+components registered with the Component Manager and, in the far left column, lists<br>
+the number of instances.
+</p>
+<p>
+Let's consider the NewMovieFromFile example again. You break on NewMovieFromFile,<br>
+and then execute the<b>thing</b>dcmd to see what components are loaded, remembering<br>
+particularly the number of instances. Next, you break on OpenComponent, step over it,<br>
+and invoke<b>thing</b>again. You can easily notice the change in instances for the 'clok'<br>
+component. This technique may be a little more cumbersome, but because QuickTime<br>
+sometimes bypasses the trap dispatch mechanism, it's more accurate.
+</p>
+<p>
+As more Macintosh Toolbox managers rely on components, you'll find trapping on typed<br>
+functionality to be invaluable to your understanding of that manager. Debugging<br>
+techniques that you've used with the Resource Manager can be used successfully with<br>
+the Component Manager. 
+</p>
+<h2>DYNAMIC STATE INFORMATION</h2>
+<p>
+You've seen how debuggers can interact with A-traps to provide valuable information<br>
+about QuickTime routines. Now let's leave the realm of debuggers and focus on the<br>
+interaction of global data structures and QuickTime routines. The Macintosh uses state<br>
+information extensively to build simulations of real-world environments.<br>
+QuickDraw's grafPort provides a familiar example -- it contains state information to<br>
+provide a consistent context for graphics operations. But it can trip you up if you're<br>
+not aware of that context.
+</p>
+<p>
+<img src="img/142.gif" width="372 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 3</b> Breaking on Component Routines With TMON Pro Debugging Tools
+</p>
+<p>
+With that in mind, let's continue our investigation of QuickTime routines. Go back to<br>
+MoviePlayer and set the breaks again on NewMovieFromFile. Then use the technique<br>
+described in the previous section to find out which components are loaded.<br>
+NewMovieFromFile first loads a 'clok' component.&nbsp;&nbsp;&nbsp;This is probably part of a<br>
+NewTimeBase call. Testing this guess by breaking on NewTimeBase shows that the<br>
+TimeBase is created dynamically -- it's not a static part of a movie file format. What<br>
+does it mean that all NewMovieFromFile calls load a TimeBase?
+</p>
+<p>
+&nbsp;QuickTime adds its own context in the form of dynamic state information. By default, a<br>
+movie generates a TimeBase. Just as GrafPort supplies a data structure for graphical<br>
+state information, TimeBase provides a data structure for time information. Any time<br>
+can be autonomously specified by a time base, time scale, and time value, which are<br>
+grouped in a convenient data structure called TimeRecord.
+</p>
+<p>
+&nbsp;If you work with QuickTime a lot, you'll notice that you seldom use TimeRecord. It<br>
+seems odd until you realize that if you use a movie, you already have a default<br>
+TimeBase supplied. There's no point to filling out a TimeRecord structure. There are<br>
+easy calls to get the movie time scale (such as GetMovieTimeScale), and you usually<br>
+specify a time value. Developers often forget the time context and make redundant<br>
+calls. For example, developers forget that StartMovie calls SetMovieRate with the<br>
+movie's preferred rate, and call both StartMovie and SetMovieRate. For movies, don't<br>
+forget the time context. (This is not to say that TimeRecord is useless; when you don't<br>
+have a movie and need to specify a specific time, TimeRecord comes in handy.)If you<br>
+continue breaking on component routines, you'll see that after loading a 'clok'<br>
+component, NewMovieFromFile dynamically loads its media handlers. The Movie<br>
+Toolbox doesn't know how to interpret media: it leaves that task to the media handlers.<br>
+(Media handlers are discussed later under "Component Bottlenecks.") A movie is a<br>
+dynamically loaded series of components. As a further exercise for breaking on<br>
+component routines, try looking at the components that CustomGetFilePreview uses. 
+</p>
+<h2>BOTTLENECKS</h2>
+<p>
+Some programming techniques allow you to alter Macintosh routines. QuickTime relies<br>
+extensively on QuickDraw, and QuickDraw uses bottlenecks to implement its routines'<br>
+functionality. Bottlenecks are commonly used in two ways:
+</p>
+<ul>
+<li>You can observe the behavior of an entire group of routines by replacing<br>
+one bottleneck routine with your own. Most commonly, you would put a<br>
+Debugger statement in it. </li>
+<li>You can gain access to information at a lower level and before it's been<br>
+worked on.&nbsp;&nbsp;&nbsp;You can either change this information or use it for other<br>
+purposes. </li>
+</ul>
+<p>
+<b>GRAFPORT BOTTLENECKS</b><br>
+QuickDraw provides some familiar examples of using bottlenecks. A grafPort contains<br>
+pointers to all the low-level routines that it uses to implement its higher-level calls.<br>
+By default the bottlenecks contain routines for drawing to the screen. When you create<br>
+a grafPort, it's possible to swap out those ProcPtrs and put in your own. The default<br>
+QuickDraw bottlenecks are usually swapped out in two circumstances: printing and<br>
+getting information. Since all of QuickDraw must route through bottlenecks in the<br>
+grafPort, and there are only 20 bottlenecks, a savvy Macintosh programmer will<br>
+know which high- level routines call which low-level routine.
+</p>
+<p>
+QuickTime introduces a new bottleneck -- StdPix -- to handle compressed image data.<br>
+StdPix replaces the newProc1 bottleneck (see Chapter 4, "Color QuickDraw," of<i>Inside</i><br>
+<i>Macintosh</i>Volume V for details). You can sit in this bottleneck (that is, replace it with<br>
+one of your own) and look at compressed data before it's decompressed. 
+</p>
+<p>
+Let's look at a situation where you may want to do this. The Picture Utilities Package is<br>
+useful for getting information about pictures; however, it wasn't designed to support<br>
+QuickTime. For example, GetPictInfo returns an inaccurate depth for QuickTime<br>
+compressed images. The following code shows how to work around this problem. You<br>
+replace all a grafPort's bottlenecks with dummy routines (so that nothing is actually<br>
+drawn), except you can call GetCompressedPixMapInfo in the StdPix bottleneck.<br>
+GetCompressedPixMapInfo returns the ImageDescriptionHandle for the picture, from<br>
+which you can get the depth. DrawPicture eventually calls StdPix, among other<br>
+bottleneck routines. Because the other bottlenecks were replaced with dummy<br>
+routines, DrawPicture's behavior is reduced to just a StdPix call. The parameters<br>
+passed to the StdPix routine fill out the parameters of the GetCompressedPixMapInfo<br>
+routine, which in turn retrieves the pixel depth via the ImageDescription structure.<br>
+The sample code on the CD creates a window for this function to "draw" in. 
+</p>
+<p>
+<code>short&nbsp;&nbsp;&nbsp;gDepth = -1;</code><br>
+<code></code><br>
+<code>pascal void myStdPix(PixMapPtr src, Rect *srcRect,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;MatrixRecordPtr matrix, short mode, RgnHandle mask,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PixMapPtr matte, Rect *matteRect, short flags)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ImageDescriptionHandle&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;desc;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Ptr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bufferSize;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GetCompressedPixMapInfo(src, &amp;desc, &amp;data, &amp;bufferSize,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nil, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gDepth = (**desc).depth;</code><br>
+<code>}</code><br>
+<code>pascal void myTextProc(short byteCount, Ptr textBuf, Point numer,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Point denom){}</code><br>
+<code>pascal void myLineProc(Point newPt){}</code><br>
+<code>pascal void myRectProc(GrafVerb verb, Rect *r){}</code><br>
+<code>pascal void myRRectProc(GrafVerb verb, Rect *r, short ovalWidth,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short ovalHeight){}</code><br>
+<code>pascal void myOvalProc(GrafVerb verb, Rect *r){}</code><br>
+<code>pascal void myArcProc(GrafVerb verb, Rect *r, short startAngle,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short arcAngle){}</code><br>
+<code>pascal void myPolyProc(GrafVerb verb, PolyHandle poly){}</code><br>
+<code>pascal void myRgnProc(GrafVerb verb, RgnHandle rgn){}</code><br>
+<code>pascal void myBitsProc(BitMap *bitPtr, Rect *srcRect, Rect *dstRect,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short mode, RgnHandle maskRgn){}</code><br>
+<code></code><br>
+<code></code><br>
+<code>void GetQTImagePixelDepth(PicHandle picture)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CQDProcs&nbsp;&nbsp;&nbsp;&nbsp;bottlenecks;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;SetStdCProcs(&amp;bottlenecks);&nbsp;&nbsp;&nbsp;// Define our own bottlenecks.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;bottlenecks.textProc = (Ptr)myTextProc;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;bottlenecks.lineProc = (Ptr)myLineProc;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;bottlenecks.rectProc = (Ptr)myRectProc;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;bottlenecks.rRectProc = (Ptr)myRRectProc;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;bottlenecks.ovalProc = (Ptr)myOvalProc;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;bottlenecks.arcProc = (Ptr)myArcProc;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;bottlenecks.polyProc = (Ptr)myPolyProc;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;bottlenecks.rgnProc = (Ptr)myRgnProc;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;bottlenecks.bitsProc = (Ptr)myBitsProc;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;bottlenecks.newProc1 = (Ptr)myStdPix;&nbsp;&nbsp;&nbsp;// pixProc.</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Install our custom bottlenecks to intercept any compressed</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// images.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;(*(qd.thePort)).grafProcs = (QDProcs *)&amp;bottlenecks;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DrawPicture(picture, &amp;((**picture).picFrame));</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;(*(qd.thePort)).grafProcs = 0L;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Switch back to the default procs.</code><br>
+<code>}</code>
+</p>
+<p>
+<b>COMPONENT BOTTLENECKS</b><br>
+A QuickTime routine may be implemented by a component. In this case, the concept of<br>
+sitting in bottlenecks applies in a useful way to QuickTime components. As you know,<br>
+the Component Manager sends the routine selector to the component, and the component<br>
+parses the selector in its main function. Since all the selectors flow through the main<br>
+function, it would be extremely valuable to replace the component with your own<br>
+delegating component in order to watch the selectors flow by. Just as you can sit in a<br>
+bottleneck and capture routines, you can capture a component, perform an operation,<br>
+and delegate the rest to the captured component. Then you could identify the sequence of<br>
+routines needed to implement specific functionality.
+</p>
+<p>
+Fortunately, some components have standardized interfaces as defined by Apple. These<br>
+public APIs make it easy to match up the selector to the routine name, as defined in the<br>
+interface files. With the introduction of QuickTime 1.5, the API for the base media<br>
+handler has been made available as defined in the file MediaHandlers.h.
+</p>
+<p>
+With a delegating component, you could theoretically modify the behavior of any<br>
+component. But whether you can modify a given component depends on whether it<br>
+implements the target request.&nbsp;&nbsp;&nbsp;Many components in QuickTime don't implement this<br>
+functionality, which is unfortunate. However,with the introduction of QuickTime 1.5,<br>
+the media handlers support the target request. By allowing media handlers to be<br>
+delegated, QuickTime 1.5 greatly opens its architecture, giving enhanced meaning<br>
+to<i>multi</i>media. For example, the text media handler delegates the generic media handler<br>
+and uses its media scheduling and editing functions to do all the hard work. If you want<br>
+to write your own media handler, delegating the generic media handler is just what you<br>
+need.
+</p>
+<p>
+To create a generic delegating component, I'll use a sample supplied with the article<br>
+"Techniques for Writing and Debugging Components" in<i>develop</i>Issue 12. The sample is<br>
+called NuMathComponent.&nbsp;&nbsp;&nbsp;It's a simple matter to convert it into a generic delegating<br>
+component. 
+</p>
+<ol>
+<li>Using a resource editor, replace the componentType, componentSubType,<br>
+and componentManufacturer of the NuMathComponent.&#960;.rsrc 'thng' resource<br>
+with 'mhlr', 'vide', and 'angs', respectively. Using 'angs' for the manufacturer<br>
+puts the component before 'appl' alphabetically. Because the Component<br>
+Manager searches alphabetically, when a search is done by QuickTime for a<br>
+component of type 'mhlr' and subtype 'vide', it grabs your component. This<br>
+technique forces QuickTime to use your component, which then captures<br>
+Apple's component. </li>
+<li>Open the NuMathComponent.&#960; project and open the NuMathComponent.c<br>
+file. </li>
+<li>Be sure to declare the<b>globals</b> variable at the top of the main function as
+
+<p>
+<code>&nbsp;PrivateGlobals**globals = (PrivateGlobals**)storage;</code>
+</p>
+<p>
+This declaration gives you access to the fields in your global storage. 
+</p>
+</li>
+<li>Delete the second switch statement in the main function and replace it<br>
+with
+
+<p>
+<code>if (globals)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DelegateComponentCall(params,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(**globals).delegateComponentInstance);</code><br>
+<code>else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;result = paramErr;</code>
+</p>
+</li>
+<li>In _NuMathOpen and _NuMathRegister, change the described component's<br>
+componentType and componentSubType fields to 'mhlr' and 'vide',<br>
+respectively. </li>
+<li>Build the code resource for the generic capture component (the code<br>
+from<i>develop</i> Issue 12 on the CD has all the necessary files). You'll have to<br>
+turn the declaration of ComponentSetTarget into a comment if you're using<br>
+QuickTime 1.5. </li>
+</ol>
+<p>
+Your main function should look like the following sample code. Focus on the call to<br>
+DelegateComponentCall, as it's the major change needed to make the generic delegating<br>
+component.&nbsp;&nbsp;&nbsp;To use the delegating component, either put it in the System Folder and<br>
+reboot or drag and drop it on Reinstaller II.
+</p>
+<p>
+<code>pascal ComponentResult main(ComponentParameters *params,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Handle storage)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// This routine is the main dispatcher for the NuMath component.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ComponentResult result = noErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PrivateGlobals**&nbsp;&nbsp;&nbsp;&nbsp;globals = (PrivateGlobals**)storage;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Did we get a Component Manager request code (&lt; 0)?</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (params-&gt;what &lt; 0)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch (params-&gt;what)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case kComponentOpenSelect:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Open request.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = CallComponentFunctionWithStorage(storage,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;params, (ComponentFunction) _NuMathOpen);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case kComponentCloseSelect:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Close request.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = CallComponentFunctionWithStorage(storage,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;params, (ComponentFunction) _NuMathClose);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case kComponentCanDoSelect:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Can Do request.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = CallComponentFunction (params,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ComponentFunction) _NuMathCanDo);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case kComponentVersionSelect:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Version request.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = CallComponentFunction (params,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ComponentFunction) _NuMathVersion);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case kComponentRegisterSelect:&nbsp;&nbsp;// Register request.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = CallComponentFunction (params,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ComponentFunction) _NuMathRegister);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case kComponentTargetSelect:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Target request unsupported.&nbsp;&nbsp;Unknown request.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = paramErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Was it one of our request codes?</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (globals)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DelegateComponentCall(params,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(**globals).delegateComponentInstance);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = paramErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return (result);</code><br>
+<code>}</code>
+</p>
+<p>
+Now let's go back to the old example: Open MoviePlayer, set the break on<br>
+DelegateComponentCall, and anchor a Memory window at "&#8710;(sp+4)^+2" for TMON Pro<br>
+or "show '(sp+4)^+2' l" for MacsBug.&nbsp;&nbsp;&nbsp;This displays the selector from the<br>
+ComponentParameters data structure passed into DelegateComponentCall. You'll be able<br>
+to read the selectors for the routines as they're passed into the main function of the<br>
+component. Remember, you can compare these numbers with the interface files (there<br>
+are no interface files for the video media handler because it doesn't have a public API).<br>
+In TMON Pro, you can open a View window of the interface file and look at the selectors<br>
+without leaving the debugger. 
+</p>
+<p>
+You can try other situations and other traps to see whether they call the video media<br>
+handler. Or set breaks in the open, close, version, and register routines -- to find out<br>
+how Things! works, for example. If you bring up the Things! control panel and select<br>
+your media handler, you'll see Things!&nbsp;&nbsp;&nbsp;calls a trio of routines -- open, version, and<br>
+close. Also, you can see what calls are made to the component on startup.
+</p>
+<p>
+A simpler technique can be used if you just want to analyze the selectors. Enter<br>
+MacsBug and execute<b>thing</b>, which will list the entry point for each component. Set a<br>
+breakpoint on an entry point. You can now use the same "show" instruction to display<br>
+the selector. If it uses a fast dispatch mechanism, the selector will be in the low-order<br>
+word of register D0. To modify this sample to be a media handler, you need to keep the<br>
+same basic structure but support some or all of the selectors defined in the<br>
+MediaHandlers.h file. For a description of those routines, refer to the<i>QuickTime</i><br>
+<i>Version 1.5 for Developers</i>CD. 
+</p>
+<h2>OLD WORLD MEETS NEW WORLD</h2>
+<p>
+QuickTime routines can be intercepted and specially processed at various locations.<br>
+Debuggers interact with QuickTime routines via the A-trap mechanism, providing<br>
+valuable information about the sequence of routines needed to implement specific<br>
+functionality. Applications can interact with QuickTime routines at the component<br>
+level, allowing the program to change the routine's behavior.&nbsp;&nbsp;The themes presented in<br>
+this article extend beyond QuickTime. When newer technology comes from Apple, you<br>
+can apply the common Macintosh themes of bottlenecks, contexts, and breaking on<br>
+A-traps to new managers. Understanding these themes and applying them expedites<br>
+your learning dramatically. In addition, you're now armed with techniques for<br>
+investigating future Macintosh managers, some of which will be implemented through<br>
+use of components. The techniques discussed in this article can help you flatten your<br>
+learning curve, which can only be an advantage. 
+</p>
+<h2>CREATING DEBUGGING TOOLS</h2>
+<p>
+Although the QuickTime Angus User Area and 'mxbm' resources are included on the <br>
+<i>Developer Series CD</i>disc, instructions for creating them are given here to show how<br>
+simple it is. You could create resources for other managers using the same technique.<br>
+The CD includes a script that uses the following commands to create the MacsBug and<br>
+TMON Pro resources for QuickTime.
+</p>
+<p>
+<b>MAKING AN ANGUS USER AREA</b><br>
+To create a debugging user area for TMON Pro you need to have TMON Pro installed,<br>
+because the script will automatically place the user area in your TMON Folder. In<br>
+addition, you need to do the following:
+</p>
+<ul>
+<li>Place the MakeUserArea script in your MPW Scripts folder.</li>
+<li>Place the debugit MPW tool (on the CD) in your MPW Tools folder.</li>
+<li>Place the TMONTypes.r and Macsbug.r files in your MPW RIncludes<br>
+folder.</li>
+<li>Place the User Area Template (on the CD) in your current directory.</li>
+</ul>
+<p>
+With the tools properly stored, you can create the QuickTime Angus User Area with the<br>
+following command:
+</p>
+<p>
+<code>makeuserarea {CIncludes}"Movies.h" &amp;eth;</code><br>
+<code>{CIncludes}"ImageCompression.h" &amp;eth;</code><br>
+<code>{CIncludes}"Components.h" &amp;eth;</code><br>
+<code>{CIncludes}"QuickTimeComponents.h" &amp;eth;</code><br>
+<code>{CIncludes}"MediaHandlers.h"</code>
+</p>
+<p>
+MakeUserArea is a script that uses the Rez, C, and debugit tools, so you can alter its<br>
+behavior fairly easily. Be sure to use the script with the managers of your choice!
+</p>
+<p>
+<b>MAKING 'MXBM' RESOURCES</b><br>
+To make 'mxbm' resources, you need to place the debugit tool in your MPW Tools<br>
+folder, Macsbug.r in your MPW RIncludes folder, the MakeMxbm script in your MPW<br>
+Scripts folder, and a Debugger Prefs file in your System Folder. Here's how to make<br>
+the 'mxbm' resources for Movies.h:
+</p>
+<p>
+<code>makemxbm {CIncludes}Movies.h MoovDispatch 128</code>
+</p>
+<h2>RECOMMENDED READING</h2>
+<ul>
+<li>"Techniques for Writing and Debugging Components" by Gary Woodcock<br>
+and Casey King, <i> develop</i>Issue 12.</li>
+<li>"Time Bases: The Heartbeat of QuickTime" by Guillermo A. Ortiz, <i>develop</i><br>
+Issue 12.</li>
+<li>"QuickTime 1.0: 'You Oughta Be in Pictures'" by Guillermo A. Ortiz, <br>
+<i>develop</i> Issue 7.</li>
+<li>TMON Professional <i>Reference Manual </i>and<i> Tutorial</i> (Icom Simulations,<br>
+Inc.).</li>
+<li><i>QuickTime Developer's Guide</i>, available from APDA as part of the<br>
+QuickTime Developer's Kit (#R0147LL/B), and the System 7.1<br>
+documentation. These have information on the Component Manager.</li>
+<li><i>Inside Macintosh </i>Volume V (Addison-Wesley, 1986), Chapter 4, "Color<br>
+QuickDraw."</li>
+</ul>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>BILL ("ANGUS") GUSCHWAN </b>describes Angus as an identity cocktail in the sky. If<br>
+his favorite philosophers, character, and author were alive today, we can imagine<br>
+what they might say about the young man and the sky. Gottlieb Frege: "Asetting sun<br>
+indicates the object, sun. But the sun also rises. Just as a night in the forest,<br>
+mountains in springtime, and a walk in the rain convey solitude, each sense adds<br>
+knowledge to the meaning of the sun. Thus, Angus does not singularly denote Bill<br>
+Guschwan, but rather indicates a sense of him." Ludwig Wittgenstein: "Bullfighting is<br>
+an analogy for life. Angus represents the bull, whereas language represents the<br>
+toreador's red cape. Thus, Angus perishes if he trusts it, and destroys if he ignores it."<br>
+Andromache: "As a young Indian identifies with soaring hawks, young Angus identifies<br>
+with the lost generation of somnambulating dogcows. As an Indian peasant links with<br>
+god via the farm tools in the hands of a Buddhist statue, Angus links with god via the<br>
+TMON Pro manual in the hands of a Zimmerman statue." Ernest Hemingway: "OK. Sure,<br>
+Angus. Anyone for a martini cocktail? With a twist." *
+</p>
+<p>
+<b>To easily read the type of resource </b> in the upper left corner of MacsBug, try<br>
+executing the command "show 'sp+2' a". The<b>a</b> parameter lets you view the information<br>
+in ASCII, and the single quotation marks tell MacsBug to anchor the status region to the<br>
+changing location of the stack pointer. In TMON Pro, use the command "&#8710;(sp+2)" in a<br>
+Memory window. *
+</p>
+<p>
+<b>Breaking on internal A-traps </b>assumes that QuickTime uses the A-trap<br>
+mechanism. A later example illustrates how this assumption can affect your<br>
+investigations.*
+</p>
+<p>
+<b>For more information on components, </b>see the QuickTime or System 7.1<br>
+documentation on the Component Manager, and see Gary Woodcock and Casey King's<br>
+article, "Techniques for Writing and Debugging Components," in <i> develop </i>Issue<br>
+12.*<b>Time bases </b>are discussed in "Time Bases: The Heartbeat of QuickTime" by<br>
+Guillermo Ortiz in <i> develop</i> Issue 12.*
+</p>
+<p>
+<b>QuickTime components that implement the target request </b>include Apple<br>
+generic media handler, Apple standard media handler, Apple video media handler,<br>
+Apple sound media handler, Apple text media handler, movie controller, movie grabber<br>
+video channel, and movie grabber sound channel. *
+</p>
+<p>
+<b>When you're exploring, </b>it's useful to use the <b> dx</b> command to turn the Debugger<br>
+and DebugStr traps on and off. In TMON Pro, you can use the Options window to achieve<br>
+the same result. If you set debugger traps in all the component requests, you'll<br>
+inevitably be annoyed by the constant breaking. *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Jim Batson, Peter Hoddie, Guillermo<br>
+Ortiz, John Wang, Gary Woodcock *
+</p>
+</body>
+</html>

@@ -1,0 +1,456 @@
+<html>
+<head>
+<!-- Article ID: 16 - Extracted from develop-1993 -->
+<!-- on 2024-02-14 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>June 93 - PRINT HINTS</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>PRINT HINTS</h2>
+<h2>SYNCING UP WITH COLORSYNC</h2>
+<p>
+<img src="img/171.gif" width="179 px"></img>
+</p>
+<h1>JOHN WANG</h1>
+<p class="spacer">&nbsp;</p>
+<p>
+Apple's recently introduced ColorSync, a color matching software technology, provides<br>
+a common platform for applications and device drivers to match colors by<br>
+communicating color information between graphics devices with differing color<br>
+characteristics. This column starts off with an overview and then delves deeper into<br>
+the inner workings of ColorSync so that you'll have a better understanding of how to<br>
+use this new technology. We'll also take a look at how applications and device drivers<br>
+can take advantage of ColorSync.
+</p>
+<p>
+<b>WHAT IS COLORSYNC?</b><br>
+ColorSync is an extension to the Macintosh system that's distributed with the Apple<br>
+Color Printer and the Color OneScanner. It provides a platform for maintaining quality<br>
+and similarity of images that are moved between different devices. Because different<br>
+devices typically reproduce different gamuts -- ranges of colors -- ColorSync can be<br>
+used by applications and device drivers to perform color correction. For example,<br>
+monitors from different manufacturers have dissimilar gamuts because they use<br>
+different hardware that drives different cathode ray tubes. In fact, there are minute<br>
+color differences among the same models due to the video card, internal settings, user<br>
+adjustments, and even age. ColorSync uses color matching algorithms to visually<br>
+equate the images produced by different devices. Applications that are ColorSync aware<br>
+attempt to display a document faithfully on any monitor. 
+</p>
+<p>
+Besides supporting RGB, ColorSync supports color matching with other color spaces,<br>
+such as CMYK. Printers normally work in the CMYK color space because CMYK colors<br>
+are subtractive -- when added they move the image toward black or dark gray. This is<br>
+entirely different from RGB monitors, which use additive colors -- colors that when<br>
+added move the image toward white.&nbsp;&nbsp;&nbsp;Consequently, ColorSync is especially useful<br>
+when it's necessary to match on-screen and printed colors -- colors with two very<br>
+different gamuts. 
+</p>
+<p>
+<b>PROFILES AND COLOR MATCHING METHODS</b><br>
+ColorSync uses two major elements to implement color matching between devices:<br>
+profiles and color matching methods (CMMs). The profiles contain the device<br>
+characterization while the CMMs contain the color matching code to perform the<br>
+matching. A CMM performs matching between a source profile and a destination<br>
+profile. A system will have at least one profile for each device to be matched and at<br>
+least one CMM to perform the matching. Apple ships ColorSync with one Apple CMM<br>
+and with ColorSync profiles for all Apple monitors currently being manufactured. The<br>
+open architecture of ColorSync allows third-party developers to create their own<br>
+profiles and CMMs. 
+</p>
+<p>
+A ColorSync profile is simply a file whose data fork contains a CMProfile record,<br>
+usually stored in the ColorSyncTM Profiles folder. (This folder is in the Preferences<br>
+folder in your System Folder; your code can get it by calling GetColorSyncFolderSpec.)<br>
+Profiles may also be stored in a 'prof' resource,as discussed later. A device may have<br>
+more than one profile; however, only one is selected for use at any given time. For<br>
+example, printers have profiles for various paper types since the output onto<br>
+different types of paper can vary. The Apple Color Printer has default profiles for<br>
+coated paper, transparency film, and plain paper. A monitor may also have several<br>
+profiles for various special gamma settings. ColorSync neither affects nor is affected<br>
+by the gamma setting. For best results, the user must select a ColorSync profile that<br>
+matches the gamma.
+</p>
+<p>
+Here's the data structure for a CMProfile record:
+</p>
+<p>
+<code>typedef struct CMHeader {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;unsigned long&nbsp;&nbsp;&nbsp;size;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSType&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CMMType;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;unsigned long&nbsp;&nbsp;&nbsp;applProfileVersion;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSType&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dataType;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSType&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;deviceType;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSType&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;deviceManufacturer;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;unsigned long&nbsp;&nbsp;&nbsp;deviceModel;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;unsigned long&nbsp;&nbsp;&nbsp;deviceAttributes[2];</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;unsigned long&nbsp;&nbsp;&nbsp;profileNameOffset;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;unsigned long&nbsp;&nbsp;&nbsp;customDataOffset;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CMMatchFlag&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;flags;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CMMatchOption&nbsp;&nbsp;&nbsp;options;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;XYZColor&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;white;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;XYZColor&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;black;</code><br>
+<code>} CMHeader;</code><br>
+<code></code><br>
+<code>typedef struct CMProfileChromaticities {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;XYZColor&nbsp;&nbsp;&nbsp;&nbsp;red;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;XYZColor&nbsp;&nbsp;&nbsp;&nbsp;green;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;XYZColor&nbsp;&nbsp;&nbsp;&nbsp;blue;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;XYZColor&nbsp;&nbsp;&nbsp;&nbsp;cyan;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;XYZColor&nbsp;&nbsp;&nbsp;&nbsp;magenta;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;XYZColor&nbsp;&nbsp;&nbsp;&nbsp;yellow;</code><br>
+<code>} CMProfileChromaticities;</code><br>
+<code></code><br>
+<code>typedef struct CMProfileResponse {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;unsigned short&nbsp;&nbsp;counts[onePlusLastResponse];</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CMResponseData&nbsp;&nbsp;data[1];</code><br>
+<code>} CMProfileResponse;</code><br>
+<code></code><br>
+<code>typedef struct CMProfile {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CMHeader&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;header;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CMProfileChromaticities profile;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CMProfileResponse&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;response;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;IString&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;profileName;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;customData[1];</code><br>
+<code>} CMProfile, *CMProfilePtr, **CMProfileHandle;</code>
+</p>
+<p>
+CMMs are components of type 'cmm ' that contain code to perform matching. The<br>
+component subtype distinguishes between different CMMs. ColorSync ships with the<br>
+default Apple CMM, which has the subtype 'appl'. Developers who want to provide<br>
+custom CMMs to perform matching beyond the capabilities of Apple's basic color<br>
+matching method need to register their CMM subtype with the Apple Registry<br>
+(AppleLink REGISTRY) to avoid conflict with other CMM manufacturers.&nbsp;&nbsp;&nbsp;The only<br>
+requirement for subtype naming is that all-lowercase types are not used, because<br>
+they're reserved by Apple.
+</p>
+<p>
+A CMM can have six routines, three of which are required:
+</p>
+<ul>
+<li>CMInit: Given the source and destination profile, prepare to perform<br>
+color matching. </li>
+<li>CMMatchColors: Match a list of colors using profiles specified by a call to<br>
+CMInit. </li>
+<li>CMCheckColors: Check a list of colors and determine whether they fall<br>
+within the gamut of the destination device's color space. </li>
+</ul>
+<p>
+The optional CMM routines are as follows:
+</p>
+<ul>
+<li>CMMatchPixMap: Match the colors of a pixel map using profiles specified<br>
+by a call to CMInit. </li>
+<li>CMCheckPixMap: Check a pixel map to determine which pixels fall outside<br>
+the destination profile's gamut. </li>
+<li>CMConcatenateProfiles: Concatenate two profiles to create one new<br>
+profile. </li>
+</ul>
+<p>
+<b>WHICH CMM TO USE?</b><br>
+ColorSync profiles that refer to the custom CMMs can be created by setting the<br>
+CMMType field in the CMHeader to the subtype of the CMM. ColorSync will attempt to<br>
+use the corresponding CMM when using that profile. However, the custom profiles<br>
+must still contain the data necessary for compatibility with Apple's default color<br>
+matching method so that the Apple CMM can be used if the custom CMM is unavailable.<br>
+The rules for deciding which CMM to use depend on the source and destination profile:
+</p>
+<ol>
+<li>If the source and destination profiles use the same CMM and the<br>
+corresponding CMM is available, the matching is performed entirely by that<br>
+CMM. If the CMM is not available, the Apple CMM is used. </li>
+<li>If the source and destination profiles use different CMMs, then: a) If the<br>
+CMM for the destination profile is available, try using that CMM. If the CMM<br>
+returns an error because it can't perform the color matching, try step b.<br>
+Since the Apple CMM will never return an error because it's always able to<br>
+perform matching between two profiles, this is considered a special case, so<br>
+skip to b.&nbsp;&nbsp;&nbsp;b) If the CMM for the source profile is available, try using that<br>
+CMM. If the CMM returns an error because it can't perform the color<br>
+matching, try step 3. Again, since the Apple CMM will never return an error,<br>
+this is considered a special case, so skip to step 3. </li>
+<li>If the CMMs for both the source and destination profiles are available but<br>
+can't perform the matching as described in step 2, ColorSync matches using<br>
+the source CMM from the source profile color space to the XYZ color space, and<br>
+then using the destination CMM from the XYZ color space to the destination<br>
+profile color space. </li>
+<li>If step 3 doesn't work because a CMM is missing, the Apple CMM is<br>
+substituted for the missing one. </li>
+</ol>
+<p>
+<b>COLORSYNC ROUTINES</b><br>
+ColorSync provides high-level and low-level routines that may be used by application<br>
+and device driver developers. Except for BeginMatching, EndMatching, and<br>
+DrawMatchedPicture -- which are available in System 7 only -- the routines are<br>
+available in system software version 6.0.7 and later. On all systems, ColorSync must<br>
+be installed. The gestalt selector 'cmtc' returns gestaltColorSync10 (0x0100) for the<br>
+version of ColorSync that works with system software version 6.0.7, and<br>
+gestaltColorSync11 (0x0110) for the version that works with System 7. (Note that<br>
+6.0.7 must also have version 1.2 of the 32-Bit QuickDraw INIT installed.)
+</p>
+<p>
+<code>// Use Gestalt to get version of ColorSync.</code><br>
+<code>if (Gestalt(gestaltColorMatchingVersion, &amp;CMversion) != noErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CMversion = 0;</code>
+</p>
+<p>
+The high-level profile management routines are as follows:
+</p>
+<ul>
+<li>GetProfile: Get the profile currently selected for a device. </li>
+<li>SetProfile: Add a profile to the device's profile list. </li>
+<li>SetProfileDescription: Set profile description fields for a new profile<br>
+(typically created by a calibrator). </li>
+<li>GetColorSyncFolderSpec: Get the folder in which ColorSync profiles<br>
+should be stored. </li>
+<li>GetProfileName: Given a profile, return its name. </li>
+<li>GetProfileAdditionalDataOffset: Given a profile, return the custom data<br>
+offset. </li>
+<li>ConcatenateProfiles: Concatenate two profiles into one. </li>
+<li>GetIndexedProfile: Return the number of profiles and the profiles from<br>
+the device's profile list. </li>
+<li>DeleteDeviceProfile: Delete a profile from a device's profile list. </li>
+</ul>
+<p>
+The following high-level matching routines provide a layer of code between application<br>
+and device driver code and the CMM component code. They simplify color matching by<br>
+performing matching of all QuickDraw drawing routines. 
+</p>
+<ul>
+<li>BeginMatching: Tell Color QuickDraw to begin matching for the current<br>
+graphics device using the specified source and destination profiles. (Not<br>
+available in system software version 6.0.7.)</li>
+<li>EndMatching: Tell Color QuickDraw to stop matching. (Not available in<br>
+6.0.7.)</li>
+<li>EnableMatching: Insert picComments to turn matching on or off inside a<br>
+picture. </li>
+<li>UseProfile: Insert a profile into an open picture. </li>
+<li>DrawMatchedPicture: Draw a picture using color matching. (Not available<br>
+in 6.0.7.)</li>
+</ul>
+<p>
+These low-level routines perform color matching:
+</p>
+<ul>
+<li>CWNewColorWorld: Create a color matching world using the specified<br>
+source and destination profiles. </li>
+<li>CWDisposeColorWorld: Dispose of a color matching world to end the<br>
+session. </li>
+<li>CWMatchColors: Match a list of colors using the current color matching<br>
+world. </li>
+<li>CWCheckColors: Check a list of colors to see if they fall within a device's<br>
+gamut. Use the current color matching world. </li>
+<li>CWMatchPixMap: Match a pixel map using the current color matching<br>
+world. </li>
+<li>CWCheckPixMap: Check the colors of a pixel map using the current color<br>
+matching world to determine whether the colors are in the gamut of the<br>
+destination device. </li>
+</ul>
+<p>
+<b>HOW DOES COLORSYNC WORK?</b><br>
+Now that you have an overview of the basic elements of ColorSync -- profiles, CMMs,<br>
+and routines -- we can discuss how ColorSync works by putting all these pieces<br>
+together. 
+</p>
+<p>
+As mentioned earlier, ColorSync profiles are normally stored in the ColorSyncTM<br>
+Profiles folder in the Preferences folder. In this folder, you'll find a selection of<br>
+monitor profiles for all Apple color monitor products. In some cases, there are<br>
+duplicates to account for the color differences between different gamma settings for the<br>
+monitor. For example, the Apple 16-inch monitor has two profiles: Apple 16" RGB<br>
+Page-White and Apple 16" RGB Standard. The user selects the profile that corresponds<br>
+to the Use Special Gamma setting made in the Monitors control panel. This profile --<br>
+also called the system profile -- is selected in the ColorSync control panel. The system<br>
+profile is used as the default source profile whenever you're matching from a<br>
+document that doesn't specify a profile or matching to a device that doesn't otherwise<br>
+have an associated profile.
+</p>
+<p>
+You may be wondering how to use the ColorSync control panel to select more than one<br>
+system profile for multiple monitors. Unfortunately, the system profile is an<br>
+abstraction that shouldn't be associated with any particular device. As described<br>
+earlier in "Which CMM to Use?" it should be used whenever a profile isn't explicitly<br>
+specified for a source or destination. ColorSync-awareapplications can support<br>
+multiple monitors by matching to specific graphics devices, thereby overriding the<br>
+system profile selection. But this isn't recommended except with high-end<br>
+applications because of difficulties in implementation and complexities for the user. 
+</p>
+<p>
+Applications can determine the current system profile selection with GetProfile. In<br>
+fact, GetProfile works with any device to get the current profile selection for that<br>
+device. However, for the call to work, the devices must register their profile<br>
+responder. Every device that uses ColorSync to perform matching must have a profile<br>
+responder, which is a component that supports the following routines:
+</p>
+<ul>
+<li>CMGetProfile: Return the profile that the driver would use to perform a<br>
+match. </li>
+<li>CMSetProfile: Add the profile to the driver's profile list. </li>
+<li>CMSetProfileDescription: Set the device-specific fields in a profile. This<br>
+allows newly created profiles to be used with the device. </li>
+<li>CMGetIndexedProfile: Get the profile that matches the search criteria. </li>
+<li>CMDeleteDeviceProfile: Delete the profile from the driver's profile list. </li>
+</ul>
+<p>
+The system profile responder is always registered globally in a system, so you can use<br>
+the ColorSync high-level profile management routines on the system device. Printer<br>
+driver profile responders are registered only if requested; you register one by calling<br>
+PrGeneral with the driver opened. The PrGeneral opcode is registerProfileOp (13).<br>
+By using a profile responder, an application can communicate with any device to<br>
+request ColorSync profile information. This is especially useful for calibration<br>
+applications. For example, an application can create a new profile for a printer, call<br>
+SetProfileDescription to set the device-specific fields in the profile, and then call<br>
+SetProfile to add the profile to the device driver's profile list.
+</p>
+<p>
+The following code excerpt demonstrates how to register a device driver profile<br>
+responder. The complete sample code (including error checking!) is provided on this<br>
+issue's CD.
+</p>
+<p>
+<code>// Register printer profile responder.</code><br>
+<code>PrOpen();</code><br>
+<code>if ((prError = PrError()) == noErr) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;printerOpened = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;prRecHdl = (THPrint)NewHandle(sizeof(TPrint));</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PrintDefault(prRecHdl);</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;regProfileBlk.iOpCode = registerProfileOp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;regProfileBlk.iError = 0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;regProfileBlk.lReserved = 0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;regProfileBlk.hPrint = prRecHdl;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;regProfileBlk.fRegisterIt = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PrGeneral((Ptr)&amp;regProfileBlk);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;prError = regProfileBlk.iError;</code><br>
+<code>}</code>
+</p>
+<p>
+You don't see the default profiles for device drivers such as the Apple Color Printer in<br>
+the ColorSyncTM Profiles folder because they're stored as 'prof' resources in the<br>
+device drivers themselves. However, applications can still create profiles for the<br>
+printer driver to use by placing them in the ColorSyncTM Profiles folder. All printer<br>
+drivers should search not only in their private profile storage location but in the<br>
+ColorSyncTM Profiles folder as well. In the Apple Color Printer Print Options dialog<br>
+box, users can choose custom profiles in a pop-up menu if Customized Color Matching<br>
+is selected. The driver even filters the profiles, so only profiles that match the paper<br>
+type appear in the menu. This is accomplished by reading in each profile in the folder<br>
+and searching for the desired values in the CMHeader record. The Apple Color Printer<br>
+driver stores the profile's paper type in the deviceAttributes field of the profile's<br>
+CMHeader record. This field is used differently by various devices; for instance,<br>
+monitor profiles use it to store the gamma setting.&nbsp;&nbsp;When you finally&nbsp;&nbsp;print to a color<br>
+printer such as the Apple Color Printer, the printer driver performs matching from<br>
+the system profile to the printer profile. The application must pass the ColorSync<br>
+picComments through to the printer for matching to occur. If the application strips out<br>
+picComments, the printer driver assumes the document uses the system profile. If the<br>
+picComments contain a custom profile, the printer driver uses that profile as the<br>
+source profile instead of the system profile. Even a matching method chosen in the<br>
+Customized Color Matching pop-up menu is overridden by such custom profiles. For<br>
+example, if a document contains scanned images, the images may have a custom profile<br>
+that uses photographic matching while the rest of the document uses the solid color<br>
+system profile.
+</p>
+<p>
+<b>WHAT DOES AN APPLICATION HAVE TO DO?</b><br>
+In a way, most applications are already ColorSync compatible because they can print to<br>
+ColorSync- aware printers such as the Apple Color Printer. However, for an<br>
+application to become ColorSync savvy, it should have three key features:
+</p>
+<ul>
+<li>It should allow users to tag color matching information to documents and<br>
+to be able to display them using ColorSync. ColorSync calls such as UseProfile,<br>
+DrawMatchedPicture, and BeginMatching/EndMatching can be used to do this. </li>
+<li>Applications should allow users to preview the output to a<br>
+ColorSync-aware printer by matching from the document to the printer<br>
+profile and back to the system profile. The user can thus view color<br>
+differences that occur in the color matching transition between gamuts. The<br>
+application can even visually outline colors that can't be displayed faithfully,<br>
+using the CheckColors routine. </li>
+<li>Most important, the application must preserve picComments in its<br>
+documents. The application can allow modification of the ColorSync<br>
+picComments as appropriate, but it must save the information in the document<br>
+and allow the information to be passed through to the printer. </li>
+</ul>
+<p>
+<b>WHAT DOES A PRINTER DRIVER HAVE TO DO?</b><br>
+A printer driver must first have a responder component that implements the<br>
+responder routines mentioned earlier. The responder allows ColorSync to communicate<br>
+with the printer driver. By watching for picComments in the printer port bottleneck<br>
+procs, the driver is notified of source profile changes and other information as well.<br>
+The printer driver can then adjust the color matching accordingly. 
+</p>
+<p>
+Matching can be performed with high-level calls such as BeginMatching or with<br>
+low-level calls such as CWMatchColors. If the printer driver spools pages in the PICT<br>
+format and uses DrawPicture with an off-screen graphics device for rendering, the<br>
+high-level calls can be used. Otherwise, matching is best performed with the<br>
+low-level calls from the QuickDraw bottleneck procs. The Apple Color Printer uses<br>
+low-level calls and performs color matching in its custom bottleneck procs before<br>
+rendering occurs. Applications that generate PostScriptTM code directly must perform<br>
+color matching themselves using the low-level calls. They can determine what<br>
+destination printer profile to use by calling GetProfile. 
+</p>
+<p>
+Apple doesn't ship an updated LaserWriter driver to support ColorSync because it<br>
+would require a major rewrite of current code. However, applications can work<br>
+around this by performing the color matching in the application. On the other hand,<br>
+PostScript Level 2 has color matching support built into the PostScript language, so it<br>
+would be possible to offload color matching to the PostScript imaging device. 
+</p>
+<p>
+<b>YOUR COLORFUL FUTURE</b><br>
+ColorSync is an open architecture platform that enables third-party developers to<br>
+create profiles, CMMs, and drivers that are mutually compatible. As shown in the<br>
+past, open architecture promotes market acceptance and user adoption. By using<br>
+ColorSync as your color matching platform, you're ensured of continued compatibility<br>
+with future Apple technologies.
+</p>
+<p>
+As a developer, you can influence the direction of ColorSync; send your feedback to<br>
+AppleLink DEVSUPPORT. In fact, you can even send me your ColorSync-savvy<br>
+application (AppleLink WANG.JY) and I'd be thrilled to evaluate it. 
+</p>
+<p>
+<b>JOHN WANG </b>(AppleLink WANG.JY) is standing in for Pete ("Luke") Alexander, who<br>
+was busy working on his QuickDraw GX article for a future issue of <i> develop</i>. We<br>
+expect various members of Developer Technical Support's Printing, Imaging, and<br>
+Graphics group to take turns writing this column in the future. John also found the<br>
+time to write his regular QuickTime column; look there (later in this issue) for the<br>
+real John Wang bio. *
+</p>
+<p>
+<b>The ColorSync Utilities document </b>on this issue's CD is the comprehensive<br>
+document that developers should refer to for ColorSync development. However, having<br>
+worked with many ColorSync developers, I've come across several issues that aren't<br>
+covered in the ColorSync Utilities document. This column is a conglomeration of hours<br>
+of discussion and mutual enlightenment.*<b>You make gamma settings </b>in the<br>
+Monitors control panel by Option-clicking the Options button and, in the dialog box<br>
+that appears, selecting Use Special Gamma and choosing the special gamma from the<br>
+pop-up menu. *
+</p>
+<p>
+<b>Components are described </b>in the Component Manager documentation in the<br>
+QuickTime Developer's Kit v. 1.5. The information will soon be published in <i>Inside</i><br>
+<i>Macintosh: More Macintosh Toolbox.</i> *
+</p>
+<p>
+<b>XYZ is a device-independent color space</b> defined by the Commission<br>
+Internationale de l'Eclairage (CIE). It's an additive color space similar to RGB. Each of<br>
+the XYZ components is a&nbsp;&nbsp;1.15-bit unsigned fixed-point number.*
+</p>
+<p>
+<b>Color matching to multiple monitors </b> is implemented by setting the destination<br>
+profile for each graphics device with SetProfile and then performing matching with<br>
+DrawMatchedPicture or BeginMatching/EndMatching. *
+</p>
+<p>
+<b>Applications that strip picComments </b>from pictures before sending them to the<br>
+printer driver are not ColorSync compatible because they remove the information that<br>
+ColorSync uses to perform matching. For general information on picComments, see the<br>
+Macintosh (Imaging) Technical Note "Picture Comments -- The Real Deal" (formerly<br>
+#91). *
+</p>
+<p>
+<b>Thanks </b>to Bill Guschwan, Tom Mohr, Konstantin Othmer, Steve Swen, and Forrest<br>
+Tanaka for reviewing this column. *
+</p>
+</body>
+</html>

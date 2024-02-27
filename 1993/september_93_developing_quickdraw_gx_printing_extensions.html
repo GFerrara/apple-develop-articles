@@ -1,0 +1,798 @@
+<html>
+<head>
+<!-- Article ID: 29 - Extracted from develop-1993 -->
+<!-- on 2024-02-19 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>September 93 - DEVELOPING QUICKDRAW GX PRINTING EXTENSIONS</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>DEVELOPING QUICKDRAW GX PRINTING EXTENSIONS</h2>
+<h1>SAM WEISS</h1>
+<p>
+<img src="img/201.gif" width="180 px"></img>
+</p>
+<p>
+<i>With QuickDraw GX comes a new extensible printing architecture that simply invites</i><br>
+<i>you to jump in and tinker. Writing printer drivers has never been easier. But with</i><br>
+<i>the advent of printing extensions, you may never have to write a printer driver again!</i><br>
+<i>This article tells you what you need to know to create QuickDraw GX printing</i><br>
+<i>extensions.</i>
+</p>
+<p>
+Macintosh system software has long provided hooks that enable developers to add<br>
+system-level features in the form of INITs (now called system extensions) and cdevs<br>
+(control panels). QuickDraw GX extends the extension concept to printing via<i>printing</i><br>
+<i>extensions</i>, plug-in software modules whose sole purpose in life is to modify the<br>
+behavior of printing. Want to stamp the word "Confidential" on every page printed to a<br>
+specific printer? Write a printing extension. Want to drive a sheet feeder attachment<br>
+to a LaserWriter? Write a printing extension. Chances are that if there's something<br>
+you want to do that the QuickDraw GX printing architecture doesn't already do, you can<br>
+do it with a printing extension. 
+</p>
+<p>
+In this article, I'll describe the steps you must take to create a QuickDraw GX printing<br>
+extension. By the end of the article we'll have a working, environmentally friendly<br>
+extension called 4-Up. As shown in Figure 1, the 4-Up printing extension maps four<br>
+document pages onto one physical page at print time, saving countless trees in the<br>
+process! 
+</p>
+<p>
+Notice that I referred to a printing extension as a "software module." I would love to<br>
+use the currently hip term "component," but I don't want to confuse the issue by<br>
+implying that printing extensions are implemented as Component Manager components.<br>
+In fact, printing extensions are a whole new sort of beast. QuickDraw GX includes a<br>
+new low-level software manager called the Message Manager, which it uses to<br>
+implement its extensible printing architecture. A printing extension is a client of the<br>
+Message Manager called a<i>message handler.&nbsp;&nbsp;</i>The Message Manager manages the<br>
+construction of a hierarchy of related message handlers into a <i>message class</i>, allows<br>
+<i>message objects</i>to be instantiated from message classes, and directs messages among<br>
+message handlers. I won't be going into too much detail about the Message Manager in<br>
+this article. But there are times when you'll have to call the Message Manager directly<br>
+from your printing extension, so you need to be aware of it. 
+</p>
+<p>
+<img src="img/202.gif" width="197 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1</b> 4-Up at Work
+</p>
+<p>
+&nbsp;Another new manager included in QuickDraw GX is the Collection Manager, which<br>
+manages the creation of lightweight extensible data structures called<i>collections</i>.<br>
+QuickDraw GX printing makes heavy use of collections. Although we won't need to call<br>
+the Collection Manager from the 4-Up extension, nearly all serious printing<br>
+extensions will need to do so. 
+</p>
+<h2>THE QUICKDRAW GX PRINTING ARCHITECTURE</h2>
+<p>
+Before we jump into the technical details of writing a printing extension, it will be<br>
+helpful to have a general overview of the QuickDraw GX printing process. First, I'll<br>
+describe how the printing process occurs in several distinct phases, each responsible<br>
+for a specific subtask of the entire process. Then, I'll explain the flow of control under<br>
+QuickDraw GX printing, as contrasted with that of the Printing Manager. And finally,<br>
+I'll discuss how printing extensions fit into the picture. 
+</p>
+<p>
+<b>&nbsp;THE FOUR SEASONS OF PRINTING</b><br>
+Under QuickDraw GX, printing occurs in four distinct phases:
+</p>
+<ul>
+<li><i>Spooling</i>, which takes place in the foreground under the control of the<br>
+printing application, results in a device-independent print file being stored to<br>
+disk. This print file is also known as a<i>portable digital document</i>or PDD, and it<br>
+can be viewed using the version of TeachText included with QuickDraw GX.<br>
+Because the contents of the print file are stored in a device-independent<br>
+format, it can be redirected to a device other than the original target,<br>
+potentially even a different class of device, for actual printing. For example, a<br>
+print file originally targeted for a PostScript LaserWriter can be redirected<br>
+to an ImageWriter. The print file contains enough information to allow the<br>
+document to be rendered to the best of the printer's ability, regardless of the<br>
+originally intended target printer. </li>
+<li><i>Despooling</i>, which always occurs in the background under the control of<br>
+the PrinterShare GX background printing task, is the process of reading pages<br>
+from the print file for imaging. Despooling need not occur on the same machine<br>
+on which spooling occurred. PrinterShare GX sends print files over the<br>
+network when the target device is a remote server. Also, users may copy print<br>
+files to floppy disk, or otherwise manually move them to other machines for<br>
+printing. </li>
+<li><i>Imaging</i> also occurs in the background under the control of PrinterShare<br>
+GX.&nbsp;&nbsp;&nbsp;Despooling and imaging always happen together, but it's useful to<br>
+consider them as distinct phases since they accomplish different tasks. While<br>
+the despooling process is responsible for reading the correct pages from the<br>
+print file, the imaging process is responsible for translating the<br>
+device-independent graphics data contained in the file into a format recognized<br>
+by the target device. This would be PostScript code in the case of a PostScript<br>
+LaserWriter, and it would be device- resolution bitmaps and appropriate<br>
+escape sequences in the case of an ImageWriter. </li>
+<li><i> Device communications</i>encompasses the actual dialog that occurs between<br>
+the printer driver and the target device. This is a distinct phase, as it may<br>
+actually take place on a machine other than that on which imaging occurred.<br>
+For example, if the target device is a remote server, and PrinterShare GX<br>
+determines that certain necessary resources (such as fonts) aren't available<br>
+on the server, PrinterShare GX may opt to image the job locally into an<i>image</i><br>
+<i>file,</i>which it sends to the server. By definition, image files are<br>
+device-dependent, nonviewable, and nonredirectable.&nbsp;&nbsp;&nbsp;The image file is<br>
+"played back" on the server during the device communications phase. </li>
+</ul>
+<p>
+<b>GO WITH THE FLOW</b><br>
+At the highest level, the flow of control under QuickDraw GX printing remains similar<br>
+to that in the existing Printing Manager. There are three major players: the<br>
+application, the printing API, and the printer driver. The printing application calls a<br>
+layer of printing API routines, each of which either performs some task or calls the<br>
+appropriate printer driver to perform some task. However, there are two major<br>
+differences in QuickDraw GX printing. First, the printing API has been greatly<br>
+expanded.&nbsp;&nbsp;&nbsp;And second, the way in which control is transferred from the API to the<br>
+driver is completely different. I won't be going into detail about the expanded printing<br>
+API -- but you'll need to understand the new flow of control in order to write printing<br>
+extensions. 
+</p>
+<p>
+The existing Printing Manager calls the driver simply by loading the appropriate<br>
+PDEF (code resource) from the driver, computing the offset to the specified routine,<br>
+and jumping to it. As shown in Figure 2, QuickDraw GX printing uses an intermediary,<br>
+the Message Manager, to transfer control to the driver. When the application makes a<br>
+QuickDraw GX printing call, and the printing API needs to call the driver, it does so by<br>
+calling the Message Manager to request that a message be sent to the driver. The<br>
+advantage of this approach is flexibility. The Message Manager allows message<br>
+handlers to be inserted between the printing API and the driver (which is itself a<br>
+message handler).&nbsp;&nbsp;&nbsp;Aha! The light goes on! This gives us the ability to extend the<br>
+behavior of printing, or even fix bugs, without modifying the driver's code. It also<br>
+serves as the foundation upon which the printing extension mechanism is built. 
+</p>
+<p>
+<b>DON'T SHOOT THE MESSENGER</b><br>
+QuickDraw GX printing defines over a hundred messages. When an application calls the<br>
+printing API, QuickDraw GX either performs the requested task itself or sends one of<br>
+these messages (via the Message Manager) to the driver to perform the task. For many<br>
+tasks, QuickDraw GX provides a default implementation for the associated message, but<br>
+sends a message to the driver anyway. This gives the driver a chance to do things its<br>
+own way, or to massage the message parameters before forwarding the message on to<br>
+the default implementation. 
+</p>
+<p>
+This is where printing extensions come in; they're inserted between the printing API<br>
+and the driver, thereby having the opportunity to<i>override</i>any message before it gets to<br>
+the driver. There are two flavors of message overriding, partial and complete.
+</p>
+<p>
+In a partial message override, the extension will do some work to customize the<br>
+behavior of the message, but it will still forward the message to the driver. The<br>
+extension may do its work before forwarding the message (preprocessing), after<br>
+forwarding the message (post-processing), or both before and after forwarding the<br>
+message. For example, message preprocessing might involve changing one or more of<br>
+the message parameters before the driver sees them. Post-processing might involve<br>
+modifying result parameters returned by the driver.&nbsp;&nbsp;&nbsp;
+</p>
+<p>
+<img src="img/203.gif" width="471 px"></img>
+</p>
+<p>
+<b>Figure 2</b> The Old Way Versus the QuickDraw GX Way
+</p>
+<p>
+In a complete message override, the extension is responsible for implementing the<br>
+message entirely and does not forward the message to the driver. Since any number of<br>
+extensions may be inserted between the printing API and the driver, complete<br>
+overrides will also inhibit any other extensions inserted between the driver and the<br>
+extension performing the override from receiving the message.&nbsp;&nbsp;&nbsp;So before completely<br>
+overriding a message, think hard and be sure to consult the documentation (<i>Inside</i><br>
+<i>Macintosh: Printing Extensions and Printer Drivers</i>, available from Addison-Wesley<br>
+in September), which gives details regarding which messages are appropriate<br>
+candidates for complete overrides. 
+</p>
+<p>
+Any message not explicitly overridden by the extension is implicitly forwarded by the<br>
+Message Manager to the driver -- or if there is another extension loaded before the<br>
+driver, it will get the next crack at the message. 
+</p>
+<h2>LESS IS MORE</h2>
+<p>
+Now that you have some background on the behind-the-scenes operations of QuickDraw<br>
+GX printing, we can investigate what it takes to cram four pages into one. The first step<br>
+is deciding which messages to override. With over a hundred messages to choose from,<br>
+this may well be the most difficult aspect of printing extension development. If you've<br>
+ever worked with a large class library like MacApp, you know what I mean. Half the<br>
+battle is understanding the context within which various messages are sent. QuickDraw<br>
+GX printing is no different; in fact, you can envision it as a printing class library. As<br>
+in MacApp, it takes some time to learn your way around.&nbsp;&nbsp;&nbsp;In our case, there are at<br>
+least four different messages we could override in order to stuff four pages into one:<br>
+GXSpoolPage, GXDespoolPage, GXImagePage, and GXRenderPage. The one we choose will<br>
+depend on the desired effect. I chose the GXDespoolPage message, which is sent by<br>
+QuickDraw GX to read each page from the print file during background printing.<br>
+QuickDraw GX printing always spools data to a device-independent print file and then<br>
+releases control back to the foreground application. PrinterShare GX, a background<br>
+printing process, despools the print file, images it, and sends the result to the target<br>
+printer. By overriding the GXDespoolPage message, we have no effect on the print file<br>
+itself and we don't affect spooling performance. Our modifications will be done on the<br>
+fly during the background despooling/imaging phase of printing. One implication of<br>
+this strategy is that our extension won't affect what the user sees when viewing the<br>
+print file on the screen (soft copy); it will affect only what's actually printed (hard<br>
+copy). 
+</p>
+<p>
+During the background despooling/imaging phase of printing, QuickDraw GX sends the<br>
+GXDespoolPage message for each page in the print file. QuickDraw GX supplies a default<br>
+implementation for this message which reads the requested page from the print file<br>
+and returns it to the caller as a picture shape. The 4-Up extension simply needs to<br>
+override the GXDespoolPage message and return a picture shape containing the<br>
+requested page plus the three succeeding pages. Of course, we'll need to scale down the<br>
+original pages and move them around on the physical page a little. But that's the basic<br>
+idea. 
+</p>
+<p>
+OK, it sounds great in theory. But we have a problem. Suppose the print file contains<br>
+16 pages.&nbsp;&nbsp;&nbsp;We're effectively creating a 4-page document. But QuickDraw GX is going to<br>
+send the GXDespoolPage message 16 times and expect a valid picture shape to be<br>
+returned each time. What happens when we run out of pages, after we're called for the<br>
+fourth time? As you've probably guessed, there's another message we must override<br>
+called GXCountPages. This message is sent at the beginning of the imaging process to<br>
+determine how many times the GXDespoolPage message should be sent. In the example<br>
+given above, we would need to override GXCountPages to return 4 instead of 16. 
+</p>
+<h2>WRITING THE CODE</h2>
+<p>
+Now that we know which messages to override, we can write some code. Writing the<br>
+code for a printing extension consists of implementing message overrides. In the 4 -<br>
+Up extension, we'll override two messages, GXCountPages and GXDespoolPage. Coding a<br>
+message override is fairly straightforward, similar to coding a callback routine for<br>
+other Toolbox managers. The most important part is ensuring that we declare the<br>
+function with the expected calling interface. 
+</p>
+<p>
+<b>OVERRIDING GXCOUNTPAGES</b><br>
+The GXCountPages message has the following interface:
+</p>
+<p>
+<code>OSErr GXCountPages (gxSpoolFile thePrintFile, long* numPages);</code>
+</p>
+<p>
+In fact, all messages share certain common interface elements. For example,<i>all</i><br>
+<i>messages must return a result of type OSErr.&nbsp;&nbsp;</i>This is important because all printing<br>
+code is segmented. If the segment dispatcher fails to load your extension's code<br>
+segment, it must be able to report the error condition to the caller. If your particular<br>
+override doesn't do anything that can fail, simply return noErr. 
+</p>
+<p>
+Now that we know the interface to the GXCountPages message, we can implement our<br>
+override.&nbsp;&nbsp;&nbsp;Since we're squeezing four pages into one, we can determine the number of<br>
+actual pages with the following simple formula:
+</p>
+<p>
+physicalPages = (originalPages + 3) / 4
+</p>
+<p>
+<b>Trick #1. </b>Determining the value of originalPages is one of two tricky things we need<br>
+to do in this extension. Your first thought might be to retrieve the document's page<br>
+count from the<i>current job,</i>which is an implicit parameter to every message. The<br>
+current job is an abstract object of type gxJob, which you can think of as a<br>
+replacement for the print record in the existing Printing Manager. It contains all<br>
+sorts of information relating to the document being printed. We can get a reference<br>
+tothe current job by calling GXGetJob, a QuickDraw GX printing routine, and then<br>
+access information such as the document's page count from the job. 
+</p>
+<p>
+Although this technique would work for simple cases, it won't work if another printing<br>
+extension is present and also modifying the result returned by the GXCountPages<br>
+message. Consider the case where the user is running our 4-Up extension and another<br>
+2-Up extension. Ideally, the result should be an 8-to-1 mapping; both extensions<br>
+would do their work, each oblivious to the other's existence, yet the final output would<br>
+be the result of a cooperative effort! 
+</p>
+<p>
+The correct technique is to forward the GXCountPages message to the next message<br>
+handler, and use the result we get back as the value for originalPages. Note that the<br>
+value we get may actually be the result of modifications made by other extensions, but<br>
+we don't care! That's the beauty and flexibility inherent in the messaging architecture.<br>
+Forwarding the GXCountPages message is as easy as calling the predefined routine<br>
+Forward_GXCountPages. Here's the full implementation of our GXCountPages override:
+</p>
+<p>
+<code>OSErr FourUpCountPages (gxSpoolFile thePrintFile, long* numPages) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;anErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;originalPages;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;anErr = Forward_GXCountPages(thePrintFile, &amp;originalPages);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;nrequire (anErr, FailedForward_GXCountPages);</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;*numPages = (originalPages + 3) / 4;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return noErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>FailedForward_GXCountPages:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return anErr;</code><br>
+<code>}</code>
+</p>
+<p>
+Note the use of the nrequire exception-handling macro. It displays an error string and<br>
+jumps to the FailedForward_GXCountPages label if anErr is nonzero. See the article<br>
+"Living in an Exceptional World" in<i>develop</i>Issue 11 for more information. 
+</p>
+<p>
+<b>OVERRIDING GXDESPOOLPAGE</b><br>
+The meat of the 4-Up extension is contained in the GXDespoolPage override. The<br>
+GXDespoolPage message has the following interface:
+</p>
+<p>
+<code>OSErr GXDespoolPage (gxSpoolFile thePrintFile, long pageNumber,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gxFormat pageFormat, gxShape *pagePicture,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Boolean *formatChanged);</code>
+</p>
+<p>
+Normally, the default implementation of this message will be executed, resulting in<br>
+the page identified by pageNumber being read from the print file specified by<br>
+thePrintFile. Additionally, the page's associated format will be read into pageFormat,<br>
+and the Boolean formatChanged will be set to true if the format being returned is<br>
+different from the format returned by the last invocation of the GXDespoolPage<br>
+message. Formats are abstract objects that contain formatting information for one or<br>
+more pages in a document. We'll need to query the page format for its dimensions so<br>
+that we can properly place our four scaled-down pages onto the physical page. 
+</p>
+<p>
+Our GXDespoolPage override must do the following work:
+</p>
+<ol>
+<li>Using pageNumber, compute the actual page numbers for the pages we<br>
+must read.&nbsp;&nbsp;&nbsp;Remember, when QuickDraw GX asks for page 2, we'll be<br>
+returning pages 5, 6, 7, and 8. Page numbers start at 1. </li>
+<li>Read up to four pages from the print file, being careful not to read past<br>
+the last remaining page. </li>
+<li>Query the page's format for its dimensions. We'll be fairly<br>
+unsophisticated and ignore all but the first format for each group of four<br>
+pages. As a result, we won't handle&nbsp;&nbsp;all cases correctly -- for example, mixed<br>
+portrait and landscape pages. This is left as an exercise for the reader. </li>
+<li>Scale down and translate each page to the correct size and position. </li>
+<li>Add the modified pages to a new picture shape, and return it. </li>
+</ol>
+<p>
+This may seem like a lot of work. Fortunately, we can rely on the default<br>
+implementation of GXDespoolPage for much of it. Here's the code:
+</p>
+<p>
+<code>OSErr FourUpDespoolPage (gxSpoolFile thePrintFile, long pageNumber,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxFormat pageFormat, gxShape* pagePicture,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Boolean* formatChanged) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;anErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;firstPage, lastPage, numPages, whichPage;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gxShape fourUpPage, thePages[4];</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gxShape*&nbsp;&nbsp;&nbsp;&nbsp;atPage;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Determine actual page numbers of the pages to despool. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;lastPage = pageNumber * 4;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;firstPage = lastPage - 3;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Determine page number for last page in spool file so that we</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;can constrain our despooling loop to a valid range if fewer</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;than four pages remain in the file. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;anErr = ForwardMessage(gxCountPages, thePrintFile, &amp;numPages);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;nrequire (anErr, FailedForward_GXCountPages);</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (lastPage &gt; numPages)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lastPage = numPages;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Create picture shape to hold subpages. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;fourUpPage = GXNewShape(gxPictureType);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;anErr = GXGetGraphicsError(nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;nrequire (anErr, FailedGXNewShape);</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Despool backwards so that pageFormat ends up containing the</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;format for the first page in the group. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;atPage = &amp;thePages[lastPage-firstPage]; /* Last page in group */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;numPages = 0;&nbsp;&nbsp;/* Track number of successfully despooled pages */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;for (whichPage = lastPage; whichPage &gt;= firstPage; --whichPage) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;anErr = Forward_GXDespoolPage(thePrintFile, whichPage,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pageFormat, atPage--, formatChanged);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nrequire (anErr, FailedForward_GXDespoolPage);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++numPages;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Map the despooled pages onto a single physical page. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxRectangle pageRect;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fixed&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tx, ty;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxMapping&nbsp;&nbsp;&nbsp;aMapping;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Get the dimensions of the physical page. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXGetFormatDimensions(pageFormat, &amp;pageRect, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Compute x and y translation factors. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tx = (pageRect.right - pageRect.left) >> 1;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ty = (pageRect.bottom - pageRect.top) >> 1;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Initialize the mapping to scale by 50%. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXResetMapping(&amp;aMapping);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;aMapping.map[0][0] = fixed1/2;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;aMapping.map[1][1] = fixed1/2;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Map the pages onto the physical page. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXMapShape(thePages[0], &amp;aMapping);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (numPages &gt; 1) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXMoveMapping(&amp;aMapping, tx, 0);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXMapShape(thePages[1], &amp;aMapping);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (numPages &gt; 2) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXMoveMapping(&amp;aMapping, -tx, ty);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXMapShape(thePages[2], &amp;aMapping);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (numPages &gt; 3) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXMoveMapping(&amp;aMapping, tx, 0);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXMapShape(thePages[3], &amp;aMapping);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Place the mapped pages into a single picture. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXSetPictureParts(fourUpPage, 1, 0, numPages, thePages, nil,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nil, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;anErr = GXGetGraphicsError(nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nrequire (anErr, FailedGXSetPictureParts);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* GXSetPictureParts cloned the pages, so we must dispose of</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;our references to them. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for (atPage = &amp;thePages[numPages-1];</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;atPage &gt;= thePages; --atPage)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXDisposeShape(*atPage);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Return the 4-up page. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;*pagePicture = fourUpPage;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Since we don't know whether the format for "actual page number</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;5" is the same as that for "actual page number 1," we</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;always set formatChanged to true. A more sophisticated</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;extension could do the right thing here. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;*formatChanged = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ncheck (anErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return noErr;</code><br>
+<code></code><br>
+<code>/*------------------------</code><br>
+<code>Exception-handling code</code><br>
+<code>------------------------*/</code><br>
+<code></code><br>
+<code>FailedGXSetPictureParts:</code><br>
+<code>FailedForward_GXDespoolPage:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;for (atPage = &amp;thePages[numPages-1];</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;atPage &gt;= thePages; --atPage)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXDisposeShape(*atPage);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GXDisposeShape(fourUpPage);</code><br>
+<code>FailedGXNewShape:</code><br>
+<code>FailedForward_GXCountPages:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return anErr;</code><br>
+<code>}</code>
+</p>
+<p>
+<b>Trick #2. </b>This code is pretty easy to follow, but one line demands further<br>
+explanation. Remember earlier I said that there were two "tricky things" our<br>
+extension would have to do. The first was correctly determining the number of original<br>
+pages in the document. The second trick occurs early in the above code, in the line
+</p>
+<p>
+<code>anErr = ForwardMessage(gxCountPages, thePrintFile, &amp;numPages);</code>
+</p>
+<p>
+We need to know the actual page number for the last page in the document so that we<br>
+can make sure not to read a nonexistent page. Since the last page's page number is equal<br>
+to the number of pages in the document, your first thought might be to send the<br>
+GXCountPages message. QuickDraw GX supplies the Send_GXCountPages routine to do<br>
+this, and we would call it like so:
+</p>
+<p>
+<code>anErr = Send_GXCountPages(thePrintFile, &amp;numPages);</code>
+</p>
+<p>
+However, this would not produce the desired result. Since this would invoke our own<br>
+GXCountPages override, as well as those of all other message handlers that override<br>
+GXCountPages, the result would be the total number of physical pages actually printed,<br>
+not the total number of logical pages we must despool. 
+</p>
+<p>
+What we really want to do is forward the GXCountPages message. But here's the<br>
+potential gotcha!&nbsp;&nbsp;&nbsp;We can't use QuickDraw GX's supplied Forward_GXCountPages<br>
+routine to do it. 
+</p>
+<p>
+Here's why: The Message Manager provides two routines for forwarding a message. The<br>
+ForwardMessage routine takes a selector, which indicates the message to be forwarded,<br>
+and zero or more message-specific parameters. ForwardThisMessage takes only the<br>
+message-specific parameters and assumes you want to forward the<i>current</i>message.<br>
+The current message is the one corresponding to the override you're currently<br>
+executing -- that is, the override from which you're calling ForwardThisMessage.&nbsp;&nbsp;<br>
+The problem with calling Forward_GXCountPages from within the GXDespoolPage<br>
+override is that all QuickDraw GX's Forward_XXX routines are simply inline aliases to<br>
+ForwardThisMessage, with the message-specific parameters added for type-checking<br>
+purposes. Since it's far more common to forward the current message than it is to<br>
+forward an arbitrary message, QuickDraw GX assumes the common case and provides<br>
+only the corresponding aliases. Therefore, if we were to call Forward_GXCountPages<br>
+from within our GXDespoolPage override, we would actually forward the<br>
+GXDespoolPage message with a bogus parameter list! 
+</p>
+<p>
+This doesn't mean we can't forward arbitrary messages, but to pull it off we do have to<br>
+call the Message Manager directly. In the above code, we call ForwardMessage and pass<br>
+the constant gxCountPages, defined by QuickDraw GX, as the message selector.<br>
+<i>Warning:</i>You don't get type checking when you call the Message Manager's sending and<br>
+forwarding functions directly, so be careful out there! 
+</p>
+<p>
+<b>THE JUMP TABLE</b><br>
+The only code left to write is the jump table for our code segment. As you'll see in the<br>
+next section, QuickDraw GX determines which messages an extension overrides and the<br>
+location of the associated override code from special resources within the extension.<br>
+Since these resources specify the location of the extension's overrides in terms of byte<br>
+offsets from the beginning of a specified code segment, it's easiest to begin each code<br>
+segment with a simple assembly language jump table. That way, the extension's entry<br>
+points are always well defined, independent of any changes we make to the code in the<br>
+future. Also, QuickDraw GX requires that each code segment begin with a long word set<br>
+to 0, and this is easily accomplished from assembly language. Since we're overriding<br>
+only two messages, and our code is small, we'll have just a single segment, with the<br>
+following jump table:
+</p>
+<p>
+<code>FourUpEntry PROC&nbsp;&nbsp;&nbsp;&nbsp;EXPORT</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DC.L&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; long word required by QuickDraw GX</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;IMPORT&nbsp;&nbsp;FourUpCountPages</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;JMP&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FourUpCountPages</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;IMPORT&nbsp;&nbsp;FourUpDespoolPage</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;JMP&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FourUpDespoolPage</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ENDPROC</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;END</code>
+</p>
+<h2>PUTTING IT ALL TOGETHER</h2>
+<p>
+Writing code is great, but it's useless if it never runs. There are several things we<br>
+must do if our printing extension is to be recognized, loaded, and executed by<br>
+QuickDraw GX.
+</p>
+<p>
+<b>BE RESOURCEFUL</b><br>
+There are four required resources (besides the code) that must be present in&nbsp;&nbsp;every<br>
+printing extension.&nbsp;&nbsp;&nbsp;All resources, including your own, should have their sysHeap and<br>
+purgeable bits set, unless otherwise noted. Except for code resources, which have IDs<br>
+starting at 0, all resources should have IDs in the range reserved for printing<br>
+extensions. This range extends from 0x9600 to 0x97FF (-27136 to -26625<br>
+decimal). The predefined constant gxPrintingExtensionBaseID (equal to -27136) is<br>
+provided for your use. All the required resources have predefined constants for their<br>
+types and IDs. For the actual values, see the appropriate header files. 
+</p>
+<p>
+The four required resources give QuickDraw GX the following important information:
+</p>
+<ul>
+<li>'over' resource: which messages you override and where to find the<br>
+associated override code</li>
+<li>'eopt' resource: during which phases of printing your extension needs to<br>
+run, and if and when it modifies the contents of the page</li>
+<li>'load' resource: where in the message handler chain your extension should<br>
+load, relative to other printing extensions</li>
+<li>'scop' resource: which driver and printer types your extension is<br>
+compatible with</li>
+</ul>
+<p>
+The remainder of this section gives all the gory details for each of the required<br>
+resources, including examples. 
+</p>
+<p>
+<b>The 'over' resource. </b>The override resource lists the messages you're overriding<br>
+and where the associated override code is located. Printing extension code resources<br>
+always have type 'pext' and should have IDs starting at 0 for maximum performance.<br>
+Given the above jump table, and the fact that we override only universal printing<br>
+messages, we have a single override resource that looks like this:
+</p>
+<p>
+<code>#define fourUpCodeSegmentID 0</code><br>
+<code>#define gxCountPagesOffset&nbsp;&nbsp;4</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* first entry follows zero long word */</code><br>
+<code>#define gxDespoolPageOffset 8</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* jump table entries are 4 bytes long */</code><br>
+<code></code><br>
+<code></code><br>
+<code>resource 'over' (-27136, purgeable, sysHeap) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxCountPages, fourUpCodeSegmentID, gxCountPagesOffset;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxDespoolPage, fourUpCodeSegmentID, gxDespoolPageOffset</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;};</code><br>
+<code>};</code>
+</p>
+<p>
+If your extension overrides imaging messages, you'll need separate override resources<br>
+for each distinct class of imaging messages you override. For example, PostScript<br>
+message overrides would go in a separate table, and vector overrides in yet another<br>
+table. You can choose any ID within the printing extension range for these tables. You<br>
+let QuickDraw GX know the override resource ID with a mapping resource whose type<br>
+is the same as the driver type for the imaging messages you're overriding, and whose<br>
+ID is equal to gxPrintingExtensionBaseID. There are predefined constants for these<br>
+values. For example, if your extension overrides the PostScript message<br>
+gxPostscriptEjectPage, you would have the following two resources:
+</p>
+<p>
+<code>resource 'post' (-27136, purgeable, sysHeap) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;-27135 /* ID of our PostScript 'over' resource */</code><br>
+<code>};</code><br>
+<code></code><br>
+<code>resource 'over' (-27135, purgeable, sysHeap) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gxPostscriptEjectPage, postscriptSegmentID,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxPostscriptEjectPageOffset;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;};</code><br>
+<code>};</code>
+</p>
+<p>
+<b>The 'eopt' resource. </b>The extension optimization resource provides QuickDraw GX<br>
+with additional information that helps it perform optimally under certain conditions.<br>
+This resource consists of a bit field containing predefined flags that tell the system<br>
+when the extension executes, whether it needs to communicate with the device<br>
+directly, and if and when it makes changes to the page. The 4-Up extension runs during<br>
+the despooling/imaging phase and changes the page during the GXDespoolPage message.<br>
+It doesn't need to communicate with the device.
+</p>
+<p>
+Using the predefined resource template, our 'eopt' resource looks like this:
+</p>
+<p>
+<code>resource 'eopt' (-27136, purgeable, sysHeap) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gxExecuteDuringImaging, gxDontNeedDeviceStatus,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gxChangePageAtGXDespoolPage, gxDontChangePageAtGXImagePage,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gxDontChangePageAtGXRenderPage</code><br>
+<code>};</code>
+</p>
+<p>
+<b>The 'load' resource. </b>The extension load resource tells QuickDraw GX your default<br>
+loading order preference. The first extension's message handler is loaded directly<br>
+above the driver. Subsequent extensions are loaded one above the other.&nbsp;&nbsp;The last<br>
+extension to be loaded is the first to override a given message, and therefore has the<br>
+most control. Most extensions should use the predefined constant<br>
+gxExtensionLoadAnywhere, which indicates that the extension has no loading<br>
+preference. If you prefer to load first, use the constant gxExtensionLoadFirst; if you<br>
+prefer to load last, use gxExtensionLoadLast. You should regard this resource as a hint,<br>
+not as a guarantee. For one thing, several extensions may indicate that they want to<br>
+load last. Obviously, only one will win. More important, the user can reorder the<br>
+extensions in any way desired, and that ordering always takes priority over the default<br>
+ordering.
+</p>
+<p>
+Our 'load' resource looks like this:
+</p>
+<p>
+<code>resource 'load' (-27136, purgeable, sysHeap) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gxExtensionLoadAnywhere</code><br>
+<code>};</code>
+</p>
+<p>
+<b>The 'scop' resource. </b>The extension scope resource tells QuickDraw GX the scope of<br>
+your extension's compatibility with the various driver types that are supported by<br>
+QuickDraw GX. Built-in support exists for raster devices, such as the ImageWriter<br>
+and LaserWriter SC, vector devices, such as plotters, and PostScript devices. If your<br>
+extension is PostScript-only, you would specify that in a 'scop' resource. An example<br>
+of a PostScript-only extension might be one that drives a sheet feeder attachment to a<br>
+LaserWriter, which understands PostScript commands for selecting bins. 
+</p>
+<p>
+You may have up to three separate 'scop' resources. The main 'scop' resource lists the<br>
+types of drivers that the extension is compatible with. It has an ID of<br>
+gxPrintingExtensionBaseID.&nbsp;&nbsp;&nbsp;The currently supported types are 'rast', 'post', 'vect',<br>
+and 'univ', for raster, PostScript, vector, and universal, respectively. For example,<br>
+an extension compatible with PostScript and vector drivers, but not with raster<br>
+drivers, would have the following 'scop' resource:
+</p>
+<p>
+<code>resource 'scop' (-27136, purgeable, sysHeap) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'post'; /* compatible with all PostScript devices */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'vect'; /* compatible with all vector devices */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;};</code><br>
+<code>};</code>
+</p>
+<p>
+The second 'scop' resource has an ID of gxPrintingExtensionBaseID+1 and lists the<br>
+specific printer types that the extension is compatible with. A printer's type is defined<br>
+by the creator type of its resource file. For example, the LaserWriter SC has the<br>
+creator type 'lwsc'. If your extension isn't generally compatible with a class of devices<br>
+but does support a particular device, you should list it here. For example:
+</p>
+<p>
+<code>resource 'scop' (-27135, purgeable, sysHeap) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'lwsc'; /* compatible with LaserWriter SC */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;};</code><br>
+<code>};</code>
+</p>
+<p>
+The third 'scop' resource has an ID of gxPrintingExtensionBaseID+2 and lists the<br>
+specific printer types that the extension is<i>not</i> compatible with. If your extension is<br>
+generally compatible with a class of devices but doesn't support a particular device,<br>
+you should list it here. For example:
+</p>
+<p>
+<code>resource 'scop' (-27134, purgeable, sysHeap) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'dpro'; /* incompatible with DraftPro plotter */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;};</code><br>
+<code>};</code>
+</p>
+<p>
+Taken together, the above three 'scop' resources would indicate that the extension is<br>
+compatible with all PostScript devices, all vector devices except for the DraftPro<br>
+plotter, and additionally the LaserWriter SC printer. 
+</p>
+<p>
+If your extension is not driver-specific, you can indicate that it has universal scope. 4<br>
+- Up is one such extension, so we have a single 'scop' resource that looks like this:
+</p>
+<p>
+<code>resource 'scop' (-27136, purgeable, sysHeap) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'univ';</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* universal scope =&gt; compatible with all devices */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;};</code><br>
+<code>};</code>
+</p>
+<p>
+Note that if this 'scop' resource had instead included 'post', 'vect', and 'rast', the<br>
+extension would indeed be loaded for all three device types. However, should a fourth<br>
+device type be defined in the future, the extension would not support it. Thus, if your<br>
+extension truly has universal scope, you should use the 'univ' type rather than<br>
+enumerating all known device types. 
+</p>
+<p>
+<b>BUILDING THE BEAST</b>We've written the code, we've added the necessary resources.<br>
+All that's left is to build it properly.&nbsp;&nbsp;&nbsp;The two most important things to remember are:
+</p>
+<ul>
+<li>Link the code so that it's given the proper resource type ('pext') and ID<br>
+(zero- based). </li>
+<li>Set the file's type to 'pext' and the creator type to something unique. This<br>
+is very important! Your extension's creator type should not be all lowercase<br>
+(lowercase types are reserved by Apple) and you should register it with the<br>
+Developer Support Center (AppleLink DEVSUPPORT) to ensure uniqueness.<br>
+When QuickDraw GX encounters two printing extensions with the same creator<br>
+type, it will reject all but the first it finds. Your Link and Rez step will look<br>
+something like this:</li>
+</ul>
+<p>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Link&nbsp;&nbsp;-ra =resSysHeap,resPurgeable&amp;eth;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-t 'pext' &amp;eth;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-c '4-Up' &amp;eth;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-rt pext=0 &amp;eth;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-sg 4-Up &amp;eth;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-m FourUpEntry &amp;eth;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{CObjs} &amp;eth;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-o "4-Up";</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Rez -rd -o "4-Up" 4-Up.r -append</code>
+</p>
+<h2>BUT WAIT! THERE'S MORE!</h2>
+<p>
+There you have it -- a completely functional printing extension, with minimal effort.<br>
+Hopefully, by now you're brimming with ideas for extensions you can write. The<br>
+mechanism is extremely powerful, and I've barely scratched the surface in this<br>
+article. Serious extensions will need to override the dialog messages to install panels<br>
+and gather user settings, call the Collection Manager to satisfy persistent storage needs<br>
+(that is, save user settings across the spooling/imaging threshold), and call the<br>
+Message Manager to manage dynamic contexts (global state that persists from one<br>
+message to the next).
+</p>
+<p>
+Extensions can also customize the Finder's desktop printer menu, save printer-wide<br>
+settings in desktop printers, and manage user interface interactions via the built-in<br>
+alert and status mechanisms.&nbsp;&nbsp;&nbsp;Perhaps a future article will explore these and other<br>
+topics. For now, you should have enough information to get more than your feet wet! 
+</p>
+<p>
+<b>SAM WEISS </b>(AppleLink S.WEISS), famous for the PrintSpy INIT (which surfaced in<br>
+the former Soviet Union when the KGB was dismantled), has been working on<br>
+QuickDraw GX printing in one form or another for the last five years. In this capacity,<br>
+he can often be found in his office managing collections, sending messages, rewriting<br>
+the core, or cutting his own hair. But in his spare time, Sam enjoys sharing his<br>
+favorite hobby (musical electronic fishkeeping) with his one-year- old daughter<br>
+Talia, whose first word was DoubleDespoolDatFileDaDa-Plecostomous. When asked<br>
+about life after QuickDraw GX, Sam appeared confused and muttered something about<br>
+having a few philosophers over for dinner. *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Dennis Farnden, Dave Hersey, Sean<br>
+Parent*
+</p>
+</body>
+</html>

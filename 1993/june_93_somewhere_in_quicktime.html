@@ -1,0 +1,447 @@
+<html>
+<head>
+<!-- Article ID: 18 - Extracted from develop-1993 -->
+<!-- on 2024-02-14 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>June 93 - SOMEWHERE IN QUICKTIME</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>SOMEWHERE IN QUICKTIME</h2>
+<h2>DERIVED MEDIA HANDLERS</h2>
+<h1>JOHN WANG</h1>
+<p>
+<img src="img/173.gif" width="180 px"></img>
+</p>
+<p>
+In this column, I'll be telling you about derived media handlers in QuickTime 1.5 --<br>
+but first, some background.
+</p>
+<p>
+QuickTime movies contain tracks that refer to media. In QuickTime 1.0, two media<br>
+types are supported: video and sound. A movie might therefore have one track that<br>
+refers to video media and one that refers to sound media. Each of these supported media<br>
+has a media handler, which is code that's responsible for interpreting the media's data.<br>
+Obviously, displaying video images requires different code than playing sound. The<br>
+media handler code is in the form of a component of type 'mhlr'. The video media<br>
+handler has the subtype 'vide', and the sound media handler has the subtype 'soun'.
+</p>
+<p>
+QuickTime uses the concept of a media to separate media interpretation from the Movie<br>
+Toolbox and to place the responsibility into individual media handlers. This has the<br>
+added advantage that media handlers can be created to interpret new media types.<br>
+However, it wasn't possible to easily create a media handler in QuickTime 1.0. 
+</p>
+<p>
+<b>DERIVED HANDLERS TO THE RESCUE</b><br>
+Derived media handler support was introduced in QuickTime 1.5 to allow developers to<br>
+define new custom media types. As an example of the capabilities of the derived media<br>
+handler, QuickTime 1.5 has a new 'text' media type that's implemented using a derived<br>
+media handler. Derived media handler components can easily be created because they<br>
+can use the services of a common base media handler supplied by Apple; hence the<br>
+name<i>derived media handler.&nbsp;&nbsp;</i>The base media handler manages most of the duties that<br>
+must be performed by all media handlers and reduces the intricacies of writing a<br>
+standalone media handler. 
+</p>
+<p>
+This column will discuss sample code (provided on this issue's CD) that implements a<br>
+complete QuickDraw derived media handler. This media handler will interpret<br>
+QuickDraw pictures stored in the media's data. Each media sample in the data is a<br>
+QuickDraw picture. For example, you could have a movie of a bouncing ball, but<br>
+instead of having compressed pixel images of the balls bouncing, as in a video media,<br>
+you would have a series of pictures of a ball drawn with PaintOval as it moves along its<br>
+path. The CD also contains a sample that creates interesting movies using our new<br>
+QuickDraw media type. 
+</p>
+<p>
+<b>CREATING THE COMPONENT SHELL</b><br>
+The first step in creating our sample derived media handler is to create a component<br>
+shell to which we can add media handler-specific calls in a later step. The<br>
+MyComponent.c file contains the following routines: main (the dispatch routine for the<br>
+component), MyOpen, MyClose, MyCanDo, MyVersion, and MyRegister. MyOpen, the<br>
+initialization routine for our component, opens the base&nbsp;&nbsp;media handler and sends<br>
+a<i>target request</i> to it. A target request is a Component Manager service that allows a<br>
+new component instance to establish itself as a<i>target</i> component instance for another<br>
+(<i>delegate</i>) instance. In our case, the target is our QuickDraw derived media handler<br>
+and the delegate is the base media handler. The delegate will be called by the target<br>
+whenever the target wants to delegate calls to it. The delegate should call the target<br>
+whenever the delegate would normally call itself (for example, when it uses its own<br>
+services). This effectively makes our derived media handler sit on top of the base<br>
+media handler by handling all requests that it can handle and delegating requests that it<br>
+can't handle to the base media handler.
+</p>
+<p>
+By calling the ComponentSetTarget routine after opening an instance of the base media<br>
+handler component, we inform the base media handler that our component is derived<br>
+from it. For example, the following code from our derived media handler component's<br>
+open routine, MyOpen, will open the base media handler and target it:
+</p>
+<p>
+<code>myComp = OpenDefaultComponent(MediaHandlerType, BaseMediaType);</code><br>
+<code>ComponentSetTarget(myComp, self);</code><br>
+<code>(**storage).delegate = myComp;</code>
+</p>
+<p>
+The above description of targeting a component is similar to another Component<br>
+Manager service, called<i> capturing</i>. Capturing is a service whereby the target<br>
+component completely and permanently overrides the delegate component by hiding it<br>
+from further use. This is feasible, for example, when updating a component or fixing<br>
+bugs in it; the target can implement only the new features while delegating the original<br>
+functionality to its delegate. Since the target wouldn't want the outdated delegate<br>
+component to be visible any longer, it would capture the delegate using the Component<br>
+Manager's CaptureComponent routine. You shouldn't call CaptureComponent on the base<br>
+media handler, because that would hide it and prevent other derived media handlers<br>
+from using it.&nbsp;&nbsp;&nbsp;Conceptually, you're not replacing the base media handler; you're just<br>
+using its services. Therefore, targeting it is sufficient. 
+</p>
+<p>
+When the media handler is no longer used by the Movie Toolbox, the QuickDraw derived<br>
+media handler's MyClose routine will be called. To close the connection to the base<br>
+media handler, MyClose must call CloseComponent to close the base media handler<br>
+component instance:
+</p>
+<p>
+<code>CloseComponent((**storage).delegate);</code>
+</p>
+<p>
+To prevent our derived media handler from registering if the base media handler isn't<br>
+available, the MyRegister routine returns true (to not register) if the initialization<br>
+done by MyOpen fails or false (to register) if it succeeds.
+</p>
+<p>
+<b>DEFINING THE MEDIA DATA FORMAT</b><br>
+The next step in creating a derived media handler is to define a media type identifier, a<br>
+sample description record that's stored along with the media samples, and the format<br>
+of the media data.
+</p>
+<p>
+For our QuickDraw media, we'll use 'Qdrw' as the media type. (As with resource types,<br>
+Apple reserves all-lowercase types, so we use a media type that contains one<br>
+uppercase character.) Every movie that contains a track created by using<br>
+NewTrackMedia with mediaType 'Qdrw' will automatically refer to our custom media<br>
+handler. Our media handler will have the component type 'mhlr' and subtype 'Qdrw'. 
+</p>
+<p>
+All description records must contain size, type, resvd1, resvd2, and dataRefIndex<br>
+fields as a minimum.&nbsp;&nbsp;&nbsp;You should always fill in the size and type fields, but you can set<br>
+the other fields to 0. It's also recommended that a field for the media data version be<br>
+included in the sample description record so that it's always possible to identify the<br>
+version of the media data.
+</p>
+<p>
+<code>#define QDrawMediaType&nbsp;&nbsp;'Qdrw'</code><br>
+<code>#define QDMediaVersion&nbsp;&nbsp;0x100</code><br>
+<code>typedef struct GraphicsDescription {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;size;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;type;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;QDrawMediaType</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;resvd1;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;resvd2;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;dataRefIndex;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;version;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;QDMediaVersion</code><br>
+<code>} QDrawDescription, *QDrawDescriptionPtr,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;**QDrawDescriptionHandle;</code>
+</p>
+<p>
+Since every media data sample has an associated description record, it's possible to<br>
+find out the version, or any other data defined in the record, for the particular sample.<br>
+To prevent wasting space with duplicate description records, QuickTime associates a<br>
+sample description index with each sample; thus, many media samples can refer to the<br>
+same description record through its index.
+</p>
+<p>
+As mentioned earlier, the samples stored in our media data are simply QuickDraw<br>
+pictures. So the data handle passed to AddMediaSample, which is the Movie Toolbox call<br>
+to add data into a media, will simply be a PicHandle. This allows us to easily create<br>
+sample data with OpenPicture and ClosePicture and dispose of it with KillPicture. 
+</p>
+<p>
+<b>CREATING A MOVIE THAT USES THE DERIVED MEDIA HANDLER</b><br>
+When we start writing the implementation-specific component routines for the media<br>
+handler, we'd like to be able to test them with a QuickTime movie that uses that media<br>
+handler. So, the next step is to write an application that creates a movie using the<br>
+QuickDraw media handler. But there's a sort of Catch-22: We won't be able to run the<br>
+application to create the movie until after we begin implementing some of the<br>
+QuickDraw media handler component routines, because some of the Movie Toolbox calls<br>
+that are used to create the movie will use the QuickDraw media handler. For example,<br>
+NewTrackMedia will cause QuickTime to open an instance of our component to prepare<br>
+for editing and playback of the new media. 
+</p>
+<p>
+The code below shows how to create a movie using our newly defined QuickDraw media<br>
+format (the complete code is on this issue's CD). AddGraphics, defined later, is a<br>
+wrapper procedure for AddMediaSample that any application can call to easily add<br>
+media samples. 
+</p>
+<p>
+<code>// Create track and media.</code><br>
+<code>myTrack = NewMovieTrack(myMovie,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(long) kFrameWidth << 16,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(long) kFrameHeight << 16, 0);</code><br>
+<code>myMedia = NewTrackMedia(myTrack, QDrawMediaType,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;600, nil, (OSType) nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>// Add samples to media.</code><br>
+<code>BeginMediaEdits(myMedia);</code><br>
+<code>myQDDesc = (QDrawDescriptionHandle)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NewHandleClear(sizeof(QDrawDescription));</code><br>
+<code>(**myQDDesc).size = sizeof(QDrawDescription);</code><br>
+<code>(**myQDDesc).type = QDrawMediaType;</code><br>
+<code>(**myQDDesc).version = QDMediaVersion;</code><br>
+<code>myPict = OpenPicture(&amp;drawRect);</code><br>
+<code>PaintOval(&amp;drawRect);</code><br>
+<code>ClosePicture();</code><br>
+<code>AddGraphics(myMedia, myPict, myQDDesc, 600, 0,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nil);</code><br>
+<code>DrawPicture(myPict, &amp;drawRect);</code><br>
+<code>KillPicture(myPict);</code><br>
+<code>EndMediaEdits(myMedia);</code><br>
+<code></code><br>
+<code>// Place media into movie.</code><br>
+<code>InsertMediaIntoTrack(myTrack, 0, 0,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GetMediaDuration(myMedia), kFix1);</code>
+</p>
+<p>
+The main difference between code that generates a movie using normal QuickTime video<br>
+media and code that uses our QuickDraw media is in the NewTrackMedia and<br>
+AddMediaSample calls. For NewTrackMedia, we pass 'Qdrw', as defined earlier, for the<br>
+mediaType parameter. 
+</p>
+<p>
+The wrapper procedure AddGraphics is defined as follows:
+</p>
+<p>
+<code>pascal OSErr AddGraphics(Media graphicsMedia,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PicHandle myPic,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;QDrawDescriptionHandle QDDesc,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TimeValue duration,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short mySync;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TimeValue *sampleTime)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return (AddMediaSample(graphicsMedia,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(Handle) myPic, 0L, GetHandleSize(myPic),</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;duration, (SampleDescriptionHandle)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;QDDesc, 1L, mySync, sampleTime));</code><br>
+<code>}</code>
+</p>
+<p>
+<b>ADDING THE MEDIA HANDLER ROUTINES</b><br>
+The last step is, of course, to complete our derived media handler component.
+</p>
+<p>
+The file named MyMediaComponentRoutines.c contains the routines that our QuickDraw<br>
+media handler implements rather than delegating to the base media handler. It wouldn't<br>
+make much sense to delegate MediaInitialize and MediaIdle, since these routines are<br>
+crucial to our code: MediaInitialize initializes our media handler and MediaIdle is the<br>
+routine that gets called for drawing. On the other hand, a call such as MediaGSetVolume<br>
+wouldn't be very useful to our very quiet graphics media, so MediaGSetVolume would<br>
+be delegated to the base media handler.
+</p>
+<p>
+All media handler routines, as defined in the Derived Media Handler Components<br>
+chapter, must be delegated to the base media handler if not implemented. We've chosen<br>
+to implement the following routines because our media handler does spatial processing<br>
+(in other words, it draws).
+</p>
+<ul>
+<li>MediaInitialize: Prepares access to media by saving necessary<br>
+information passed to it in the GetMovieCompleteParams record. </li>
+<li>MediaIdle: The Movie Toolbox provides processing time to the derived<br>
+media handler through this routine. The QuickDraw media handler draws<br>
+during this call. </li>
+<li>MediaSetActive: The Movie Toolbox calls this routine if the media is<br>
+enabled or disabled. </li>
+<li>MediaSetRate: Called if the rate changes. This is necessary to determine<br>
+when the movie rate is reversed. </li>
+<li>MediaSetMediaTimeScale: Our media handler cares about the media time<br>
+scale since we store times in the media's time coordinate system. </li>
+<li>MediaTrackEdited: Called if the track has been edited. If so, we'll want to<br>
+redraw. </li>
+<li>MediaSetGWorld: Called if the destination GWorld changes. If so, we'll<br>
+want to know the new GWorld for drawing. </li>
+<li>MediaSetDimensions: Called if the spatial dimensions change. </li>
+<li>MediaSetMatrix: Called if the track matrix or movie matrix changes due<br>
+to movie resizing. </li>
+<li>MediaGetTrackOpaque: Called to determine whether the track is opaque.<br>
+We want to return true so that correct compositing occurs. Our media may be<br>
+semitransparent. </li>
+<li>MediaSampleDescriptionChanged: Called if the sample description record<br>
+changes. If we ever store information beyond the media data version, we'll<br>
+probably want to know if the user changes the sample description contents. If<br>
+the description record changes due to different media samples referring to<br>
+different description records, this routine isn't called. Instead, the media<br>
+handler must check the sample description index returned by GetMediaSample.</li>
+</ul>
+<p class="spacer">&nbsp;</p>
+<p>
+The routines we didn't implement are:
+</p>
+<ul>
+<li>MediaGGetStatus: Our simplified QuickDraw media handler doesn't need<br>
+any error processing. </li>
+<li>MediaPutMediaInfo, MediaGetMediaInfo: Since we don't store any<br>
+proprietary information along with the media data, we don't need to implement<br>
+this. </li>
+<li>MediaSetMovieTimeScale: Our media handler doesn't care about the movie<br>
+time scale since we don't store any times in the movie's time coordinate<br>
+system. </li>
+<li>MediaSetClip: Our media handler doesn't support clipping. </li>
+<li>MediaSetGraphicsMode, MediaGetGraphicsMode: Our media handler doesn't<br>
+support graphics modes.</li>
+<li>MediaGetNextBoundsChange: Our bounds doesn't change dynamically. (The<br>
+text media handler is an example of a media that has dynamically changing<br>
+bounds.)</li>
+<li>MediaGetSrcRgn: Our media doesn't have an irregular display region. </li>
+<li>MediaGSetVolume, MediaSetSoundBalance, MediaGetSoundBalance: We<br>
+don't play sound. </li>
+<li>MediaPreroll: We let the base media handler do our prerolling for us. The<br>
+data handler is smart about caching, so we really don't need to worry about<br>
+this. </li>
+</ul>
+<p>
+Since it's difficult for us to cover every possible condition in which the media handler<br>
+will get called, a clever approach is needed to aid in the development of the derived<br>
+media handler. The solution lies in DebugStr: By strategically placing DebugStr calls<br>
+throughout the media handler, we can see which routines are being called. Knowing<br>
+which events trigger calls to our media handler will allow us to decide which calls the<br>
+handler should support and which ones we can delegate. For example, it was through<br>
+this process that I found that MediaSetMatrix was a call I needed to implement because<br>
+resizing a movie window causes MediaSetMatrix to be called. 
+</p>
+<p>
+This approach makes it possible to create a media handler starting off with just a<br>
+MediaInitialize routine and building from there. The selectors for a media handler<br>
+component are in the range of 0x500 to 0x5FF. Therefore, any calls that are delegated<br>
+with selectors in this range should be examined to determine whether the actions that<br>
+cause the routine to be called are significant to the media handler implementation. If<br>
+so, the routine should not be delegated. The QuickTime documentation, this column, the<br>
+sample code, and common sense should give you a good idea of which media<br>
+handler-specific routines a derived media handler must implement. 
+</p>
+<p>
+<b>THE GUTS OF THE MATTER</b><br>
+As you can see in MyMediaComponentRoutines.c, most of the guts are in the routines<br>
+MediaInitialize and MediaIdle. MediaInitialize is called by the Movie Toolbox when a<br>
+movie using the media is opened. The MediaInitialize routine should grab information<br>
+it needs that's passed to it by QuickTime in the GetMovieCompleteParams record and<br>
+store it in a private data structure. 
+</p>
+<p>
+<code>typedef struct {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;version;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Movie&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theMovie;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Track&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theTrack;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Media&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theMedia;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TimeScale&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;movieScale;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TimeScale&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mediaScale;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TimeValue&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;movieDuration;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TimeValue&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;trackDuration;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TimeValue&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mediaDuration;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Fixed&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;effectiveRate;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TimeBase&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;timeBase;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;volume;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Fixed&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;width;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Fixed&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;height;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;MatrixRecord&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;trackMovieMatrix;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CGrafPtr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;moviePort;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GDHandle&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;movieGD;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PixMapHandle&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;trackMatte;</code><br>
+<code>} GetMovieCompleteParams;</code><br>
+<code></code><br>
+<code>typedef struct&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;Component stuff</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ComponentInstance&nbsp;&nbsp;&nbsp;delegate;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ComponentInstance&nbsp;&nbsp;&nbsp;self;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;Characteristics</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Movie&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myMovie;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Track&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myTrack;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Media&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myMedia;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Fixed&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mediaRate;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Rect&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;graphicsBox;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;MatrixRecord&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myMatrix;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CGrafPtr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;port;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GDHandle&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;device;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sampleDescIndex;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;Media globals</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;somethingChanged;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;enabled;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Fixed&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;newMediaRate;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TimeValue&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lastMediaTime;</code><br>
+<code>} PrivateGlobals;</code>
+</p>
+<p>
+The above private data structure for the QuickDraw derived media handler shows the<br>
+fields that the handler is interested in. For example, we would obviously need to know<br>
+the trackMovieMatrix, but a sound media handler would not. The information in the<br>
+GetMovieCompleteParams record is valid at the time of the MediaInitialize call and is<br>
+updated through other derived media handler routines such as MediaSetGWorld. It's<br>
+important to implement such derived media handler routines to update information<br>
+used by the media handler.
+</p>
+<p>
+MediaInitialize also needs to inform the base media handler of its capabilities by<br>
+calling the routine MediaSetHandlerCapabilities. Our media handler uses this routine<br>
+to tell the base media handler that we perform spatial processing and that we also can<br>
+work with transfer modes. 
+</p>
+<p>
+MediaIdle does the bulk of the processing in a media handler. Our MediaIdle routine<br>
+uses GetMediaSample to get the media sample and then calls DrawPicture to display the<br>
+sample. It also uses a scheme of calling GetMediaNextInterestingTime to implement<br>
+sync frames; this allows greater performance when playing movies backward, because<br>
+the media handler won't have to begin drawing from the beginning of the media. The<br>
+concept of sync frames is important in QuickTime movies because it allows temporal<br>
+compression so that not all frames need to contain complete state information. Keeping<br>
+a small number of frames between key frames makes it possible to preserve<br>
+performance when playing movies backward, since rendering of frames must still<br>
+occur in the forward direction.
+</p>
+<p>
+The effect of not having sync frames is evident if you create a movie without any (see<br>
+the example on the CD). Such a movie will look to the media handler like a movie in<br>
+which every frame is a key frame. As you can see with these movies, backward<br>
+playback of movies gives different results than forward playback since each sample is<br>
+treated as a sync sample even though it shouldn't be. This is not recommended because<br>
+it's conceptually and visually confusing to users. 
+</p>
+<p>
+In addition, to prevent the redrawing of previously drawn frames, our media handler<br>
+keeps track of the last media time that the image has been updated so that it can<br>
+continue from there if no other changes to the environment prevent it. This works only<br>
+when the movie is playing in the forwarddirection. When a movie is played backward,<br>
+each frame must be completely recreated starting from the last key frame. 
+</p>
+<p>
+<b>OUT OF TIME</b><br>
+Using the QuickDraw derived media handler as a framework, you can create your own<br>
+media type.&nbsp;&nbsp;&nbsp;Interactivity tracks, custom sound format tracks (such as MIDI), and<br>
+even hardware control tracks are all possible. With some creativity and work, you can<br>
+expand the capabilities of QuickTime beyond imaginable limits.
+</p>
+<p>
+<b>JOHN WANG </b>(AppleLink WANG.JY) of Apple's Printing, Imaging, and Graphics group<br>
+was once a math and science nerd whose writing skills were as bad as the BASIC<br>
+programming language compared to C. His hard work (hah) and prep school training<br>
+finally pulled him through. Yet he still can't believe he's writing to an audience<br>
+greater than just himself. (The editors can't either.) He's even got a double feature in<br>
+this issue (see also "Print Hints"). Will wonders never cease.*
+</p>
+<p>
+<b>For more information about derived media handlers, </b> see the Derived Media<br>
+Handler Components chapter of <i>Inside Macintosh: QuickTime Components</i> (which is<br>
+included in the QuickTime Developer's Kit v. 1.5). *
+</p>
+<p>
+<b>For more information on the Component Manager, </b> see "Techniques for<br>
+Writing and Debugging Components" in <i> develop</i>Issue 12 and the Component Manager<br>
+documentation in the QuickTime Developer's Kit v. 1.5. (The Component Manager will<br>
+also be described in <i>Inside Macintosh: More Macintosh Toolbox</i> .)*
+</p>
+<p>
+<b>For more information on the picture format, </b> see the "Color Picture Format"<br>
+section of the Color QuickDraw chapter of<i>Inside Macintosh</i> Volume V.*<b>Thanks </b>to Ken<br>
+Doyle, Bill Guschwan, Peter Hoddie, and Guillermo Ortiz for reviewing this column. *
+</p>
+</body>
+</html>

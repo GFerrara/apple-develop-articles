@@ -1,0 +1,486 @@
+<html>
+<head>
+<!-- Article ID: 32 - Extracted from develop-1993 -->
+<!-- on 2024-02-20 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>September 93 - MANAGING COMPONENT REGISTRATION</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MANAGING COMPONENT REGISTRATION</h2>
+<h1>GARY WOODCOCK</h1>
+<p>
+<img src="img/214.gif" width="180 px"></img>
+</p>
+<p>
+<i>One of the many design problems a component developer may face is how to register</i><br>
+<i>interdependent components in a predetermined fashion so that any given component is</i><br>
+<i>registered before the components that depend on it. This article and the sample code</i><br>
+<i>that accompanies it show you how to do just that.</i>
+</p>
+<p>
+The Component Manager is an effective mechanism for providing extended functionality<br>
+to the Macintosh platform. Although a single component can perform impressive tasks,<br>
+often it's a hierarchy of components, cooperating with one another, that provides the<br>
+most powerful capabilities.&nbsp;&nbsp;&nbsp;An example of such a hierarchy is found in QuickTime<br>
+movie playback using the movie controller component (see Figure 1). This component<br>
+uses the services of many other components, all of which cooperate together, to make<br>
+interaction with QuickTime movies very simple yet very powerful. 
+</p>
+<p>
+There are distinct advantages to partitioning functionality in this manner. First, by<br>
+creating components that perform simpler processing, you increase the likelihood that<br>
+you can leverage the investment you've made in your code by using it in more than one<br>
+place. Second, it's easier to debug smaller components than a gigantic<br>
+everything-and-the-kitchen-sink component. Finally, a component that provides<br>
+very elementary functionality is easier to override or update (via component<br>
+replacement or capture) than a large, complex component. 
+</p>
+<p>
+This situation -- a component depending on the presence of several lower-level<br>
+components to perform its function -- is very commonplace. In such cases, it's<br>
+important to take steps to ensure that supporting components are available when your<br>
+component needs them. There are two obvious choices for when to go looking for the<br>
+components you depend on: when your component is being registered (in its register<br>
+routine), or when your component is first opened (in its open routine). Most<br>
+software-dependent components don't need to worry much about managing component<br>
+registration.&nbsp;&nbsp;&nbsp;Generally such a component should just auto-register, and then check<br>
+for any required components in the open routine; if the required components aren't<br>
+available, your open routine can return an error. The caller of your component can<br>
+then handle the error in whatever way is most appropriate.&nbsp;&nbsp;&nbsp;There is a case, however,<br>
+where checking at registration time might be necessary; that's what this article is<br>
+about. 
+</p>
+<p>
+<img src="img/215.gif" width="408 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1</b> The Movie Controller Component Hierarchy
+</p>
+<h2>DO I REALLY NEED TO WORRY ABOUT THIS?</h2>
+<p>
+One potential problem occurs in situations where the Component Manager's<br>
+registration list is used to build some user interface element, such as a pop-up menu<br>
+or a list. In this case, the general assumption is that because a component's name is<br>
+displayed in a user interface element, a user can select it and it will do whatever it's<br>
+supposed to do -- after all, if the component couldn't perform its function, it wouldn't<br>
+be displayed as an option for the user, right? Well, that depends. 
+</p>
+<p>
+Let's look at an example. The SuperOps company builds the WhizBang video digitizer<br>
+card and supplies two software components with it -- the WhizBang video digitizer<br>
+component and the WhizBang sequence-grabber panel component (which is used to<br>
+control features specific to the WhizBang hardware). The component files are named<br>
+WhizBang Video Digitizer and WhizBang Panel. In its register routine, the WhizBang<br>
+video digitizer component checks for its hardware and registers with the Component<br>
+Manager only if the hardware is present (this is normal behavior for components that<br>
+encapsulate hardware functionality). The WhizBang sequence-grabber panel<br>
+component checks for the availability of the WhizBang video digitizer component when<br>
+it receives either an open message or a "panel can run" message -- it doesn't get a<br>
+register message, and therefore it always registers successfully with the Component<br>
+Manager. 
+</p>
+<p>
+Now let's say I've got a Macintosh Quadra 950 with multiple sound and video digitizers<br>
+installed (I can dream, can't I?), one of which is the WhizBang card. I remove the<br>
+WhizBang card from my computer, but I leave the two WhizBang components installed.<br>
+I then start up my Macintosh Quadra and run my favorite movie capture application. I<br>
+display the sequence-grabber video settings dialog box, and I see a dimmed item in the<br>
+panel pop-up menu -- "WhizBang panel." The dimmed name indicates one of two<br>
+things: another application has the WhizBang video digitizer open, so it's not available,<br>
+or the WhizBang video digitizer component isn't registered at all, so the panel can't<br>
+run. 
+</p>
+<p>
+In this case, we already know that the WhizBang card isn't installed, so there's no way<br>
+this panel can<i>ever</i>&nbsp;&nbsp;&nbsp;be enabled, given the current hardware configuration. Rather than<br>
+confuse users by displaying the panel name in the pop-up menu (even if it is<br>
+dimmed), it would be nicer if it weren't displayed atall.&nbsp;&nbsp;To do that, we need to ensure<br>
+the following order of events at startup: the video digitizer component must attempt to<br>
+register first, and then the panel component must attempt to register (this implies<br>
+that the panel component must implement a register routine), checking for the<br>
+presence of the video digitizer component before it does so. Further, this sequence of<br>
+events must not be influenced by the alphabetic order of the component filenames.<br>
+Guess what? We can realize this goal by managing component registration. 
+</p>
+<p>
+This article and the sample code on this issue's CD demonstrate various ways of<br>
+managing component registration. We start with the easiest, most obvious approach<br>
+and work our way up to a more sophisticated solution, pointing out the pros and cons of<br>
+each along the way. If you just want the "answer" without any fanfare, skip ahead to<br>
+the section "Mo' Better: Use a Loader Component to Manage Registration."
+</p>
+<p>
+I assume that you're familiar with the Component Manager and that you know<br>
+something about how components are written. For more information on these topics,<br>
+see<i>Inside Macintosh: More Macintosh Toolbox</i>&nbsp;&nbsp;and "Techniques for Writing and<br>
+Debugging Components" in<i>develop</i> Issue 12. 
+</p>
+<h2>THE SYSTEM VERSION AND THE COMPONENT MANAGER</h2>
+<p>
+The Component Manager behaves slightly differently depending on the version of<br>
+system software it's running under and how the Component Manager was installed. It's<br>
+important to know about these subtleties in order to understand how to work with the<br>
+Component Manager to install your components properly. 
+</p>
+<p>
+In system software version 6.0.7, the Component Manager is installed as part of an<br>
+INIT (usually the QuickTime INIT). During the INIT installation, the Component<br>
+Manager examines the contents of the System Folder and its subfolders for files of type<br>
+'thng'; in each 'thng' file, it looks for resources of type 'thng', which it then uses to<br>
+register the corresponding components. The important point here is that the<br>
+Component Manager is not available until after the INIT has been installed. 
+</p>
+<p>
+Like system software version 6.0.7, versions 7.0 and 7.0.1 pick up the Component<br>
+Manager via an INIT, and so again the Component Manager isn't around until after the<br>
+INIT has been installed.&nbsp;&nbsp;&nbsp;The main difference in System 7 is that in addition to<br>
+searching the System Folder and its subfolders for component files, the Component<br>
+Manager will also examine the contents of any subfolders that are in the Extensions<br>
+folder. 
+</p>
+<p>
+Examples of INITs in system software versions 7.0 and 7.0.1 that install the<br>
+Component Manager are QuickTime, AppleScript, and Macintosh Easy Open. Note that<br>
+your component can't assume that just because the Component Manager is installed,<br>
+QuickTime is installed -- always use the Gestalt selectors to determine what<br>
+functionality is available. 
+</p>
+<p>
+The Component Manager is actually part of System 7.1 and, as a consequence, is<br>
+available before the INIT process is started. 
+</p>
+<h2>METHODS FOR MANAGING COMPONENT REGISTRATION</h2>
+<p>
+Now that we have a good idea of when the Component Manager is installed and where it's<br>
+searching for components, let's see what we can do to make sure that our components<br>
+get registered in the order we want them to be registered. 
+</p>
+<p>
+We'll use some simple components to illustrate the various methods we might use to<br>
+manage component registration. In the sample code provided on the CD are three<br>
+components -- Moe, Larry, and Curly -- that together establish a functional<br>
+component hierarchy (see Figure 2). The hierarchy is such that Moe doesn't depend on<br>
+any other components, Larry depends on Moe, and Curly depends on both Larry and<br>
+Moe. To enforce these dependencies, we use register routines in Larry and Curly to<br>
+make sure that the components they need are present before they actually allow<br>
+themselves to be registered with the Component Manager. To let us know when each of<br>
+these components is actually registered, Moe's register routine calls SysBeep once,<br>
+Larry's calls SysBeep twice, and Curly's calls SysBeep three times. By the way, these<br>
+components really don't do anything useful at all, but you probably figured that out<br>
+already. 
+</p>
+<p>
+<img src="img/216.gif" width="326 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> The Moe, Larry, and Curly Component Hierarchy
+</p>
+<p>
+<b>RISKY: LET THE COMPONENT MANAGER TAKE CARE OF IT</b><br>
+We can always simply let the Component Manager do whatever comes naturally -- in<br>
+this case, auto- registration. This method works only as long as you aren't picky about<br>
+the order in which your components are registered. (Obviously, if your component<br>
+doesn't depend in any way on the presence of other components, you're golden.) In our<br>
+example scenario, though, we can't count on the Component Manager recognizing our<br>
+constraints and doing the right thing. The Component Manager doesn't have enough<br>
+information to know that our components have an ordering dependency (kinda reminds<br>
+you of INITs, doesn't it?). 
+</p>
+<p>
+&nbsp;Nonetheless, let's look at what happens. The following is what occurs on my Macintosh<br>
+Quadra 700 running System 7.1 and QuickTime 1.6, but you shouldn't infer that this<br>
+is how the Component Manager will behave from now until eternity -- there is no<br>
+documentation whatsoever that provides this kind of detailed information on component<br>
+registration behavior, so it<i>can</i> change. 
+</p>
+<p>
+&nbsp;We start with each component in a separate file. We might expect that the Component<br>
+Manager would register component files in alphabetic order, and in fact this is exactly<br>
+what happens. The first component that the Component Manager tries to register is<br>
+Curly. However, Curly needs both Moe and Larry before it can be registered, and<br>
+neither of them is present, so Curly bails. Larry comes next, and because Larry needs<br>
+Moe, and Moe isn't around yet, Larry bails. Moe is last, and Moe doesn't depend on any<br>
+components at all, so Moe is registered successfully. One out of three's not too good,<br>
+though. 
+</p>
+<p>
+&nbsp;We might further expect that if we put all of our components in a single file, the<br>
+Component Manager would walk the component resources from lowest resource ID to<br>
+highest resource ID. If that were true, all we'd have to do is give our components<br>
+ascending resource IDs in the order in which we want them to be registered (say, 200<br>
+for Moe, 300 for Larry, and 400 for Curly), and we'd be done! Well, I know we all<br>
+long for the day that the omniscient System will always figure out the right thing to do<br>
+regardless of how we've specified that it be done, but that day's not here yet -- or, to<br>
+quote KON, "It's just a computer."
+</p>
+<p>
+&nbsp;The Component Manager calls Count1Resources to find out how many 'thng' resources<br>
+are in a file.&nbsp;&nbsp;&nbsp;It then iterates through these resources, using the Get1IndResources<br>
+call. Unfortunately, there's no guarantee that the Resource Manager will index<br>
+resources in the same numeric order as their corresponding resource IDs; that is,<br>
+even if Moe's 'thng' resource ID is lowest (200), Moe's resource index (as maintained<br>
+by the Resource Manager) may or may not be 1.
+</p>
+<p>
+&nbsp;If we actually go ahead and try this (you can try this yourself with the Moe, Larry,<br>
+and Curly component file on the CD, which I created by simply Rezzing the three<br>
+components into a single 'thng' file), we find that we get exactly the same behavior we<br>
+observed with the separate component files -- first Curly fails, then Larry fails, and<br>
+only Moe registers successfully. This approach just isn't reliable enough for our<br>
+purposes, and we need a better mousetrap. 
+</p>
+<p>
+<b>BETTER: USE AN INIT TO MANAGE REGISTRATION</b><br>
+Here's an idea -- we can use an INIT to manage the registration order of our<br>
+components! We'll create a resource that describes the order in which to register our<br>
+components, and then the INIT can read this resource, registering the component<br>
+resources in the specified order. The registration order is simply defined as the<br>
+position in the component list; that is, the first component in the list is registered<br>
+first, the second component in the list is registered second, and so on. 
+</p>
+<p>
+<b>The component load order resource. </b>We use a custom resource, called a<br>
+component load order resource, to indicate to our INIT the order in which the<br>
+components in the INIT file should be registered. The resource type is defined as 'thld'<br>
+(for "thing load") and the resource is a 1-based list of structures of type<br>
+ComponentLoadSpec, as defined below:
+</p>
+<p>
+<code>#define kComponentLoadOrderResType&nbsp;&nbsp;'thld'</code><br>
+<code></code><br>
+<code>typedef struct ComponentLoadSpec {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ResType componentResType;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;componentResID;</code><br>
+<code>} ComponentLoadSpec, *ComponentLoadSpecPtr, **ComponentLoadSpecHdl;</code><br>
+<code></code><br>
+<code>typedef struct ComponentLoadList {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;count;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ComponentLoadSpec&nbsp;&nbsp;&nbsp;spec[1];</code><br>
+<code>} ComponentLoadList, *ComponentLoadListPtr, **ComponentLoadListHdl;</code>
+</p>
+<p>
+The componentResType field contains the component resource type, in this case 'thng',<br>
+and the componentResID field contains the component resource ID. 
+</p>
+<p>
+<b>The loader INIT. </b>Our INIT -- called, surprisingly enough, LoaderINIT -- doesn't<br>
+really do much work. When the INIT is executed, it checks to see whether the Shift key<br>
+or mouse button is held down; if so, it quits. If not, it then checks for the presence of<br>
+the Component Manager, and if the Component Manager is installed, it tries to load our<br>
+components with a call to the LoadComponents routine. 
+</p>
+<p>
+<code>main (void)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;KeyMap keys;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// INIT setup for THINK C (these routines are defined in</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// &lt;SetupA4.h&gt;)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;RememberA0();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;SetUpA4();</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// If mouse or Shift key down, don't bother.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GetKeys (keys);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!Button() &amp;&amp; !(1 &amp; keys[1])) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;result = noErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Is the Component Manager available?</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (HasComponentMgr()) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Load the components!</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = LoadComponents (kComponentLoadListResType,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kLoaderBaseResID);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// INIT cleanup for THINK C (this routine is defined in</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// &lt;SetupA4.h&gt;)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;RestoreA4();</code><br>
+<code>}</code>
+</p>
+<p>
+<b>The LoadComponents routine. </b>LoadComponents does the job of reading the<br>
+component load order resource and loading each of the components it points to; this<br>
+routine is shown below. 
+</p>
+<p>
+<code>static OSErr</code><br>
+<code>LoadComponents (ResType loadListResType, short loadListResID)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = noErr;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ComponentLoadListHdl&nbsp;&nbsp;&nbsp;componentLoadList =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ComponentLoadListHdl) Get1Resource (loadListResType,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;loadListResID);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Did we get the component load list?</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (componentLoadList != nil) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ComponentLoadSpec&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;componentLoadSpec;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ComponentResourceHandle componentResHdl;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Component&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;componentID;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;numComponentsToLoad = (**componentLoadList).count;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short i;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for (i = 0; i &lt; numComponentsToLoad; i++) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Get the component load spec.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;componentLoadSpec = (**componentLoadList).spec[i];</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Get the component resource pointed to by this spec.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;componentResHdl = (ComponentResourceHandle) Get1Resource</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;( componentLoadSpec.componentResType,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;componentLoadSpec.componentResID);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Did we get it?</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (componentResHdl != nil) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Register it.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;componentID = RegisterComponentResource</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(componentResHdl, kRegisterGlobally);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (componentID == 0L) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// RegisterComponentResource failed.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = -1L;&nbsp;&nbsp;&nbsp;// Return anonymous error</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Get1Resource failed.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = ResError();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;else {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Couldn't get component loader resource.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = ResError();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return (result);</code><br>
+<code>}</code>
+</p>
+<p>
+<b>Why it's too good to be true. </b>LoaderINIT works fine if we're running System 7.1<br>
+or later (the Component Manager is installed<i>before</i> the INIT 31 process begins) or we<br>
+name LoaderINIT something alphabetically greater than the name of the INIT that's<br>
+installing the Component Manager (assuming we know this somehow). If neither of<br>
+these conditions is met, LoaderINIT will execute before the Component Manager is<br>
+installed, and none of our components will be registered.&nbsp;&nbsp;&nbsp;Bummer. 
+</p>
+<p>
+We could do something sneaky like patch a trap that we've observed being called right<br>
+before the Finder comes up, and then execute our INIT code. In effect, this defers our<br>
+normal INIT execution until after all other INITs load (provided they aren't pulling the<br>
+same sneaky trick). However, we'd rather be more elegant and, dare I say, more<br>
+compatible. We could also name our INIT ~LoaderINIT (or something similar) to<br>
+guarantee that we run last in the INIT sequence (a somewhat naive hope), but we'd<br>
+rather not become participants in the latest chapter of the ongoing saga of INIT Wars<br>
+(Chapter XX: MacsBug Strikes Back). So what's a component developer to do?
+</p>
+<p>
+<b>MO' BETTER: USE A LOADER COMPONENT TO MANAGE REGISTRATION</b><br>
+Fortunately, we don't have to give up yet. We can avoid the shortcomings of the INIT<br>
+approach by using a component to load our components -- a component we'll call, oh, I<br>
+don't know, something original; how about . . . a loader component. 
+</p>
+<p>
+<b>The loader component. </b>The loader component is a very simple component. It<br>
+implements only the open, close, can do, version, and register selectors, and has no<br>
+unique selectors of its own. It resides in a file of type 'thng', so the Component Manager<br>
+will auto-register it. Also, the cmpWantsRegisterMessage flag is set in the<br>
+componentFlags field of its component resource so the Component Manager will send it<br>
+a register message at auto-register time. Our other three components (Moe, Larry,<br>
+and Curly) are also included in the loader component file. 
+</p>
+<p>
+When the loader component is registered, it receives three messages from the<br>
+Component Manager -- open, register, and close. The register routine does all the<br>
+work. It performs basically the same checks that are performed in LoaderINIT and<br>
+calls the same LoadComponents routine described earlier to manually register Moe,<br>
+Larry, and Curly. The loader component's register routine is shown below. 
+</p>
+<p>
+<code>pascal ComponentResult</code><br>
+<code>_LoaderRegister (Handle storage)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;KeyMap&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;keys;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;LoaderPrivateGlobalsHdl globals =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(LoaderPrivateGlobalsHdl) storage;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = noErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;#ifndef BUILD_LINKED</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short savedResRefNum = CurResFile();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short compResRefNum = OpenComponentResFile ((**globals).self);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Use the component's resource file (not the THINK project</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// resource file) if we're running standalone.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;UseResFile (compResRefNum);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;#endif BUILD_LINKED</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// If mouse or Shift key down, don't bother.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GetKeys (keys);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!Button() &amp;&amp; !(1 &amp; keys[1])) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Load the components!</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = LoadComponents (kComponentLoadListResType,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kLoaderBaseResID);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;#ifndef BUILD_LINKED</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Restore the resource file (if running standalone).</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CloseComponentResFile (compResRefNum);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;UseResFile (savedResRefNum);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;#endif BUILD_LINKED</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return ((result == noErr) ? 0L : 1L);</code><br>
+<code>}</code>
+</p>
+<p>
+<b>The 'gnht' resource. </b>Everything's pretty cool up to this point, except for one<br>
+minor detail -- we can't keep the component resources for Moe, Larry, and Curly as<br>
+'thng' resources in our loadercomponent file.&nbsp;&nbsp;Why? Well, if they<i>are</i>&nbsp;&nbsp;kept as 'thng'<br>
+resources, they'll be auto-registered along with the loader component, and our<br>
+carefully constructed mechanism for managing registration goes right out the window!<br>
+Worse, we end up trying to load our components twice -- once via the Component<br>
+Manager's auto-registration mechanism, and once by our own loader component! 
+</p>
+<p>
+So, we need to mildly fake out the Component Manager. We do this by keeping Moe,<br>
+Larry, and Curly's component resources around as 'gnht' resources instead of 'thng'<br>
+resources. The 'gnht' resource is identical to the 'thng' resource, but the Component<br>
+Manager doesn't know to look for it, so Moe, Larry and Curly aren't auto-registered.<br>
+The loader component (whose component resource is of type 'thng')<i>does</i> get<br>
+auto-registered, and it knows where to find the component resources for Moe, Larry,<br>
+and Curly because the component load order resource provides this information. Recall<br>
+that in LoaderINIT, the component load specs in the component load order resource all<br>
+point to resources of type 'thng'. We simply change these fields to point to resources of<br>
+type 'gnht', and we're set! 
+</p>
+<h2>PRACTICE SAFE REGISTRATION</h2>
+<p>
+In this article, we've looked at several approaches to installing components in a<br>
+predetermined order.&nbsp;&nbsp;&nbsp;While you're encouraged to adapt these methods freely to fit<br>
+your particular problem, keep in mind that your solution should strive to be as<br>
+compatible as possible with other system extensions -- your users will thank you for<br>
+sparing them the frustration of renaming and removing extensions just to get your<br>
+software running!
+</p>
+<p>
+<b>GARY WOODCOCK,</b> an optically challenged, melanin-impoverished male who lives<br>
+with his feline-American companion Phaser, hopes someday soon to be able to spend a<br>
+few motivationally deficient days enjoying a reduced state of awareness without<br>
+becoming terminally inconvenienced. He feels P. J. O'Rourke's observation that "Giving<br>
+money and power to government is like giving whiskey and car keys to teenage boys"<br>
+carries far too much truth. *
+</p>
+<p>
+<b>For more information on overriding components, </b>see Bill Guschwan's<br>
+"Somewhere in QuickTime" column in this issue. *
+</p>
+<p>
+<b>For more information on QuickTime components, </b>see Inside Macintosh:<br>
+QuickTime and Inside Macintosh: QuickTime Components (included in the QuickTime<br>
+Developer's Kit v. 1.5) and "Inside QuickTime and Component-Based Managers" in<br>
+develop Issue 13.*
+</p>
+<p>
+<b>KON's pithy quote </b>was immortalized in the Puzzle Page in <i>develop</i>&nbsp;&nbsp;Issue 9.*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Bill Guschwan, Peter Hoddie, Casey<br>
+King *
+</p>
+</body>
+</html>

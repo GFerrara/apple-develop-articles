@@ -1,0 +1,1298 @@
+<html>
+<head>
+<!-- Article ID: 24 - Extracted from develop-1993 -->
+<!-- on 2024-02-19 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>June 93 - VIDEO DIGITIZING UNDER QUICKTIME</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>VIDEO DIGITIZING UNDER QUICKTIME</h2>
+<h1>CASEY KING AND GARY WOODCOCK</h1>
+<p>
+<img src="img/182.gif" width="216 px"></img>
+</p>
+<p>
+<i>With the introduction of the 'vdig' component in QuickTime 1.0, Apple established an</i><br>
+<i>API that encompassed the critical features of video digitizing hardware. This article</i><br>
+<i>takes a closer look at the more complex aspects of the QuickTime 1.0 interface and at</i><br>
+<i>the new functionality provided by QuickTime 1.5. Thanks to the QuickTime framework,</i><br>
+<i>application writers and video digitizer developers have begun to deliver the kind of</i><br>
+<i>high-performance solutions we've all been waiting for. And the evolution of this</i><br>
+<i>technology has just begun.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Video digitizing hardware on the Macintosh is not new. Way back in 1990, dozens of<br>
+hardware developers were offering video digitizing cards that they hoped would score<br>
+big in that elusive but potentially lucrative market called multimedia. However,<br>
+because these products targeted different niches and had different feature sets, there<br>
+was a lot of chaos and redundancy in the marketplace.&nbsp;&nbsp;&nbsp;Each video digitizer card had its<br>
+own API. A multimedia software developer who wanted to support more than one<br>
+specific card had to either write a single application that included code for the API of<br>
+every card on the market or else release multiple versions of an application, one<br>
+version for each card.&nbsp;&nbsp;&nbsp;The inefficiency of this situation kept developers from<br>
+introducing innovative products quickly.&nbsp;&nbsp;&nbsp;Users, for their part, were confused by the<br>
+vast differences in the user interfaces of various products and in the capabilities of the<br>
+hardware. 
+</p>
+<p>
+The introduction of QuickTime in December 1991 changed all this by providing a<br>
+standard video digitizing interface. The component nature of QuickTime allowed video<br>
+digitizer manufacturers to concentrate on making value-added hardware and software,<br>
+secure in the knowledge that their products would work with whatever<br>
+general-purpose video capture and editing applications were out there. Application<br>
+writers could at last code to a standard interface and take advantage of improvements in<br>
+the underlying hardware as they came along. Customers also benefited from a standard,<br>
+and usually simplified, interaction with these devices. 
+</p>
+<p>
+So much for history! This article takes a look at the present and future of QuickTime<br>
+video digitizing from two perspectives -- that of the digitizer developer and that of the<br>
+video application developer (although the video neophyte will find valuable<br>
+information here as well). The article focuses on the less understood areas of the 'vdig'<br>
+interface and the new features in QuickTime 1.5<b>.&nbsp;&nbsp;</b>Because a discussion of video<br>
+digitizing under QuickTime would be incomplete without a look at the video digitizer's<br>
+main client, the sequence grabber, we also briefly examine this powerful component.<br>
+We conclude with a wish list of features for the next generation of video digitizing<br>
+products.
+</p>
+<p>
+To get the most out of this article, you need to be familiar with QuickTime components<br>
+in general, video digitizer components specifically, and some basic video terminology.<br>
+For an overview of components, read our article "Techniques for Writing and<br>
+Debugging Components" in Issue 12 of<i>develop</i>.&nbsp;&nbsp;We also suggest that you read Chapter<br>
+7, "Video Digitizer Components," in<i>Inside Macintosh: QuickTime Components</i>(which is<br>
+included in the QuickTime Developer's Kit v.1.5).&nbsp;&nbsp;Finally, while we've attempted to<br>
+interject definitions of some basic video terms, the References box at the end of this<br>
+article lists some of our favorite books on video. If you're really interested in dazzling<br>
+your friends with your new-found video expertise, you'll want to investigate some of<br>
+these books.
+</p>
+<p>
+&nbsp;This issue's CD contains two pieces of sample code related to this article. The 'vdig'<br>
+code is an example of a software-only digitizer. You can use it as a template to write<br>
+your own video digitizer components or as a vehicle for testing grab applications when<br>
+you don't have any video digitizing hardware<b>. </b>The sample application, HackTV, shows<br>
+how to use the sequence grabber to preview and record movies. HackTV can use either<br>
+the software 'vdig' provided or a hardware 'vdig' that you may already own. HackTV can<br>
+also be used by 'vdig' makers to test their code.
+</p>
+<h2>&nbsp;THE VIDEO CAPTURE PROCESS</h2>
+<p>
+As Figure 1 shows, the process of making movies involves several components. The<br>
+sequence grabber component (component type 'barg') plays an especially critical role.<br>
+It's responsible for coordinating the activities of the lower-level components to<br>
+achieve different results -- like displaying video in a window, grabbing a single<br>
+picture, or grabbing a movie. By protecting application developers from having to deal<br>
+with the low-level management of the video digitizer, the sequence grabber makes it<br>
+much easier to incorporate video input capabilities in applications. Note that the<br>
+sequence grabber also handles audio input devices and synchronization of picture and<br>
+sound. For the sake of simplicity, these tasks aren't shown in Figure 1. 
+</p>
+<p>
+<img src="img/183.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1</b> Grabbing Video -- The Big Picture
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;Data flow in the video digitizing pipeline begins with an analog video source like a<br>
+video camera, but it could also be a VCR, a laser disc, or a direct broadcast feed. The<br>
+video digitizer's primary purpose in life is to convert the analog signal into a digital<br>
+form that can be either displayed in the frame buffer or processed further by an image<br>
+compressor. The video digitizing hardware can optionally perform resizing, color<br>
+conversion, or clipping. In the absence of hardware support for theseoperations,&nbsp;&nbsp;the<br>
+sequence grabber will sometimes provide them, as we'll explain later. If the<br>
+application's request is for video in a window, the process is complete. (From a video<br>
+digitizing perspective, displaying live video in a window is called<i>play through</i>, and<br>
+capturing video to a movie is called<i> capturing</i> or<i> grabbing</i>. The sequence grabber calls<br>
+these operations<i>previewing</i>and<i> recording</i>, respectively.) When a movie is requested,<br>
+an image compressor processes the data further, and the result is stored either in<br>
+system memory or to disk.
+</p>
+<p>
+An important restriction of the QuickTime 1.0 video capture process is that the<br>
+digitizer is limited by the image compressor. Since the grabbed image has to be<br>
+perfectly still while the compressor is working, the digitizer can't grab the next<br>
+frame until the compressor is finished with the current one; otherwise, there will be<br>
+frame tears. Thus, the speed of the compressor has a significant influence on the<br>
+effective capture rate of the digitizer. (For a discussion of industry-standard frame<br>
+rates and acceptable QuickTime capture rates, see "Frame Rates and Motion Quality.")<br>
+One of the biggest challenges in making a movie is figuring out how to compress the<br>
+data fast enough to maintain a good effective capture rate.
+</p>
+<h2>A CLOSER LOOK AT SOME 'VDIG' BASICS</h2>
+<p>
+In this section, we explore a few QuickTime 'vdig' topics that seem to give developers<br>
+the most trouble when they first undertake the task of writing a video digitizer<br>
+component. While<i>Inside Macintosh</i>is the definitive reference source for all the<br>
+information we present here and for all of QuickTime, this section will give you<br>
+additional insight into the more difficult aspects of rolling your own 'vdig'. 
+</p>
+<p>
+To illustrate some specific points, this section presents code excerpts from our<br>
+software implementation of a 'vdig'. In practice, how you write a video digitizer<br>
+component depends heavily on your particular digitizer hardware implementation. For<br>
+the sake of illustration, however, we'll simulate some hardware features with<br>
+software that provides roughly equivalent functionality. 
+</p>
+<p>
+<b>GETTING VIDEO COORDINATE SYSTEMS STRAIGHT</b><br>
+The coordinate system for video digitizers can seem confusing, but it's actually quite<br>
+straightforward.&nbsp;&nbsp;&nbsp;The common mistake is to try to map the digitizer coordinate system<br>
+onto the QuickDraw global coordinate system, even though the two aren't related. The<br>
+critical point to keep in mind is that when referencing the video source, you're<br>
+working in a coordinate system that's specific to your digitizing hardware. All<br>
+cropping rectangles are relative to this coordinate system.
+</p>
+<p>
+Figure 2 shows the four rectangles that define the video source. The MaxSrcRect<br>
+defines the maximum source area that the digitizer is capable of grabbing. Typically<br>
+this area includes all or portions of the vertical and horizontal blanking areas. Note<br>
+that you don't have to define the top left point of MaxSrcRect as 0,0; this is an entirely<br>
+arbitrary reference point that 'vdig' developers can define as they choose. The other<br>
+three rectangles are defined in relation to MaxSrcRect. The ActiveSrcRect is the region<br>
+of the maximum source rectangle that contains the actual video image.&nbsp;&nbsp;&nbsp;The first pixel<br>
+of active video is the top left corner, and the last pixel is the bottom right. 
+</p>
+<p>
+<img src="img/184.gif" width="438 px"></img>
+</p>
+<p>
+<b>Figure 2</b> A Video Digitizer Coordinate System
+</p>
+<p>
+The DigitizerRect describes the area of the MaxSrcRect to be captured -- the image<br>
+that the user will actually see, although it hasn't been scaled yet. The DigitizerRect<br>
+defaults to the area of the ActiveSrcRect; to describe a cropped image, the<br>
+DigitizerRect is usually defined as a portion of the ActiveSrcRect. It's not uncommon<br>
+for part of the blanking signal to be displayed in the ActiveSrcRect. This is because<br>
+different source devices -- like VCRs, laser discs, and broadcast signals -- send out<br>
+slightly different analog signals. To align the image, a 'vdig' client can nudge the<br>
+DigitizerRect a few pixels in the appropriate direction using VDSetDigitizerRect. 
+</p>
+<p>
+The last rectangle, VBlankRect, defines the area of vertical blanking. This region can<br>
+contain vertical interval time code (VITC), closed captioning, and teletext. For those<br>
+video dweebs out there, this corresponds to lines 10 to 19 of each field of the incoming<br>
+video. 
+</p>
+<p>
+Remember, all rectangle coordinates are relative to MaxSrcRect. MaxSrcRect,<br>
+ActiveSrcRect, and VBlankRect are always fixed and hardware dependent. The only<br>
+control that a client has is in the definition of DigitizerRect. The following code shows<br>
+how to implement the VDGetMaxSrcRect call for a 'vdig'. Implementing the<br>
+VDGetActiveSrcRect and VDGetVBlankRect calls is very similar.
+</p>
+<p>
+<code>pascal VideoDigitizerError&nbsp;&nbsp;GetMaxSrcRect</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(Handle storage, short inputStd, Rect *maxSrcRect)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;error = noErr;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (inputStd == ntscIn)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Example supports only NTSC.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetRect(maxSrcRect, 0, 0, kMaxHorNTSCIn,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kMaxVerNTSCIn+kVerBlank);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;error = paramErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!error)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(**storage).maxSrcRect = *maxSrcRect;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return (error);</code><br>
+<code>}</code>
+</p>
+<p>
+SetDigitizerRect, shown below, is also very straightforward. Notice that the<br>
+DigitizerRect must fully intersect the MaxSrcRect.
+</p>
+<p>
+<code>pascal VideoDigitizerError vdigSetDigitizerRect</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(vdigGlobals storage, Rect *digiRect)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Rect&nbsp;&nbsp;&nbsp;&nbsp;tempR;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Can't be empty.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!digiRect || EmptyRect(digiRect)) return (paramErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// They must intersect . . .</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!SectRect(digiRect, &amp;(**storage).maxSrcRect, &amp;tempR))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return (paramErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// . . . completely.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!EqualRect(digiRect, &amp;tempR)) return (paramErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;(**storage).digiRect = *digiRect;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;. . .</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Insert hardware-dependent code to crop.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;. . .</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return noErr;</code><br>
+<code>}</code>
+</p>
+<p>
+One more very important point to understand about video coordinate systems is that<br>
+scaling and translation can be specified either as a matrix or as a destination rectangle.<br>
+Your digitizer must support both transformation methods. If the matrix is nil, use the<br>
+destination rectangle; otherwise, ignore it and use the matrix. The 'vdig' must offset<br>
+the top left of the DigitizerRect to 0,0 before applying the matrix, or the video won't<br>
+be positioned correctly. This isn't necessary when using the destination rectangle. By<br>
+the way, the sequence grabber uses the destination rectangle, and not the matrix, to<br>
+specify scaling and translation, although this may change at any time. 
+</p>
+<p>
+<b>ACCELERATING THE FRAME CAPTURE PROCESS</b><br>
+Video digitizer clients -- such as an application or, more likely, the sequence grabber<br>
+-- that want to configure a 'vdig' for video play through can do so by specifying a video<br>
+source rectangle with VDSetDigitizerRect and a destination with<br>
+VDSetPlayThruDestination. The live video stream is then enabled via the<br>
+VDSetPlayThruOnOff call. Clients that want to capture and store images to make a<br>
+QuickTime movie, on the other hand, must deal with the tradeoff between compression<br>
+time and capture rate described earlier. This section explains how a video digitizer<br>
+client and a 'vdig' can cooperate to maximize the effective capture rate and thus the<br>
+overall performance of a digitizing system. 
+</p>
+<p>
+At the most basic level, the frame capture process involves grabbing a frame,<br>
+compressing it, appending the frame to a movie, grabbing another frame, compressing<br>
+it, and so on. Unfortunately, while this synchronous frame grabbing (with the<br>
+VDGrabOneFrame call) is fine for single grabs, it's too slow for capturing moving<br>
+images. The real killer when using the synchronous call is that no parallel processing<br>
+can occur. Once the call to the video digitizer is made, the entire system is brought to a<br>
+stop waiting for the completion of the frame grab. Since the digitizer must synchronize<br>
+to the incoming video's vertical blanking interval, this can mean waiting the duration<br>
+of up to one or two video fields (33,333 to 66,666 microseconds for NTSC video).<br>
+What's more, because the video stream must be stopped at the conclusion of the call and<br>
+restarted to grab another frame, the actual wait between synchronous grabs tends to be<br>
+even longer. 
+</p>
+<p>
+A video digitizer client can achieve parallel processing, and thus better performance,<br>
+if it grabs asynchronously, sending the image either to a single buffer or to a series of<br>
+buffers. If you use just one buffer, you get a slight performance improvement over a<br>
+synchronous grab. The VDGrabOneFrameAsync call tells the digitizer to kick off a<br>
+frame grab and to return immediately to the caller (this typically takes around 500<br>
+microseconds). The compressor can be turned loose on the frame being grabbed<br>
+without waiting for the grab to be complete. (Such<i>beam chasing</i> assumes that the<br>
+compressor is slower than the video digitizer and won't catch it. Most software<br>
+compressors today are in fact slower than digitizers.) Once the compressor is finished<br>
+with the frame, the client makes the VDDone call to determine whether the first frame<br>
+grab is complete before requesting another one. This process continues until recording<br>
+is terminated.
+</p>
+<p>
+One problem with such single-buffer asynchronous grabs is that the client must still<br>
+start and stop the video stream with each call, incurring the same overhead as in a<br>
+synchronous grab. An even more serious problem is that the 'vdig' client must handle<br>
+frame synchronization between the digitizer and compressor; otherwise, the resulting<br>
+movie will contain annoying frame tears. Why does this happen?&nbsp;&nbsp;&nbsp;Suppose the<br>
+VDGrabOneFrameAsync call is made while the digitizer is in the middle of a frame.&nbsp;&nbsp;<br>
+The digitizer will honor the request and return immediately, but the video won't really<br>
+start until the beginning of the next field. If the compressor is turned loose as soon as<br>
+the digitizer returns, it will be compressing stale data. And depending on how slow the<br>
+compressor is, new digitizer data may overwrite the stale data in midstream, all of<br>
+which is bad news. 
+</p>
+<p>
+Clients of your 'vdig' can attain still better performance if the 'vdig' implements<br>
+multiple buffers. By constantly ping-ponging between two or more buffers, the 'vdig'<br>
+can increase the effective capture rate, potentially to the maximum rate. The process<br>
+works roughly as follows: A 'vdig' client initializes the process by making the video<br>
+digitizer call VDSetupBuffers (we'll look at this in more detail momentarily). The<br>
+client then begins the capture process by calling VDGrabOneFrameAsync to fill buffer<br>
+1 with a frame and to start the next grab into buffer 2. The client calls VDDone to make<br>
+sure that the frame grab in buffer 1 is complete. Next, the compressor compresses the<br>
+frame in buffer 1.&nbsp;&nbsp;&nbsp;Then VDGrabOneFrameAsync is called to send the next digitized<br>
+frame back into buffer 1, and the compressor starts compressing the contents of<br>
+buffer 2. The whole sequence is repeated for successive frames.
+</p>
+<p>
+If you think two buffers are a snap, that's great, because in practice there are often<br>
+three. Figure 3 shows a snapshot of the asynchronous grab process when three buffers<br>
+are implemented. The number of buffers your 'vdig' needs to implement, by the way, is<br>
+typically equal to the number ofconcurrent operations a video digitizing system must<br>
+perform on those buffers. The example shown in Figure 3 uses three buffers to<br>
+support<i>interframe compression</i>. This technique, which is also known as<i> frame</i><br>
+<i>differencing</i>, makes it possible for a compressor to eliminate the redundant data in a<br>
+sequence of frames -- essentially the parts of the image that stay the same from one<br>
+frame to the next. At specified intervals, all the data in a frame is saved; this frame is<br>
+known as a<i>key frame</i>. Depending on the content of the image sequence, frame<br>
+differencing can provide a substantial increase in compression efficiency. 
+</p>
+<p>
+Figure 3 shows what's going on in three hypothetical buffers at a specific moment in<br>
+time. The whole process of grabbing a frame from the digitizer and compressing it<br>
+with frame differencing involves the following steps:
+</p>
+<p>
+<img src="img/185.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 3</b> Multiple Buffers in Motion
+</p>
+<ol>
+<li> The 'vdig' initially uses a buffer -- in this case, buffer 1 -- as a<br>
+play-through destination. </li>
+<li> The sequence grabber makes the VDGrabOneFrameAsync call with the<br>
+next available buffer, buffer 2. </li>
+<li> The 'vdig' receives VDGrabOneFrameAsync, returns to the sequence<br>
+grabber, and begins the asynchronous grab -- in this case, completing a<br>
+frame grab into buffer 1. Upon completion it's available to begin digitizing<br>
+into buffer 2. </li>
+<li> The sequence grabber uses VDDone to find out when the frame grab into<br>
+buffer 1 is complete. </li>
+<li> The sequence grabber makes another VDGrabOneFrameAsync call. The<br>
+'vdig' completes the frame grab into buffer 2 and then is available to begin<br>
+digitizing into buffer 3. </li>
+<li> The sequence grabber calls the Image Compression Manager to compress<br>
+the completed frame, while the 'vdig' continues digitizing. </li>
+<li> The sequence grabber writes the compressed frame to disk. </li>
+<li> The sequence grabber repeats the basic process outlined in steps 4<br>
+through 7, this time using buffer 3 for the next buffer, compressing buffer 2,<br>
+and using buffer 1 as the first key frame for frame differencing. </li>
+<li> The sequence grabber repeats the process outlined in steps 4 through 7,<br>
+using buffer 1 for the next buffer, compressing buffer 3, and using buffer 2<br>
+as the next key frame for frame differencing. </li>
+<li>The 'vdig' is returned to play-through mode when the record operation is<br>
+completed. A movie file is created. </li>
+</ol>
+<p>
+A word of caution: A common mistake in using VDGrabOneFrameAsync is to pass in the<br>
+current buffer to be worked on rather than the next destination buffer. By telling the<br>
+digitizer in advance where the next frame should be placed, you give the digitizer all<br>
+the information it needs to do a fast buffer change once the current frame grab is<br>
+complete. The time required to reposition the video buffer is less than the time in a<br>
+vertical blanking period, so the digitizer theoretically has enough time to grab every<br>
+frame without the need for resynchronization. In this case, the obstacles to achieving<br>
+the maximum capture rate are the other processes involved, such as compression and<br>
+disk access speeds. Note that there's no need to turn the digitizer on and off with<br>
+multiple buffers because the video frame in buffer 1 will in effect be frozen once the<br>
+digitizer repositions its free-running output to buffer 2. 
+</p>
+<p>
+Now let's take a step back and look at the interaction between the video digitizer client<br>
+and the 'vdig' during buffer initialization. Figure 4 shows two possible scenarios. In<br>
+scenario A, the card has local memory available for multiple buffering but doesn't<br>
+support generic hardware DMA. (Digitizers that support hardware DMA can send the<br>
+video data to any available memory; they aren't restricted to local memory.) In<br>
+scenario B, the digitizer supports hardware DMA but doesn't have local memory for<br>
+multiple buffering.
+</p>
+<p>
+<img src="img/186.gif" width="447 px"></img>
+</p>
+<p>
+<b>Figure 4</b> Initializing Multiple Buffers -- Two Scenarios
+</p>
+<p>
+For both scenarios in Figure 4, the basic sequence of events is similar. 
+</p>
+<ol>
+<li>The sequence grabber uses VDSetPlayThruDestination to set up the first<br>
+destination, which happens to be visible to the user on a monitor. </li>
+<li>The sequence grabber determines how many buffers to allocate based on<br>
+the video characteristics, the compression settings, and the amount of memory<br>
+available for multiple buffering.</li>
+<li> The sequence grabber uses VDSetupBuffers to tell the video digitizer how<br>
+to partition the buffers.</li>
+</ol>
+<p>
+The differences between the scenarios depicted in Figure 4 are subtle but very<br>
+important to understand. First, in scenario A, the sequence grabber uses the integrated<br>
+frame buffer when setting up the play-through destination. In scenario B, where the<br>
+digitizer is more flexible in its ability to redirect video data, the sequence grabber can<br>
+make the play-through destination any frame buffer -- that is, any screen -- that the<br>
+user chooses. 
+</p>
+<p>
+The second difference between the two scenarios in Figure 4 is in how the sequence<br>
+grabber finds available memory and partitions that memory into multiple buffers.<br>
+Because the digitizer in scenario A doesn't support hardware DMA, local memory on<br>
+the card is the only memory available for multiple buffering. The sequence grabber<br>
+will make the VDGetMaxAuxBuffer call to determine the maximum usable memory<br>
+available. In our example, three buffers are allocated. If sufficient space for three<br>
+buffers isn't available, the sequence grabber will make the buffer sizes smaller and<br>
+use software to expand the frame to the desired size. In contrast, the video digitizer in<br>
+scenario B supports hardware DMA and doesn't have any local buffering, so the<br>
+sequence grabber will use system memory for buffer allocation. In this case the size of<br>
+the buffers is limited by the amount of free memory available. Once the number and<br>
+size of the buffers have been determined, VDSetupBuffers is used in both cases to<br>
+communicate this information to the 'vdig'. 
+</p>
+<p>
+To sum up, a 'vdig' client looks at two video digitizer capabilities to determine how to<br>
+initialize buffers -- the availability of local off-screen memory and the digitizer's<br>
+ability to do generic hardware DMA. While there are actually four possible<br>
+combinations of these two capabilities, the two scenarios shown in Figure 4 define the<br>
+major options for initializing multiple buffers.&nbsp;&nbsp;The two combinations not shown in<br>
+the figure are a 'vdig' that doesn't provide any local off-screen memory and doesn't<br>
+support hardware DMA, and a 'vdig' that supports both capabilities. If a 'vdig' has<br>
+neither capability, it's not a very interesting digitizer -- just consider yourself<br>
+lucky that it can digitize video into a window at all. At the other end of the spectrum,<br>
+the increasing numbers of digitizers that support both local memory and hardware<br>
+DMA are<i>very</i>interesting. With these digitizers, buffers are allocated in the local<br>
+off-screen memory first for performance reasons, while hardware DMA is normally<br>
+used to display video in a window on any screen.
+</p>
+<p>
+At this point you're probably asking yourself, "Do I really need to understand this<br>
+stuff?" The answer for video digitizer developers is a resounding "Yes," especially if<br>
+you want to squeeze out every last drop of performance. For those interested only in<br>
+the general concepts, we've probably led you down a road you wish you hadn't<br>
+embarked on. Sometimes the quest for new knowledge hurts! 
+</p>
+<p>
+If you're writing a digitizer, you'll be interested in the following code<b>,</b> which shows<br>
+how to write the routines that support multiple-buffer asynchronous frame grabs.<br>
+Notice that in the vdigSetupBuffers routine, pendingAsyncBuffer is used to keep track<br>
+of the next buffer to be grabbed. Here it's initialized to -1, which is not a valid buffer<br>
+number. 
+</p>
+<p>
+<code>pascal VideoDigitizerError vdigSetupBuffers</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(vdigGlobals storage, VdigBufferRecListHandle bufferList)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;MatrixRecord&nbsp;&nbsp;&nbsp;&nbsp;matrix;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;i;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;RgnHandle&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;clipRgn;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!bufferList) return paramErr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Can't have empty list.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!(**bufferList).count) return paramErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Can't have 0 buffers.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Dispose of any buffers previously created.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if ((**storage).bufferList) {&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DisposeHandle((Handle)(**storage).bufferList);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(**storage).bufferList = 0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Same with any clipRgn previously created.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if ((**storage).clipRgn) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DisposeRgn((**storage).clipRgn);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(**storage).clipRgn = 0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Don't accept a mask if the 'vdig' can't clip.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!gCanClip &amp;&amp; (**bufferList).mask) return paramErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Copy the matrix if it exists.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if ((**bufferList).matrix)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;matrix = *(**bufferList).matrix;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Make a local copy.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;HandToHand((Handle *)&amp;bufferList);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (err = MemError()) return err;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (clipRgn = (**bufferList).mask) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HandToHand((Handle *)&amp;clipRgn);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (err = MemError()) return err;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(**storage).clipOrigin = (**bufferList).list[0].location;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Save the important stuff in private storage for later</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// retrieval.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;(**storage).bufferList = bufferList;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;(**storage).clipRgn = clipRgn;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;(**storage).pendingAsyncBuffer = -1;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;(**storage).matrix = matrix;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Do the important error checking when it's not</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// performance-critical.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;for (i=0; i &lt; (**bufferList).count; i++) {&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (!validatePixMap(storage, (**bufferList).list[i].dest))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return paramErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return noErr;</code><br>
+<code>}</code>
+</p>
+<p>
+The vdigGrabOneFrameAsync routine (below) is continually being called by the<br>
+sequence grabber once movie making starts. After some simple error checking, the<br>
+software digitizer draws the frame at the appropriate destination. The buffer used in<br>
+drawVideoFrame is the pending buffer that was passed into this routine on the last call.<br>
+While this isn't so important with the software-only video digitizer illustrated here,<br>
+it can give hardware digitizers some additional time to get things switched over and<br>
+started in anticipation of the next vdigGrabOneFrameAsync call.
+</p>
+<p>
+<code>pascal VideoDigitizerError vdigGrabOneFrameAsync</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(vdigGlobals storage, short buffer)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;VdigBufferRecListHandle bufferList;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Bail if you can't do asynchronous grabs.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!gCanAsync) return digiUnimpErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Make sure the buffer list is set up first with VDSetupBuffers.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!(bufferList = (**storage).bufferList)) return badCallOrder;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Make sure the buffer request is within bounds.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (buffer &gt; (**bufferList).count) return paramErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Get the buffer to draw into from the last one saved.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// This is the one saved in pendingAsyncBuffer.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if ((**storage).pendingAsyncBuffer != -1) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short aBuf = (**storage).pendingAsyncBuffer;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (aBuf == buffer)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DebugStr("\pasync grab into incomplete buffer");</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;drawVideoFrame(storage, (**bufferList).list[aBuf].location,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(**bufferList).list[aBuf].dest);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Set up the next buffer to use when called.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;(**storage).pendingAsyncBuffer = buffer;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return noErr;</code><br>
+<code>}</code>
+</p>
+<p>
+<b>IDENTIFYING DIGITIZER TYPES AND CAPABILITIES</b><br>
+No two video digitizers are alike. To make sure your 'vdig' component works smoothly<br>
+with QuickTime, it's critical to identify the capabilities your hardware provides.
+</p>
+<p>
+The 'vdig' component interface attempts to be very flexible in allowing you to indicate<br>
+what your card can do. A 'vdig' specifies its type and capabilities in the DigitizerInfo<br>
+structure, shown below.&nbsp;&nbsp;&nbsp;Two calls -- VDGetDigitzerInfo and VDGetCurrentFlags --<br>
+give a client (normally the sequence grabber) access to information contained in this<br>
+structure. 
+</p>
+<p>
+<code>typedef struct {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vdigType;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inputCapabilityFlags;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;outputCapabilityFlags; </code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inputCurrentFlags;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;outputCurrentFlags;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;slot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GDHandle&nbsp;&nbsp;&nbsp;&nbsp;gdh;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// For vdigs with preferred screen</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GDHandle&nbsp;&nbsp;&nbsp;&nbsp;maskgdh;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// For vdigs that have mask planes</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;minDestHeight; // Smallest resizable height</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;minDestWidth;&nbsp;&nbsp;// Smallest resizable width</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;maxDestHeight; // Largest resizable height</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;maxDestWidth;&nbsp;&nbsp;// Largest resizable height</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;blendLevels;&nbsp;&nbsp;&nbsp;// # of blend levels = 2 if 1-bit mask</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;reserved;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>} DigitizerInfo;</code>
+</p>
+<p>
+In the vdigType field, you specify which of the four types of digitizer you are. Either<br>
+you're a basic rectangular digitizing device or you're a device that supports clipping<br>
+-- an alpha channel device, a mask plane device, or a key color device. In the<br>
+capability flags fields, you indicate to clients what capabilities a particular digitizer<br>
+instance provides. 
+</p>
+<p>
+The current flags fields have the same attribute bit fields as the capability flags, but<br>
+they indicate the currently available capabilities, not the total possible capabilities.<br>
+By nature, some capabilities are mutually exclusive. For instance, if you support<br>
+NTSC and PAL input formats, at any given time you're actively doing only one of them.<br>
+The bit corresponding to the active standard is the one that would be set in the current<br>
+flags, while both would be set in the capability flags. 
+</p>
+<p>
+Figure 5 lists each of the attribute flags for input and output capabilities, with the<br>
+flags added to the API in QuickTime 1.5 shown in bold. Complete descriptions of the<br>
+flags can be found in Chapter 7, "Video Digitizer Components," of<i>Inside Macintosh:</i><br>
+<i>QuickTime Components</i>. 
+</p>
+<p>
+One point we'd like to emphasize is that clients of your digitizer will be much happier<br>
+if you truthfully state what you can and can't do. The sequence grabber, in particular,<br>
+will function much better. So don't broadcast that you can support hardware play<br>
+through or hardware DMA unless you can! In addition, when designing your device's<br>
+feature set, it's better not to make your capabilities modal. For instance, don't build a<br>
+card that can resize in 32-bit-per-pixel mode but not in 16-bpp mode. 
+</p>
+<p>
+Applications also need to know about your capabilities. An application makes preflight<br>
+calls, like VDPreflightDestination, to your digitizer to determine whether its request<br>
+will be honored, denied, or changed. Digitizers are required to support all the<br>
+preflight calls.
+</p>
+<p>
+<b>Some examples. </b>To see how the attribute flags are set, let's take a look at three<br>
+completely different fictional video digitizer implementations. One of the examples<br>
+includes the support provided by QuickTime 1.5 for digitizer hardware compression<br>
+-- a nifty feature we'll discuss when we look at the QuickTime 1.5 additions later in<br>
+this article.
+</p>
+<p>
+As you consider the examples, pay particular attention to the use of the following<br>
+structure members and attribute flags, which seem to be among the least understood:
+</p>
+<p>
+<code>vdigInfo-&gt;inputCapabilityFlags[digiInVTR_Broadcast]</code><br>
+<code>vdigInfo-&gt;outputCapabilityFlags[digiOutDoesDMA]</code><br>
+<code>vdigInfo-&gt;outputCapabilityFlags[digiOutDoesDouble]</code><br>
+<code>vdigInfo-&gt;outputCapabilityFlags[digiOutDoesQuad]</code><br>
+<code>vdigInfo-&gt;outputCapabilityFlags[digiOutDoesHWPlayThru]</code><br>
+<code>vdigInfo-&gt;outputCapabilityFlags[digiOutDoesAsyncGrabs]</code><br>
+<code>vdigInfo-&gt;gdh</code><br>
+<code>vdigInfo-&gt;maskgdhvdigInfo-&gt;blendLevels</code>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The size of the MaxAuxBuffer is also very important if the device supports one. The<br>
+only way for a client to determine this is to make the VDGetMaxAuxBuffer call to see if<br>
+it returns valid data. See "What the $#%!! Is a MaxAuxBuffer, and Do I Have One?" for<br>
+details. 
+</p>
+<p>
+<img src="img/187.gif" width="477 px"></img>
+</p>
+<p>
+<b>Figure 5</b> Video Digitizer Attribute Flags
+</p>
+<p>
+For our first example of a fictional digitizer, let's suppose SuperOps announces an<br>
+entry-level video digitizing card with the following capabilities: The card has one<br>
+video input (an RCA-style connector) and can support only the NTSC video standard.<br>
+The card is a combined video digitizer and frame buffer. The frame buffer can support<br>
+1, 2, 4, 8, 16, and 32 bpp on a monitor that's 640 by 480 pixels. The video digitizer,<br>
+however, can display real-time video on its own frame buffer only in the 16-bpp and<br>
+32-bpp modes. Our SuperOps card doesn't support compression, but it does support<br>
+clipping via an alpha channel. Because it can resize the video but not zoom, scaling<br>
+only makes the video smaller. The card has additional local memory for grabbing in<br>
+16-bpp mode, but not in 32-bpp mode.
+</p>
+<p>
+The interesting fields and their values for the SuperOps card are:
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<code>vdigType&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;vdTypeAlpha;</code><br>
+<code>inputCapabilityFlags&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;digiInDoesNTSC | digiInDoesComposite |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiInDoesColor;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>outputCapabilityFlags&nbsp;&nbsp;=&nbsp;&nbsp;digiOutDoes16 | digiOutDoes32 |&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiOutDoesShrink | digiOutDoesMask |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiOutDoesQuarter | digiOutDoesSixteenth |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiOutDoesBlend | digiOutDoesHWPlayThru |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiOutDoesAsyncGrabs;</code><br>
+<code>gdh&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;// Handle to frame buffer graphics device</code><br>
+<code>blendLevels&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;video16 ? 2 : (video32 ? 256:0);</code>
+</p>
+<p>
+In 32-bpp mode, there's no room for a MaxAuxBuffer, so the call to<br>
+VDGetMaxAuxBuffer fails. In 16-bpp mode, a MaxAuxBuffer is available because only<br>
+half of the on-board local frame buffer memory is being used, and the size of the<br>
+unused memory is equivalent to the display size, 640 by 480 pixels. 
+</p>
+<p>
+The second fictional card, the OneShot-O-Matic, is designed to do only single-frame<br>
+grabs. The card has three inputs -- composite, S-Video, and component RGB -- and<br>
+can support both the NTSC and PAL video standards on all three. The maximum size that<br>
+can be grabbed is a function of which input standard the card uses (for example, the<br>
+maximum size would be 768 by 576 pixels when decoding the PAL standard). Because<br>
+the OneShot-O-Matic can grab only to its local memory, it can't do hardware DMA --<br>
+that is, it doesn't support play through to any frame buffer. The OneShot-O-Matic<br>
+supports only 32-bpp grabs. Resizing, clipping, and hardware compression aren't<br>
+supported.&nbsp;&nbsp;The board is populated with 2 megabytes of memory, which is enough to<br>
+support the maximum size required by the PAL standard. 
+</p>
+<p>
+For the OneShot-O-Matic card, the interesting fields and their values are:
+</p>
+<p>
+<code>vdigType&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;&nbsp;vdTypeBasic;</code><br>
+<code>inputCapabilityFlags&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;&nbsp;digiInDoesNTSC | digiInDoesPAL |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiInDoesComposite | digiInDoesSVideo |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiInDoesComponent | digiInDoesColor;</code><br>
+<code>outputCapabilityFlags&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;&nbsp;digiOutDoes32 | digiOutDoesAsyncGrabs;</code><br>
+<code>gdh&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;&nbsp;nil;</code><br>
+<code>blendLevels&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;&nbsp;0;</code>
+</p>
+<p>
+In this case, the MaxAuxBuffer will consume the entire 2 MB local buffer area. This<br>
+works out to be 524,288 available pixels in 32-bpp mode (2097152 / 4 bytes per<br>
+pixel). The representation of this as a width and height must be large enough to<br>
+support the largest grab size; thus 800 by 655 pixels would be valid, as would 700<br>
+by 748 pixels. Hardware resizing would have allowed multiple buffers to reside in the<br>
+MaxAuxBuffer. With this card, however, the video digitizer will be relying on the<br>
+sequence grabber to do resizing, color conversion, and on-screen placement<br>
+operations<b>.&nbsp;&nbsp;</b>Our third fictional card, the Verne-Motion, is designed to perform not<br>
+only video digitizing, but also hardware compression using a highly proprietary<br>
+algorithm called SqueezeMe. (We'll discuss compressed-source devices shortly.) The<br>
+card has one S-Video input and supports all input standards -- NTSC, PAL, and SECAM.<br>
+In addition, the Verne-Motion can simultaneously support two channels of video: an<br>
+RGB pixel stream formatted for display, and a compressed SqueezeMe stream to be<br>
+saved as a QuickTime movie. The card has a general-purpose DMA engine that can<br>
+direct these data streams either to memory on the card or to system memory. The<br>
+on-card memory is 4 MB and gives better performance than you get when you send the<br>
+video data to system memory. The Verne-Motion supports hardware clipping with an<br>
+8-bit mask plane, which can also be stored in local memory or in system memory. The<br>
+video input circuitry has a mode that distinguishes between clean broadcast-quality<br>
+input signals and noisier VCR-type signals. Finally, the Verne-Motion lets you<br>
+arbitrarily scale video images to make them up to two times larger in both the<br>
+horizontal and vertical directions. 
+</p>
+<p>
+The interesting fields and their values for the Verne-Motion card are:
+</p>
+<p>
+<code>vdigType&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;&nbsp;vdTypeMask;</code><br>
+<code>inputCapabilityFlags&nbsp;&nbsp;=&nbsp;&nbsp;&nbsp;digiInDoesNTSC | digiInDoesPAL |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiInDoesSECAM | digiInDoesSVideo |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiInVTR_Broadcast | digiInDoesColor;</code><br>
+<code>outputCapabilityFlags =&nbsp;&nbsp;&nbsp;digiOutDoes8 | digiOutDoes16 |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiOutDoes32 | digiOutDoesStretch |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiOutDoesShrink | digiOutDoesMask |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiOutDoesDouble | digiOutDoesQuarter |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiOutDoesSixteenth | digiOutDoesHW_DMA |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiOutDoesHWPlayThru |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiOutDoesAsyncGrabs | digiOutCompress |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;digiOutPlayThruDuringCompress;</code><br>
+<code>gdh&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;&nbsp;nil;</code><br>
+<code>maskgdh&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;&nbsp;// Handle to local mask plane &#8212; 8 bpp deep</code><br>
+<code>blendLevels&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;&nbsp;256;</code>
+</p>
+<p>
+The size of the MaxAuxBuffer in this case would be 1024 by 1024 pixels in 32-bpp<br>
+mode (1024 * 1024 * 4 bytes per pixel equals 4 MB, which is the total available<br>
+memory). In the 16-bpp mode, the MaxAuxBuffer would be 2048 by 1024 pixels, and<br>
+in the 8-bpp mode, it would be 2048 by 2048 pixels.
+</p>
+<p>
+As you can see from these examples, there are many different classes of video<br>
+digitizers out there.&nbsp;&nbsp;&nbsp;Your card may look very similar to one of the ones we've<br>
+presented, but it's more likely that you'll have to set different flags to describe your<br>
+card's features. 
+</p>
+<h2>THE POWER OF THE SEQUENCE GRABBER</h2>
+<p>
+The sequence grabber makes life easier for application programmers by handling all<br>
+the messy details of controlling video digitizers, sound input devices, and compressors.<br>
+This marvelous piece of QuickTime has a very rich API that we won't even pretend to<br>
+cover in this article. However, the sequence grabber plays such an important role in a<br>
+video digitizing application that a brief introduction is in order. Note that while the<br>
+code excerpts below demonstrate how the sequence grabber can preview and record a<br>
+video channel, the HackTV application on the CD includes an audio channel as well. 
+</p>
+<p>
+Before we discuss previewing and recording, we want to briefly describe how the<br>
+sequence grabber can make up for functionality missing from a digitizer. For the<br>
+sequence grabber to be able to do this, the video digitizer must be able to use<br>
+off-screen memory -- either local memory on the digitizing device or, in the more<br>
+general case, any memory. (Recall that you can use the VDGetMaxAuxBuffer call to<br>
+locate local device memory.) As an example, let's see how the sequence grabber can<br>
+support color conversion. 
+</p>
+<p>
+Suppose a video digitizer can display video only to its own integrated frame buffer. In a<br>
+multimonitor system, this would mean a user could display video on only one of the<br>
+monitors. The sequence grabber comes to the rescue because it can use off-screen<br>
+memory for the grab and copy it to thedesired destination buffer, making the video<br>
+appear on one of the unsupported displays.&nbsp;&nbsp;Now suppose the digitizer is asked to<br>
+display video in a depth it doesn't support (say the user changes the graphics mode<br>
+from 32 bpp to 4 bpp with the Monitors control panel). The sequence grabber can<br>
+again use off-screen memory to do the right thing. Of course, you never get something<br>
+for nothing.&nbsp;&nbsp;&nbsp;All this buffer copying will adversely affect performance. 
+</p>
+<p>
+<b>PREVIEWING</b><br>
+Previewing video with the sequence grabber is the equivalent of setting up the 'vdig' in<br>
+play-through mode to display live video on the computer screen. The code to make this<br>
+happen is shown below.&nbsp;&nbsp;&nbsp;Remember that the sequence grabber can simulate live video<br>
+play through for devices that don't support hardware play through.
+</p>
+<p>
+<code>// Find and open a sequence grabber.</code><br>
+<code>gSeqGrabber = OpenDefaultComponent(SeqGrabComponentType, (OSType) 0);</code><br>
+<code>// If we get a sequence grabber, set it up.</code><br>
+<code>if (gSeqGrabber != 0L) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Get the monitor &#8212; in this case, the dialog</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// window in which video is displayed.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gMonitor = GetNewDialog(kMonitorDLOGID, nil, (WindowPtr) -1L);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (gMonitor != nil) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Initialize the sequence grabber.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GetPort(&amp;savedPort);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetPort(gMonitor);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ShowWindow(gMonitor);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGInitialize(gSeqGrabber);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (result == noErr) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGSetGWorld(gSeqGrabber, (CGrafPtr) gMonitor,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Get a video channel.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGNewChannel(gSeqGrabber, VideoMediaType,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;gVideoChannel);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if ((gVideoChannel != nil) &amp;&amp; (result == noErr)) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;width;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;height;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gQuarterSize = false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gHalfSize = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gFullSize = false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGGetSrcVideoBounds(gVideoChannel,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;gActiveVideoRect);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;width = (gActiveVideoRect.right -</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gActiveVideoRect.left)/2;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;height = (gActiveVideoRect.bottom -</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gActiveVideoRect.top)/2;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SizeWindow (gMonitor, width, height, false);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Preview the video only.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGSetChannelUsage(gVideoChannel,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;seqGrabPreview);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGSetChannelBounds(gVideoChannel,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;(gMonitor-&gt;portRect));</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Go!</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (result == noErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGStartPreview(gSeqGrabber);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetPort(savedPort);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>}</code>
+</p>
+<p>
+We establish a connection to the sequence grabber component in the usual way, with<br>
+OpenDefaultComponent. We initialize the sequence grabber, set up the graphics<br>
+environment, and allocate a new channel for video. We want the displayed video to be<br>
+one-quarter size, so we call SGGetSrcVideoBounds to see what size the source video is.<br>
+This function calls VDGetDigitizerRect, which returns the source video size equal to<br>
+the digitizer rectangle. We scale the height and width accordingly, and the new size is<br>
+sent to the sequence grabber via the SGSetChannelBounds routine.&nbsp;&nbsp;Finally, we call<br>
+SGStartPreview, which turns on the video digitizer by calling the digitizer function<br>
+VDSetPlayThruOnOff, and previewing begins. 
+</p>
+<p>
+<b>RECORDING</b><br>
+Recording is very similar to previewing and is almost as simple. The following code<br>
+highlights the differences between recording and previewing. 
+</p>
+<p>
+<code>// Start exactly the same way as for previewing.</code><br>
+<code>// Find and open a sequence grabber.</code><br>
+<code>gSeqGrabber = OpenDefaultComponent(SeqGrabComponentType, (OSType) 0);</code><br>
+<code>// If we get a sequence grabber, set it up.</code><br>
+<code>if (gSeqGrabber != 0L) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;. . .</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if ((gVideoChannel != nil) &amp;&amp; (result == noErr)) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Set up size the same as in previewing case.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;width;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;height;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gQuarterSize = false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gHalfSize = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gFullSize = false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGGetSrcVideoBounds(gVideoChannel,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;gActiveVideoRect);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;width = (gActiveVideoRect.right -</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gActiveVideoRect.left)/2;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;height = (gActiveVideoRect.bottom -</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gActiveVideoRect.top)/2;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SizeWindow(gMonitor, width, height, false);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Record and play images instead of just previewing</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// them.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGSetChannelUsage(gVideoChannel, seqGrabRecord |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;seqGrabPlayDuringRecord);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGSetChannelBounds(gVideoChannel,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;(gMonitor-&gt;portRect));</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Get ready. . .</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGSetDataOutput(gSeqGrabber,&amp;gMovieFile,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;seqGrabToDisk);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGPrepare(gSeqGrabber, true, true);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Go!</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGStartRecord(gSeqGrabber);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;while (!Button() &amp;&amp; !result) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGIdle(gSeqGrabber);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = SGStop(gSeqGrabber);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;. . .</code><br>
+<code>}</code>
+</p>
+<p>
+There are several differences between recording and previewing. First we set up the<br>
+sequence grabber to record and to play through while recording. We next specify a file<br>
+for the movie to be written to, indicating that the movie be grabbed directly to disk.<br>
+For a short movie, we could grab to memory if we wanted. By default, the recording<br>
+time is limited by the system resources available -- in this case, disk space.
+</p>
+<p>
+The SGStartRecord call initiates the grab to disk. SGIdle is called repetitively to<br>
+provide processing time to the sequence grabber. You should call SGIdle as often as<br>
+possible while recording. When the user clicks the mouse button, or when the disk is<br>
+full, recording will stop, and we call SGStop to complete the recording process. 
+</p>
+<p>
+That's all there is to simple recording. If you want to do more sophisticated tasks with<br>
+the sequence grabber, such as replacing the standard sequence grabber disk- or<br>
+compression-bottleneck routines with your own, consult<i>Inside Macintosh: QuickTime</i><br>
+<i>Components</i>, or refer to the SGSample sample code on the QuickTime 1.0 Developer's<br>
+CD-ROM.
+</p>
+<h2>WHAT'S NEW FOR DIGITIZERS IN QUICKTIME 1.5</h2>
+<p>
+QuickTime 1.5 provides expanded support for sophisticated new types of video<br>
+digitizing hardware.&nbsp;&nbsp;&nbsp;First, it defines a number of routines that allow digitizers to<br>
+describe their capabilities to clients more completely. It also defines routines that<br>
+give clients more control over the digitization process.&nbsp;&nbsp;&nbsp;QuickTime 1.5 adds to the<br>
+video digitizer API by supporting devices that are capable of producing<br>
+compressed-image data. Finally, a standard user interface has been introduced for<br>
+choosing and configuring video digitizers.
+</p>
+<p>
+<b>EXPANDED INFORMATION SERVICES</b><br>
+QuickTime 1.5 encompasses a greater range of digitizer capabilities than did<br>
+QuickTime 1.0. The latest API defines new flags and several new routines to allow<br>
+applications to determine whether a digitizer supports these new capabilities. 
+</p>
+<p>
+<b>New digitizer information flags. </b>Four new flags have been defined in the<br>
+outputCapabilityFlags field of the DigitizerInfo record.
+</p>
+<ul>
+<li>The digiOutDoesUnreadableScreenBits flag indicates that the video<br>
+digitizer may put pixels on the screen that are visible but can't be used when<br>
+compressing images. In other words, image data can't be read directly from the<br>
+screen as source material for the compression phase. </li>
+<li>The digiOutDoesCompress flag indicates that the digitizer is capable of<br>
+producing compressed-image data directly. </li>
+<li>The digiOutDoesCompressOnly flag indicates that the digitizer provides<br>
+compressed-image data only and that it's unable to provide image data for<br>
+display. </li>
+<li>The digiOutDoesPlayThruDuringCompress flag indicates that the digitizer<br>
+can display image data while it's compressing it. </li>
+</ul>
+<p>
+<b>New information routines. </b>Four new functions allow applications to get additional<br>
+information about the digitizer's capabilities. 
+</p>
+<ul>
+<li>The VDGetSoundInputDriver call gives video digitizers a way to tell<br>
+applications which sound input driver they're associated with. Several<br>
+digitizer boards now available have sound as well as video digitizing<br>
+capability. </li>
+<li>The VDGetPreferredTimeScale routine allows digitizers that can<br>
+time-stamp the data they create to communicate their preferred time scale to<br>
+applications. The sequence grabber, in particular, uses this call to establish<br>
+the time scale of the video data it creates from the digitizer output. </li>
+<li>The VDGetDataRate routine is extremely useful because it gives clients a<br>
+way to determine the performance capabilities of a digitizer. The call returns<br>
+three values.&nbsp;&nbsp;&nbsp;The first value, milliSecPerFrame, indicates the number of<br>
+milliseconds of overhead involved in digitizing a single frame. <i>Overhead</i>is<br>
+defined as the average delay between the time the digitizer requests a frame<br>
+from its associated hardware and the time the device actually delivers the<br>
+frame. The second value, framesPerSecond, is the maximum rate at which the<br>
+digitizer can capture video frames in its current configuration. This value is<br>
+not affected by the VDSetFrameRate call, described later on. The last value,<br>
+bytesPerSecond, indicates the data rate at which a compressed-source<br>
+digitizer can produce compressed-image data. This value varies depending on<br>
+parameters for spatial and motion quality, image size, and depth. In other<br>
+words, unlike milliSecPerFrame and framesPerSecond, bytesPerSecond<i>isn't</i>a<br>
+static value. </li>
+<li>The VDGetDMADepths routine allows an application to determine the pixel<br>
+depths a DMA-style digitizer can support. The depthArray parameter is a<br>
+pointer to a long word of flags, with each flag representing a possible depth. A<br>
+flag with a value of 1 indicates that the corresponding depth is supported. The<br>
+preferredDepth parameter is a pointer to a long word indicating -- big<br>
+surprise -- the preferred depth of the digitizer. A value of 0 indicates that all<br>
+depths are equally acceptable. Note that if a DMA-style digitizer doesn't<br>
+support this call, the digitizer is assumed to be capable of handling off-screen<br>
+buffers at all depths indicated in the outputCapabilityFlags field of its<br>
+DigitizerInfo record. </li>
+</ul>
+<p>
+<b>ENHANCED DIGITIZATION CONTROL</b><br>
+Two new routines in QuickTime 1.5 give applications greater control over how a video<br>
+digitizer performs its task. Video digitizers that can time-stamp the video frames they<br>
+produce should implement the new VDSetTimeBase routine so that applications can<br>
+specify the time coordinate system the video digitizer should use when time-stamping<br>
+video frames.
+</p>
+<p>
+The second routine, VDSetFrameRate, allows applications to tell a digitizer the precise<br>
+frame rate to use for capture. Digitizers used to capture video at only one frame rate<br>
+-- as fast as possible.&nbsp;&nbsp;&nbsp;However, the advent of full-frame-rate digitizing hardware<br>
+and compressed-source devices has made it increasingly important for clients to<br>
+manage the tradeoff between frame rate, image size, and compression quality. The rate<br>
+in VDSetFrameRate is expressed as a fixed-point value, typically between 0 and 29.97<br>
+(see "Frame Rates and Motion Quality" earlier in this article for a discussion of frame<br>
+rate values). 
+</p>
+<p>
+<b>COMPRESSED-SOURCE DEVICE SUPPORT</b><br>
+OK, pay attention here -- this enhancement alone is worth the price of admission for<br>
+QuickTime 1.5. QuickTime is finally poised to silence all complaints about "postage<br>
+stamp video sizes" and "jerky frame rates." By expanding the video digitizer API to<br>
+support compressed-source video digitizers, QuickTime gives users access to<br>
+full-size, full-frame-rate digital video. A number of new video capture boards with<br>
+on-board compression and decompression capabilities are already shipping, and there<br>
+will undoubtedly be others soon. 
+</p>
+<p>
+QuickTime 1.5 includes eight new routines for servicing compressed-source video<br>
+digitizers. Several of these calls should look familiar to you, since they're largely<br>
+compressed-source versions of existing calls and serve very similar purposes. 
+</p>
+<ul>
+<li>VDGetCompressionTypes is a straightforward call. It simply returns a<br>
+handle to the list of compressors that your video digitizer implements. Each<br>
+element of the list contains the component ID, type, name, format, and<br>
+capabilities of a compressor. </li>
+<li>The VDSetCompression routine specifies which of all the possible<br>
+compressors a digitizer should use. The parameters for VDSetCompression<br>
+specify the spatial quality, temporal quality, depth, and other characteristics<br>
+of the compression. </li>
+<li>VDCompressOneFrameAsync starts the digitizing process for<br>
+compressed-source devices, just as VDGrabOneFrameAsync starts the process<br>
+for regular digitizers.&nbsp;&nbsp;&nbsp;The major difference is that a compressed-source<br>
+digitizer handles all the management of data buffers itself, without external<br>
+assistance from the caller.</li>
+<li>VDCompressDone is similar to VDDone in that it allows a caller to<br>
+determine when a frame has been completed (in this case, digitized and<br>
+compressed). </li>
+<li>The VDReleaseCompressBuffer tells a compressed-source device to free<br>
+the buffer returned by the VDCompressDone call.</li>
+<li>The VDResetCompressSequence call instructs a digitizer to insert a key<br>
+frame into a frame-differenced image sequence as soon as possible after it<br>
+receives this call.</li>
+<li>The VDGetImageDescription routine prompts the digitizer to return an<br>
+image description structure corresponding to the current settings. This<br>
+structure is defined in the Image Compression Manager chapter of<i>Inside</i><br>
+<i>Macintosh: QuickTime</i> and is the same structure that's used to describe image<br>
+data in movie files. </li>
+<li>The VDSetCompressionOnOff routine starts and stops the digitizer. To give<br>
+the digitizer adequate time to prepare itself for the requested operation,<br>
+clients must call this routine before calling VDSetCompression or<br>
+VDCompressOneFrameAsync. </li>
+</ul>
+<p>
+Typically, compressed-source devices are able to act as hardware decompressors and<br>
+have a corresponding QuickTime image decompressor component that clients can use to<br>
+play back the compressed images. However, if your hardware produces compressed<br>
+data that can't be read by any of the standard QuickTime image decompressor<br>
+components, you need to provide an appropriate software-only decompressor<br>
+component. This way, users who don't have your hardware will still be able to play<br>
+movies produced with your compressor. 
+</p>
+<p>
+<b>A STANDARD USER INTERFACE FOR CONFIGURING VIDEO DIGITIZERS</b><br>
+QuickTime 1.5 introduces changes to the sequence grabber component, which many<br>
+developers rely on to reduce the complexity of dealing with video and sound digitizers.<br>
+One of the more significant additions to the sequence grabber component is standard<br>
+dialog boxes for configuring video and sound digitizers. Both Apple and third parties<br>
+can extend the controls presented in these dialog boxes through sequence grabber<i>panel</i><br>
+<i>components</i>. Although this article won't delve into the details of writing a panel<br>
+component, you should be aware of them and how they relate to video digitizers.
+</p>
+<p>
+Figure 6 shows the Source panel, one of the three panel components built into<br>
+QuickTime 1.5. The other two panel components are the Image panel and the<br>
+Compression panel. You navigate to the different panels through the pop-up menu at<br>
+the top of the panel area. 
+</p>
+<p>
+<img src="img/188.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 6</b> The Source Panel
+</p>
+<p>
+If your video digitizer has capabilities that aren't addressed by the standard panels in<br>
+QuickTime 1.5, and it's important to give users access to these features, we strongly<br>
+urge you to write a panel component. Any applications that use the sequence grabber<br>
+dialog boxes can then pick up the functionality in your panel component. There's less<br>
+work for everybody this way -- video digitizer manufacturers don't have to write<br>
+applications that show off their card-specific features, and application developers<br>
+don't have to write card-specific code.
+</p>
+<p>
+You'll find a description of how to write your own sequence grabber panel components<br>
+in Chapter 6 of<i> Inside Macintosh: QuickTime Components</i>. As a bonus, we've included<br>
+the source code for an example panel component on this issue's CD. 
+</p>
+<h2>THE IDEAL VIDEO DIGITIZER</h2>
+<p>
+To bring a video digitizer board to market, developers must make numerous<br>
+compromises between design, features, and cost. It's not unusual for a few hasty design<br>
+decisions to lead to a less-than- wonderful QuickTime digitizer product. For example,<br>
+if the SuperOps company creates a video digitizing card that can do video play through<br>
+at only 24 bpp in a display size of 640 by 480 pixels, and that can capture at only 8<br>
+bpp in a display size of 240 by 180 pixels, the card probably isn't going to be a prime<br>
+candidate for the next QuickTime product of the year. Why? Because the video digitizer<br>
+API is designed to encourage the creation of devices that have more or less symmetrical<br>
+operating characteristics in both the play- through and capture modes. Obviously, the<br>
+card just described doesn't meet this goal -- it behaves quite differently depending on<br>
+whether it's performing play through or capture. In addition, the choice of 240 by<br>
+180 pixels as the board's capture size is unwise. In general, an ActiveSrcRect size<br>
+that's evenly divisible by 2 produces the best quality without the support of<br>
+sophisticated filtering (see "What's So Magic About Magic Sizes?").
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Table 1 </b>Characteristics of an Ideal Video Digitizer
+</p>
+<p><table border="0"><tr><td><b>Feature</b></td><td><b></b><b>Benefit</b></td></tr>
+<tr><td>Hardware DMA support</td><td>The ability to display video on</td></tr>
+<tr><td></td><td>any screen (or off-screen) and</td></tr>
+<tr><td></td><td>not be captive to a local frame</td></tr>
+<tr><td></td><td>buffer</td></tr>
+<tr><td>Enhanced resizing algorithms</td><td>Improved image quality</td></tr>
+<tr><td>(anti-aliasing, improved</td><td></td></tr>
+<tr><td>line filtering, and so on)</td><td></td></tr>
+<tr><td>Arbitrary resizing in hardware</td><td>Fast resizing to any size</td></tr>
+<tr><td>16-bit pixel support</td><td>Reduced data rate with minimal</td></tr>
+<tr><td></td><td>loss of color fidelity</td></tr>
+<tr><td>Enhanced color control</td><td>Finer control over compression</td></tr>
+<tr><td></td><td>efficiency and improved image</td></tr>
+<tr><td></td><td>quality</td></tr>
+<tr><td>Hardware compression and decompression</td><td>Improved live-capture frame</td></tr>
+<tr><td></td><td>rates, movie playback rates, and</td></tr>
+<tr><td></td><td>bigger movie sizes</td></tr>
+<tr><td>Arbitrary hardware zoom (stretch, shrink)</td><td>Better cropping</td></tr>
+<tr><td>Multiple buffering</td><td>Better performance</td></tr>
+<tr><td>Signal lock sensing and standard detection</td><td>Improved user experience</td></tr>
+<tr><td>Symmetrical play-through and</td><td>Improved user feedback</td></tr>
+<tr><td>record characteristics</td><td></td></tr>
+<tr><td>Hardware special effects (flips, warps, skews)</td><td>Fun stuff to create that</td></tr>
+<tr><td></td><td>jaw-dropping impact on users</td></tr>
+<tr><td>Key color</td><td>Fast masking, blue screen</td></tr>
+<tr><td></td><td>effects</td></tr>
+<tr><td>Hardware clip mask</td><td>Video window clipping in</td></tr>
+<tr><td></td><td>graphics environments</td></tr>
+<tr><td>Simultaneous compression and decompression</td><td>Video conferencing and video</td></tr>
+<tr><td></td><td>phone of multiple video channels</td></tr>
+<tr><td></td><td>applications</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+So how does a developer decide what sorts of features to include in a digitizer board?<br>
+Well, we've got some pretty solid ideas about what characteristics make for a really<br>
+great digitizer. To get a sense of the kind of features we believe an ideal QuickTime<br>
+video digitizer should have, take a look at Table 1. Keep in mind that each of the<br>
+features of this ideal digitizer has a very real associated cost, which gets reflected in<br>
+the retail price. Our ideal digitizer would probably be priced out of the reach of most<br>
+users today. But then again, two years ago we wouldn't have believed we could afford<br>
+personal computers with 32 MB of RAM, so who knows? 
+</p>
+<p>
+<b>WHAT'S SO MAGIC ABOUT MAGIC SIZES?</b><br>
+When the vertical dimension of the ActiveSrcRect can be evenly divided by 2, the<br>
+resulting sizes are referred to as <i>magic sizes</i>. Actually, there's nothing magic about<br>
+them. They just happen to be easily produced by some simple tricks in hardware and<br>
+software. It takes two fields to produce a complete frame of full-size NTSC video (for<br>
+example, 640 by 480 pixels), with each field holding half the lines of the video frame.<br>
+The most common resizing trick is to drop a field from each video frame to produce the<br>
+requisite number of lines for a half-size image (for example, 320 by 240 pixels).<br>
+This makes it very simple to produce good-quality half-size video without performing<br>
+more sophisticated image filtering in software. Because software isn't burdened with<br>
+the additional task of performing a more complex filtering of the image, the effective<br>
+capture rate of the digitizer is increased at this "magic" size.
+</p>
+<p>
+<b>GO GRAB A MOVIE</b><br>
+Wow, we've covered a lot of ground here! Start thinking about integrating video data<br>
+types into your applications, and experiment with the sample code to get started. The<br>
+main message we want to pass on to application writers is that you should use the<br>
+sequence grabber as your entry point into the world of video. Taking advantage of the<br>
+enormous capability of the sequence grabber leaves you more time to spend on creating<br>
+features that differentiate your product. As for video digitizer developers, we hope this<br>
+article has given you more insight into the grab process and gotten you ready to start<br>
+implementing some of the cool features listed in Table 1. We're counting on seeing<br>
+many of these capabilities in the next generation of digitizer boards. Finally, to the<br>
+video neophyte, all we can say is that there aren't too many things that are more<br>
+entertaining than going out and grabbing a movie. So go do it! 
+</p>
+<h2>REFERENCES</h2>
+<ul>
+<li><i>Inside Macintosh: QuickTime</i> and <i>Inside Macintosh: QuickTime</i><br>
+<i>Components</i>. These are included in the QuickTime Developer's Kit v. 1.5.</li>
+<li>"Inside QuickTime and Component-Based Managers" by Bill Guschwan, <br>
+<i>develop</i> Issue 13.</li>
+<li>"Techniques for Writing and Debugging Components" by Gary Woodcock<br>
+and Casey King, <i> develop</i>Issue 12.</li>
+<li>"Time Bases: The Heartbeat of QuickTime" by Guillermo A. Ortiz, <i> develop</i><br>
+Issue 12.</li>
+<li><i>Electronic Cinematography: Achieving Photographic Control over the</i><br>
+<i>Video Image</i> by Harry Mathias and Richard Patterson (Wadsworth, 1985).</li>
+<li><i>Film Art: An Introduction</i>, 3rd ed., by David Bordwell and Kristin<br>
+Thompson (McGraw-Hill, 1990).</li>
+<li><i>Graphics Gems </i>Volume I edited by Andrew S. Glassner (Academic Press,<br>
+1990), Chapter 3, "Useful 1-to- 1 Pixel Transforms."</li>
+<li><i>Raster Graphics Handbook</i>, 2nd ed., Conrac Corporation (Van Nostrand<br>
+Reinhold, 1985).</li>
+<li><i>Television Production</i>, 3rd ed., by Alan Wurtzel and Stephen R. Acker<br>
+(McGraw-Hill, 1989).</li>
+</ul>
+<p>
+<b>FRAME RATES AND MOTION QUALITY</b><br>
+The term<i> frame rate</i> is frequently tossed about in discussions of the pros and cons of<br>
+video digitizers. Frame rate is the rate at which frames appear during video playback.
+</p>
+<p>
+It's commonly held that the frame rate corresponding to full-motion video is 30<br>
+frames per second (fps). However, 30 fps is not the only interesting frame rate or<br>
+even the only "true" full-motion frame rate.
+</p>
+<ul>
+<li>30 fps is the normal frame rate for NTSC video and broadcast production.<br>
+The precise rate is actually 29.97 fps. When a QuickTime product promises<br>
+"full-motion" video, this is the rate that's typically implied.</li>
+<li>25 fps is the normal frame rate for PAL and SECAM video and broadcast<br>
+production.</li>
+<li>24 fps is the normal frame rate for theatrical film production.</li>
+<li>10 to 12 fps is widely regarded as the minimum acceptable frame rate for<br>
+a QuickTime movie. At rates below this threshold, the motion is generally<br>
+perceived to be too jerky.&nbsp;&nbsp;In addition to frame rate, there are two other terms<br>
+you should know about. If the frame rate measures the speed at which the<br>
+movie is played back for the viewer, the <i> capture rate</i>is the rate at which the<br>
+'vdig' hardware is capable of capturing frames. The <i>effective capture rate</i> is<br>
+the number of frames per second that end up in a QuickTime movie. Many<br>
+factors can make the effective capture rate less than the intrinsic rate the<br>
+hardware can support. We'll discuss these factors later in the article.</li>
+</ul>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>WHAT THE $#%!! IS A MAXAUXBUFFER, AND DO I HAVE</b><br>
+<b>ONE?</b>VDGetMaxAuxBuffer is an extremely misunderstood 'vdig' call. For a video<br>
+digitizer that implements this call, the sequence grabber can provide improved<br>
+capture rates and enhanced capabilities, even if the digitizer hardware wasn't<br>
+originally designed with off-screen buffering in mind.
+</p>
+<p>
+Simply put, a MaxAuxBuffer is the total unused off-screen local memory on a digitizer<br>
+card. The sequence grabber can use the MaxAuxBuffer to implement resizing, clipping,<br>
+and color conversion operations for digitizers that don't support these operations in<br>
+hardware. The MaxAuxBuffer can also be used to provide a low-performance<br>
+equivalent to DMA for devices that don't support hardware DMA. Alternatively, the<br>
+sequence grabber can use the MaxAuxBuffer for multiple buffering by partitioning it<br>
+into one or more smaller buffers.
+</p>
+<p>
+Even if your card supports high-performance DMA-to-system memory operations, we<br>
+suggest that video digitizers support and implement this feature whenever possible.<br>
+Transferring data into your local memory system will be faster than transferring it<br>
+across NuBusTM into system memory. This, in turn, makes it possible for clients to<br>
+achieve a faster effective capture rate.
+</p>
+<p>
+A couple of rules of thumb for using VDGetMaxAuxBuffer: First, because a<br>
+MaxAuxBuffer is composed of local memory only from your device, you should <i>not</i><br>
+allocate system memory to support this call. Second, the sequence grabber will<br>
+sometimes act like a snapperhead and make this call multiple times. Just be consistent<br>
+with your replies. You aren't responsible for managing or partitioning this memory<br>
+-- you simply have to say it's around.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>CASEY KING AND GARY WOODCOCK </b>are considered fictitious by Apple Computer,<br>
+Inc. (at least, they're never around their offices when anybody's looking for them).<br>
+Any similarity to actual persons, living, dead, or somewhere in between, is<br>
+unintentional, unlikely, and if true, probably unfortunate. All persons appearing in<br>
+this article are over 18 years of age (physically, anyway). This article was written<br>
+entirely on location in Austin, TX, and Cupertino, CA, usually between the hours of 10<br>
+P.M. and 4 A.M.*
+</p>
+<p>
+Casey King and Gary Woodcock are trademarks of Apple Computer, Inc.
+</p>
+<p>
+<b>Great QuickTime movies </b>are tough to produce due to the number of tradeoffs that<br>
+need to be considered. See the article "Making Better QuickTime Movies" in this issue<br>
+for more information on managing frame rate, frame size, compression, image<br>
+quality, and sound to achieve the best results. *<b>A single full-sized video frame</b><br>
+consists of two fields, one containing the odd-numbered scan lines and the other<br>
+containing the even-numbered scan lines.*
+</p>
+<p>
+<b>For an example </b>of how to set up destination characteristics, see the description of<br>
+VDSetPlayThruDestination in <i> Inside Macintosh: QuickTime Components</i>.*
+</p>
+<p>
+<b>VDSetPlayThruDestination is </b>one of the required calls defined in the video<br>
+digitizer component API. For a complete list of all the calls that a digitizer component<br>
+must implement, see the section "Required Functions" in Chapter 7 of <i> Inside</i><br>
+<i>Macintosh: QuickTime Components</i>.*<b>For more information on time scales, </b> see<br>
+<i>Inside Macintosh: QuickTime Components </i>and "Time Bases: The Heartbeat of<br>
+QuickTime" in <i>develop</i> Issue 12.*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Bill Guschwan, Peter Hoddie,<br>
+Guillermo Ortiz, John Wang *
+</p>
+</body>
+</html>

@@ -1,0 +1,519 @@
+<html>
+<head>
+<!-- Article ID: 44 - Extracted from develop-1993 -->
+<!-- on 2024-02-21 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>December 93 - DRAG AND DROP FROM THE FINDER</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>DRAG AND DROP FROM THE FINDER</h2>
+<h1>DAVE EVANS AND GREG ROBBINS</h1>
+<p>
+<img src="img/241.gif" width="180 px"></img>
+</p>
+<p>
+<i>Some users navigate Standard File dialogs with no problem, but many others find them</i><br>
+<i>tedious or even confusing. Users want to find and organize their files without having to</i><br>
+<i>learn the intricacies of the hierarchical file system and Standard File dialogs. With</i><br>
+<i>applications that use the Drag Manager, users will be able to work with files the way</i><br>
+<i>they expect: by dragging files from the Finder into an application window. This article</i><br>
+<i>and the accompanying sample program show how easily your application can provide</i><br>
+<i>this valuable feature.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The Drag Manager is so new you won't find it in Inside Macintosh yet, but if your<br>
+application works with files, you'll want to learn more about what it can do for you.<br>
+This new Macintosh Toolbox manager lets users drag and drop data (such as text and<br>
+pictures) between windows in an application and between different applications. It also<br>
+allows users to drag document icons to and from the Finder. 
+</p>
+<p>
+Rather than describing the Drag Manager in depth, this article and its sample<br>
+application focus on using the Drag Manager to drag picture files (files of type 'PICT')<br>
+from the Finder into an application. The techniques used by the sample application can<br>
+easily be generalized to cover other cases. 
+</p>
+<p>
+The Drag Manager is currently packaged as a system software extension that you can<br>
+license to include with your products. It requires System 7, and to take advantage of<br>
+the Finder dragging described in this article you need Finder version 7.1.1 or later.<br>
+You can order the full Macintosh Drag and Drop Developer's Kit from APDA. The Drag<br>
+Manager will also be included in future system software releases. 
+</p>
+<p>
+Along with the sample application, called SimpleDrag, this issue's CD contains the<br>
+programmer's guide for the Drag Manager as well as theDrag and Drop Human<br>
+Interface Guidelines. After you've read this article and looked at the SimpleDrag code,<br>
+you should read these two documents to get a deeper understanding of the Drag Manager.<br>
+SimpleDrag not only allows picture files to be dragged from the Finder but also lets<br>
+PICT data be dragged from one application window into another; for the full story on<br>
+this, look at the code and documentation on the CD.
+</p>
+<h2>THE INTERFACE: IT'S NOT SUCH A DRAG</h2>
+<p>
+Dragging is a skill that every Macintosh user has mastered. It provides a quick, simple<br>
+alternative to commands as a way of performing common operations such as moving or<br>
+deleting files. This use of dragging gives users a sense of control because they can<br>
+manipulate objects directly with excellent visual feedback. And it's faster and more<br>
+intuitive than commands because it's not hidden in a menu. 
+</p>
+<p>
+Since all Macintosh users use dragging to arrange and manipulate files in the Finder, it<br>
+only makes sense that they should be able to drag files from the Finder into an<br>
+application window. But until now, the only way to select and specify files within an<br>
+application has been with Standard File dialogs. Now you can use the Drag Manager to<br>
+provide an alternate, more intuitive way to work with files: the user can open a file in<br>
+your application simply by dragging the file's icon into an application window. 
+</p>
+<h2>FIRST, A FEW TERMS</h2>
+<p>
+Before we look at the sample code, we need to clarify a few terms that the Drag<br>
+manager&nbsp;&nbsp;introduces: <i>drag items, drag flavors, drag handlers, senders, </i>and <i>receivers.</i>
+</p>
+<p>
+The objects that a user drags are called drag items. For example, a user who selects<br>
+and drags three files is dragging three different drag items. 
+</p>
+<p>
+Drag <i>flavors</i> describe the kind of data that a drag item contains. When a user drags an<br>
+item to an application window, the receiving application must determine whether it<br>
+can accept the data in the drag item. Each item can have more than one flavor, because<br>
+data can usually be described in more than one format or data type. For example, you<br>
+can describe text data as ASCII data, styled text data, or RTF interchange format; if a<br>
+program can't accept the more elaborate RTF format, it may be able to use the plain<br>
+ASCII text. The Drag Manager uses a four-character ResType to identify a flavor. In<br>
+our sample application, we use only two drag flavors: one that identifies files dragged<br>
+from the Finder, and another that identifies PICT data dragged from an application<br>
+window. 
+</p>
+<p>
+The Drag Manager uses an application's <i>drag handlers</i> to provide dragging feedback and<br>
+to complete a drag. There are two types of drag handlers: <i>tracking handlers</i> and <i>receive</i><br>
+<i>handlers</i>. A tracking handler is called while an item is being dragged over an<br>
+application's windows; a receive handler is called when the user releases the mouse<br>
+button to drop the item in a window. Each window has a tracking handler and receive<br>
+handler installed for it, though several windows may use the same handler. When you<br>
+initialize your application or open a new window, you call the Drag Manager to install<br>
+your drag handler callback routines.
+</p>
+<p>
+Because the Drag Manager provides interapplication drag and drop services, it's<br>
+important to know where the drag starts and where it ends. The application in which<br>
+the drag starts is called thesender.&nbsp;&nbsp;&nbsp;Any application that the item is dragged over is a<br>
+potential <i>receiver</i> of the drag; the application it's dropped into is the actual receiver.<br>
+The sender and receiver might be the same application -- but with interapplication<br>
+dragging, another application could be the receiver of the drag. 
+</p>
+<h2>NOW, ON TO THE CODE</h2>
+<p>
+With the lingo out of the way, let's look at our SimpleDrag application. This<br>
+application displays pictures in its windows. One way the user specifies a picture file<br>
+to be displayed is by choosing the application's Open command and then selecting a file<br>
+from the Standard File dialog. But since the application uses the Drag Manager, the<br>
+user can also drag a picture file from the Finder into a SimpleDrag window. PICT data<br>
+displayed in a SimpleDrag window can even be dragged into another SimpleDrag<br>
+window. 
+</p>
+<p>
+Before you call any Drag Manager routines,&nbsp;&nbsp;make sure that the Drag Manager is<br>
+available by calling Gestalt with the selector gestaltDragMgrAttr and checking the<br>
+gestaltDragMgrPresent bit of the response. *
+</p>
+<p>
+First let's consider the code for the Open command case. When the user chooses the<br>
+Open command, SimpleDrag calls the Standard File Package to present a dialog that<br>
+lists the picture files.&nbsp;&nbsp;&nbsp;Once the user has selected a file, SimpleDrag calls its<br>
+SetWindowPictureFromFile routine to read the file and display it. 
+</p>
+<p>
+To support dragging files from the Finder into the application, SimpleDrag installs two<br>
+drag handlers for each new window. While the user drags a PICT drag item over a<br>
+SimpleDrag window, the tracking handler provides visual feedback. If the user drops<br>
+the item in a SimpleDrag window, the Drag Manager calls the receive handler to read<br>
+and display the PICT information, which may be not only a picture file but also PICT<br>
+data dragged from another window; the receive handler calls<br>
+its SetWindowPictureFromFile routine if the drag item is a picture file (just as when<br>
+the user chooses Open from the File menu). 
+</p>
+<p>
+The following routine installs the tracking and receive handlers:
+</p>
+<p>
+<code>OSErr InstallDragHandlers(WindowPtr theWindow)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSErr retCode;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;retCode = InstallTrackingHandler(MyTrackingHandler, theWindow,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (retCode == noErr) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retCode = InstallReceiveHandler(MyReceiveHandler, theWindow,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (retCode != noErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(void) RemoveTrackingHandler(MyTrackingHandler,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theWindow);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return retCode;</code><br>
+<code>}</code>
+</p>
+<p>
+That's all you need to do to set up tracking and receive handlers for the given window.<br>
+You can also install a default handler, to be used for any window that you don't<br>
+explicitly install a handler for, by passing nil as the window pointer to the install<br>
+routine.
+</p>
+<p>
+<b>TRACKING THE DRAG</b><br>
+Now let's see what happens while the user drags an item around. Our main objective is<br>
+to indicate, with visual feedback, where it's OK to drop the item. SimpleDrag provides<br>
+the standard feedback highlighting for its type of windows and data -- a thin frame<br>
+highlight within the content region of the window. This highlight signals the user that<br>
+the item can be dropped there. 
+</p>
+<p>
+While the user drags an item (or items) over one of the application's windows, the<br>
+mouse movement determines what messages the tracking handler receives, as follows:
+</p>
+<ul>
+<li>The tracking handler receives an EnterHandler message the first time it's<br>
+called (that is, the first time the drag enters a window that uses that handler).<br>
+You can allocate memory or, as in our application, check whether you can<br>
+receive the drag. </li>
+<li>The handler receives an EnterWindow message when the drag enters a<br>
+window.&nbsp;&nbsp;&nbsp;This message is distinct from EnterHandler because you may be<br>
+using the same handler for more than one window, in which case there might<br>
+be many EnterWindow messages between an EnterHandler/LeaveHandler pair.</li>
+<li>While the user drags within a window, the handler receives multiple<br>
+InWindow messages. </li>
+<li>When the drag leaves the window, the handler receives a LeaveWindow<br>
+message. </li>
+<li>When the user drags to a window that uses a different tracking handler,<br>
+the handler receives a LeaveHandler message. </li>
+</ul>
+<p>
+The tracking handler for SimpleDrag is as follows:
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<code>pascal OSErr MyTrackingHandler(DragTrackingMessage theMessage,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;WindowPtr theWindow, void *handlerRefCon, DragReference theDrag)</code><br>
+<code>{</code><br>
+<code>#pragma unused (handlerRefCon)</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;RgnHandle&nbsp;&nbsp;&nbsp;tempRgn;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mouseInContentFlag;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retCode;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;retCode = noErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;switch (theMessage) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case dragTrackingEnterHandler:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Determine whether the drag item is acceptable and</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// store that flag in the globals, plus reset the</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// highlighted global flag.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gDragHandlerGlobals.acceptableDragFlag =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DragItemsAreAcceptable(theDrag);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gDragHandlerGlobals.windowIsHilightedFlag = false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case dragTrackingEnterWindow:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case dragTrackingInWindow:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case dragTrackingLeaveWindow:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Highlighting of the window during a drag is done here.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Do it only if we can accept this item and we're not</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// in the source window.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (gDragHandlerGlobals.acceptableDragFlag &amp;&amp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DragIsNotInSourceWindow(theDrag)) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (theMessage == dragTrackingLeaveWindow)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mouseInContentFlag = false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mouseInContentFlag = MouseIsInContentRgn(theDrag,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theWindow);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (mouseInContentFlag &amp;&amp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;!gDragHandlerGlobals.windowIsHilightedFlag) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ClipRect(&amp;theWindow-&gt;portRect);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tempRgn = NewRgn();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;RectRgn(tempRgn, &amp;theWindow-&gt;portRect);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (ShowDragHilite(theDrag, tempRgn, true) ==</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;noErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gDragHandlerGlobals.windowIsHilightedFlag =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DisposeRgn(tempRgn);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else if (!mouseInContentFlag &amp;&amp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gDragHandlerGlobals.windowIsHilightedFlag) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ClipRect(&amp;theWindow-&gt;portRect);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (HideDragHilite(theDrag) == noErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gDragHandlerGlobals.windowIsHilightedFlag =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case dragTrackingLeaveHandler:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Do nothing for the LeaveHandler message.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Let the Drag Manager know we didn't recognize the</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// message.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retCode = paramErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return retCode;</code><br>
+<code>}</code>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The EnterWindow message is sent when the drag enters the structure region of a<br>
+window, not the content region. The Drag and Drop Human Interface Guidelines specify<br>
+that the title bar of a window, which is outside the content region, should not be able to<br>
+receive drags. So upon receiving an EnterWindow message, the tracking handler needs<br>
+to check the mouse location before calling ShowDragHilite.*
+</p>
+<p>
+To give the user visual feedback, the tracking handler uses the Drag Manager's<br>
+ShowDragHilite routine. This routine takes a region to be highlighted and draws an<br>
+inset or outset frame of that region. Here we use it to highlight inside the content<br>
+region of the window, but you can also use it to highlight panes within a window or any<br>
+arbitrary region that accepts a drag. We later call HideDragHilite when the drag leaves<br>
+the content region of our window.
+</p>
+<p>
+As you can see in the above code, there are several conditions to check for before<br>
+calling the highlight routines. The DragItemsAreAcceptable routine, which the<br>
+tracking handler calls when it gets an EnterHandler message, checks that only one item<br>
+is being dragged (a limitation of our simple example) and that the drag item is PICT<br>
+data or a picture file.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<code>Boolean DragItemsAreAcceptable(DragReference theDrag)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retCode;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;unsigned short&nbsp;&nbsp;totalItems;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ItemReference&nbsp;&nbsp;&nbsp;itemRef;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;acceptableFlag;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;HFSFlavor&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;currHFSFlavor;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Size&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;flavorDataSize;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;FlavorFlags&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;currFlavorFlags;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;acceptableFlag = false;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// This application can only accept the drag of a single item.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;retCode = CountDragItems(theDrag, &amp;totalItems);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (retCode == noErr &amp;&amp; totalItems == 1) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retCode = GetDragItemReferenceNumber(theDrag, 1, &amp;itemRef);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (retCode == noErr) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Use GetFlavorFlags to see if the drag item is PICT</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// data.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retCode = GetFlavorFlags(theDrag, itemRef, 'PICT',</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;currFlavorFlags);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (retCode == noErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;acceptableFlag = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Check if the item is a file spec for a picture</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// file.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;flavorDataSize = sizeof(HFSFlavor);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retCode = GetFlavorData(theDrag, itemRef,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;flavorTypeHFS, &amp;currHFSFlavor,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;flavorDataSize, 0);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (retCode == noErr &amp;&amp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;currHFSFlavor.fileType == 'PICT')</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;acceptableFlag = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return acceptableFlag;</code><br>
+<code>}</code>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+DragItemsAreAcceptable calls GetFlavorFlags with type 'PICT' to determine whether<br>
+the drag item is PICT data. If it isn't PICT data, GetFlavorFlags returns<br>
+cantGetFlavorErr; DragItemsAreAcceptable then checks to see if the drag item is a<br>
+picture file, by calling GetFlavorData with flavorTypeHFS. This is a special flavor that<br>
+identifies files dragged from the Finder into an application. Data of type HFSFlavor<br>
+contains the file's Finder information and an FSSpec that you can use to open and read<br>
+the file. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<code>typedef struct HFSFlavor {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSType&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fileType;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// file type</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSType&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fileCreator;&nbsp;&nbsp;&nbsp;&nbsp;// file creator</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;unsigned short&nbsp;&nbsp;fdFlags;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Finder flags</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;FSSpec&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fileSpec;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// file system specification</code><br>
+<code>};</code><br>
+<code>typedef struct HFSFlavor HFSFlavor;</code>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Another check made in the tracking handler is to ensure (with the routine<br>
+MouseIsInContentRegion) that the drag isn't over the title bar or over controls in the<br>
+application window. To implement drag and drop according to the guidelines, we accept<br>
+drags only in the content region of a window. Also, since SimpleDrag doesn't support<br>
+drag and drop within the same window, the tracking handler checks (with its<br>
+DragIsNotInSourceWindow routine) to make sure that the user isn't dragging over the<br>
+same window in which the drag originated. 
+</p>
+<p>
+<b>RECEIVING THE DRAG</b><br>
+The receive handler is similar to the tracking handler, but it's called once, and we<br>
+must ask for all the data we want. We also make sure that the drag stopped in the<br>
+content region of the window and that the user isn't dragging back into the source<br>
+window. 
+</p>
+<p>
+Below is the code for SimpleDrag's receive handler. In a receive handler, you first ask<br>
+for the data type you prefer, whether picture, text, or some other type, and whether a<br>
+file from the Finder or data dragged directly from another window. In SimpleDrag, we<br>
+prefer to receive PICT data directly, so we look for it first. If the drag item isn't PICT<br>
+data, we use the HFS flavor to look for files of type 'PICT'. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<code>pascal OSErr MyReceiveHandler(WindowPtr theWindow,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;void *handlerRefCon, DragReference theDrag)</code><br>
+<code>{</code><br>
+<code>#pragma unused (handlerRefCon)</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ItemReference&nbsp;&nbsp;&nbsp;itemRef;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Size&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dataSize;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Handle&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tempHandle;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;HFSFlavor&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theHFSFlavor;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dataObtainedFlag;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retCode;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;dataObtainedFlag = false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!DragItemsAreAcceptable(theDrag) ||</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;!MouseIsInContentRgn(theDrag, theWindow) ||</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;!DragIsNotInSourceWindow(theDrag))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return dragNotAcceptedErr;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// There is only one item, so get its reference number.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;retCode = GetDragItemReferenceNumber(theDrag, 1, &amp;itemRef);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (retCode != noErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return retCode;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// PICT data is preferred, so get it if it's available.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;retCode = GetFlavorDataSize(theDrag, itemRef, 'PICT', &amp;dataSize);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (retCode == noErr) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tempHandle = TempNewHandle(dataSize, &amp;retCode);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (tempHandle == nil)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tempHandle = NewHandle(dataSize);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (tempHandle != nil) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HLock(tempHandle);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retCode = GetFlavorData(theDrag, itemRef, 'PICT',</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*tempHandle, &amp;dataSize, 0);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (retCode == noErr) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retCode = SetWindowPicture(theWindow,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(PicHandle) tempHandle);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (retCode == noErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dataObtainedFlag = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DisposeHandle(tempHandle);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!dataObtainedFlag) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Couldn't get PICT data so try to get HFS-flavor data.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dataSize = sizeof(HFSFlavor);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retCode = GetFlavorData(theDrag, itemRef, flavorTypeHFS,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;theHFSFlavor, &amp;dataSize, 0);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (retCode == noErr &amp;&amp; theHFSFlavor.fileType == 'PICT') {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retCode = SetWindowPictureFromFile</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(&amp;theHFSFlavor.fileSpec, theWindow);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (retCode != noErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(void) ReportErrorInWindow(nil,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"\pCannot display received picture. ", retCode);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return retCode;</code><br>
+<code>}</code>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+If there's an error, this receive handler just displays a simple string. For commercial<br>
+products, you would never code strings inline as shown, for localization reasons. 
+</p>
+<h2>GOTCHAS</h2>
+<p>
+Here we'll describe a couple of precautions you should take that will make your life<br>
+easier when you use the Drag Manager.
+</p>
+<p>
+<b>FINDER GOTCHAS</b><br>
+The Drag Manager works for documents and other standard files, but what about<br>
+folders and hard drive icons? The Finder uses the same HFS flavor to describe these<br>
+items. If the user drags them to your application, you'll see the FSSpec for the folder's<br>
+directory or the disk's root directory. The file type and creator information isn't<br>
+relevant to the file system, but it's useful for identifying the items being dragged. For<br>
+both folders and disk icons, the creator is set to 'MACS' to show that the system<br>
+software created them. For folders, the file type is 'fold', and for disk icons the file<br>
+type is 'disk'. In both cases the Finder flags for the folder or disk are set<br>
+appropriately. Remember that these file types serve only to quickly identify the items<br>
+being dragged and don't reflect what's in the catalog information of any volumes.
+</p>
+<p>
+Some software that extends the functionality of the Finder, such as QuickDraw GX and<br>
+PowerTalk (the client server software based on the Apple Open Collaboration<br>
+Environment), adds new Finder icons such as desktop printers, letters, and mailboxes.<br>
+These items don't actually represent the state of the file system, but they can be<br>
+dragged like any Finder icon. This is a valuable and consistent metaphor for the Finder<br>
+interface, but it creates an inconsistency for your receive handler when receiving<br>
+drags from the Finder. Since these icons can't be described as FSSpecs, don't expect to<br>
+receive HFS flavors for them.
+</p>
+<p>
+Just for completeness, you should know that the Users &amp; Groups control panel also<br>
+uses the Drag Manager. The drag flavors that identify those icons make sense only to<br>
+the Finder, and don't have relevant information you could extract. The same is true for<br>
+contents of Finder suitcase files like the System file. Finder icons for sounds, keyboard<br>
+layouts, and fonts that are in suitcases are representations of resources in the suitcase<br>
+file, so they don't have HFS flavors to describe them.&nbsp;&nbsp;&nbsp;Note, however, that sound and<br>
+font <i>files</i>, which are not part of suitcases, use HFS flavors just like any other file. 
+</p>
+<p>
+<b>WAITNEXTEVENT</b><br>
+Another precaution applies if, in drag handlers, you call WaitNextEvent, EventAvail,<br>
+GetNextEvent, or any other routine that would normally cause a process switch or a<br>
+background application to receive WaitNextEvent time. In these cases, don't expect<br>
+other applications to receive any background time, because the Drag Manager disables<br>
+process switching during a drag. Because process switching is disabled, you should be<br>
+careful when interacting with the user in your receive handler. You may not be the<br>
+frontmost process, and opening a dialog may hang the Macintosh. 
+</p>
+<h2>DRAGGING AWAY</h2>
+<p>
+The Drag Manager makes it easy to add drag and drop functionality to your application.<br>
+It gives users a familiar and intuitive way to manipulate files and data. This article and<br>
+the sample application emphasize how to implement dragging files from the Finder into<br>
+your application windows, but you can do much more than that with the Drag Manager.<br>
+So take a look at the documentation and guidelines on the CD and give it a go; your users<br>
+will think it's anything but a drag! 
+</p>
+<p>
+DAVE EVANS can often be found coding for the User Experience team of the AppleSoft OS<br>
+Platform Group. Although some still think he moonlights on the set of the TV show<br>
+"Beverly Hills 90210," Dave actually finds entertainment by throwing himself off<br>
+cliffs and cornices, plane struts and buildings (the last much to Apple Security's<br>
+chagrin). Dave does admit, though, to being deathly afraid of bungee jumps! *
+</p>
+<p>
+GREG ROBBINS has been insisting for three years that he doesn't work for Apple. But<br>
+he has worked as a consultant to the Developer Technical Support and Macintosh<br>
+System Software groups since 1991, having given up an earlier passion for neural<br>
+networks to hack the Mac. Greg spends his off hours in the mountains of California,<br>
+looking for people even more lost than he is.*
+</p>
+<p>
+For more on letters and mailboxes, see the article "Building PowerTalk-Savvy<br>
+Applications" in this issue of develop.*
+</p>
+<p>
+THANKS TO OUR TECHNICAL REVIEWERSSteve Fisher, Rob Johnston, Jim Mensch, Andy<br>
+Nicholas *
+</p>
+</body>
+</html>

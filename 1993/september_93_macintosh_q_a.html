@@ -1,0 +1,784 @@
+<html>
+<head>
+<!-- Article ID: 37 - Extracted from develop-1993 -->
+<!-- on 2024-02-20 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>September 93 - MACINTOSH Q & A</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH Q &amp; A</h2>
+<h1>MACINTOSH DEVELOPER TECHNICAL SUPPORT</h1>
+<p>
+<b>Q</b><i> Will QuickDraw and QuickDraw GX coexist, or will QuickDraw GX replace</i><br>
+<i>QuickDraw?</i>
+</p>
+<p>
+<b>A </b> QuickDraw isn't leaving with the introduction of QuickDraw GX. It's here to stay.<br>
+Among other reasons, QuickDraw functions are used extensively by the Macintosh<br>
+Toolbox and applications. For more information, see the article "Getting Started With<br>
+QuickDraw GX" in this issue of <i>develop</i> .
+</p>
+<p>
+<b>Q</b><i> Will display cards that offer QuickDraw acceleration be affected by QuickDraw GX?</i>
+</p>
+<p>
+<b>A </b> Current QuickDraw acceleration cards aren't affected by QuickDraw GX. QuickDraw<br>
+GX doesn't use any of the current QuickDraw calls and its presence won't affect<br>
+applications that use only QuickDraw. QuickDraw acceleration cards also won't<br>
+accelerate QuickDraw GX.
+</p>
+<p>
+<b>Q</b><i> The LaserWriter driver before the QuickDraw GX version has an option to print in</i><br>
+<i>Color/Grayscale or Black &amp; White. Why isn't this option in the QuickDraw GX</i><br>
+<i>LaserWriter driver?</i>
+</p>
+<p>
+<b>A </b> The Color/Grayscale option was added to the LaserWriter driver only for<br>
+compatibility reasons. At the time, some applications couldn't deal with the color<br>
+option (specifically with cGrafPorts), so a Black &amp; White mode was also provided. The<br>
+Black &amp; White mode exhibited the same functionality as the earlier LaserWriter<br>
+driver 5.2.
+</p>
+<p>
+&nbsp;Because most applications are color compatible now, the option was removed from the<br>
+QuickDraw GX printer drivers. Some people reported that the option let them print<br>
+faster when they chose Black &amp; White. This was true because of quirks in the earlier<br>
+LaserWriter driver version. Under QuickDraw GX, this shouldn't be a problem. If it<br>
+turns out to be a problem for your driver, you could incorporate black-and-white<br>
+threshold printing into your "rough draft mode" code. The QuickDraw GX LaserWriter<br>
+driver always prints in color.
+</p>
+<p>
+<b>Q</b><i> When a QuickDraw GX PostScript printer driver generates a file, will it work for</i><br>
+<i>Level 1 and Level 2 printers?</i>
+</p>
+<p>
+<b>A </b> The LaserWriter driver bundled with QuickDraw GX produces a flavor of PostScript<br>
+that we call "portable." This flavor is meant to work on the widest range of printing<br>
+devices, be they Level 1 or 2, color or black and white.
+</p>
+<p>
+<b>Q</b><i> What PostScript Level 2 features does the QuickDraw GX printing mechanism take</i><br>
+<i>advantage of?</i>
+</p>
+<p>
+<b>A </b> The Level 2 features used in QuickDraw GX mostly have to do with patterns, text,<br>
+and bitmaps:
+</p>
+<ul>
+<li>QuickDraw GX patterns are converted into Level 2 pattern dictionaries<br>
+when going to a Level 2 printer. The actual PostScript code emitted by the<br>
+driver differs little with respect to patterns when going to Level 1 or Level 2.<br>
+However, the procedures defined in the header do something entirely different<br>
+on a Level 2 printer.</li>
+<li>Line layout in QuickDraw GX takes advantage of the <b> xshow</b>, <b>yshow</b>, and<br>
+<b>xyshow</b> operators when it makes sense to do so.</li>
+<li>The Level 2 rectangle operators are used in Level 2, though this happens<br>
+in the procedures defined in the header rather than in PostScript code from<br>
+the driver.</li>
+<li>On Level 2 printers, the indexed color spaces are used for printing<br>
+bitmaps up to eight bits deep.</li>
+<li>The plan is to use Level 2 device-independent color when possible.</li>
+</ul>
+<p>
+<b>Q</b><i> Why can't I get NewMessageGlobals to work in my gxInitialize message for my</i><br>
+<i>QuickDraw GX printing extension? The global data I try to initialize isn't being</i><br>
+<i>accessed correctly.</i>
+</p>
+<p>
+<b>A </b> You shouldn't call NewMessageGlobals from any routine in which you access your<br>
+global data. Otherwise, because of optimization that your compiler may perform, the<br>
+data references can be invalid. Instead, use an approach like this:
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<code>extern long A5Size(void);</code><br>
+<code>extern void A5Init(void *);</code><br>
+<code>typedef struct GlobalType {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;StringHandle&nbsp;&nbsp;&nbsp;&nbsp;aString;</code><br>
+<code>} GlobalType;</code><br>
+<code>GlobalType myGlobals;</code><br>
+<code></code><br>
+<code>/* This routine sets the initial values of our global data. */</code><br>
+<code>OSErr InitGlobalData()</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;err;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Initialize our globals.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myGlobals.aString = GetString(r_myStringID);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;err = ResError();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!err) DetachResource(myGlobals.aString);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return err;</code><br>
+<code>}</code><br>
+<code></code><br>
+<code>/* Our override for the gxInitialize message. */</code><br>
+<code>OSErr MyInitialize()</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSErr err;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Create an A5 world, then go initialize our global data.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;err = NewMessageGlobals(A5Size(), A5Init());</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!err) err = InitGlobalData();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return err;</code><br>
+<code>}</code>
+</p>
+<p>
+&nbsp;A detailed explanation of the problem accompanies the Kabooms printing extension<br>
+sample on this issue's CD.
+</p>
+<p>
+<b>Q</b><i> A QuickDraw GX printing extension I've already written works fine, but when I</i><br>
+<i>install my latest creation, it doesn't show up in the print dialog -- only my old</i><br>
+<i>printing extension does. Both extensions are the same except for a few lines of code in</i><br>
+<i>their gxDespoolPage message overrides. What's going on?</i>
+</p>
+<p>
+<b>A </b> Your printing extensions shouldn't have the same creator type. QuickDraw GX<br>
+requires unique creator types for drivers and printing extensions, just as the Finder<br>
+does for applications. A creator type must be unique because QuickDraw GX uses it to<br>
+build its chain of message handlers. If two printing extensions have the same creator,<br>
+there's no way to determine which is which in the chain. You can register creator<br>
+types for your printer drivers and printing extensions with the Developer Support<br>
+Center (AppleLink DEVSUPPORT).
+</p>
+<p>
+<b>Q</b><i> Will the SndPlayFromDisk routine in the new Sound Manager version 3.0 work on</i><br>
+<i>Macintosh models without the Apple Sound Chip? For the current Sound Manager, is</i><br>
+<i>there a good way to tell whether a machine supports SndPlayFromDisk?</i>
+</p>
+<p>
+<b>A </b> Sound Manager 3.0 supports SndPlayFromDisk on all models. Playing from disk is<br>
+based on the performance of the machine's SCSI device more than the Sound Manager's<br>
+performance. In earlier versions of the Sound Manager, SndPlayFromDisk works only<br>
+on Apple Sound Chip machines. The System 7.1 interface has a play-from-disk Gestalt<br>
+flag in the sound attributes selector. If this flag bit is set, play from disk is supported.<br>
+If you're not running System 7.1, you'll have to guess based on whether the version of<br>
+the system being used has an Apple Sound Chip. So first check for the new Gestalt flag<br>
+and the presence of Sound Manager version 3.0 or later, which supports this flag.<br>
+Older versions of the Sound Manager don't report whether play from disk is supported,<br>
+so you'll have to check for the Apple Sound Chip.
+</p>
+<p>
+<b>Q</b><i> Is the Component Manager bundled with QuickTime? In other words, will the users</i><br>
+<i>of the application I'm designing have to buy QuickTime in order to get the Component</i><br>
+<i>Manager?</i>
+</p>
+<p>
+<b>A </b> The Component Manager was first introduced as part of the QuickTime 1.0 system<br>
+extension. This makes the presence of QuickTime a requirement for system software<br>
+versions earlier than System 7.1. The Component Manager is now part of System 7.1,<br>
+giving the extended functionality to any Macintosh application running on System 7.1<br>
+regardless of the presence of QuickTime.
+</p>
+<p>
+<b>Q</b><i> How does the Component Manager handle multiple segments?</i>
+</p>
+<p>
+<b>A </b> The Component Manager doesn't automatically support multiple code segments. In<br>
+fact, it assumes that all the code is in one segment. The 'thng' resource allows you to<br>
+specify one segment. Therefore, if you load other code segments from your main<br>
+segment, they should be loaded and locked in the system heap. There are several ways<br>
+you can do this; the register routine probably is the best place to do it. Since the<br>
+register routine is called only once at registration time, this allows your component to<br>
+completely load the remaining code segments into the system heap. Components should<br>
+ensure&nbsp;&nbsp;that A5 (or A4) is set appropriately before any intersegment calls. For more<br>
+information, see "Managing Component Registration" in this issue of <i> develop</i> .
+</p>
+<p>
+<b>Q</b><i> How can I get answers to my Macintosh Common Lisp questions?</i>
+</p>
+<p>
+<b>A </b> Macintosh Common Lisp technical support is available on the Internet at the<br>
+following addresses (add "@internet#" for the corresponding AppleLink addresses):
+</p>
+<ul>
+<li>bug-mcl@cambridge.apple.com, which reaches the MCL team</li>
+<li>info-mcl@cambridge.apple.com, which reaches MCL users at large</li>
+</ul>
+<p>
+&nbsp;You can join the info-mcl list in one of the following ways:
+</p>
+<ul>
+<li>Contact info-mcl-request@cambridge.apple.com on the Internet to add<br>
+your address to the list.</li>
+<li>Join INFO.MCL$ on AppleLink by contacting ST.CLAIR.</li>
+<li>Check comp.lang.lisp.mcl on Internet netnews.</li>
+</ul>
+<p>
+&nbsp;MCL utilities and sample source code are available in these places:
+</p>
+<ul>
+<li>on the MCL 2.01 CD-ROM (available through APDA)</li>
+<li>on the <i>Developer CD Series</i>  disc (Tool Chest edition) and the <i> develop</i><br>
+<i>Bookmark</i>&nbsp;&nbsp;CD</li>
+<li>on the Internet, by anonymous ftp from the location<br>
+cambridge.apple.com:/pub/MCL2/contrib</li>
+</ul>
+<p>
+<b>Q</b><i> Can I assume that the value of the ColorSync CWorld parameter returned by the</i><br>
+<i>CWNewColorWorld routine isn't null if the routine was successful? I'd like to</i><br>
+<i>determine whether a color world exists by checking the variable for null.</i>
+</p>
+<p>
+<b>A </b> You can assume that if no error is returned by CWNewColorWorld, the CWorld<br>
+parameter will be a valid handle. In other words, it won't be null if no error is<br>
+returned.
+</p>
+<p>
+<b>Q</b><i> The icons that appear in our application's menu lists are very, very small. It looks</i><br>
+<i>like they're 8 x 8 (scaled) instead of the standard 16 x 16. Can you tell from our test</i><br>
+<i>code why this is happening?</i>
+</p>
+<p>
+<b>A </b> This was a wild one! What's causing the weird behavior is that you have a 'cicn'<br>
+resource with ID = 256 that's smaller than 32 x 32. When the MDEF finds such an<br>
+icon, it uses it to size the area to use for the menu icons. So, for your application the<br>
+solution is either to change the 'cicn' to be larger (32 x 32) or to give it a different<br>
+ID.
+</p>
+<p>
+<b>Q</b><i> I've installed a resource error procedure (ResErrProc) but it gets called with an</i><br>
+<i>error&nbsp;&nbsp;-192 (resNotFound) every time I release a resource. Why is this happening</i><br>
+<i>and what can I do to fix it?</i>
+</p>
+<p>
+<b>A </b> If you install a ResErrProc, the Process Manager switches it out when switching to<br>
+another application. The problem you're having is that the Process Manager doesn't<br>
+switch it out while in Process Manager code itself. If you break into the debugger in<br>
+your ResErrProc and examine register A5, you'll find it's not your A5; it is in fact the<br>
+Process Manager's.
+</p>
+<p>
+&nbsp;What has happened is that the Process Manager has patched ReleaseResource for its<br>
+own mysterious purposes. An error occurs, which the Process Manager believes it can<br>
+ignore, but because your ResErrProc is still installed, it gets called and reports the<br>
+error. To avoid this, when your ResErrProc gets called, check to see whether register<br>
+A5 is equal to the low-memory global CurrentA5. If the values aren't equal, you can<br>
+assume your application wasn't responsible for the error, so you can ignore it.
+</p>
+<p>
+&nbsp;The code might look like this:
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<code>void MyResErrorProc (void)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;A5;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;A5 = SetCurrentA5 ();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (A5 == *(long *)CurrentA5)&nbsp;&nbsp;&nbsp;/* If they're equal, we're in</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;current app code */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Debugger(); /* ...or whatever you want to do here */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;else /* Not in current app code */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetA5 (A5); /* Restore old A5 */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return;</code><br>
+<code>}</code>
+</p>
+<p>
+&nbsp;Similar problems can occur if you make calls that make other Resource Manager<br>
+calls. The secondary calls may produce errors that are inconsequential to the primary<br>
+call, but your ResErrProc gets called anyway. This makes ResErrProcs of limited use,<br>
+so use any information reported by a ResErrProc carefully.
+</p>
+<p>
+<b>Q</b><i> We can't apply the rotation and skew effects to a QuickTime 1.5 movie. We've created</i><br>
+<i>an identity matrix, applied RotateMatrix to the matrix, set the matrix to the movie</i><br>
+<i>using SetMovieMatrix, and played the movie. The movie didn't rotate but the movieRect</i><br>
+<i>rotated and the movie scaled to the movieRect. Is there anything wrong with what we're</i><br>
+<i>doing?</i>
+</p>
+<p>
+<b>A </b> Rotation and skew will give you correct results for matrix operations but they<br>
+haven't been implemented into QuickTime movie playback yet. Scaling and offset<br>
+transformations now work with movies and images; rotation and skew are important<br>
+future directions. Meanwhile, you can accomplish rotation and skewing by playing a<br>
+movie to an off-screen GWorld and then using QuickDraw GX to display the rotated or<br>
+skewed off-screen GWorld.
+</p>
+<p>
+<b>Q</b><i> The demo programs on the final QuickTime for Windows CD won't run without</i><br>
+<i>locking up, because the QTInitialize function doesn't return. Any ideas?</i>
+</p>
+<p>
+<b>A </b> The final QuickTime for Windows exhibits the behavior you describe when the<br>
+display board is configured in a way that QuickTime for Windows doesn't recognize.<br>
+XGA and SuperVGA are modes that could cause this problem. To check whether this is<br>
+the problem, edit the QTW.INI file to include the following:
+</p>
+<p>
+<code>[Video]</code><br>
+<code>Optimize = Driver</code>
+</p>
+<p>
+&nbsp;The default is Hardware. This could be causing the problem you describe.
+</p>
+<p>
+<b>Q</b><i> While updating our application to run correctly under the Kanji version of System</i><br>
+<i>7.1, we've noticed that the space bar sends two key-down events (values $81 and</i><br>
+<i>$40) as opposed to one ($20). To determine whether the space bar was hit, should we</i><br>
+<i>use the key code from the event record instead of the character code?</i>
+</p>
+<p>
+<b>A </b> This is new with Kanji 7.1 and is still a controversial issue. Codes $81and $40<br>
+correspond to the two-byte space character, which is different from the standard<br>
+ASCII space character (different width).
+</p>
+<p>
+&nbsp;You can't use the key code from the event record, as it has been lost during KanjiTalk's<br>
+event processing. Moreover, even if it were there (or if you got it through a GetKeys<br>
+call) you shouldn't use it; the space bar has different key codes on different keyboards!
+</p>
+<p>
+&nbsp;So, the only reasonable workaround in your case seems to be to expand your space bar<br>
+key- down check to compare with $81 (the first byte of a two-byte character)<br>
+followed by $40, in addition to comparing with the standard ASCII $20.
+</p>
+<p>
+<b>Q</b><i> What kind of resources are available to incorporate WorldScript capability to our</i><br>
+<i>programs?</i>
+</p>
+<p>
+<b>A </b> The first thing to do to support WorldScript is to make sure that your product takes<br>
+full advantage of the Script Manager. The most up-to-date and comprehensive<br>
+reference for learning about it is <i>Inside Macintosh: Text</i> . Be sure to check the<br>
+QuickDraw Text and Text Utilities chapters, because much of the old Script Manager<br>
+functionality has been moved into those areas. Other references are <i>Guide to Macintosh</i><br>
+<i>Software Localization</i>&nbsp;&nbsp;and <i> Localization for Japan</i> . These are all available through<br>
+APDA. (If compatibility with system software versions before System 7.1 is<br>
+important to your application, see the earlier documentation: the Script Manager and<br>
+Worldwide Software Overview chapters of <i> Inside Macintosh</i>&nbsp;&nbsp;Volumes V and VI, and<br>
+<i>Macintosh Worldwide Development: Guide to System Software</i>&nbsp;&nbsp;.) See also the Text<br>
+Services Manager chapter of <i>Inside Macintosh: Text</i> .
+</p>
+<p>
+&nbsp;In general, all the rules for being Script Manager-compatible apply, but with a few<br>
+new twists. WorldScript is still a very young technology and there isn't a lot of<br>
+detailed information yet. Some human interface issues have not matured to the point of<br>
+being ready to standardize. This means that you might find yourself breaking new<br>
+ground as you add WorldScript support to your application.
+</p>
+<p>
+&nbsp;The Japanese Language Kit is the first new product to take advantage of WorldScript.<br>
+All the non-Roman system software uses WorldScript but doesn't really take full<br>
+advantage of the possibilities.
+</p>
+<p>
+&nbsp;The main advantage of WorldScript is that it supports multiple scripts in a system.<br>
+The old model was that there could be a Roman script plus one other optional script,<br>
+and Roman was always the secondary script, unless it was the only script. Now, any<br>
+script can be the primary script, and there can be multiple secondary scripts. (Roman<br>
+is still required to be available.)&nbsp;&nbsp;This makes it possible to have Japanese (and in the<br>
+future, other scripts) installed as secondary scripts in any system.
+</p>
+<p>
+&nbsp;Because many of the Macintosh Toolbox and operating system routines don't pass<br>
+script or font information with text, it's difficult to display multiscript text properly.<br>
+Menus, dialogs, window titles, and filenames are problem areas. A short-term solution<br>
+is the Language Kit Extension, which was introduced in the Japanese Language Kit. It<br>
+dynamically changes the system fonts according to the region code in each application's<br>
+'vers' resource. This allows localized applications to display menus, dialogs, window<br>
+titles, and filenames correctly. Multiple applications running concurrently can have<br>
+independent system fonts.
+</p>
+<p>
+&nbsp;The Language Kit Extension also extends the Views control panel to control the current<br>
+script and font for the entire file system. This allows the user to display, create, and<br>
+edit filenames for any script installed. Note that this solution supports only one script<br>
+at a time, and fundamental changes will have to made to the Toolbox to support more<br>
+than one script concurrently.
+</p>
+<p>
+&nbsp;A technical overview of potential internationalization problem areas is given in the<br>
+"Internationalization Checklist" on this issue's CD. Internationalization tips are also<br>
+provided in "Writing Localizable Applications" in Issue 14 of <i> develop</i> . Here are some<br>
+areas requiring special attention:
+</p>
+<ul>
+<li>Font names should be displayed in menus in their appropriate script and<br>
+font.</li>
+<li>The system (primary) script may not be the same as the application<br>
+script.</li>
+<li>Script system resources (date/time/currency) should be referenced<br>
+explicitly.</li>
+<li>Text should be tagged with script and font information so that it can be<br>
+displayed in its appropriate script and font.</li>
+</ul>
+<p>
+&nbsp;Styled text and QuickDraw GX are multiscript-capable and should be used as much as<br>
+possible. Unstyled text documents limit text to one script (character set), which is<br>
+undesirable.
+</p>
+<p>
+&nbsp;Ideally, the localized version of a product should be independent of the scripts and<br>
+languages it supports. With Macintosh multiscript support and today's cultural<br>
+diversity within nations, users want "foreign language-capable" applications that let<br>
+them mix writing systems and use familiar regional formatting conventions.
+</p>
+<p>
+&nbsp;Here are a few tests to see how well you're doing:
+</p>
+<ul>
+<li>Does the base version of your application work on all localized versions of<br>
+system software (such as KanjiTalk, Arabic, German)?</li>
+<li>Install the Japanese Language Kit and see whether your application<br>
+supports multiscript text. Try using the two-byte Japanese script with a<br>
+relatively simple script such as German, and then with a bidirectional script<br>
+such as Arabic.</li>
+</ul>
+<p>
+<b>Q</b><i> We're planning to distribute a custom font with our application, by including the</i><br>
+<i>FOND and NFNT resources in its resource fork. Are there any problems we might be</i><br>
+<i>overlooking by using this technique?</i>
+</p>
+<p>
+<b>A </b> There are things you must be aware of when embedding fonts in applications. First,<br>
+no ID conflict resolution is done. Since the system caches some fonts for performance<br>
+reasons, if your font has the ID of a font in the system, you can't predict whether<br>
+you'll get your font or the system's font. Second, you must use NFNT instead of FONT<br>
+resources for bitmap fonts, or the system will sometimes get the wrong font strike.<br>
+This is described in the Macintosh Technical Note "Fond of FONDs" (Text 21). You<br>
+should never try to override a font in the System file with one in your application; the<br>
+name of your custom font should be different from all other font names. If you don't<br>
+want your font to show up in menus, give it a name beginning with a period or "%" so<br>
+that AddResMenu will ignore it.
+</p>
+<p>
+&nbsp;While most printer drivers and the system take pains to find fonts wherever they may<br>
+be, some software components don't, and we can't promise this will work with all<br>
+printers or all software. While installing fonts in an application should work for most<br>
+purposes, it's preferable all around for you (and your customers) to install your fonts<br>
+in the system. Of course, you should always ask for your font by name in your code.
+</p>
+<p>
+<b>Q</b><i> When I try to use the MDEF mDrawMsg to draw the contents of the pop-up box for a</i><br>
+<i>pop-up menu, if the system justification is right to left and I send it mDrawMsg with a</i><br>
+<i>rectangle that's too short, the system hangs unless I move the left edge of the rectangle</i><br>
+<i>off to infinity and use clipping to constrain the drawing. Is there a better way to do</i><br>
+<i>this?</i>
+</p>
+<p>
+<b>A </b> There may be an easier way to achieve the same result. The standard MDEF has been<br>
+modified to support two new messages to do exactly what you need. In fact, this was<br>
+added to support the System 7 pop-up menu CDEF. For an MDEF whose entry point is<br>
+defined as
+</p>
+<p>
+<code>void pascal MyMenu (short message, MenuHandle theMenu, Rect</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;*menuRect, Point *hitPt, short *whichItem);</code>
+</p>
+<p>
+&nbsp;the two new messages are mCalcItemMsg and mDrawItemMsg. In response to<br>
+mCalcItemMsg, the MDEF calculates the bounding rectangle of a menu item:
+</p>
+<p>
+Input parameters:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;message = mCalcItemMsg = 5<br>
+&nbsp;&nbsp;&nbsp;&nbsp;theMenu = handle to pop-up menu<br>
+&nbsp;&nbsp;&nbsp;&nbsp;menuRect.top and menuRect.left = screen position at which to draw menu<br>
+&nbsp;&nbsp;&nbsp;&nbsp;hitPt = not used<br>
+&nbsp;&nbsp;&nbsp;&nbsp;whichItem = menu item to calculate the size for
+</p>
+<p>
+Output:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;menuRect.bottom and menuRect.right, calculated for correct size for whichItem
+</p>
+<p>
+&nbsp;In response to mDrawItemMsg, the MDEF draws an item in a menu:
+</p>
+<p>
+Input parameters:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;message = mDrawItemMsg = 4<br>
+&nbsp;&nbsp;&nbsp;&nbsp;theMenu = handle to pop-up menu<br>
+&nbsp;&nbsp;&nbsp;&nbsp;menuRect = rectangle to draw item in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;hitPt = not used<br>
+&nbsp;&nbsp;&nbsp;&nbsp;whichItem = menu item to draw
+</p>
+<p>
+* Output:<br>
+Draws item whichItem of menu theMenu in rectangle menuRect. menuRect is<br>
+determined by first calling the MDEF with mCalcItemMsg.
+</p>
+<p>
+&nbsp;These messages may be ignored by other menu definition procedures; they're optional.<br>
+If you find that your rectangle wasn't resized after an mCalcItemMsg call, the MDEF<br>
+has probably ignored your size request, and you should do it manually. The standard<br>
+MDEF will continue to support these options.
+</p>
+<p>
+<b>Q</b><i> We create an alias for a file when File Sharing is off, so the alias doesn't contain</i><br>
+<i>server and zone information. Then we turn on File Sharing and resolve the alias. The</i><br>
+<i>file, of course, is found but the alias isn't marked for an update. Shouldn't it be</i><br>
+<i>updated?</i>
+</p>
+<p>
+<b>A </b> According to <i>Inside Macintosh: Files,</i>&nbsp;&nbsp;wasChanged is set to TRUE only on&nbsp;&nbsp;aliases<br>
+created by NewAlias (not NewAliasMinimalFromFullPath or NewAliasMinimal) when<br>
+it sees that key information has changed. The key information is:
+</p>
+<ul>
+<li>name of the target</li>
+<li>directory ID of the target's parent</li>
+<li>file ID or directory ID of the target</li>
+<li>name and creation date of the volume on which the target resides</li>
+</ul>
+<p>
+&nbsp;Since none of that changes when you turn File Sharing on or off, the wasChanged flag<br>
+isn't set to TRUE. If you're really worried about it, just call UpdateAlias every time<br>
+you use the alias (unless you think this would be a major performance hit). Or maybe<br>
+you should update it only if you notice that it doesn't have server information and the<br>
+server is now turned on (to check for this, call PBHGetVolParms and check the<br>
+bHasPersonalAccessPrivileges bit).
+</p>
+<p>
+<b>Q</b><i> When I try to compile some C++ code that I'm porting from another platform, I get</i><br>
+<i>the error message shown below. Can you shed some light on what the error means? I</i><br>
+<i>can avoid it by removing labels, but sometimes it's difficult to fix. What's the real</i><br>
+<i>cure?</i>
+</p>
+<p>
+<code># 4:14:35 PM ----- Executing build commands.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CPlus -s tops1 -model far -sym on -mf test.cp</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Set Echo 0</code><br>
+<code>File "test.cp"; line 704 # sorry, not implemented: label in block</code><br>
+<code>with destructors</code>
+</p>
+<p>
+<b>A </b> The error message is correct; labels in a scope that locally defines objects with<br>
+destructors aren't supported. The most appropriate fix would be for AT&amp;T to fix their<br>
+CFront code to support this, but that's not going to happen right away.
+</p>
+<p>
+&nbsp;The variety of twisted code paths that become possible when labels and gotos are used<br>
+probably gave the compiler programmers conniptions. When code can contain<br>
+constructors and destructors, the C++ compiler has to be extremely careful to<br>
+construct each object only once and destruct each object only once. This probably was a<br>
+problem for the C++ compiler if gotos were allowed, so the compiler programmers<br>
+must have chickened out and didn't write the necessary code (at least, not yet). The<br>
+only solution to this error is either to avoid the label and goto constructs (which<br>
+you've been trying to do) or to keep any objects with destructors out of the block that<br>
+contains the label.
+</p>
+<p>
+<b>Q</b><i> I want to use sprintf in a standalone code resource, but I'm having trouble linking</i><br>
+<i>my resource because sprintf apparently requires data-to-code references. I get the</i><br>
+<i>error shown below; what can I do to avoid this?</i>
+</p>
+<p>
+<code>### While reading file "HD:MPW:Libraries:Libraries:Runtime.o"</code><br>
+<code>### Link: Error: Data to Code reference not supported (no Jump</code><br>
+<code>Table). (Error 59)</code><br>
+<code>### Link: Errors prevented normal completion.</code>
+</p>
+<p>
+<b>A </b> Unfortunately, a great deal of the standard C library uses globals, which<br>
+necessitates your creating an A5 world as described in the Macintosh Technical Note<br>
+"Stand-Alone Code, <i> ad nauseam</i> " (Platforms &amp; Tools 35). Additionally, some of the<br>
+global data used is initialized with function pointers. For example, if you had the<br>
+following global variable defined
+</p>
+<p>
+<code>&nbsp;ProcPtr&nbsp;&nbsp;gMyProcedure = (ProcPtr)MyFunc;</code>
+</p>
+<p>
+&nbsp;where MyFunc is a function of yours, you can see that the global variable would have<br>
+to be initialized with a pointer to the function before your code started executing.<br>
+MPW's loader supports only pointing variables such as these at A5-relative<br>
+references -- that is, into the jump table. It cannot initialize them to the PC-relative<br>
+reference that a standalone code segment requires. This means that you can't link any<br>
+code resource that requires a data-to-code reference -- thus the error.
+</p>
+<p>
+&nbsp;Fortunately, there's a workaround. Because the standard library is written very<br>
+generally and uses a lot of indirection, the linker believes sprintf might use some of<br>
+the standard output calls; however, it never does, and since it's these calls that<br>
+necessitate the use of the data-to-code references, if we can fool the linker into<br>
+accepting an innocuous substitute, we won't require the data-to-code references that<br>
+are causing us such agony now. To cut to the chase, add the following lines to your code<br>
+somewhere:
+</p>
+<p>
+<code>size_t fwrite (const void *, size_t, size_t, FILE *) { return 0; }</code><br>
+<code>flsbuf() {}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// These calls won't actually be called by sprintf.</code><br>
+<code></code><br>
+<code>fcvt() {}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// These calls are used only for floating-point %f</code><br>
+<code>ecvt() {}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// and %e.</code>
+</p>
+<p>
+&nbsp;The first two calls override fwrite and flsbuf; these calls will no longer cause the<br>
+linker to believe that you require the data-to-code references; because they're never<br>
+called by sprintf, replacing them isn't a difficulty. The second two calls are only<br>
+conveniences; they stub out the standard library's code for converting floating-point<br>
+arguments. If you never use %f or %e in your sprintf calls, these will reduce the size<br>
+of your compiled code.
+</p>
+<p>
+&nbsp;To get these overriding functions to mask the versions in the StdCLib.o library, make<br>
+sure that the object file containing these stubs appears on the Link command line<br>
+before the StdCLib.o library.
+</p>
+<p>
+<b>Q</b><i> Why does calling FSpCreateResFile return an afpAccessDenied error (in ResErr)</i><br>
+<i>when the destination folder is an AppleShare drop folder?</i>
+</p>
+<p>
+<b>A </b> Using any of the CreateResFile calls in a drop box is a useless exercise. Here's why:<br>
+The access privileges within a drop box are very limited write-only access. This lets<br>
+you create new files and then perform a small set of operations on the file while it's <br>
+<i>empty</i>&nbsp;&nbsp;(no bytes in either the data or the resource fork of the file). So, while the file<br>
+is empty, you can open it (either fork) with write-only access (PBHOpenDeny or<br>
+PBHOpenRFDeny), and write the file's attributes (PBHSetFInfo or PBSetCatInfo),<br>
+including Desktop Manager comments. Once either fork has a single byte of data<br>
+written to it, you can no longer open or change the file's attributes. This makes it<br>
+possible to copy a file into a drop folder, but not to manipulate or delete a file<br>
+(containing data) that's already in the drop folder. You can also move a file or<br>
+directory into a drop folder if that file or directory is already on the same server<br>
+volume.
+</p>
+<p>
+&nbsp;So, when you call CreateResFile on a drop folder, a new file is created and data is added<br>
+to the resource fork of the file. Since the file now has data in one of&nbsp;&nbsp;the forks, you<br>
+cannot open the file or change any of the file's attributes. FSpCreateResFile fails<br>
+because after performing the CreateResFile operation that writes data into the<br>
+resource fork, it attempts to set the file's attributes (creator, fileType, and<br>
+scriptTag).
+</p>
+<p>
+&nbsp;For a quick explanation of drop folder access privileges and rules, see the Macintosh<br>
+Technical Note "Creating Files Inside an AppleShare Drop Folder" (Files 18). For a<br>
+complete explanation of what AFP access privileges you need to perform specific<br>
+operations on an AppleShare (AFP) server, see the section "Directory Access Control"<br>
+in <i> Inside AppleTalk</i>&nbsp;&nbsp;starting on page 13-31.
+</p>
+<p>
+<b>Q</b><i> When I try to send an OpenSelection Apple event to the Finder, I get a -903 error</i><br>
+<i>after calling AESend. Could you tell me what causes this error and how I can overcome</i><br>
+<i>it?</i>
+</p>
+<p>
+<b>A </b> The application is returning the -903 error because it isn't completely set up to<br>
+send and receive Apple events. This is why you're getting the error only after calling<br>
+AESend.&nbsp;&nbsp;The problem is that the isHighLevelEventAware bit isn't set in your SIZE<br>
+resource, meaning that your application doesn't send or receive high-level events. For<br>
+more information on setting the isHighLevelEventAware bit, see <i>Inside Macintosh:</i><br>
+<i>Macintosh Toolbox Essentials</i>&nbsp;&nbsp;, pages 2-115 through 2-119 (or <i>Inside Macintosh</i> <br>
+Volume VI, pages 5-14 through 5-17).
+</p>
+<p>
+<b>Q</b><i> When we launch our Macintosh application, the system heap grows by huge amounts.</i><br>
+<i>It seems to be filling up with font-related resources. What's causing this to happen?</i>
+</p>
+<p>
+<b>A </b> Your application is probably calling RealFont for each font installed in the system.<br>
+Trying to build lists of font information at startup nearly always balloons the system<br>
+heap to enormous sizes if you have lots of fonts.
+</p>
+<p>
+&nbsp;When you call RealFont, the system must load the FOND resource and walk through the<br>
+association table to see if there's a bitmap for it. If there's a TrueType font, the Font<br>
+Manager loads the 'sfnt' resource and examines it. A value inside TrueType fonts says<br>
+"I don't render smaller than this resolution"; if the requested resolution is smaller<br>
+than that value, RealFont returns FALSE even on a TrueType font. For most of Apple's<br>
+TrueType fonts the value is about 6 points -- calling RealFont(2, Helvetica) will<br>
+return FALSE.
+</p>
+<p>
+&nbsp;So the system is loading every FOND and 'sfnt' looking to see whether the fonts are<br>
+real. The main solution is not to call RealFont until you're sure you need the<br>
+information. For example, don't outline Size menus until just before they're accessed<br>
+or until a new font is chosen, to prevent this kind of problem.
+</p>
+<p>
+<b>Q</b><i> I just wrote an installer script for the Apple Installer version 3.4. After the</i><br>
+<i>installation is complete and I click the Quit button, the Finder insists on mounting both</i><br>
+<i>of the disks that were used in the installation. It gives me the annoying dialog "Please</i><br>
+<i>insert the disk Install 1" and "Please insert the disk Program 1." Before I did the</i><br>
+<i>installation, only the Install 1 disk was mounted by the Finder. Why is this</i><br>
+<i>happening?</i>
+</p>
+<p>
+<b>A </b> This situation typically occurs when the installer disk sets were created under<br>
+System 7 and the installation is happening under system software version 6.0.x. Its<br>
+cause is that the system is trying to update the second disk's desktop. The solution in<br>
+this case is to insert the disk into a system running version 6.0.x before performing<br>
+the installation.
+</p>
+<p>
+&nbsp;Another possible cause for this problem is that the second disk opens to display a<br>
+window by default. When the Installer quits, there's still "residue" Finder information<br>
+to be written to the second disk, which has since been ejected. The solution in this case<br>
+is to insert the second disk with the write tab lock disabled, and close any open window<br>
+associated with that disk.
+</p>
+<p>
+<b>Q</b><i> I received an error code of -151 from NewGWorld when creating a very large</i><br>
+<i>off-screen bitmap. Does this mean not enough memory? If so, can I count on it not to</i><br>
+<i>change in future versions of the system? It's not listed as one of the possible errors in</i><br>
+<i>Inside Macintosh Volume VI.</i>
+</p>
+<p>
+<b>A </b> The error -151 is cTempMemErr, "failed to allocate memory for temporary<br>
+structures," or in other words, there wasn't enough temporary memory available for<br>
+NewGWorld. NewGWorld returns this error after it receives a memFullErr from<br>
+TempNewHandle. (See <i> Inside Macintosh: Memory</i>&nbsp;&nbsp;or the Memory Management chapter<br>
+of <i> Inside Macintosh </i> Volume VI for more information about temporary memory.) This<br>
+was inadvertently left out of <i> Inside Macintosh</i>&nbsp;&nbsp;Volume VI but does appear in the MPW<br>
+interface files. You can count on this error code in future versions of system software.
+</p>
+<p>
+<b>Q</b><i> SetStylHandle appears to dispose of only the TEStyleHandle in the TextEdit record and</i><br>
+<i>not the handles in the TEStyleRec in system software version 7.0.1. Since my</i><br>
+<i>application calls SetStylHandle often, I'm leaving lots of little handles around in my</i><br>
+<i>heap. Can I safely dispose of the handles in the current TEStyleRec before calling</i><br>
+<i>SetStylHandle?</i>
+</p>
+<p>
+<b>A </b> SetStylHandle does indeed orphan the related handles in your heap, a potential<br>
+problem for applications using SetStylHandle. This won't be fixed in the foreseeable<br>
+future. Your application will be fine disposing of the handles itself. Here's a routine<br>
+you can use instead of SetStylHandle; it correctly disposes of the substructures in the<br>
+TEStylRec before calling SetStylHandle:
+</p>
+<p>
+<code>void FixedSetStylHandle(TEStyleHandle newstyle, TEHandle hte)</code><br>
+<code>/*</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;This function avoids orphaning the substructures of a</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TEStyleRec by disposing of them before calling SetStylHandle.</code><br>
+<code>*/</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;register TEStyleHandle oldstyle;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Get the old-style handle so that we can clean it up. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;oldstyle = GetStylHandle(hte);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Dispose of the substructures first. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DisposeHandle((**oldstyle).styleTab);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DisposeHandle((**oldstyle).lhTab);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DisposeHandle((**(**oldstyle).nullStyle).nullScrap);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DisposeHandle((**oldstyle).nullStyle);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Now we can install the new style. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;SetStylHandle(newstyle, hte);</code><br>
+<code>}</code>
+</p>
+<p>
+<b>Q</b><i> I was hiking in a remote part of the Rocky Mountains and could have sworn that I saw</i><br>
+<i>the familar Macintosh beach-ball cursor. Is this possible?</i>
+</p>
+<p>
+<b>A </b> Yes; that's the same symbol that's used to signify a ranger station. It could also be<br>
+that you were hallucinating. (By the way, <i> develop</i> 's Editor-in-Cheek tells us that the<br>
+beach-ball cursor can also be found on the reverse of an Eastern Caribbean $5 bill;<br>
+she took a special field trip down there just to check this out.)
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Kudos to our readers </b> who care enough to ask us terrific and well thought-out<br>
+questions. The answers are supplied by our teams of technical gurus in Apple's<br>
+Developer Support Center; our thanks to all. Special thanks to Pete ("Luke")<br>
+Alexander, Mark Baumwell, Joel Cannon, Matt Deatherage, Tim Dierks, Nitin Ganatra,<br>
+Bill Guschwan, Mark Harlan, C. K. Haun, Dave Hersey, Rich Kubota, Jim Luther,<br>
+Joseph Maurer, Kevin Mellander, Don Moccia, Ed Navarrete, Guillermo Ortiz, Faith<br>
+Pai, Dave Radcliffe, Brigham Stevens, Steve Strassmann, Dan Strnad, John Wang, and<br>
+Dave Wells for the material in this Q &amp; A column. *<b>Have more questions?</b>
+</p>
+<p>
+Need more answers? Take a look at the Macintosh Q&amp;A Technical Notes on this issue's<br>
+CD and on the Dev Tech Answers library on AppleLink.*
+</p>
+</body>
+</html>

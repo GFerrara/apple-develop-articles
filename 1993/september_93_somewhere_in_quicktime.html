@@ -1,0 +1,396 @@
+<html>
+<head>
+<!-- Article ID: 33 - Extracted from develop-1993 -->
+<!-- on 2024-02-20 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>September 93 - SOMEWHERE IN QUICKTIME</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>SOMEWHERE IN QUICKTIME</h2>
+<h2>DYNAMIC CUSTOMIZATION OF COMPONENTS</h2>
+<h1>BILL GUSCHWAN</h1>
+<p>
+<img src="img/217.gif" width="180 px"></img>
+</p>
+<p>
+QuickTime's component architecture lets you do a number of amazing and useful things<br>
+by customizing components, which you can do by deriving one component based on<br>
+another. Because QuickTime components are dynamically linked, preexisting<br>
+applications can take advantage of a new, derived component without recompiling or<br>
+rebooting. And because QuickTime is an extension of system software, the derived<br>
+component will provide systemwide functionality. 
+</p>
+<p>
+In this column I'll describe how to use object-oriented techniques to customize<br>
+components using a derived component. To illustrate, I'll show you how to customize<br>
+the Apple text media handler to "speak" text tracks in movies using Apple's new<br>
+Text-to-Speech Manager. You'll find the derived component on this issue's CD, along<br>
+with a generic derived component that you can use as a basis for doing your own<br>
+customizing. I've also supplied an application to help you debug your component. This<br>
+application uses the debugging technique of registering the code inline. It's very basic<br>
+and simply plays back a movie, but it gives you access to the full debugging<br>
+environment of THINK C.
+</p>
+<p>
+<b>ABOUT THOSE OBJECT-ORIENTED TECHNIQUES</b><br>
+As any MacApp or class library programmer knows, there are three main steps to<br>
+adding or altering functionality in an object-oriented program:
+</p>
+<ol>
+<li>Identify the class responsible for the behavior you want to alter. </li>
+<li>Identify the specific methods you need to add or override. </li>
+<li>Create a new class derived from the original class and implement the new<br>
+methods or enhance the inherited methods.</li>
+</ol>
+<p>
+Because components can be overridden much like C++ classes, these object-oriented<br>
+techniques can be applied to customizing components. (For a more in-depth<br>
+comparison of components and C++ classes, see the "Be Our Guest" column in<i>develop</i><br>
+Issue 12.)
+</p>
+<p>
+So, the three steps to customizing components are:
+</p>
+<ol>
+<li>Identify the component to use as a starting point. </li>
+<li>Identify the routines in the component to override. </li>
+<li>Create a derived component.</li>
+</ol>
+<p>
+Before we get into a discussion of these steps, let's drop back and look at the nuts and<br>
+bolts of QuickTime component architecture with its dynamic linking capabilities. This<br>
+should give you a clearer idea of how it's possible to alter QuickTime's behavior at run<br>
+time. 
+</p>
+<p>
+<b>DYNAMIC LINKING OF COMPONENTS</b><br>
+The QuickTime movie file format depends on the dynamic linking capabilities of the<br>
+Component Manager. To play a QuickTime movie, you need more than just the movie<br>
+data (video frames, digitized audio samples, text, and such): you also need a time<br>
+source, code to read/write the data, and code to act on or interpret the data. It would be<br>
+impractical to store all this information in each and every QuickTime movie. Instead,<br>
+the time source and code are dynamically linked in as components, while the movie data<br>
+remains in a QuickTime movie file. 
+</p>
+<p>
+When a movie is opened in an application like MoviePlayer, the movie file is opened<br>
+first, followed by a NewMovieXXX call (such as NewMovieFromFile). The major<br>
+purpose of the NewMovieXXX call is to dynamically link to all the components listed in<br>
+the movie resource and return a handle to this "new" data structure.
+</p>
+<p>
+When a NewMovieXXX call is made, QuickTime invokes the Component Manager to load<br>
+the handlers described in the media. A clock component is loaded first (type 'clok',<br>
+subtype 'micr'). Then the media handler for each track is brought in (type 'mhlr'). If<br>
+you have video and sound, for example, video and sound media handlers are loaded<br>
+(subtypes 'vide' and 'soun', respectively).
+</p>
+<p>
+You may notice that the media handlers open other media handlers to do chores for<br>
+them. The video and sound media handlers open the standard media handler (type<br>
+'mhlr', subtype 'mhlr'), which is a private, high-throughput media handler. The text<br>
+media handler, though, opens the base media handler (type 'mhlr', subtype 'gnrc').<br>
+The base media handler is a public, general-purpose media handler with a lower<br>
+throughput that is nevertheless fast enough for text. 
+</p>
+<p>
+Next a data handler is loaded. Note that at present there's only one kind of data handler<br>
+(type 'dhlr', subtype 'alis') supporting streams of data from HFS files. If necessary, a<br>
+decompressor component is loaded for video; its type depends on the compression<br>
+format. 
+</p>
+<p>
+Thus, a media handler and a data handler are loaded for each track. QuickTime movies<br>
+use data handlers and media handlers to load, interpret, and manage the movie data. The<br>
+alias data handler is responsible for opening and closing data files and for reading and<br>
+writing sample data. It doesn't understand the format of the data but merely hands off<br>
+the data to the media handler to interpret.
+</p>
+<p>
+The media handler is the component that's responsible for interpreting data retrieved<br>
+from the data handler and for scheduling the rendering of this data at the correct time<br>
+during movie playback. For example, the text media handler interprets text samples<br>
+and renders the text track in the movie based on the current time value of the movie.<br>
+The media handler interfaces with the data handler using file offsets and with the rest<br>
+of QuickTime through a time value. Thus, a major media handler chore is to convert<br>
+time values into file offsets.
+</p>
+<p>
+You now know how and why a QuickTime movie dynamically links with its media<br>
+handlers. With that background on QuickTime component architecture behind us, we<br>
+now embark on the process of customizing the text media handler to speak its text. 
+</p>
+<p>
+<b>IN SEARCH OF A BASE COMPONENT</b><br>
+The first step in customizing a component is to identify the base component -- the<br>
+component to start with. 
+</p>
+<p>
+Not all components can be customized. There are two requirements. First, the<br>
+component must implement the target request; that is, it must allow another<br>
+component instance to intercept all its messages. To determine whether a particular<br>
+component instance implements the target request, you can use the call
+</p>
+<p>
+<code>ComponentFunctionImplemented(myComponentInstance,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kComponentTargetSelect)</code>
+</p>
+<p>
+The second requirement is that a component must have a public API before it can be<br>
+inherited from.&nbsp;&nbsp;&nbsp;When a component is called, it's passed the routine's selector in the<br>
+ComponentParameters structure. The component parses this selector and jumps to the<br>
+appropriate function. If there's no public API, you can't know the parameters and<br>
+behavior of any of the component's routines and thus can't override them. The interface<br>
+file QuickTimeComponent.h contains the APIs for all public QuickTime components. 
+</p>
+<p>
+To speak text as it streams by, we'll want to customize the Apple text media handler,<br>
+which both implements the target request and has a public API. The Apple text media<br>
+handler itself is a derived media handler that uses the services of the base media<br>
+handler supplied by Apple. Consequently, its interface is defined in the<br>
+MediaHandlers.h file. (For more on the intricacies of derived media handlers, see the<br>
+"Somewhere in QuickTime" column in<i>develop</i> Issue 14.)
+</p>
+<p>
+<b>IN SEARCH OF THE ROUTINES TO OVERRIDE</b><br>
+Our next step is to find the routines to override. In our example, one routine we need<br>
+to override is the routine in the Apple text media handler where the text is rendered.<br>
+In addition to rendering the text, we want to grab the text and speak it. 
+</p>
+<p>
+A media handler is normally called in response to a MoviesTask call. MoviesTask is the<br>
+QuickTime workhorse routine that gives time to the media handler to get the data and<br>
+render it. In turn, MoviesTask calls the MediaIdle routine to do the bulk of the<br>
+processing in a media handler.&nbsp;&nbsp;&nbsp;MediaIdle is the main routine in MediaHandlers.h.<br>
+Thus, MediaIdle is the main routine we want to override. Additionally, we'll need to<br>
+override the MediaInitialize routine, which supplies us with an initial reference to the<br>
+media. 
+</p>
+<p>
+<b>CREATING A DERIVED COMPONENT</b><br>
+So far we've chosen a base component from which to derive our customized component,<br>
+and we've identified the routines we want to override. Now we're ready to take the<br>
+third step of writing a new component that targets the base component and overrides<br>
+the identified routines. If you're curious about the design of the generic derived<br>
+component, you can investigate it on the CD. I'm only going to point out a couple of<br>
+things about its design before moving on to discuss what you need to do to make your<br>
+own derived component. 
+</p>
+<p>
+<b>To capture or not to capture. </b> You have two possible approaches when deriving a<br>
+component. First, you can simply open and target a component, which lets your<br>
+component use the services of that component. The component is still available to other<br>
+clients, but you're using an instance of it.&nbsp;&nbsp;&nbsp;Second, in addition to targeting the<br>
+component, you can capture it. The base component will then be replaced by your<br>
+component in the component registration list and will no longer be available to clients<br>
+(although current connections are retained). The CaptureComponent routine returns a<br>
+special ID so that the captured component can still be used by your component.
+</p>
+<p>
+We'll use CaptureComponent because we want to replace the functionality of all<br>
+instances of the text media handler (conceptually, you can think of capturing as<br>
+patching). However, targeting without capturing is just as effective -- and it has a<br>
+few advantages: it doesn't require you to keep track of the captured component's ID, and<br>
+it allows clients looking for a specific component to be successful.
+</p>
+<p>
+Let's walk through the steps you'd take to make your own derived component using the<br>
+generic code on this issue's CD, which are the same steps used to create our<br>
+text-speaking example. You need to make changes in specific places: the component<br>
+resource, the global data file, the OpenComponent routine, and the override routines. 
+</p>
+<p>
+<b>Changing the component resource. </b>The first thing to change is the resource file<br>
+for the component.&nbsp;&nbsp;&nbsp;The essential part of this file is the component description, which<br>
+is a structure that describes the component type, subtype, manufacturer, and flags.<br>
+The Component Manager looks at this information when it's handling an application's<br>
+request for a component. You want the right information here so that QuickTime will<br>
+grab your derived component instead of the base component. 
+</p>
+<p>
+You should change the component type and subtype to match those of the component<br>
+you're inheriting from. In our example, when a QuickTime movie with a text track is<br>
+opened, QuickTime asks the Component Manager for a text media handler, which has<br>
+type 'mhlr' and subtype 'text'.&nbsp;&nbsp;&nbsp;Since we want QuickTime to grab our derived<br>
+component instead, we need to make its type and subtype the same.
+</p>
+<p>
+In our case, we have to change the component manufacturer to match that of the base<br>
+component as well. This isn't the ideal situation, because it would be most desirable for<br>
+each component to have a unique manufacturer. But clients may look for a component of<br>
+a specific manufacturer and won't grab your derived component if its manufacturer is<br>
+different. Because it would be better to be able to identify a derived component, it's<br>
+strongly suggested that component clients always perform a default search, avoiding<br>
+asking for specifics other than type and subtype. 
+</p>
+<p>
+You may also need to set the componentFlags field, which identifies specific<br>
+functionality for a component. For example, video digitizers use componentFlags to<br>
+identify the type of clipping the digitizer performs, among other things.
+</p>
+<p>
+If you don't know how a client searches for a component, you can find out by running<br>
+that application and trapping on FindNextComponent. The last parameter pushed on the<br>
+stack is the component description, and you can find its values in a debugger (see<br>
+"Inside QuickTime and Component-Based Managers" in<i>develop</i> Issue 13). In our<br>
+example, we know that QuickTime performs a simple type and subtype search for a<br>
+text media handler, so we only have to change the type and subtype in the component<br>
+resource. 
+</p>
+<p>
+<b>The global data file. </b>The ComponentData.h file contains the declaration of the data<br>
+structure for each component instance and the global component data structure. You'll<br>
+need to fill out a component description structure describing your chosen base<br>
+component, which will be used to ask the Component Manager to find it. 
+</p>
+<p>
+Now you're left with defining the global data for your derived component. The generic<br>
+capturing component on this issue's CD has one item that's shared across all its<br>
+instances: a reference to the captured component. If you need data that's shared across<br>
+instances, declare it here, but in general you shouldn't need it. 
+</p>
+<p>
+The data local to each instance is allocated in the OpenComponent routine. By default,<br>
+three component instances will be kept track of: a self copy, a delegate copy, and a<br>
+target copy. These instances will be stored for you, and you won't need to do any work.<br>
+The target copy is the instance of a component that may capture yours. If your<br>
+component calls itself, it should use this instance in case the target overrides the<br>
+routine. 
+</p>
+<p>
+The other data that you allocate is specific to the type of your derived component. For<br>
+our example, we'll allocate room for a speech channel, a media reference, a handle to<br>
+the text to be spoken, and a StdTTSParams structure, which is filled out by the<br>
+Standard Text to Speech dialog. This dialog lets the user choose voice, pitch, and<br>
+modulation.
+</p>
+<p>
+<b>The OpenComponent routine. </b>OpenComponent performs three major operations.<br>
+First, it allocates storage for each instance. Second, it checks for QuickTime, the<br>
+Text-to-Speech Manager, and other dependencies; if they're not installed, the<br>
+component can't open and an error is returned. Note that software dependencies are<br>
+checked here instead of in RegisterComponent to bypass possible load order conflicts.<br>
+Finally, OpenComponent captures the Apple text media handler and stores a reference<br>
+to it in the component globals. 
+</p>
+<p>
+<b>The override routines. </b>Now it's time to implement the override routines. You'll<br>
+need to get the selectors for the routines from the original component's header file.
+</p>
+<p>
+In our example, we look at MediaHandlers.h and find the MediaInitialize routine. The<br>
+selector has a constant, kMediaInitializeSelect. We need to make the parameters of our<br>
+override routine match those of the MediaInitialize routine.
+</p>
+<p>
+<code>pascal ComponentResult MediaInitialize</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;(PrivateGlobals **storage,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GetMovieCompleteParams *gmc)</code>
+</p>
+<p>
+MediaInitialize performs these tasks: it stores the media reference from the<br>
+GetMovieCompleteParams structure in our private storage; it queries the user for a<br>
+voice with the Standard Text to Speech dialog; and, with this information, it allocates<br>
+and sets up the speech channel. 
+</p>
+<p>
+Next we implement the MediaIdle routine, which has a selector of kMediaIdleSelect.<br>
+Our MediaIdle looks like this:
+</p>
+<p>
+<code>pascal ComponentResult MediaIdle</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;(PrivateGlobals **storage, TimeValue</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;atMediaTime, long flagsIn, long *flagsOut,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;const TimeRecord *movieTime)</code>
+</p>
+<p>
+This routine retrieves the media sample for the time passed in and then speaks it. The<br>
+important parameter is atMediaTime, which contains the current time value of the<br>
+media for the movie. We get the media sample for that time using GetMediaSample, and<br>
+then we use the nifty new Text-to- Speech Manager to speak.
+</p>
+<p>
+In this case, we'll use SpeakText, which takes three parameters: a speechChannel<br>
+(allocated earlier in the OpenComponent routine), a pointer to the beginning of the<br>
+text that we want to speak, and the length of the text. SpeakText is an asynchronous<br>
+routine, so it won't hold up processing (or the movie) while it speaks. On the other<br>
+hand, the text can't be disposed of until speaking is finished. To accommodate this<br>
+requirement, a reference to the text is stored in our instance storage, and the text is<br>
+disposed of when the component closes. 
+</p>
+<p>
+<b>LETTING USERS LINK AND UNLINK COMPONENTS</b><br>
+Thanks to dynamic linking, a large number of users can easily take advantage of new<br>
+functionality provided by customized components. Three methods can be used to<br>
+register and unregister components. First, a component is registered at system<br>
+startup if the component resides in the System Folder, or in the Extensions folder of<br>
+the System Folder. To unregister this component, a user can remove it and reboot.<br>
+Second, an application can dynamically register components as needed, and then<br>
+unregister them when finished. Third, you can use the drag-and-drop applications<br>
+Komponent Killer and Reinstaller II included on this issue's CD. Using these<br>
+applications, you don't have to reboot. (Of course, your typical user won't do it this<br>
+way; this method is for you, the programmer.)
+</p>
+<p>
+<b>EXCITING PROSPECTS</b><br>
+Now you know how to customize a component using a derived component, which will be<br>
+dynamically linked at run time and thus can extend systemwide functionality. Just<br>
+think of the possibilities! You can override the movie controller and implement an<br>
+Apple event handler. And you can override other base components as well. Fiddle<br>
+around with the generic derived component on the CD to get an idea of the exciting<br>
+prospects before you. 
+</p>
+<h2>REFERENCES</h2>
+<ul>
+<li>"Somewhere in QuickTime: Derived Media Handlers" by John Wang, <br>
+<i>develop </i> Issue 14.</li>
+<li>"Inside QuickTime and Component-Based Managers" by Bill Guschwan, <br>
+<i>develop </i> Issue 13.</li>
+<li>"Techniques for Writing and Debugging Components" by Gary Woodcock<br>
+and Casey King, <i> develop</i> Issue 12.</li>
+<li>"Be Our Guest: Components and C++ Classes Compared" by David Van<br>
+Brink, <i> develop </i> Issue 12.</li>
+</ul>
+<p>
+<b>BILL GUSCHWAN </b>(AppleLink ANGUS) hung out with Robert Schumann to discuss<br>
+their symphonic feats. Robert: "Angus, I understand you compare your jobs to<br>
+symphonies." Angus: "I guess so, though I'd rather compare operas to pasta. You know,<br>
+Wagner is lasagna, Mozart is fettucine, Verdi is ravioli, . . ." Robert: "So on your<br>
+opera pasta scale, how do you rate my symphonic music?" Angus: "Linguini." Robert:<br>
+"Yo mama!" Angus: "Listen, Mr. Concerto Psycho Ward, at least my mother knows the<br>
+meaning of life beyond success. Can't say the same about your wife." Robert: "You mean<br>
+my beloved Clara." Angus: "Yep, Clara, the dogcow. Well, gotta go, I hear Symphony No.<br>
+2." Robert: "Before you go, what's the key?" Angus: "C Major." Robert: "No, what's the<br>
+key?" Angus: "As Wittgenstein says, the key to life is that language is a game." Robert:<br>
+"No, what's the key?" Angus: "Oh, it's the key to my new office in PIE DTS." Robert:<br>
+"Then let the music begin, allegro." Angus: "Pass the parmesan." *
+</p>
+<p>
+<b>To see information about a track </b>in a hierarchical manner, you can use<br>
+Dumpster, a QuickTime tool that's included on this issue's CD.*
+</p>
+<p>
+<b>You can watch the components of a movie load </b> if you set A-trap breaks as<br>
+outlined in the section "Breaking on Common Component Manager Routines" in the<br>
+article "Inside QuickTime and Component-Based Managers" in <i> develop </i> Issue 13.*
+</p>
+<p>
+<b>QuickTime 1.6 adds a new Component Manager selector, </b><br>
+componentWantsUnregister, that you can take advantage of when you want to free a<br>
+captured component. Set componentWantsUnregister in the componentRegisterFlags<br>
+field. When the captured component is unregistered, your derived component can call<br>
+UncaptureComponent and dispose of the global memory.*
+</p>
+<p>
+<b>To identify a captured component in a debugger, </b> you can use the <b> thing</b><br>
+dcmd. The component ID of a captured component will begin with two periods (..). *
+</p>
+<p>
+<b>A version of the Text-to-Speech Manager </b> can be found on this issue's CD. *
+</p>
+<p>
+<b>Thanks </b>to Ken Doyle, Tim Schaaff, and Gary Woodcock for reviewing this column. *
+</p>
+</body>
+</html>

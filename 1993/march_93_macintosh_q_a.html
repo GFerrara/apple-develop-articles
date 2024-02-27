@@ -1,0 +1,716 @@
+<html>
+<head>
+<!-- Article ID: 7 - Extracted from develop-1993 -->
+<!-- on 2024-02-12 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>March 93 - MACINTOSH Q & A</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH Q &amp; A</h2>
+<h1>MACINTOSH DEVELOPER TECHNICAL SUPPORT</h1>
+<p>
+<b>Q</b><i> Our program has a problem with filenames that start with a period. During an Open</i><br>
+<i>call, if the filename starts with a period, the Open code calls the Device Manager (for</i><br>
+<i>drivers and DAs) instead of the File Manager. However, we've seen other applications</i><br>
+<i>that can successfully open these files. What's the secret? How do we open files that</i><br>
+<i>otherwise look (from the name) like drivers?</i>
+</p>
+<p>
+<b>A </b> The Open trap is shared between the Device Manager and the File Manager. When<br>
+Open is called, it checks first to see whether you're trying to open a driver. Driver<br>
+names always start with a period. If you can, avoid using filenames that begin with a<br>
+period. Macintosh Technical Note "HFS Elucidations" (formerly #102) discusses this<br>
+conflict. The secret to opening those files is using the new Open Data Fork functions<br>
+available with System 7 -- FSpOpenDF, HOpenDF, and PBHOpenDF. These functions<br>
+bypass the driver name check and go right to the File Manager. Here's the code we use<br>
+to open a file:
+</p>
+<p>
+<code>err := HOpenDF(vRefNum, dirID, fileName, permission, refNum);</code><br>
+<code>IF (err = paramErr) THEN&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{HOpenDF call isn't available}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;err := HOpen(vRefNum, dirID, fileName, permission, refNum);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{try again with old HOpen call}</code>
+</p>
+<p>
+&nbsp;Try this and your problem should go away under System 7. The code retries with the<br>
+regular Open call (which uses the same input parameters), so this code can be used in<br>
+programs that run under both System 6 and System 7.
+</p>
+<p>
+<b>Q</b><i> In System 7, the memory allocated for INITs by the 'sysz' resource mechanism</i><br>
+<i>seems to be limited to about 16 MB on our 32 MB Macintosh IIfx. For 'sysz' values up</i><br>
+<i>to 15 MB it works great, but it seems the system heap can't grow beyond 16 MB. Is</i><br>
+<i>there some reason for this?</i>
+</p>
+<p>
+<b>A </b> The system heap size at startup is limited to approximately half the size of total<br>
+RAM. This is because the early startup code places the stack and some globals in the<br>
+middle of RAM so that the system heap can grow up from below while BufPtr is<br>
+lowered from above. This is basically the situation until an application is launched.<br>
+Things are eventually rearranged so that the system heap will have more room to<br>
+grow, but this doesn't happen until the Process Manager is launched, after INIT time.<br>
+This limitation would mean that you could size your heap until it reached nearly (but<br>
+not quite) half the size of RAM. We suggest that you attempt to allocate some of your<br>
+RAM later, after the Process Manager starts up; at that point, the system heap should<br>
+be somewhat less limited.
+</p>
+<p>
+<b>Q</b><i> The Macintosh Technical Note "Setting ioNamePtr in File Manager Calls" (formerly</i><br>
+<i>#179) says that ioNamePtr needs to point either to nil or to storage for a Str255.</i><br>
+<i>This contradicts the Technical Note "Searching Volumes -- Solutions and Problems"</i><br>
+<i>(formerly #68), which gives an example of a recursive indexed search using</i><br>
+<i>PBGetCatInfo. The example uses a Str63. Which Technical Note is correct?</i>
+</p>
+<p>
+<b>A </b> To be generically correct, ioNamePtr should point to a Str255. However, in the<br>
+case of PBGetCatInfo and other calls that return a filename (or a directory name), a<br>
+Str63 is sufficient. The reasons are tied to the history of the Macintosh file system.
+</p>
+<p>
+&nbsp;MFS, the original Macintosh file system, supported filename lengths of up to 255<br>
+characters. However, the Finder on those systems supported filename lengths up to<br>
+only 63 characters and, in fact, developers were warned to limit filename lengths to<br>
+fewer than 64 characters (see page II-81 of <i>Inside Macintosh</i> Volume II).
+</p>
+<p>
+&nbsp;HFS, the hierarchical file system (in every Macintosh ROM since the Macintosh<br>
+Plus), further limited filename lengths to 31 characters. If you mount an MFS disk<br>
+while running HFS, the old MFS code is called to handle the operation. So, the file<br>
+system can still create and use files with long filenames on MFS volumes. When the<br>
+System 7 file system was being designed, Engineering had to decide what size string to<br>
+use in FSSpec records. The decision was to use a Str63 instead of a Str31 to be able to<br>
+support long MFS filenames, and to use a Str63 instead of a Str255 because there<br>
+were probably very few filenames with over 63 characters (remember, the old<br>
+Finder limited filenames to 63 characters). Using a Str63 instead of a Str255 saves<br>
+192 bytes per FSSpec record.
+</p>
+<p>
+&nbsp;So, we recommend that you use at least a Str63 for filenames, as in "Searching<br>
+Volumes -- Solutions and Problems." If you need to manipulate the filename in any<br>
+way after you've gotten the name -- for example, to concatenate it with another string<br>
+-- you might want to use a Str255.
+</p>
+<p>
+&nbsp;Note: Even though the System 7 file system supports filenames longer than 31<br>
+characters on MFS volumes, the System 7 Finder does not. In fact, the System 7 Finder<br>
+currently crashes if you try to open an MFS volume (that is, open the volume window)<br>
+that has files with names longer than 31 characters.
+</p>
+<p>
+<b>Q</b><i> I'm trying to use the Macintosh Time Manager to calculate elapsed times, but when I</i><br>
+<i>increase the delay time from $4FFFFFF to $5FFFFFF I get incorrect results. Why is</i><br>
+<i>this happening?</i>
+</p>
+<p>
+<b>A </b> There seems to be an undocumented limitation of the Time Manager: it can't keep<br>
+track of times longer than about a day, so it replaces them with the maximum time it<br>
+supports. For Time Manager tasks, this isn't crippling; the task simply executes<br>
+earlier than expected. When used for elapsed-time calculations, however, it's a bad<br>
+thing; the Time Manager installs the task with the smaller time, and when you remove<br>
+it, you see a smaller than expected remaining time. This makes it appear as if a large<br>
+period of time has passed.
+</p>
+<p>
+&nbsp;The value at which the Time Manager trims is approximately $53A8FE5. The reason<br>
+for this strange value is somewhat complex. The Time Manager uses a VIA timer to do<br>
+its measurement. This timer runs at 783360 Hz, giving it a resolution of about 1.276<br>
+microseconds. However, the Macintosh could never actually provide this kind of<br>
+accuracy, given its latencies and overhead. Also, this frequency would have given a<br>
+32-bit counter a range of only about 91 minutes. Therefore, the Time Manager<br>
+actually throws away the low four bits of this counter, keeping a 32-bit counter with<br>
+a resolution of 20.425 microseconds and a range of 24 hours, 22 minutes. This time<br>
+is a lot larger than the maximum number of microseconds that can be measured, but is<br>
+equal to 87,724,005 milliseconds, which is (ta-dahh!) $53A8FE5. This is why you<br>
+were overflowing the Time Manager's internal counter, causing your task to be<br>
+clipped.
+</p>
+<p>
+&nbsp;All should work well if you use times less than 24 hours. If you need to measure<br>
+durations for times exceeding the Time Manager's limits, you can use a<br>
+fixed-frequency task that executes every hour and increments an hour counter. To<br>
+determine the fractional hours component of the time, you'd remove the task to<br>
+determine how much longer till the next hour.
+</p>
+<p>
+<b>Q</b><i> When a picture that contains a pixMap is spooled into a window, how and when is&nbsp;&nbsp;the</i><br>
+<i>depth of the pixMap in the picture converted to the depth of the screens the window is</i><br>
+<i>on?</i>
+</p>
+<p>
+<b>A </b> When a picture is spooled in, if QuickDraw encounters any bitmap opcode, it<br>
+allocates a pixMap of the same depth as the data associated with the bitmap opcode,<br>
+expands the data into the temporary pixMap, and then calls StdBits. StdBits is what<br>
+triggers the depth and color conversions as demanded by the color environment (depth,<br>
+color table, B&amp;W settings) of the devices the target port may span (as when a window<br>
+crosses two or more screens).
+</p>
+<p>
+&nbsp;If there's not enough memory in the application heap or in the temporary memory<br>
+pool, QuickDraw bands the image down to one scan line and calls StdBits for each of<br>
+these bands. Note that if you're providing your own bitsProc, QuickDraw will call it<br>
+instead of StdBits. This process is the same when the picture is in memory, with the<br>
+obvious exception that all the picture data is present; the color mapping occurs when<br>
+StdBits does its stuff.
+</p>
+<p>
+<b>Q</b><i> How do I get the pixel depth of the QuickTime video media for a given track?</i>
+</p>
+<p>
+<b>A </b> To find the video media pixel depth, you'll need to retrieve the media's image<br>
+description handle. You can use GetMediaSampleDescription to get it, but this routine<br>
+needs both the video media and the track's index number. It's not obvious, but a media's<br>
+type is identified by its media handler's type. Thus, you can walk through a movie's<br>
+tracks by using its indexes until you find video media, at which point you have both the<br>
+track index and video media.
+</p>
+<p>
+&nbsp;The following sample code does the trick:
+</p>
+<p>
+<code>#include &lt;QuickDraw.h&gt;</code><br>
+<code>#include &lt;Movies.h&gt;</code><br>
+<code>#include &lt;ImageCompression.h&gt;</code><br>
+<code></code><br>
+<code>Media GetFirstVideoMedia(Movie coolMovie, long *trackIndex)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Track&nbsp;&nbsp;&nbsp;coolTrack = nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Media&nbsp;&nbsp;&nbsp;coolMedia = nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;numTracks;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OSType&nbsp;&nbsp;mediaType;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;numTracks = GetMovieTrackCount(coolMovie);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;for (*trackIndex=1; *trackIndex&lt;=numTracks; (*trackIndex)++) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;coolTrack = GetMovieIndTrack(coolMovie, *trackIndex);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (coolTrack) coolMedia = GetTrackMedia(coolTrack);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (coolMedia) GetMediaHandlerDescription(coolMedia,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;mediaType, nil, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (mediaType = VideoMediaType) return coolMedia;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;*trackIndex = 0;&nbsp;&nbsp;&nbsp;&nbsp;// trackIndex can't be 0</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return nil;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// went through all tracks and no video</code><br>
+<code>}</code><br>
+<code></code><br>
+<code>short GetFirstVideoTrackPixelDepth(Movie coolMovie)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;SampleDescriptionHandle imageDescH =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(SampleDescriptionHandle)NewHandle(sizeof(Handle));</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long trackIndex = 0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Media coolMedia = nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;coolMedia = GetFirstVideoMedia(coolMovie, &amp;trackIndex);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!trackIndex || !coolMedia) return -1; // we need both</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GetMediaSampleDescription(coolMedia, trackIndex, imageDescH);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return (*(ImageDescriptionHandle)imageDescH)-&gt;depth;</code><br>
+<code>}</code>
+</p>
+<p>
+<b>Q</b><i> What's the difference between ignorance and apathy?</i>
+</p>
+<p>
+<b>A </b> We don't know and we don't care.
+</p>
+<p>
+<b>Q</b><i> Could you tell me what the "printer driver is MultiFinder compatible" bit is used</i><br>
+<i>for?</i>
+</p>
+<p>
+<b>A </b> The "printer driver is MultiFinder compatible" bit provides two features. First, it<br>
+allows the printer driver resource file to be opened by multiple clients. This was<br>
+obviously needed to support multiple applications printing simultaneously under<br>
+MultiFinder. The other feature provided by the flag is the loading of PDEFs into the<br>
+system heap rather than the application heap (which is where they go under the<br>
+Finder). The MultiFinder-compatible bit has a major limitation: if your driver has<br>
+this flag set, you aren't allowed to add or resize resources, or do anything else that<br>
+would cause the RAM- resident resource map to change. Although MultiFinder lets<br>
+multiple applications open the printer resource file at the same time, it has no control<br>
+over the resource map that gets loaded by the Resource Manager when the file is<br>
+opened. Because of this, each client gets its own personal copy of the resource map.<br>
+When these clients get done with the file, they write the resource map back to the file<br>
+(via UpdateResFile). Obviously, if the resources have changed in any way, the last<br>
+client to call UpdateResFile is the only one whose changes will be recorded. This is a<br>
+"thrill seeker" method of handling the printer driver resource files, but since none of<br>
+the Apple printer drivers currently add or resize resources, it made sense.
+</p>
+<p>
+&nbsp;So the bottom line here is that if you want your drivers to be compatible under<br>
+MultiFinder, you'll have to implement a scheme that doesn't require adding or resizing<br>
+resources. It's OK to change the data in a resource, as long as you don't change its size.<br>
+Changing the data won't cause changes to the resource map, so each client will still<br>
+have accurate copies of the map.
+</p>
+<p>
+&nbsp;Here's what would happen to your printer driver's resources under the Finder and<br>
+MultiFinder when the MultiFinder-compatible bit is set:
+</p>
+<ul>
+<li>Under the Finder in system software version 6.0.x: All resources are<br>
+loaded into the application heap -- regardless of the resource attribute's bit<br>
+setting. If the resource has the "load into the system heap" bit set, it will still<br>
+be loaded into the application heap under the Finder. This makes sense in the<br>
+Finder world because the application heap will usually have more room than<br>
+the system heap.</li>
+<li>Under MultiFinder in System 6 or System 7: All the printer driver's<br>
+resources <i> will</i> be loaded into the system heap. This is true whether the "load<br>
+into the system heap" bit is set or not.</li>
+</ul>
+<p>
+&nbsp;Why does the resource loading occur this way, even when the resource's "load into the<br>
+system heap" bit is set? Patches to the GetResource trap load all your printer driver's<br>
+resources into the system heap when the MultiFinder-compatible bit is set under<br>
+MultiFinder, and into the application heap under the Finder (as described above),<br>
+which is why you can't override this behavior.
+</p>
+<p>
+&nbsp;By the way, you should be aware of the SetPDiMC MPW tool, which is available on the<br>
+<i>Developer CD Series</i> disc. It will automatically set the MultiFinder-compatible bit for<br>
+you when you build your printer driver.
+</p>
+<p>
+<b>Q</b><i> If I call FSWrite and attempt to write more than space allows, what happens? Of</i><br>
+<i>course I get a Disk Full error, but does FSWrite write as much as possible before</i><br>
+<i>quitting, and then return the number of bytes written in the count parameter?</i>
+</p>
+<p>
+<b>A </b> In the current implementation of the file system, writes to local volumes owned by<br>
+the file system are an all-or-nothing deal. If the space for a write can't be allocated,<br>
+the write call fails and no bytes are written.
+</p>
+<p>
+&nbsp;However, do <i>not</i> depend on that, because the Macintosh file system doesn't control all<br>
+volumes that might be mounted. Today, Apple ships four external file systems:<br>
+CD-ROM, AppleShare, ProDOS File System (for Apple II ProDOS volumes), and PC<br>
+Exchange (for MS-DOS volumes). Various third parties have written other external<br>
+file systems. The way they react to error conditions may not be the same as local<br>
+volumes controlled entirely by the file system.
+</p>
+<p>
+&nbsp;To make your application always work correctly, you should check for errors and<br>
+handle them appropriately. If you get a dskFulErr, you should assume that if any<br>
+information was written to the file, it wasn't written correctly. You should either<br>
+reset the file's EOF to its previous position (if you're appending to an existing file) or<br>
+delete the file (if you had just created the file and were writing to it for the first<br>
+time).
+</p>
+<p>
+<b>Q</b><i> How can I mount a volume without using aliases? I get the mounting information,</i><br>
+<i>then attempt to mount the volume. However, the PBVolumeMount call returns an error</i><br>
+<i>code.</i>
+</p>
+<p>
+<b>A </b> The PBGetVolMountInfo, PBGetVolMountInfoSize, and PBVolumeMount functions are<br>
+currently handled by only the AppleShare external file system (part of the AppleShare<br>
+Chooser extension). Those functions are available on AppleShare volumes when the<br>
+AppleShare Chooser extension is version 7.0 (system software versions 7.0 and<br>
+7.0.1), version 3.0 (AppleShare 3.0), or version 7.1 (System 7.1). The AppleShare<br>
+Chooser extension version 3.0 can be installed on System 6 systems, and then the<br>
+PBGetVolMountInfo, PBGetVolMountInfoSize, and PBVolumeMount functions can be<br>
+used in System 6. Other file systems may support these functions in the future. The<br>
+paramErr error code is returned when these functions aren't available on a particular<br>
+volume.
+</p>
+<p>
+<b>Q</b><i> I need to prevent users from copying my application off a volume. Is there a new</i><br>
+<i>equivalent of the old Bozo bit?</i>
+</p>
+<p>
+<b>A </b> The Bozo or NoCopy bit was bit 11 in the fdFlags word of the FInfo record. As noted<br>
+in the Macintosh Technical Note "Finder Flags" (formerly #40), this bit hasn't been<br>
+used for that purpose since System 5. In fact, System 7 reused bit 11 for the<br>
+isStationery bit. (See <i> Inside Macintosh</i> Volume VI, pages 9-36 and 9-37, for the<br>
+current list of Finder flag bits.)
+</p>
+<p>
+&nbsp;There isn't an equivalent of the Bozo bit. However, the System 7 Finder won't copy<br>
+files that have the copy-protect bit (bit 6) set in the ioFlAttrib field returned by the<br>
+PBGetCatInfo function. However, the bits in the ioFlAttrib field can't be changed with<br>
+the PBSetCatInfo function. Instead, they're used to report the state of things set by<br>
+other parts of the file system.
+</p>
+<p>
+&nbsp;The copy-protect bit is set by the AppleShare external file system when it finds that a<br>
+file's copy-protect bit is returned by an AppleTalk Filing Protocol file server. The<br>
+AppleShare external file system is the only file system we know of that sets the<br>
+copy-protect bit. There's no way to make the local file system set the copy-protect bit<br>
+for volumes it controls.
+</p>
+<p>
+<b>Q</b><i> Are there any tricks that might speed up reading and writing large files to disk?</i><br>
+<i>We're using standard C calls (fread and fwrite) for this purpose since our file I/O</i><br>
+<i>calls need to be platform-independent. Are there any low-level File Manager calls that</i><br>
+<i>might speed up the file I/O?</i>
+</p>
+<p>
+<b>A </b> The C fread and fwrite functions are slower than File Manager calls because the<br>
+standard C library adds another layer of overhead to file I/O. In addition, unless you<br>
+turn buffering off, all file I/O is double-buffered when you use the standard C library<br>
+functions. That is, fread reads from a RAM buffer in which the lower-level C library<br>
+code has buffered data read from a disk file; fwrite writes data into a RAM buffer and<br>
+the lower-level C library code writes from that buffer into a disk file.
+</p>
+<p>
+&nbsp;For the highest file I/O throughput, and for maximum flexibility and functionality on<br>
+the Macintosh, you should use the File Manager for all file access. The low-level File<br>
+Manager calls (the PBxxx or PBHxxx calls) have the least overhead and give you the<br>
+most control. If you use the File Manager's Read (FSRead or PBRead) and Write<br>
+(FSWrite or PBWrite) calls, you'll achieve maximum throughput by reading or<br>
+writing your data in the largest size possible (for example, if you need to write<br>
+10,000 bytes, you can write them with one Write call).
+</p>
+<p>
+&nbsp;If you must use the standard C library, you may want to adjust the size of the file I/O<br>
+buffer used by the library for your particular purposes. You can adjust the size of the<br>
+file I/O buffer using MPW C's setvbuf function. If you do nothing, you'll get a default<br>
+buffer with a size of 1024 (1K).
+</p>
+<p>
+&nbsp;MPW C's setvbuf size parameter is treated internally as an unsigned short. This<br>
+means that the largest value acceptable to setvbuf for its size parameter is 65535.<br>
+Larger values will be treated modulo this number. If you set the buffer size to 0, I/O<br>
+is unbuffered. You can turn off buffering like this:
+</p>
+<p>
+<code>setbuf(stream, NULL); // turn off buffering</code>
+</p>
+<p>
+&nbsp;or like this:
+</p>
+<p>
+<code>setvbuf(stream, NULL, _IONBF, 0); // turn off buffering</code>
+</p>
+<p>
+&nbsp;Here are some general rules to follow to determine the size of the file I/O buffer you<br>
+should use:
+</p>
+<ul>
+<li>If the file is small (less than 10K), you should probably use the default<br>
+buffer.</li>
+<li>If the file is large (greater than 10K) but you write to it from your<br>
+program in small pieces, buffering may help cut down the number of disk<br>
+accesses. You may want to change the buffer size to around 10K. You can<br>
+experiment to see whether other values provide better results for you. You'll<br>
+probably find some point where the overhead of double-buffering is more than<br>
+the overhead of disk accesses -- that's when you should turn buffering off.</li>
+<li>If the file is large (greater than 10K) and you write to it in large pieces<br>
+or write to it with one Write call, you should turn buffering off.</li>
+</ul>
+<p>
+<b>Q</b><i> If you were omnipotent and you had a round knob that controls the value of &#960;, what</i><br>
+<i>would happen to the knob as you turned it?</i>
+</p>
+<p>
+<b>A </b> Although unsure, we believe that the number of fingers on your hand would change.
+</p>
+<p>
+<b>Q</b><i> I'm porting C code from a UNIX</i>&#174;<i> platform to the Macintosh. The code uses stdlib and</i><br>
+<i>stdio calls such as calloc, realloc, malloc, free, memcmp, memcpy, memset, strtod,</i><br>
+<i>strcat, strchr, strcpy, strlen, strncat, strncpy, strrchr, fopen, fclose, fwrite, and</i><br>
+<i>fread. For the most part, I've always avoided these calls on the Macintosh since the</i><br>
+<i>Toolbox has equivalents. However, I'd like to know whether there are any</i><br>
+<i>ramifications if I use these calls for porting compatibility. The only issues I can</i><br>
+<i>identify are (1) StdCLib.o, which defines these calls, uses globals and therefore will</i><br>
+<i>prevent me from using the code in standalone code segments, and (2) I'll lose some file</i><br>
+<i>information such as type and creator. Are there any other issues that I should be aware</i><br>
+<i>of?</i>
+</p>
+<p>
+<b>A </b> There are various difficulties or "gotchas" associated with use of these calls on the<br>
+Macintosh, which generally keep them from being used in commercial development.<br>
+However, being able to cross-compile code is very useful, so people like to use the<br>
+calls for portability reasons despite their drawbacks.
+</p>
+<p>
+&nbsp;The memory allocation calls (such as malloc, calloc, and realloc) all allocate<br>
+pointer-based blocks. This works but can cause memory fragmentation and inefficient<br>
+usage compared to the handle-based system usually used on the Macintosh. Also,<br>
+MPW's implementation of these calls doesn't return memory to the Macintosh pool;<br>
+when you allocate a block with malloc, the routine gets a larger block from the<br>
+Macintosh with NewPtr, which it then subdivides into several smaller blocks to<br>
+satisfy allocation requests. However, if the program then frees all the allocations made<br>
+from this Macintosh pointer block, the library routine won't notice and dispose of it.<br>
+Although the memory remains available for reuse by the standard C allocation<br>
+routines, it has been lost to the Macintosh. For details, see the Q&amp;A about using calloc<br>
+and NewPtr in the same program in <i> develop</i> Issue 12 and the Macintosh Technical Note<br>
+"A/UX Q&amp;As."
+</p>
+<p>
+&nbsp;The file manipulation calls suffer somewhat merely because they don't fit well into<br>
+the Macintosh file system. For example, if you want to select files with the Macintosh<br>
+StandardGet dialog, you'll find that fopen doesn't accept the volume reference or<br>
+directory ID returned; it accepts a pathname, making it difficult to specify files in<br>
+various folders. Also, as you noted, you have no control over types or creators; you<br>
+also can't easily associate resource forks with data forks or use a number of the more<br>
+expressive Macintosh file system calls.
+</p>
+<p>
+&nbsp;You can use all of the string-manipulation calls (such as strcpy and strlen) and<br>
+simple memory- access calls (such as memcpy and memcmp) with impunity;<br>
+fortunately, bytes is bytes. Note, however, that a large number of seemingly innocuous<br>
+calls (such as atoi and many others) use globals, making them inappropriate for use in<br>
+cases where globals wouldn't be available, such as in code resources.
+</p>
+<p>
+&nbsp;Basically, the standard C calls do work but suffer from faults, primarily because<br>
+they've been kind of wedged into a system in which they don't fit. While most are<br>
+functional and compatible enough to be used in software safely, be aware of their<br>
+drawbacks and limitations; the basic decision is whether you can provide the<br>
+functionality you need with these calls and whether the extra work required to deal<br>
+with them is more or less than the effort saved by avoiding wholesale modifications to<br>
+the source being ported.
+</p>
+<p>
+<b>Q</b><i> How can I detect whether a font suitcase is corrupted when it's opened and whether</i><br>
+<i>any of the fonts in it are corrupted before any of the fonts are used? I know that the</i><br>
+<i>Finder is able to do this, and I was wondering whether Apple gives out this</i><br>
+<i>information. My program will run only under System 7, if that helps.</i>
+</p>
+<p>
+<b>A </b> The Finder and font architecture on the Macintosh are living things; the definition<br>
+of what is and isn't a damaged suitcase can change from release to release of system<br>
+software. However, any of the following conditions makes System 7 report the suitcase<br>
+as "damaged":
+</p>
+<ul>
+<li>More than eight FONDs reference the same font.</li>
+<li>The Finder can't create a new standalone icon object for each font in the<br>
+suitcase. The usual cause of this is that two FONDs have the same name for the<br>
+first 31 characters, and the Finder thinks there's already an icon in that<br>
+window with the same name. (Two icons in the same directory with the same<br>
+name is a sign of damage.)</li>
+<li>There isn't at least one font association table entry, or the table goes past<br>
+the logical end of the resource.</li>
+<li>The first resource name in the map is zero-length. (This is a test for<br>
+some older third-party corrupted suitcases.)</li>
+<li>The FOND has no name.</li>
+<li>The FOND doesn't have a valid character range; ffFirstChar has to be less<br>
+than ffLastChar, unless it's a "dummy" FOND (created on the fly for old<br>
+standalone FONTs, in which case ffLastChar is 0).</li>
+<li>All the font association table entries aren't in ascending point size order.</li>
+<li>Two font association table entries reference exactly the same point size<br>
+and style.</li>
+<li>The offsets to the width table, kerning table, and style mapping table are<br>
+invalid and nonzero.</li>
+<li>The font ID is 0 and it's not the system font.</li>
+</ul>
+<p>
+&nbsp;We can't promise that this list is complete, but it does contain most conditions for<br>
+which the Finder would report a suitcase as damaged.
+</p>
+<p>
+<b>Q</b><i> We'd like to maintain only one version of our globally distributed application, which</i><br>
+<i>would adapt to the language in use by changing DITL resource text items and menu</i><br>
+<i>titles and items. Does the Macintosh Operating System support this?</i>
+</p>
+<p>
+<b>A </b> Currently the Macintosh Operating System doesn't inherently support localized<br>
+resources for several languages, or choose the right language according to the localized<br>
+version of the system. However, your approach of including all localized text items in<br>
+the same application is absolutely feasible. Just include an option to let the user select<br>
+the language -- somewhere in Preferences, if not in a dedicated "Languages" menu --<br>
+and design a numbering scheme for the resource IDs such that the resources to be<br>
+loaded can be determined from the language code.
+</p>
+<p>
+&nbsp;It's better to let the user choose the language, rather than derive it from the system.<br>
+This provides for a choice in case the user lives in a multilingual region, or in case<br>
+your application doesn't include translations for the language of the user's system.
+</p>
+<p>
+&nbsp;Because menus, windows, and dialogs are displayed with the system font, this<br>
+approach works only for languages supported by the system script.
+</p>
+<p>
+<b>Q</b><i> My installer creates a folder on a user's hard disk and copies the necessary files into</i><br>
+<i>it. My final action atom moves the folder onto the desktop and sets its size and location.</i><br>
+<i>I'd also like to be able to open the folder. I call PBGetCatInfoSync to get the data into a</i><br>
+<i>CInfoPBRec record. Where is the state of a folder (open/closed) stored, and can I set</i><br>
+<i>one of the parameters in the CInfoPBRec and then call PBSetCatInfoSync to solidify the</i><br>
+<i>change? Using the installer to copy an open folder to the user's drive is unacceptable</i><br>
+<i>because of the size and nature of the program I'm installing.</i>
+</p>
+<p>
+<b>A </b> There's no solution for System 6; the Finder data structures are private, and<br>
+there's no call to open a folder. In System 7, you can send the Finder an Open Selection<br>
+Apple event. This is described in a HyperCard stack called FinderEvents on the <br>
+<i>Developer CD Series</i> disc. The stack also contains the source code for the XCMD used to<br>
+demonstrate the Finder events. There's another sample that you should see as well:<br>
+SendFinderOpen in the Snippets folder.
+</p>
+<p>
+<b>Q</b><i> We're having problems with color patterns using the LaserWriter driver version</i><br>
+<i>7.1.2. If we create a 'ppat' resource in ResEdit (32 x 32 bits, in this case) and then do</i><br>
+<i>a FillCRect to the port returned by PrOpenDoc (with color set so that it's a cGrafPort)</i><br>
+<i>with the pattern loaded by GetPixPat, we get a weird pattern. Doing the same to an</i><br>
+<i>off-screen GWorld and using CopyBits to copy to the printer port works fine, if a little</i><br>
+<i>slowly. Are we missing something here?</i>
+</p>
+<p>
+<b>A </b> You need to use the FillCRect call off-screen rather than directly into the printer<br>
+port, for at least two reasons. First, the LaserWriter driver doesn't support filling<br>
+objects with anything but black-and-white patterns because it uses the PostScript<br>
+halftone screen functions to draw patterns. Second, the LaserWriter driver doesn't<br>
+understand (or handle) pixPats. Therefore, your only recourse is the one you<br>
+discovered -- to copy to and from GWorlds. Unfortunately, FillCRect doesn't work with<br>
+the LaserWriter drivers through version 7.2. After version 7.2 this probably won't<br>
+be a problem.
+</p>
+<p>
+<b>Q</b><i> Do NumToString and StringToNum work correctly regardless of the script chosen as</i><br>
+<i>the system script? When I attempt to use SANE to convert non-Roman digits from a</i><br>
+<i>dialog box editText item, SANE doesn't seem to like it.</i>
+</p>
+<p>
+<b>A </b> SANE expects all digits to be in the range ASCII $30-$39, with $2D as a negative<br>
+indicator. These ASCII values can be generated from any international script by using<br>
+the Macintosh numeric keypad. The symbols 0 through 9 are internationally<br>
+recognized as numeric values.
+</p>
+<p>
+&nbsp;There are many additional ways to represent numbers on the Macintosh, including<br>
+words (one, two, uno, dos), notations (dozen, hundred, million), ordinals (first,<br>
+second, third), Roman numerals (I, II, III), symbols (&#960;, e, i), and hexadecimal<br>
+($FF). Many languages have alternative numbering systems and special characters<br>
+that represent numbers. In Symbol and double-byte fonts, there are special<br>
+characters representing fractions (1/2, 1/4), superscripts, subscripts, numbers<br>
+within circles, and so on.
+</p>
+<p>
+&nbsp;While it would be nice to have routines that convert between ASCII numbers and<br>
+alternatives such as longhand numbers (used when writing checks), Roman numerals<br>
+(used for copyright year in movie credits), or local number systems (for formal<br>
+documents), no such routines exist in the Macintosh Toolbox today. It would be<br>
+possible but difficult for an application to custom- process numbers for each language<br>
+and script. The <i> Unicode Standard Reference,</i> Volume 1, lists hundreds of different<br>
+kinds of numbers -- and they're not all base 10.
+</p>
+<p>
+&nbsp;Scripts that have alternative number character sets always support the universal<br>
+single-byte ASCII digits as well. When a script has alternative numeric characters,<br>
+the user generally types script-dependent numeric characters from the top row of the<br>
+keyboard and the single-byte ASCII digits from the numeric keypad.
+</p>
+<p>
+&nbsp;Although it doesn't translate the digits themselves, the Script Manager offers support<br>
+for formatting a number into a local form. For example, Europeans often use a comma<br>
+as a decimal point and a period as a thousands marker. Most countries have unique<br>
+currency symbols. There are many different ways to represent numerical values for<br>
+things such as date, time, and money. This kind of formatting information is in the<br>
+international resources.
+</p>
+<p>
+&nbsp;One way to do data validation is to use CharType and check for numeric characters. We<br>
+can't guarantee that this has been implemented for all scripts, but it is correct for<br>
+Roman and Japanese.
+</p>
+<p>
+&nbsp;NumToString and StringToNum don't deal with international formats. Use the Script<br>
+Manager routines Str2Format and Format2Str to get the text into a numerical form<br>
+that SANE can deal with. See <i>Inside Macintosh</i> Volume VI, page 14-49, for details.
+</p>
+<p>
+<b>Q</b><i> I'm attempting to determine whether a debugger is installed, and if so, to find a THz</i><br>
+<i>pointer to its heap zone. Is this possible?</i>
+</p>
+<p>
+<b>A </b> The MacsBug debugger is loaded into high memory above the value found in the<br>
+global variable BufPtr ($10C). Since it's loaded into the memory that's not managed<br>
+by the Memory Manager, it's not in a heap. The global variable MacJmp ($120) points<br>
+to the debugger's entry point.
+</p>
+<p>
+&nbsp;There's also a flags byte in low memory that contains the following information:
+</p>
+<p>
+<code>Bit 7&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Set if debugger is running.</code><br>
+<code>Bit 6&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Set if debugger can handle system errors.</code><br>
+<code>Bit 5&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Set if debugger is installed.</code><br>
+<code>Bit 4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Set if debugger can support the Discipline utility.</code>
+</p>
+<p>
+&nbsp;The flags byte may be in one of two places: the high-order byte of the long word at<br>
+MacJmp, or the address $BFF. When MacsBug is loaded, it examines the value at<br>
+address $BFF. If the value at $BFF is $FF, the system is using the 24-bit Memory<br>
+Manager and the flags byte will be the high-order byte of the long word at MacJmp. If<br>
+the value at $BFF isn't $FF, the system is using the&nbsp;&nbsp;32-bit Memory Manager and the<br>
+flags byte will be at address $BFF.
+</p>
+<p>
+&nbsp;For information on debuggers other than MacsBug, you'll need to contact the<br>
+publishers of those products.
+</p>
+<p>
+<b>Q</b><i> We need to localize our application for several international markets. Do you have</i><br>
+<i>any special tools or recommendations for us?</i>
+</p>
+<p>
+<b>A </b> You can use a System 7.1 tool called AppleGlot (on the <i> Developer CD Series</i> disc) to<br>
+localize text in your application. Once a file has been localized the first time, the tool<br>
+can compare versions and copy over everything that has stayed the same (usually<br>
+99%) so that it can focus on the text that's different. It also creates a nice audit trail<br>
+and is pretty easy to use. It should save you a lot of time. To take full advantage of this<br>
+tool, you need common code for all localized versions, which is what you're planning to<br>
+do to avoid the mess of having multiple sources. Occasionally, your application might<br>
+have features that make sense only on a particular script system; in that case, you can<br>
+check for that configuration and enable those routines when appropriate. Once you have<br>
+common source and tools that help localize your application, you can add auxiliary<br>
+resources for various languages.
+</p>
+<p>
+&nbsp;If you have only a small amount of text in your application, it makes sense to bundle<br>
+everything together in one worldwide product. Apple's TrueType fonts, for example,<br>
+have internal name tables with names and information such as copyright strings in<br>
+about a dozen languages. Each string is tagged with a platform, script, and language.<br>
+But if you have a fair amount of textual resources, it might make more sense to have<br>
+optional files and resources that can be installed as needed.
+</p>
+<p>
+&nbsp;Unless you intend to support every script and language, you'll probably want to have a<br>
+set of resources for unavailable languages. You can pick whatever language you want<br>
+for this other set (English is popular), but the trick is to use only 7-bit ASCII<br>
+characters. All script systems use the same character codes for the range $00-$7F,<br>
+which match ASCII. It's the 8-bit characters that differ radically. This means that text<br>
+that includes characters like ..., TM, &#169;, and * will not display properly on non-Roman<br>
+script systems. Just substitute text such as&nbsp;&nbsp;. . ., tm, (c), and * for them. You can<br>
+decide what's appropriate and necessary.
+</p>
+<p>
+&nbsp;Another thing to consider is checking for and supporting secondary script systems in<br>
+your application. The Macintosh Toolbox doesn't fully support secondary scripts such<br>
+as Japanese menus on an English system, but your application can support secondary<br>
+script data even with the current Toolbox limitations, by using styled text commands.
+</p>
+<p>
+<b>Q</b><i> We would like to use the "dogcow" icon in our Page Setup dialog. Is the dogcow</i><br>
+<i>trademarked, and are there any restrictions on using this icon in our software?</i>
+</p>
+<p>
+<b>A </b> Yes, the dogcow logo (along with its call, "Moof!") is a trademark of Apple and is<br>
+proprietary. The dogcow appears on Apple's <i> Developer CD Series</i> disc and in other<br>
+material. Apple has a pending U.S. registration on it. Accordingly, it's not available to<br>
+third-party developers as an icon or file symbol.
+</p>
+<p>
+<img src="img/132.gif" width="62 px"></img>
+</p>
+<p>
+<b>Q</b><i> Where in the world does the dogcow come from?</i>
+</p>
+<p>
+<b>A </b> Some people say that the dogcow hails from the sunny shores of the Middle of<br>
+Nowhere. This location in the south Atlantic can be found in the Map control panel;<br>
+simply type "Middle of Nowhere" and click Find. (For a small fee, these same people<br>
+will tell you where they last saw Elvis.)
+</p>
+<p>
+<b>Kudos to our readers </b> who care enough to ask us terrific and well thought-out<br>
+questions. The answers are supplied by our technical gurus in Apple's Developer<br>
+Support Center; our thanks to all. Special thanks to Pete ("Luke") Alexander, Mark<br>
+Baumwell, Joel Cannon, Matt Deatherage, Tim Dierks, Marcie ("M. G.") Griffin, Bill<br>
+Guschwan, C. K. Haun, Dave Hersey, Dennis Hescox, Rich Kubota, Jim Luther, Joseph<br>
+Maurer, Guillermo Ortiz, Kent Sandvik, Brigham Stevens, and Dan Strnad for the<br>
+material in this Q&amp;A column. *
+</p>
+<p>
+<b>Have more questions?</b> Need more answers? Take a look at the Q&amp;A Technical Notes<br>
+on the <i> Developer CD Series </i>disc and the Dev Tech Answers library on AppleLink.*
+</p>
+</body>
+</html>

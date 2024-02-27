@@ -1,0 +1,693 @@
+<html>
+<head>
+<!-- Article ID: 34 - Extracted from develop-1993 -->
+<!-- on 2024-02-20 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>September 93 - FLOATING WINDOWS: KEEPING AFLOAT IN THE WINDOW MANAGER</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>FLOATING WINDOWS: KEEPING AFLOAT IN THE WINDOW<br>
+MANAGER</h2>
+<h1>DEAN YU</h1>
+<p>
+<img src="img/218.gif" width="180 px"></img>
+</p>
+<p>
+<i>These days having floating windows in an application is like having an air bag in a car;</i><br>
+<i>you're not cool if you don't have at least one. Because system software doesn't support</i><br>
+<i>floating windows in the Window Manager, myriad floating window implementations</i><br>
+<i>abound, ranging from the straightforward to the twisted. This article presents a</i><br>
+<i>library of routines providing standard, predictable floating window behavior that most</i><br>
+<i>applications can readily use.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Floating windows are windows that stay in front of document windows and provide the<br>
+user easy access to an application's tools and controls. Ever since the introduction of<br>
+HyperCard, most Macintosh programmers have been in love with floating palettes and<br>
+frequently use them. This would be fine if there were an official way to implement<br>
+floating windows, but there is no such beast.&nbsp;&nbsp;&nbsp;This article offers a solution. 
+</p>
+<p>
+Currently, the most popular way of implementing floating windows is to patch various<br>
+Window Manager routines so that they behave correctly when floating windows are<br>
+present. But patching traps has always been problematical. Patches often make<br>
+assumptions about how a particular routine behaves or when it will be called. If<br>
+system software or a third-party extension suddenly uses the patched routine where it<br>
+has never been used before, compatibility problems can arise. Often, patches subtly<br>
+alter the behavior of a routine -- for example, by using a register or setting a<br>
+condition code.&nbsp;&nbsp;&nbsp;This makes it difficult for Apple to extend (or even fix!) the<br>
+Macintosh API and still maintain a high level of compatibility with existing<br>
+applications. 
+</p>
+<p>
+You can just as easily implement floating windows by avoiding the use of high-level<br>
+Window Manager routines that generate activate events; instead, you can use<br>
+lower-level routines almost exclusively. It's much less likely that the code will break<br>
+(or cause other code to break) when Apple makes changes to the system software. The<br>
+reason for this is simple: it's much less likely for system software engineers to change<br>
+the fundamental behavior of a Macintosh Toolbox routine than it is for them to use that<br>
+routine in some new and different way. Under this second implementation method, the<br>
+application becomes a proper client of the Toolbox, using the routines that are<br>
+available rather than trying to reengineer them. The floating windows library<br>
+described in this article and provided on this issue's CD follows this philosophy. 
+</p>
+<p>
+<img src="img/219.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1</b> Order of Windows on a Screen
+</p>
+<h2>STANDARD FLOATING WINDOW BEHAVIOR</h2>
+<p>
+Developers implementing floating windows should follow certain rules to ensure the<br>
+"consistent user experience" that we're always harping about. Don't worry if there<br>
+seem to be a lot of things to keep in mind; the routines in the library do most of the<br>
+hard work for you. 
+</p>
+<p>
+<b>ORDER OF ON-SCREEN INTERFACE OBJECTS</b><br>
+As more and more things appear on users' screens, it becomes very important to define<br>
+a front-to- back order in which interface objects appear. This alleviates confusion and<br>
+prevents the neophyte user from being scared away when things start flying thick and<br>
+fast on the screen. Within an application, the order of windows and other on-screen<br>
+objects from back to front should be as follows (see Figure 1):
+</p>
+<ul>
+<li>Document windows and modeless dialogs</li>
+<li>Floating windows</li>
+<li>Modal dialogs and alerts</li>
+<li>System windows</li>
+<li>Menus</li>
+<li>Help balloons</li>
+</ul>
+<p>
+If you thought that floating windows would be as far back as they are, you get a gold<br>
+star. The rationale for putting modal dialogs in front of floating windows stems from<br>
+the normal use of these windows: floating windows are most frequently used as tool<br>
+palettes. The user picks a tool, color, or something similar from the palette and then<br>
+performs an operation on the active document. When a modal dialog appears, the<br>
+application needs more information from the user before it can proceed.&nbsp;&nbsp;&nbsp;The tools in<br>
+the floating window should not be available because they can't be used in the dialog. 
+</p>
+<p>
+Incidentally, system windows are windows that can appear in an application's window<br>
+list but aren't directly created by the application. These windows appear in front of all<br>
+windows created by the application. Examples of system windows include notification<br>
+dialogs, the PPC Browser, and input method windows. 
+</p>
+<p>
+<b>APPEARANCE OF FLOATING WINDOWS</b><br>
+The physical appearance of the HyperCard floating palette has become the de facto<br>
+standard look for floating windows. The description of floating windows that follows is<br>
+based on this look. There's at least one popular program that uses the standard<br>
+document window as a floating window. Don't do this; it only confuses the novice user. 
+</p>
+<p>
+Unlike document windows, floating windows are all peers of each other. That is, there's<br>
+no visual cue to the user of any front-to-back order unless the floating windows<br>
+actually overlap each other; they all float at the same level. Because of this equality,<br>
+the title bars of floating windows are almost always in an active state. The exception to<br>
+this rule occurs when a modal window is presented to the user; since this type of<br>
+window appears above floating windows on the screen, the background of the title bar<br>
+of each visible floating window turns from its dotted pattern to white to indicate an<br>
+inactive state (see Figure 2). 
+</p>
+<p>
+A floating window can have a close box, a zoom box, and a title. The use of size boxes in<br>
+floating windows is not recommended. The title bar of a floating window should be 11<br>
+pixels high or 2 pixels higher than the minimum height of the primary script's<br>
+application font, whichever is greater. The title of a floating window should be in the<br>
+application font, bold, and its size should be the greater of 9 points and the smallest<br>
+recommended point size for that script system. Floating windows should have a<br>
+1-pixel drop shadow that starts 2 pixels from the left and top of the window. 
+</p>
+<p>
+<img src="img/220.gif" width="218 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> Active and Inactive States of a Floating Window
+</p>
+<p>
+<b>FLOATING WINDOWS AND CONTEXT SWITCHING</b><br>
+Because floating windows are almost always in an active state, it would be very<br>
+confusing to the user if floating windows were still visible when an application is<br>
+placed in the background. (Imagine an active window lurking behind an inactive<br>
+document window.) For this reason, when an application receives a suspend event it<br>
+should hide any visible floating windows. Conversely, when the application receives a<br>
+subsequent resume event, the floating windows that were hidden on the suspend event<br>
+should be revealed. 
+</p>
+<h2>IMPLEMENTING FLOATING WINDOWS IN YOUR APPLICATION</h2>
+<p>
+Now that we've taken care of the formalities, we can get to the heart of the matter. This<br>
+section explains the methodology used in creating the floating windows library<br>
+routines included on this issue's CD. (You can use these routines, or you can write<br>
+your own using the same methodology.) First, we talk about handling activate events,<br>
+which is the trickiest aspect of implementing floating windows. Then, we describe the<br>
+API in the floating windows library and how you can use it in your applications. 
+</p>
+<p>
+<b>DEALING WITH ACTIVATE EVENTS</b><br>
+The most difficult part of implementing floating windows is dealing with activate<br>
+events. You need to work around how the Window Manager generates these events and<br>
+how the Toolbox Event Manager reports them to an application. The Window Manager<br>
+was written under the assumption that there's only one active window at any time;<br>
+obviously, this is not true in an application that has floating windows. A corollary of<br>
+this assumption is that the Window Manager generates only one deactivate event for<br>
+every activate event. This model breaks down when a modal dialog appears in an<br>
+application with floating windows: the modal dialog receives the activate event, but a<br>
+deactivate event is necessary for all visible floating windows and the frontmost<br>
+document window. If things were left up to the Window Manager, only the frontmost<br>
+floating window would receive the required deactivate event. 
+</p>
+<p>
+To avoid this problem, you shouldn't use the Window Manager routines SelectWindow,<br>
+ShowWindow, and HideWindow since they implicitly generate activate and deactivate<br>
+events. In addition, you shouldn't use SendBehind to move the front window further<br>
+back in the pile of windows on the screen or to make a window frontmost, because that<br>
+routine also generates activate events. 
+</p>
+<p>
+Instead, use lower-level routines like BringToFront, ShowHide, and HiliteWindow to<br>
+simulate the higher-level calls. Additionally, instead of dispatching activate events in<br>
+your application's main event loop, you should activate or deactivate a window as its<br>
+position in the window list changes. Here's how a replacement to SelectWindow might<br>
+look (see "This Is Not Your Father's Window Manager" for more information on this<br>
+routine):
+</p>
+<p>
+<code>pascal void SelectReferencedWindow(WindowRef windowToSelect)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;WindowRef&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;currentFrontWindow;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;WindowRef&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lastFloatingWindow;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ActivateHandlerUPP&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;activateProc;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;isFloatingWindow;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (GetWindowKind(windowToSelect) == kApplicationFloaterKind) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;isFloatingWindow = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;currentFrontWindow = (WindowRef) FrontWindow();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;else {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;isFloatingWindow = false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;currentFrontWindow = FrontNonFloatingWindow();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lastFloatingWindow = LastFloatingWindow();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;// Be fast (and lazy) and do nothing if you don't have to.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (currentFrontWindow != windowToSelect) {</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Selecting floating windows is easy, since they're always</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// active.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (isFloatingWindow)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BringToFront((WindowPtr) windowToSelect);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else {</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// If there are no floating windows, call SelectWindow</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// as in the good ol' days.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (lastFloatingWindow == nil)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SelectWindow((WindowPtr) windowToSelect);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else {</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Get the activate event handler for the window</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// currently in front.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;activateProc =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GetActivateHandlerProc(currentFrontWindow);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Unhighlight it.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HiliteWindow((WindowPtr) currentFrontWindow, false);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Call the activate handler for this window to</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// deactivate the window.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (activateProc != nil)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CallActivateHandlerProc(activateProc,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uppActivateHandlerProcInfo,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;currentFrontWindow,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kDeactivateWindow);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Get the activate event handler for the window</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// that's being brought to the front.&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;activateProc = GetActivateHandlerProc(windowToSelect);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Bring it behind the last floating window and</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// highlight it. Note that Inside Macintosh Volume I</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// states that you need to call PaintOne and CalcVis</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// on a window if you're using SendBehind to bring it</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// closer to the front. In System 7, this is no</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// longer necessary.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SendBehind((WindowPtr) windowToSelect,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(WindowPtr) lastFloatingWindow);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HiliteWindow((WindowPtr) windowToSelect, true);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Now call the window's activate event handler.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (activateProc != nil)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CallActivateHandlerProc(activateProc,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uppActivateHandlerProcInfo, windowToSelect,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kActivateWindow);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>}</code>
+</p>
+<p>
+<b>Activate events and the frontmost document window. </b>Other cases that the<br>
+Window Manager doesn't handle well occur when the frontmost document window is<br>
+closed or when a new document window is created in front of other document windows.<br>
+If floating windows are present, these document windows don't get the needed activate<br>
+and deactivate events, since the application is essentially removing or creating<br>
+windows in the middle of the window list. Your application needs to send the right<br>
+activate events to the right windows. The floating windows library routines<br>
+ShowReferencedWindow and HideReferencedWindow generate the appropriate activate<br>
+and deactivate events for you. 
+</p>
+<p>
+<b>Activate events and modal windows. </b>When a modal window is to appear, you<br>
+should send deactivate events to all visible floating windows and to the active document<br>
+window. When the user dismisses the modal window, send activate events to those<br>
+windows. Instead of overloading SelectReferencedWindow with yet another case, it's<br>
+easier to surround calls to Alert or ModalDialog with calls to deactivate and activate<br>
+the floating windows and the first document window. 
+</p>
+<p>
+Here's what the code would look like:
+</p>
+<p>
+<code>short PresentAlert(short alertID, ModalFilterProcPtr filterProc)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;alertResult;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DeactivateFloatersAndFirstDocumentWindow();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;alertResult = Alert(alertID, filterProc);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ActivateFloatersAndFirstDocumentWindow();</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return alertResult;</code><br>
+<code>}</code>
+</p>
+<h2>THIS IS NOT YOUR FATHER'S WINDOW MANAGER</h2>
+<p>
+You may have noticed that the SelectReferencedWindow routine doesn't strictly define<br>
+how to do certain things. There are two reasons for this. The first is the advent of<br>
+PowerPC architecture. When you write code that has the potential of running on<br>
+several different runtime architectures, it should be generic, especially if you don't<br>
+know what's lurking on the other side of a procedure pointer. The 68000 and PowerPC<br>
+architectures handle procedure pointers differently: on a 680x0 machine, a ProcPtr<br>
+points to the entry point of a procedure, whereas on a PowerPC, a ProcPtr points to a<br>
+routine descriptor. It would be nice if source code that calls procedure pointers didn't<br>
+have to worry about the proper calling convention for a particular platform and the<br>
+proper magic would happen at the flip of a compile switch. The solution that we use in<br>
+system software is the CallProcPtr macros defined in our interface files, which<br>
+expand to different things depending on the platform we're compiling for. For the<br>
+ActivateHandlerUPP (for <b> U</b>niversal <b>P</b>rocedure <b>P</b>ointer) type used in<br>
+SelectReferencedWindow, the definitions shown below are needed.
+</p>
+<p>
+The second reason for generality in the code is the future. We would like to move the<br>
+Macintosh operating system into the 1990s to get preemptive multitasking and<br>
+separate address spaces. This means a move toward opaque data structures: accessor<br>
+functions will be provided, so you won't be able to access fields of a data structure<br>
+directly. In the future, data structures like WindowRecords may no longer be created<br>
+in your application's address space, so you'll get a reference to a window instead of an<br>
+absolute address. The floating window API follows this philosophy; all calls take a<br>
+WindowRef type instead of a WindowPtr, and all fields of a window's data structure are<br>
+accessed with an accessor function. This is all for the best. Really.
+</p>
+<p>
+<code>typedef pascal void (*ActivateHandlerProcPtr)(WindowRef theWindow,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Boolean activateWindow);</code><br>
+<code>enum {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;uppActivateHandlerProcInfo =kPascalStackBased |</code><br>
+<code>kParam1FourByteCode |</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kParam2TwoByteCode</code><br>
+<code>};</code><br>
+<code></code><br>
+<code>typedef pascal void (*ActivateHandlerProcPtr)(WindowRef theWindow,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Boolean activateWindow);</code><br>
+<code>enum {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;uppActivateHandlerProcInfo =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kPascalStackBased | kParam1FourByteCode | kParam2TwoByteCode</code><br>
+<code>};</code><br>
+<code></code><br>
+<code>#if USES68KINLINES</code><br>
+<code>typedef ActivateHandlerProcPtr ActivateHandlerUPP;</code><br>
+<code>#pragma parameter CallActivateHandlerProc(__A0)</code><br>
+<code>pascal void CallActivateHandlerProc</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;(ActivateHandlerUPP activateHandler, WindowRef theWindow,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Boolean activateWindow) = 0x4E90; //jsr (A0)</code><br>
+<code>#define CallActivateHandlerProc(activateHandler, \</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;activateHandlerProcInfo, theWindow, activateWindow)&nbsp;&nbsp;\</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CallActivateHandlerProc(activateHandler, theWindow, \</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;activateWindow)</code><br>
+<code>#else</code><br>
+<code>typedef UniversalProcPtr ActivateHandlerUPP;</code><br>
+<code>#define CallActivateHandlerProc(activateHandler, \</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;activateHandlerProcInfo, theWindow, activateWindow)&nbsp;&nbsp;\</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CallUniversalProc(activateHandler, activateHandlerProcInfo, \</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;theWindow, activateWindow)</code><br>
+<code>#endif</code>
+</p>
+<p>
+<b>THE FLOATING WINDOW API</b><br>
+The floating windows library supplies the routines and accessor functions described<br>
+below. Each routine description tells how to use it in an application and, when<br>
+necessary, describes its parameters in detail. 
+</p>
+<p>
+The floating window API uses the WindowRef type in the place of a WindowPtr. This is<br>
+in anticipation of the situation in which memory for a window's data structure is no<br>
+longer allocated in the application's address space. (See "This Is Not Your Father's<br>
+Window Manager.") At present, a WindowRef is interchangeable with a WindowPtr,<br>
+and a parameter of type WindowRef can be passed to existing Window Manager<br>
+routines. A typecast is needed because a WindowRef points to a structure that contains<br>
+a WindowRecord plus other fields. 
+</p>
+<p>
+<b>Creating and disposing of windows. </b>The routines described in this section --<br>
+NewWindowReference, GetNewWindowReference, and DisposeWindowReference --<br>
+should be used instead of NewWindow, GetNewWindow, and DisposeWindow. You can use<br>
+these new routines for any type of window, not just floating windows. Note that you<br>
+should use them together; for example, DisposeWindowReference should be used to<br>
+dispose of any windows created by NewWindowReference or GetNewWindowReference. 
+</p>
+<p>
+<code>pascal OSErr NewWindowReference(WindowRef *windowReference,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;const Rect *boundsRect, ConstStr255Param title, Boolean visible,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;WindowAttributes attributes, WindowRef behind, long refCon,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ActivateHandlerUPP activateHandler);</code>
+</p>
+<p>
+NewWindowReference creates a floating window, document window, or dialog window.<br>
+On machines with Color QuickDraw, it creates a color window; on machines without<br>
+Color QuickDraw, it creates a window with a black-and-white grafPort. 
+</p>
+<p>
+The windowReference parameter returns a reference to the new window. If a window<br>
+could not be created, nil is returned. The boundsRect, title, visible, and refCon<br>
+parameters are identical to the parameters you would normally pass to NewWindow or<br>
+NewCWindow. 
+</p>
+<p>
+The behind parameter specifies the window that the new window should be created<br>
+behind. It's similar to the behind parameter that's passed to NewWindow, except that<br>
+-1 has the following special meaning: if a floating window is being created, -1 means<br>
+the new window will be created in front of all other windows; if a document window is<br>
+being created, -1 means the new window will be created behind any existing floating<br>
+windows. 
+</p>
+<p>
+Unlike NewWindow, which establishes an appropriate WDEF resource based on the<br>
+window definition ID passed as a parameter, NewWindowReference establishes an<br>
+appropriate window definition function based on the attributes parameter, which<br>
+describes the desired physical attributes.&nbsp;&nbsp;&nbsp;The following values have been defined for<br>
+the attributes parameter:
+</p>
+<p>
+<code>enum {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kHasCloseBoxMask =&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x00000001,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kHasZoomBoxMask =&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x00000002,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kHasGrowBoxMask =&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x00000004,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kHasModalBorderMask =&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x00000010,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kHasThickDropShadow =&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x00000020,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kHasDocumentTitlebarMask =&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x00001000,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kHasPaletteTitlebarMask =&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x00002000,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kHasRoundedTitlebarMask =&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x00004000,</code><br>
+<code></code><br>
+<code>// Attribute groupings</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kWindowGadgetsMask =&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x0000000F,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kWindowAdornmentsMask =&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x00000FF0,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kWindowTitlebarMask =&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x000FF000,</code><br>
+<code></code><br>
+<code>};</code><br>
+<code>typedef unsigned long WindowAttributes;</code>
+</p>
+<p>
+The values of the attributes parameter can be combined, except only one title bar value<br>
+can be used.&nbsp;&nbsp;&nbsp;For example, kHasCloseBoxMask + kHasZoomBoxMask +<br>
+kHasGrowBoxMask + kHasDocumentTitlebarMask describes the appearance of a<br>
+standard document window. 
+</p>
+<p>
+Finally, the activateHandler parameter is a pointer to the routine that's called<br>
+whenever the window is activated or deactivated. You should always supply this<br>
+routine, because the main event loop doesn't receive activate events when the floating<br>
+windows library is used. Activate event handlers have the following prototype:
+</p>
+<p>
+<code>pascal void (*ActivateHandlerProcPtr) (WindowRef theWindow, Boolean</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;activateWindow);</code>
+</p>
+<p>
+The theWindow parameter is the window that should be activated or deactivated. The<br>
+activateWindow parameter specifies whether the window should be activated or<br>
+deactivated: true means activate, false means deactivate. 
+</p>
+<p>
+NewWindowReference can return the following errors:
+</p>
+<ul>
+<li> kUndefinedTitlebarTypeError: Invalid values in the attributes<br>
+parameter, or more than one title bar attribute is specified in the attributes<br>
+parameter. </li>
+<li> kWindowNotCreatedError: Not enough memory to create the window. </li>
+<li> kInvalidWindowOrderingError: The behind parameter specifies creating<br>
+a floating window behind an existing document window, or a document window<br>
+in front of a floating window. </li>
+</ul>
+<p>
+<code>pascal OSErr GetNewWindowReference(WindowRef *windowReference, short</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;windowResourceID, WindowRef behind, ActivateHandlerUPP</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;activateHandler);</code>
+</p>
+<p>
+GetNewWindowReference creates a window based on a resource template. On machines<br>
+with Color QuickDraw, it creates a color window. On machines without Color<br>
+QuickDraw, it creates a window with a black-and-white grafPort. 
+</p>
+<p>
+The windowReference parameter returns a reference to the new window. If a window<br>
+could not be created, nil is returned. The windowResourceID parameter is the resource<br>
+ID of the WIND resource that describes the window. The visible field in the WIND<br>
+resource should be false. 
+</p>
+<p>
+The behind parameter specifies the window that the new window should be created<br>
+behind. As in NewWindowReference, if -1 is specified for this parameter, document<br>
+windows are created behind any existing floating windows. 
+</p>
+<p>
+GetNewWindowReference can return the following errors:
+</p>
+<ul>
+<li>kWindowNotCreatedError: Not enough memory to create the window, or<br>
+the specified WIND resource cannot be found. </li>
+<li>kInvalidWindowOrderingError: The meaning of this is the same as for<br>
+NewWindowReference. </li>
+</ul>
+<p>
+<code>pascal void DisposeWindowReference(WindowRef windowReference);</code>
+</p>
+<p>
+DisposeWindowReference frees the memory used by a window created with<br>
+NewWindowReference or GetNewWindowReference. 
+</p>
+<p>
+<b>Displaying windows. </b>The routines described in this section affect how windows<br>
+look and how they're ordered on the screen. 
+</p>
+<p>
+<code>pascal void SelectReferencedWindow(WindowRef windowToSelect);</code>
+</p>
+<p>
+SelectReferencedWindow replaces SelectWindow; it brings a window as far forward as<br>
+it should come when the user clicks in it. Selecting a floating window makes it the<br>
+absolute frontmost window on the screen. Selecting a document window makes it the<br>
+frontmost document window, but it remains behind all floating windows<b>. </b>
+</p>
+<p>
+<code>pascal void HideReferencedWindow(WindowRef windowToHide);</code>
+</p>
+<p>
+HideReferencedWindow replaces HideWindow to hide a window. As in HideWindow, if<br>
+the frontmost window is hidden, it's placed behind the window immediately behind it,<br>
+so when it's shown again, it will no longer be frontmost. This is also true for document<br>
+windows even if floating windows are visible. 
+</p>
+<p>
+<code>pascal void ShowReferencedWindow(WindowRef windowToShow);</code>
+</p>
+<p>
+This routine replaces ShowWindow to make a hidden window visible again. If the<br>
+window is frontmost when it's shown, the previously active window is deactivated. 
+</p>
+<p>
+<code>pascal void DeactivateFloatersAndFirstDocumentWindow(void);</code>
+</p>
+<p>
+Before presenting a modal window to the user, applications should call this routine to<br>
+unhighlight any visible floating windows and the frontmost document window, and to<br>
+send deactivate events to these windows. At this point, all visible windows in the<br>
+window list can be treated as normal windows, and the modal dialog or alert can be<br>
+brought up with the traditional calls. 
+</p>
+<p>
+<code>pascal void ActivateFloatersAndFirstDocumentWindow(void);</code>
+</p>
+<p>
+After the user dismisses a modal window, the application should call<br>
+ActivateFloatersAndFirstDocumentWindow to restore the highlight state of any visible<br>
+floating windows and the frontmost document window. This routine also sends an<br>
+activate event for each of these windows. When called in the background,<br>
+ActivateFloatersAndFirstDocumentWindow hides any visible floating windows by<br>
+calling SuspendFloatingWindows. 
+</p>
+<p>
+<code>pascal void SuspendFloatingWindows(void);</code>
+</p>
+<p>
+When an application with visible floating windows receives a suspend event, it should<br>
+call SuspendFloatingWindows to hide its floating windows. This routine remembers the<br>
+current visibility of a floating window so that only the current visible floating<br>
+windows are revealed on a subsequent call to ResumeFloatingWindows. If a movable<br>
+modal dialog is frontmost when this routine is called, floating windows are not hidden<br>
+because the application is in a modal state. However, if the dialog goes away while the<br>
+application is in the background, the floating windows will be hidden automatically<br>
+because ActivateFloatersAndFirstDocumentWindow calls SuspendFloatingWindows.
+</p>
+<p>
+<code>pascal void ResumeFloatingWindows(void);</code>
+</p>
+<p>
+Applications should call ResumeFloatingWindows when a resume event is received. Any<br>
+floating windows that were visible when SuspendFloatingWindows was called are made<br>
+visible again.&nbsp;&nbsp;&nbsp;ResumeFloatingWindows also activates the frontmost document window.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Utility routines. </b>These routines provide all the other functions an application<br>
+might need to operate smoothly with floating windows. 
+</p>
+<p>
+<code>pascal ActivateHandlerUPP GetActivateHandlerProc</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;(WindowRef theWindow);</code>
+</p>
+<p>
+GetActivateHandlerProc returns a pointer to the routine that handles activate and<br>
+deactivate events for the specified window. If the window doesn't have a handler<br>
+routine, GetActivateHandlerProc returns nil. 
+</p>
+<p>
+<code>pascal void SetActivateHandlerProc(WindowRef theWindow,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ActivateHandlerUPP activateHandlerProc);</code>
+</p>
+<p>
+SetActivateHandlerProc sets a new routine to handle activate and deactivate events for<br>
+the specified window. It replaces any existing handler routine for this window. 
+</p>
+<p>
+<code>pascal void DragReferencedWindow(WindowRef windowToDrag,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Point startPoint, const Rect *draggingBounds);</code>
+</p>
+<p>
+DragReferencedWindow drags a window around, ensuring that document windows stay<br>
+behind floating windows. Like DragWindow, DragReferencedWindow doesn't bring a<br>
+window forward if the Command key is held down during the drag. 
+</p>
+<p>
+<code>pascal WindowRef FrontNonFloatingWindow(void);</code>
+</p>
+<p>
+FrontNonFloatingWindow returns a reference to the first visible window that's not a<br>
+floating window. Usually, this is the first visible document window. However, if a<br>
+modal dialog is visible, it returns a reference to the dialog window. 
+</p>
+<p>
+<code>pascal WindowRef LastFloatingWindow(void);</code>
+</p>
+<p>
+LastFloatingWindow returns a reference to the floating window that's furthest back in<br>
+the window list, whether it's visible or not. Normally, the floating windows library<br>
+uses this routine internally, although applications can use it to determine where the<br>
+floating window section of the window list ends. If there are no floating windows in the<br>
+window list, LastFloatingWindow returns nil. 
+</p>
+<p>
+<b>Hangin' with the Get/Setters. </b>In an effort to move toward more flexible and<br>
+architecture-independent data structures, the library includes routines that get and<br>
+set several WindowRecord fields. The library supplies the accessor functions only for<br>
+the fields the floating window routines need to get at, however. The ambitious reader<br>
+can also create accessor functions for the other WindowRecord fields that aren't<br>
+provided by the floating windows library. Accessor functions have been provided for<br>
+these fields: windowKind, visible, hilited, strucRgn, and nextWindow. 
+</p>
+<h2>THE SAMPLE PROGRAM AND THE SOURCE</h2>
+<p>
+On this issue's CD, there's a floating windows program that doesn't do much more than<br>
+exercise the routines from the floating windows library. It shows how floating<br>
+windows interact with other types of windows, including alerts, movable modal<br>
+dialogs, and document windows. The floating window definition procedure on the CD is<br>
+taken from one of the many game programs I've never finished; it works well enough<br>
+for demonstration purposes, although anyone can write a better one. 
+</p>
+<p>
+The complete MPW C source for the floating windows library is in the files<br>
+WindowExtensions.c and WindowExtensions.h. This code was written so that most<br>
+applications could start using the routines with a minimum of effort. (You may have to<br>
+change the resource ID of the floating window WDEF that's defined in<br>
+WindowExtensions.h.) Just remember that your mileage may vary. 
+</p>
+<h2>SEAT CUSHIONS AND OTHER FLOTATION DEVICES</h2>
+<p>
+OK, I admit it. I did have a private agenda when I set out to write this article. The way I<br>
+figure it, for every application developer I convince to implement floating windows<br>
+without patching traps, I save myself a few hours in MacsBug. The most compelling<br>
+argument I could think of was to write the code for the floating windows library<br>
+routines so that no one else would have to. If you use the supplied library routines, you<br>
+don't have to worry about any of the details on how floating windows behave, and you<br>
+can concentrate on making your applications the envy of all your friends who use<br>
+Windows.
+</p>
+<p>
+The floating windows library described in this article isn't the be-all and end-all of<br>
+floating windows.&nbsp;&nbsp;&nbsp;The THINK Class Library and MacApp -- as well as AppsToGo in the<br>
+Sample Code folder on the CD -- provide support for floating windows within an entire<br>
+application framework. The floating windows library presented here has the advantage<br>
+of being a standalone library that can be linked into your home-grown application. For<br>
+the stout of heart who want to implement their own floating windows, this article lays<br>
+out a road map of the gotchas and pitfalls in creating floating windows on top of the<br>
+Window Manager.
+</p>
+<p>
+I touched briefly on making source code more platform independent. As Apple takes the<br>
+Macintosh experience cross-platform, there's a big potential for source code<br>
+maintenance to become hellish as different machine architectures create subtle<br>
+differences in the runtime environment. By factoring out assumptions about data<br>
+structures and the underlying chip architecture, your applications can move<br>
+cross-platform more quickly and less expensively.
+</p>
+<p>
+The API of the floating windows library hints at what the Toolbox will look like in a<br>
+few years time.&nbsp;&nbsp;&nbsp;While I can't predict when the Window Manager will finally support<br>
+floating windows, use of the API described in this article will make for a smoother<br>
+transition when that day finally comes. 
+</p>
+<p>
+<b>DEAN YU </b>subscribes to the Taoist philosophy that that which is meant to happen,<br>
+eventually will happen. In fact, he believes this is the only reason he landed his job as<br>
+a Blue Meanie in the first place. During his two-and-a-half year stint in the System<br>
+Software group, Dean has worked on System 7 and System 7.1 and has gone to Canc&#250;n.<br>
+Apple's Rumor Monger claims that Dean left Apple in January to avoid working on a<br>
+project that installs&nbsp;&nbsp;69 files in the System Folder,and that, more recently, he went to<br>
+Las Vegas and married a Marilyn Monroe look-alike.&nbsp;&nbsp;Dean denies these rumors, of<br>
+course, but not very vehemently.*
+</p>
+<p>
+<b>Floating windows </b>are known as utility windows in the <i> Macintosh Human Interface</i><br>
+<i>Guidelines</i> .*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>C. K. Haun, Nick Kledzick, Kevin<br>
+MacDonell, Eric Soldan *
+</p>
+</body>
+</html>

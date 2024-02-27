@@ -1,0 +1,325 @@
+<html>
+<head>
+<!-- Article ID: 13 - Extracted from develop-1993 -->
+<!-- on 2024-02-14 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>March 93 - DEVICELOOP MEETS THE INTERFACE</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>DEVICELOOP MEETS THE INTERFACE</h2>
+<h1>JOHN POWERS</h1>
+<p>
+<img src="img/166.gif" width="180 px"></img>
+</p>
+<p>
+<i>With the ascendancy of multimedia, 3-D shading and elaborate color backgrounds are</i><br>
+<i>showing up in an increasing number of interface designs. But what happens when these</i><br>
+<i>sophisticated interface elements must be displayed across multiple monitors of</i><br>
+<i>different bit depths? This article explains how to use the DeviceLoop function to take</i><br>
+<i>care of the device, clipping, and bit-depth logistics involved in multiple-monitor</i><br>
+<i>displays.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+One of the great things about the Macintosh is its ability to support more than one<br>
+monitor at a time. You can display windows in any active monitor or split a window --<br>
+and the objects in it -- across several monitors at once. What's more, you can make an<br>
+image adjust to the bit depth and other capabilities of each monitor it's displayed on, so<br>
+that the visual interface looks as good as it possibly can on each of the devices attached<br>
+to the computer. 
+</p>
+<p>
+I recently worked on a project in which one of the goals was exactly that -- we wanted<br>
+our application windows to look really good across multiple monitors and at any bit<br>
+depth. The task was complicated by the fact that the interface was quite sophisticated<br>
+graphically. To give our windows a distinctive, three-dimensional look, we used shaded<br>
+color graphics. We filled the content area with background graphics, text, patterned<br>
+and colored lines, and 3-D buttons. With the exception of our standard List Manager<br>
+lists, all the window objects were drawn by our application program. Even the<br>
+conventional scroll bar, close box, and zoom box were replaced by custom art drawn<br>
+by the application, not the Window Manager. 
+</p>
+<p>
+Displaying these complex windows across multiple monitors was obviously going to be<br>
+a challenge.&nbsp;&nbsp;&nbsp;We knew that the Finder, for example, pulled it off -- whenever Finder<br>
+windows span monitors of different bit depths, the parts of the window on each monitor<br>
+are drawn to the individual monitor's depth. "If the Finder does it, so can we," I<br>
+decided, although I actually knew very little about how to solve the problem. 
+</p>
+<h2>DEVICELOOP TO THE RESCUE</h2>
+<p>
+I bit the bullet. The search for ways to draw a window across multiple monitors led in<br>
+a number of directions, all of them involving visible regions, clipping regions, and<br>
+region-rect conversions. I asked a lot of people for advice, and while everyone was<br>
+gracious in offering help, the job was looking complicated. Fortunately, one of the<br>
+advice givers suggested that I check out the DeviceLoopfunction&nbsp;&nbsp;in<i>Inside</i><br>
+<i>Macintosh</i>Volume VI. (I found out later that the advice giver was the author of the<br>
+DeviceLoop function.)
+</p>
+<p>
+When I looked up DeviceLoop in Volume VI, here's what I found: The DeviceLoop<br>
+procedure searches all active screen devices, calling your drawing procedure<br>
+whenever it encounters a screen that intersects your drawing region. You supply a<br>
+handle to the region in which you wish to draw and a pointer to your drawing<br>
+procedure. . . . If the DeviceLoop procedure encounters similar devices -- having the<br>
+same pixel depth, black-and- white/color setting, and matching color table seeds -- it<br>
+makes only one call to your drawing procedure, pointing to the first such device<br>
+encountered. 
+</p>
+<p>
+This sounded exactly like what we were looking for. The Window Manager itself uses<br>
+DeviceLoop to display window components on a variety of monitors. Since we were<br>
+drawing our own windows, DeviceLoop was clearly what we needed. 
+</p>
+<p>
+Here's what DeviceLoop looks like in C:
+</p>
+<p><pre>pascal void DeviceLoop (RgnHandle drawingRgn,
+&nbsp;&nbsp;&nbsp;&nbsp;DeviceLoopDrawingProcPtr drawingProc,
+&nbsp;&nbsp;&nbsp;&nbsp;long userData, DeviceLoopFlags flags);</pre></p>
+<p>
+The drawingRgn parameter is a handle to the region that will be drawn in (usually a<br>
+window's visRgn). The drawingProc parameter is a pointer to your drawing routine<br>
+(see below). The userData parameter is a long that gets passed to your drawing<br>
+routine. Finally, the flags parameter controls how devices are grouped before your<br>
+drawing routine is called. (Pass 0 for the default behavior -- grouping similar<br>
+devices together. See the description in<i>Inside Macintosh</i>for other possible values.)
+</p>
+<p>
+The drawing routine needs to be declared as follows:
+</p>
+<p><pre>pascal void MyDrawProc (short depth, short deviceFlags,
+&nbsp;&nbsp;&nbsp;&nbsp;GDHandle targetDevice, long userData);</pre></p>
+<p>
+Here the depth parameter is the depth of the device you're currently drawing on. The<br>
+deviceFlags parameter is a copy of the device's gdFlags, targetDevice is a handle to the<br>
+device, and userData is whatever you passed to DeviceLoop. 
+</p>
+<p>
+DeviceLoop works like this: Each time your drawing routine is called, the current<br>
+port's visRgn will have been set to the intersection of your drawing region and some<br>
+screen device. DeviceLoop passes the drawing characteristics of the particular screen<br>
+it's working on to the drawing routine, which can then make use of them -- for<br>
+instance, by drawing to the appropriate bit depth. In short, DeviceLoop takes care of<br>
+all the device, clipping, and bit-depth logistics, while all you have to do is draw. 
+</p>
+<h2>USING DEVICELOOP IN AN OBJECT-ORIENTED WORLD</h2>
+<p>
+In our application, we had to draw not only the contents of the window, but also the<br>
+window itself.&nbsp;&nbsp;&nbsp;True to our object-oriented design, we created classes for all the<br>
+interface objects. These classes included a TArt class for backgrounds, graphics, and<br>
+3-D button objects; a TLine class for lines; a TTxt class for black-and-white text; and<br>
+a TBkg class for backgrounds for the text. Although we used DeviceLoop for drawing<br>
+objects in every class except the text classes, the heart of the process is best<br>
+illustrated by our use of DeviceLoop for TArt objects. 
+</p>
+<p>
+The graphics for TArt objects were stored as PICT resources. To give the best possible<br>
+image, the interface designer created an 8-bit-deep PICT for display depths of 8 bits<br>
+or deeper. For all other display depths and CPUs without Color QuickDraw, she created<br>
+a 1-bit-deep, black-and-white PICT. We could have let the Macintosh use the 8-bit<br>
+PICT for all drawing -- color and black-and- white -- and, with dithering, the<br>
+results would have been pretty good. But since we had our own hand-designed, 1-bit<br>
+version of the PICT, DeviceLoop was a better solution.&nbsp;&nbsp;Our window object&nbsp;&nbsp;kept track<br>
+of all the interface objects that it needed to draw. When an update event was received,<br>
+the document object told the window object to draw. Specifically, our<br>
+BeginUpdate/EndUpdate function called a particular drawing routine for each of the<br>
+objects. Each object, in turn, called DeviceLoop with our DrawProc callback, which<br>
+contained the actual drawing code for that object. Figure 1 shows this strategy. 
+</p>
+<p>
+<img src="img/167.gif" width="552 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1</b> An Inefficient Way to Incorporate DeviceLoop
+</p>
+<p>
+We used this DeviceLoop-within-each-object's-drawing-procedure approach until<br>
+someone pointed out how inefficient it was to call DeviceLoop for every interface<br>
+object. We realized that it would be much better to call DeviceLoop once and have the<br>
+drawing procedure that we passed to it decide which object had to be drawn. We wound<br>
+up with a single DeviceLoop call in the window's BeginUpdate/EndUpdate function, as<br>
+shown in Figure 2. The use of a single DeviceLoop call in the window object really<br>
+streamlined the design.
+</p>
+<p>
+<img src="img/168.gif" width="558 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> A Better Way to Call DeviceLoop
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+One problem we encountered was that the compiler balked whenever we referenced our<br>
+drawing routine (called DrawProc) in the DeviceLoop parameter list. We even<br>
+included the scope -- TWin::DrawProc -- and that didn't help. The breakthrough came<br>
+when we made DrawProc static.&nbsp;&nbsp;&nbsp;Unfortunately, changing it to static caused another<br>
+problem: the compiler choked when we referenced<b>this</b> within DrawProc. We forgot<br>
+that static functions can't reference nonstatic member variables. (You C++ aficionados<br>
+are probably smiling, but we recent converts must struggle at first.) We couldn't use<br>
+static variables, however, because each of our objects required its own variables.&nbsp;&nbsp;<br>
+Thus, to access an object's variables, we had to pass the window object pointer in the<br>
+userData parameter of the DeviceLoop function.
+</p>
+<h2>AN EXAMPLE</h2>
+<p>
+The<i> Developer CD Series</i>disc contains a sample application that shows how we used<br>
+DeviceLoop for TArt objects in our interface. The application, DeviceLoopInDrag,<br>
+displays a window that can be dragged between monitors of different bit depths. Figure<br>
+3 shows this window spanning a grayscale and a black-and-white monitor. 
+</p>
+<p>
+&nbsp;Excerpts from the DeviceLoopInDrag source code follow. First there's the update<br>
+function that's called whenever the window needs to be redrawn. It just calls the<br>
+drawing procedure for the window object (TWin). 
+</p>
+<p>
+<img src="img/169.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 3</b> DeviceLoop in Action
+</p>
+<p><pre>// TDoc::DoUpdate
+// Document object.
+// Entry for update event action.
+void
+TDoc::DoUpdate()
+{
+&nbsp;&nbsp;&nbsp;&nbsp;BeginUpdate(this-&gt;fDocWindow);
+&nbsp;&nbsp;&nbsp;&nbsp;this-&gt;fWinObj-&gt;Draw();
+&nbsp;&nbsp;&nbsp;&nbsp;EndUpdate(this-&gt;fDocWindow);
+}</pre></p>
+<p>
+&nbsp;The window's drawing procedure does little more than set up and call DeviceLoop.<br>
+Notice that we're passing the reference to the current window object --<b>this</b> -- in<br>
+DeviceLoop's userData parameter, as described earlier. Since we want the default<br>
+DeviceLoop behavior, we set the flags to 0. 
+</p>
+<p><pre>// TWin::Draw
+// Window object.
+// Within BeginUpdate/EndUpdate.
+void
+TWin::Draw()
+{
+&nbsp;&nbsp;&nbsp;&nbsp;// Have DeviceLoop manage the drawing.
+&nbsp;&nbsp;&nbsp;&nbsp;// Pass the window object in userData.
+&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;userData = (long)this;
+&nbsp;&nbsp;&nbsp;&nbsp;DeviceLoopFlags&nbsp;&nbsp;&nbsp;&nbsp;flags = 0;
+&nbsp;&nbsp;&nbsp;&nbsp;GrafPtr&nbsp;&nbsp;&nbsp;&nbsp;myPort;
+&nbsp;&nbsp;&nbsp;&nbsp;GetPort(&amp;myPort);
+&nbsp;&nbsp;&nbsp;&nbsp;DeviceLoop(myPort-&gt;visRgn, TWin::DrawProc, userData, flags);
+&nbsp;&nbsp;&nbsp;&nbsp;// Draw the stuff we don't need DeviceLoop for.
+&nbsp;&nbsp;&nbsp;&nbsp;// We tell the subview to take care of that.
+&nbsp;&nbsp;&nbsp;&nbsp;this-&gt;fView-&gt;Draw();
+};</pre></p>
+<p>
+Next, theTWin drawing procedure is the callback procedure that DeviceLoop invokes to<br>
+coordinate the drawing of each of the elements on the screen.
+</p>
+<p><pre>// TWin::DrawProc
+// Called by DeviceLoop.
+// A static function. Must be in a resident segment, locked and
+// unpurgeable. Because it's static, it can't access object member
+// variables directly. We use the window object passed in userData
+// to access its member variables.
+#pragma segment Main
+pascal void
+TWin::DrawProc(short depth, short /*deviceFlags*/,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GDHandle hTargetDevice, long userData)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;// Get the window object from userData.
+&nbsp;&nbsp;&nbsp;&nbsp;TWin* theWinObject = (TWin*) userData;
+&nbsp;&nbsp;&nbsp;&nbsp;// Use depth of 1 if we have a computer without Color QuickDraw.
+&nbsp;&nbsp;&nbsp;&nbsp;depth = (hTargetDevice==NULL)?1:depth;
+&nbsp;&nbsp;&nbsp;&nbsp;// Draw our objects.
+&nbsp;&nbsp;&nbsp;&nbsp;theWinObject-&gt;fBackground-&gt;Draw(depth);
+&nbsp;&nbsp;&nbsp;&nbsp;theWinObject-&gt;fLogo-&gt;Draw(depth);
+&nbsp;&nbsp;&nbsp;&nbsp;theWinObject-&gt;fText-&gt;Draw(depth);
+&nbsp;&nbsp;&nbsp;&nbsp;theWinObject-&gt;fButton-&gt;Draw(depth);
+};</pre></p>
+<p>
+Finally, here's the actual TArt::Draw function, used for various items in the window.<br>
+Based on the bit-depth parameter passed to it, the Draw function decides whether to<br>
+use the black-and-white or the color version of its PICT.
+</p>
+<p><pre>// TArt::Draw
+// All art objects (PICTs) are drawn here. This is where we
+// distinguish between B&amp;W or color renderings of TArt objects.
+// The B&amp;W rendering has a resource ID that's kBWOffset larger
+// than its color counterpart value.
+void
+TArt::Draw(short depth)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;// Don't draw empty art.
+&nbsp;&nbsp;&nbsp;&nbsp;if(this-&gt;fPictID==0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;
+&nbsp;&nbsp;&nbsp;&nbsp;PicHandle&nbsp;&nbsp;&nbsp;&nbsp;hPict;
+&nbsp;&nbsp;&nbsp;&nbsp;if(depth&lt;8)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Use B&amp;W PICT.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hPict = (PicHandle) GetResource('PICT',
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;this-&gt;fPictID+kBWOffset);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Use color PICT.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hPict = (PicHandle) GetResource('PICT', this-&gt;fPictID);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;if(hPict)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Rect&nbsp;&nbsp;&nbsp;&nbsp;theDrawRect;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;this-&gt;GetDrawRect(theDrawRect);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HLock((Handle) hPict);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DrawPicture(hPict, &amp;theDrawRect);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HUnlock((Handle) hPict);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+};</pre></p>
+<h2>SUMMING UP</h2>
+<p>
+How did we wind up feeling about DeviceLoop? After we first discovered it, our<br>
+tendency was to use it everywhere. We even used it to call a drawing routine that<br>
+always drew in black and white, no matter what the bit depth. We later stripped this<br>
+use out of the interface because it offered no advantage and added extra code. 
+</p>
+<p>
+One concern we had was that performance would degrade to an intolerable level as we<br>
+added objects to be drawn. To see what would happen, the mischievous test engineer for<br>
+our project devised a case with 99 separate TArt objects in the same window.<br>
+Predictably, the 99 objects weren't displayed all at once. While you can expect some<br>
+lag between the appearance of first object in a window and the last, however, the<br>
+drawing time when you use DeviceLoop is really very short, well within user<br>
+tolerance. 
+</p>
+<p>
+All in all, our design team was very pleased with DeviceLoop. We were glad to have<br>
+found such an easy way to solve the problem of displaying interface objects on<br>
+monitors of different bit depths. The interface designer got the look she wanted, and we<br>
+were able to accomplish the job with a minimum of hassle and a minimum of code. This<br>
+was one challenge that left everyone happy. 
+</p>
+<p>
+<b>JOHN POWERS</b> (AppleLink JOHNPOWERS) started his career as a behavioral<br>
+scientist, studying how people use computers. He worked his way up the management<br>
+ladder, and then cofounded a company that developed software for the first home<br>
+computers. That lead him to Atari, but Atari got weird, so John joined Convergent<br>
+Technologies to develop the WorkSlate notebook computer, eight years before the<br>
+PowerBook. That led him to another management ladder and into The Learning<br>
+Company, where he developed software for children. Locked in his management office,<br>
+John discovered the Macintosh and decided to become a Macintosh software developer.<br>
+Now he's at Apple Computer developing Macintosh software that helps people use<br>
+computers. *
+</p>
+<p>
+<b>The DeviceLoop call first appears in System 7.</b> If your application will be<br>
+running under an earlier version of system software, you'll need to implement your<br>
+own DeviceLoop function. For an example of how to do this, see the column "Graphical<br>
+Truffles: Multiple Screens Revealed" in Issue 10 of <i> develop</i>.*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Edgar Lee and Brigham Stevens.<br>
+Special thanks to Pat Coleman, the Interface Designer on the project that inspired this<br>
+article.*
+</p>
+</body>
+</html>

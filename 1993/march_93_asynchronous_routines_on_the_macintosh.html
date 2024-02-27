@@ -1,0 +1,1309 @@
+<html>
+<head>
+<!-- Article ID: 12 - Extracted from develop-1993 -->
+<!-- on 2024-02-13 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>March 93 - ASYNCHRONOUS ROUTINES ON THE MACINTOSH</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>ASYNCHRONOUS ROUTINES ON THE MACINTOSH</h2>
+<h1>JIM LUTHER</h1>
+<p>
+<img src="img/163.gif" width="180 px"></img>
+</p>
+<p>
+<i>&nbsp;The Macintosh has always supported asynchronous calls to many parts of its operating</i><br>
+<i>system. This article expands on the information found in Inside Macintosh by telling</i><br>
+<i>when, why, and how you should use functions asynchronously on the Macintosh. It</i><br>
+<i>includes debugging hints and solutions to problems commonly encountered when</i><br>
+<i>asynchronous calls are used.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;When calling a routine synchronously, your program passes control to the routine and<br>
+doesn't continue execution until the routine's work has completed (either successfully<br>
+or unsuccessfully).&nbsp;&nbsp;&nbsp;This would be like giving someone a task and then watching them<br>
+perform that task. Although the task is eventually completed, you don't get anything<br>
+done while you watch.
+</p>
+<p>
+&nbsp;On the other hand, when calling a routine asynchronously, your program passes<br>
+control to the routine, and the program's request is placed in a queue or, if the queue is<br>
+empty, executed immediately; in either case, control returns to the program very<br>
+quickly, even if the request can't be executed until later. The system processes any<br>
+queued requests while your program is free to continue execution, then interrupts you<br>
+later when the request is completed. This is like giving someone a task and going back<br>
+to your work while they finish the task. In most cases, it results in more work being<br>
+accomplished during the same period of time. Figure 1 illustrates the difference<br>
+between synchronous and asynchronous calls. 
+</p>
+<p>
+&nbsp;One situation in which you shouldn't use synchronous calls is when you don't know<br>
+how long it may take for the operation to complete, as with the PPC Toolbox's<br>
+PPCInform function, for example.&nbsp;&nbsp;&nbsp;PPCInform won't complete until another program<br>
+attempts to start a session with your program.&nbsp;&nbsp;&nbsp;This could happen immediately, but<br>
+the chances are far greater that it won't. If PPCInform is called synchronously, it<br>
+appears that the system has locked up because the user won't get control back until the<br>
+call completes. If you call PPCInform asynchronously, it doesn't matter if the function<br>
+doesn't complete for minutes, hours, or even days -- your program (and the rest of<br>
+the system) can continue normally. 
+</p>
+<p>
+<img src="img/164.gif" width="599 px"></img>
+</p>
+<p>
+<b>Figure 1</b>How Synchronous and Asynchronous Calls Work
+</p>
+<p>
+You should also avoid synchronous calls when you can't know the state of the service<br>
+you've asked for. Program code that's part of a completion routine, VBL task, Time<br>
+Manager task, Deferred Task Manager task, or interrupt handler is executed at what's<br>
+commonly called<i>interrupt time</i>. Synchronous calls made at interrupt time often result<br>
+in deadlock. (See "Deadlock.") An asynchronous call can solve the problem: if the<br>
+service you call is busy handling another request, your asynchronous request is<br>
+queued and your program code can give up control (that is, the completion routine or<br>
+task your code is part of can end), letting the service complete the current request and<br>
+eventually process your request.
+</p>
+<p>
+&nbsp;Routines called synchronously are allowed to move memory, while routines called<br>
+asynchronously purposely avoid moving memory so that they can be called at interrupt<br>
+time. For example, the File Manager's PBHOpen routine may move memory when<br>
+called synchronously, but won't when called asynchronously. If your code is executing<br>
+in an environment where memory can't be moved (for example, at interrupt time),<br>
+you must call routines asynchronously to ensure that they don't move memory. 
+</p>
+<p>
+&nbsp;At this time, the various lists in<i>Inside Macintosh</i>of "Routines That May Move or Purge<br>
+Memory," "Routines and Their Memory Behavior," and "Routines That Should Not Be<br>
+Called From Within an Interrupt" are either incomplete or incorrect and can't be<br>
+trusted entirely. The reasons why a system routine can't be called at interrupt time<br>
+include: the routine may move memory; the routine may cause a deadlock condition; the<br>
+routine is not reentrant. This article shows how to postpone most system calls until a<br>
+safe time. You're encouraged to call as few system routines at interrupt time as<br>
+possible.
+</p>
+<p>
+&nbsp;The routines discussed in this article are low-level calls to the File Manager, the<br>
+Device Manager (including AppleTalk driver, Serial Driver, and disk driver calls),<br>
+and the PPC Toolbox. All these routines take the following form:
+</p>
+<p>
+<code>FUNCTION SomeFunction (pbPtr: aParamBlockPtr; async: BOOLEAN): OSErr;</code>
+</p>
+<p>
+&nbsp;Routines of this form are executed synchronously when async = FALSE or<br>
+asynchronously when async = TRUE. 
+</p>
+<p>
+<b>DETERMINING ASYNCHRONOUS CALL COMPLETION</b>Your program can use two<br>
+methods to determine when an asynchronous call has completed: periodically poll for<br>
+completion (check the ioResult field of the parameter block passed to the function) or<br>
+use a completion routine. Both methods enable your program to continue with other<br>
+operations while waiting for an asynchronous call to complete. 
+</p>
+<p>
+<b>POLLING FOR COMPLETION</b>Polling for completion is a simple method to use when<br>
+you have only one or two asynchronous calls outstanding at a time. It's like giving<br>
+someone a task and calling them periodically to see if they've completed it. When your<br>
+program fills in the parameter block to pass to the function, it sets the ioCompletion<br>
+field to NIL, indicating that there's no completion routine. Then, after calling the<br>
+function asynchronously, your program only needs to poll the value of the ioResult<br>
+field of the parameter block passed to the function and wait for it to change:
+</p>
+<ul>
+<li>A positive value indicates the call is either still queued or in the process<br>
+of executing. </li>
+<li>A value less than or equal to 0 (noErr) indicates the call has completed<br>
+(either with or without an error condition). </li>
+</ul>
+<p>
+Polling is usually straightforward and simple to implement, which makes the code<br>
+used to implement polling easy to debug. The following code shows an asynchronous<br>
+PPCInform call and how to poll for its completion:
+</p>
+<p>
+<code>PROCEDURE MyPPCInform;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;VAR</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err: OSErr;{ Error conditions are ignored in this procedure }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ because they are caught in PollForCompletion. }</code><br>
+<code></code><br>
+<code>BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gPPCParamBlock.informParam.ioCompletion := NIL;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gPPCParamBlock.informParam.portRefNum := gPortRefNum;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gPPCParamBlock.informParam.autoAccept := TRUE;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gPPCParamBlock.informParam.portName := @gPPCPort;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gPPCParamBlock.informParam.locationName := @gLocationName;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gPPCParamBlock.informParam.userName := @gUserName;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;err := PPCInform(PPCInformPBPtr(@gPPCParamBlock), TRUE);</code><br>
+<code>END;</code>
+</p>
+<p>
+In this code, MyPPCInform calls the PPCInform function asynchronously with no<br>
+completion routine (ioCompletion is NIL). The program can then continue to do other<br>
+things while periodically calling the PollForCompletion procedure to find out when the<br>
+asynchronous call completes. 
+</p>
+<p>
+<code>PROCEDURE PollForCompletion;</code><br>
+<code>BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;IF gPPCParamBlock.informParam.ioResult &lt;= noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN { The call has completed. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IF gPPCParamBlock.informParam.ioResult = noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ The call completed successfully. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ELSE</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ The call failed, handle the error. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END;</code><br>
+<code>END;</code>
+</p>
+<p>
+PollForCompletion checks the value of the ioResult field to find out whether<br>
+PPCInform has completed. If the call has completed, PollForCompletion checks for an<br>
+arror condition and then performs an appropriate action.
+</p>
+<p>
+There are three important things to note in this example of polling for completion:
+</p>
+<ul>
+<li>The parameter block passed to PPCInform, gPPCParamBlock, is a<br>
+program global variable. Since the parameter block passed to an asynchronous<br>
+call is owned by the system until the call completes, the parameter block must<br>
+not be declared as a local variable within the routine that makes the<br>
+asynchronous call. The memory used by local variables is released to the stack<br>
+when a routine ends, and if that part of the stack gets reused, the parameter<br>
+block, which could still be part of an operating system queue, can get trashed,<br>
+causing either unexpected results or a system crash. Always declare<br>
+parameter blocks globally or as nonrelocatable objects in the heap. </li>
+<li>Calls to PollForCompletion must be made from a program loop that's not<br>
+executed completely at interrupt time. This prevents deadlock. You don't<br>
+necessarily have to poll from an application's event loop (which is executed at<br>
+noninterrupt time), but if you poll from code that executes at interrupt time,<br>
+that code must give up control between polls. </li>
+<li>PollForCompletion checks the ioResult field of the parameter block to<br>
+determine whether PPCInform completed and, if it completed, to see if it<br>
+completed successfully.</li>
+</ul>
+<p>
+One drawback to polling for completion is latency. When the asynchronous routine<br>
+completes its job, your program won't know it until the next time you poll. This can be<br>
+wasted time. For example, assume you give someone a task and ask them if they're done<br>
+(poll) only once a day: if they finish the task after an hour, you won't find out they've<br>
+completed the task until 23 hours later (a 23-hour latency). To avoid latency, use<br>
+completion routines instead of polling ioResult to find out when a routine completes. 
+</p>
+<p>
+<b>USING COMPLETION ROUTINES</b><br>
+Making an asynchronous call with a completion routine is only slightly more complex<br>
+than polling for completion. A completion routine is a procedure that's called as soon as<br>
+the asynchronous function completes its task. When your program fills in the<br>
+parameter block to pass to the function, it sets the ioCompletion field to point to the<br>
+completion routine. Then, after calling the function asynchronously, your program can<br>
+continue. When the function completes, the system interrupts the program that's<br>
+running and the completion routine is executed. (There are some special things you<br>
+need to know about function results to use this model; see "Function Results and<br>
+Function Completion.")
+</p>
+<p>
+Since the completion routine is executed as soon as the function's task is complete,<br>
+your program finds out about completion immediately and can start processing the<br>
+results of the function. Using a completion routine is like giving someone a task and<br>
+then asking them to call you as soon as they've completed it. 
+</p>
+<p>
+Because a completion routine may be called at interrupt time, it can't assume things<br>
+that most application code can. When a completion routine for an asynchronous<br>
+function gets control, the system is in the following state:
+</p>
+<ul>
+<li>On entry, register A0 points to the parameter block used to make the<br>
+asynchronous call. </li>
+<li>Your program again owns the parameter block used to make the<br>
+asynchronous call, which means you can reuse the parameter block to make<br>
+another asynchronous call (see the section "Call Chaining" later in this<br>
+article). </li>
+<li>Both register D0 and ioResult in the parameter block contain the result<br>
+status from the function call. </li>
+<li> For completion routines called by the File Manager or Device Manager,<br>
+the A5 world is undefined and must be restored before the completion routine<br>
+uses any application global variables. </li>
+</ul>
+<p>
+Since completion routines execute at interrupt time, they must follow these rules:
+</p>
+<ul>
+<li>They must preserve all registers except A0, A1, and D0-D2. </li>
+<li>They can't call routines that can directly or indirectly move memory, and<br>
+they can't depend on the validity of handles to unlocked blocks. </li>
+<li>They shouldn't perform time-consuming tasks, because interrupts may<br>
+be disabled. As pointed out in the Macintosh Technical Note "NuBusTM<br>
+Interrupt Latency (I Was a Teenage DMA Junkie)," disabling interrupts and<br>
+taking over the machine for long periods of time "almost always results in a<br>
+sluggish user interface, something which is not usually well received by the<br>
+user." Some ways to defer time-consuming tasks are shown later in this<br>
+article. </li>
+<li>They can't make synchronous calls to device drivers, the File Manager, or<br>
+the PPC Toolbox for the reasons given earlier. </li>
+</ul>
+<p>
+<b>PPC Toolbox completion routines. </b>The PPC Toolbox simplifies the job of writing<br>
+completion routines.&nbsp;&nbsp;&nbsp;When a PPC Toolbox function is called asynchronously, the<br>
+current value of register A5 is stored.&nbsp;&nbsp;&nbsp;When the completion routine for that call is<br>
+executed by the PPC Toolbox, the stored A5 value is restored and the parameter block<br>
+pointer used to make the call is passed as the input parameter to the completion<br>
+routine.
+</p>
+<p>
+A completion routine called by the PPC Toolbox has this format in Pascal:
+</p>
+<p>
+<code>PROCEDURE MyCompletionRoutine (pbPtr: PPCParamBlockPtr);</code>
+</p>
+<p>
+PPC Toolbox completion routines are still called at interrupt time and so must follow<br>
+the rules of execution at interrupt time. 
+</p>
+<p>
+The following code shows an asynchronous PPCInform call and its completion routine. 
+</p>
+<p>
+<code>PROCEDURE InformComplete (pbPtr: PPCParamBlockPtr);</code><br>
+<code>BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;IF pbPtr^.informParam.ioResult = noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ The PPCInform call completed successfully. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ELSE</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ The PPCInform call failed; handle the error. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END;</code><br>
+<code>END;</code><br>
+<code></code><br>
+<code>PROCEDURE DoPPCInform;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;VAR</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err: OSErr;{ Error conditions are ignored in this procedure }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ because they are caught in InformComplete. }</code><br>
+<code></code><br>
+<code>BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gPPCParamBlock.informParam.ioCompletion := @InformComplete;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gPPCParamBlock.informParam.portRefNum := gPortRefNum;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gPPCParamBlock.informParam.autoAccept := TRUE;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gPPCParamBlock.informParam.portName := @gPPCPort;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gPPCParamBlock.informParam.locationName := @gLocationName;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gPPCParamBlock.informParam.userName := @gUserName;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;err := PPCInform(PPCInformPBPtr(@gPPCParamBlock), TRUE);</code><br>
+<code>END;</code>
+</p>
+<p>
+In this code, DoPPCInform calls PPCInform asynchronously with a completion routine<br>
+(ioCompletion contains a pointer to InformComplete). The program can then continue<br>
+to do other things.
+</p>
+<p>
+When PPCInform completes, control is passed to InformComplete with a pointer to<br>
+gPPCParamBlock. InformComplete checks the result returned by PPCInform and then<br>
+performs an appropriate action.
+</p>
+<p>
+Here are the important things to note in this example of a PPC Toolbox completion<br>
+routine: * The parameter block gPPCParamBlock is declared globally for the reasons<br>
+given earlier in the section "Polling for Completion." * InformComplete checks the<br>
+ioResult field of the parameter block to determine whether PPCInform completed<br>
+successfully.
+</p>
+<p>
+<b>File Manager and Device Manager completion routines in high-level</b><br>
+<b>languages. </b> File Manager and Device Manager completion routines written in a<br>
+high-level language such as Pascal or C are more complicated than PPC Toolbox<br>
+completion routines. They must take additional steps to get the value in register A0<br>
+and, if program global variables will be used, restore register A5 to the application's<br>
+A5 value. The reason for this is that File Manager and Device Manager completion<br>
+routines are called with the pointer to the call's parameter block in register A0 and<br>
+with the A5 world undefined. 
+</p>
+<p>
+In most high-level languages, registers A0, A1, and D0-D2 are considered scratch<br>
+registers by the compiler and aren't preserved across routine calls. For this reason,<br>
+you should not depend on register values as input parameters to routines written in a<br>
+high-level language. Examples of completion routines in<i>Inside Macintosh</i>and in several<br>
+Macintosh Technical Notes use short inline assembly routines to retrieve the value of<br>
+register A0, in the following manner:
+</p>
+<p>
+<code>FUNCTION GetPBPtr: ParmBlkPtr;</code><br>
+<code>{ Return the pointer value in register A0. }</code><br>
+<code>INLINE $2E88; { MOVE.L A0,(A7) }</code><br>
+<code></code><br>
+<code>PROCEDURE MyCompletionRoutine;</code><br>
+<code>{ This procedure gets called when an asynchronous call completes. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;VAR</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pbPtr: ParmBlkPtr;</code><br>
+<code></code><br>
+<code>BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;pbPtr := GetPBPtr;{ Retrieve the value in register A0. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DoWork(pbPtr);&nbsp;&nbsp;&nbsp;&nbsp;{ Call another routine to do the actual work. }</code><br>
+<code>END;</code>
+</p>
+<p>
+Although the GetPBPtr inline assembly routine works with today's compilers, be<br>
+careful, because register A0 could be used by the compiler for some other purpose<br>
+before the statement with the inline assembly code is executed. As shown in the<br>
+previous example, you can minimize the chances of the compiler using a register<br>
+before you retrieve its value by retrieving the register value in the completion<br>
+routine's first statement and then doing as little as possible within the completion<br>
+routine (call another routine to do any additional work). 
+</p>
+<p>
+The safest way to use register values as input parameters to completion routines<br>
+written in a high- level language is to use a completion routine written in assembly<br>
+language that calls a routine written in a high-level language. The following record<br>
+type allows File Manager and Device Manager completion routines to be written in<br>
+high-level languages such as C or Pascal with only one small assembly language<br>
+routine. This record also holds the application's A5 value so that the completion<br>
+routine can restore A5 and application globals can be accessed from within the<br>
+completion routine.
+</p>
+<p>
+<code>TYPE</code><br>
+<code>&nbsp;&nbsp;extendedPBPtr = ^extendedPB;</code><br>
+<code>&nbsp;&nbsp;extendedPB = RECORD</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ourA5:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LONGINT;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Application's A5 }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ourCompletion: ProcPtr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Address of the completion routine }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ written in a high-level language }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;pb:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ParamBlockRec;{ Parameter block used to make call }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;END;</code>
+</p>
+<p>
+PreCompletion, a small assembly language routine, is used as the completion routine<br>
+for all File Manager and Device Manager asynchronous calls (PreCompletion comes<br>
+preassembled and ready to link with your C or Pascal code on the<i>Developer CD</i><br>
+<i>Series</i>disc). PreCompletion preserves the A5 register, sets A5 to the application's A5,<br>
+calls the designated Pascal completion routine with a pointer to the parameter block<br>
+used to make the asynchronous call, and then restores the A5 register:
+</p>
+<p>
+<code>PreCompletion&nbsp;&nbsp;&nbsp;PROC&nbsp;&nbsp;&nbsp;&nbsp;EXPORT</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;LINK&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A6,#0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; Link for the debugger.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;MOVEM.L&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A5,-(SP)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; Preserve A5 register.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;MOVE.L&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A0,-(SP)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; Pass PB pointer as the parameter.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;MOVE.L&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-8(A0),A5&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; Set A5 to passed value (ourA5).</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;MOVE.L&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-4(A0),A0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; A0 = real completion routine address.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;JSR&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(A0)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; Transfer control to ourCompletion.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;MOVEM.L&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(SP)+,A5&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; Restore A5 register.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;UNLK&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A6&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; Unlink.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;RTS&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; Return.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;STRING&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ASIS</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DC.B&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$8D,'PreCompletion' ; The debugger string.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DC.W&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$0000</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;STRING&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PASCAL</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ENDP</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;END</code>
+</p>
+<p>
+Before an application makes an asynchronous call, it initializes the extendedPB record<br>
+with the application's A5 and the address of the high-level language's completion<br>
+routine. The ioCompletion field of the extendedPB record's parameter block is<br>
+initialized with the address of PreCompletion:
+</p>
+<p>
+<code>myExtPB.ourA5 := SetCurrentA5;</code><br>
+<code>myExtPB.ourCompletion := @MyCompletionRoutine;</code><br>
+<code>myExtPB.pb.ioCompletion := @PreCompletion;</code>
+</p>
+<p>
+The high-level language's completion routine called by PreCompletion has this format<br>
+in Pascal:
+</p>
+<p>
+<code>PROCEDURE MyCompletionRoutine (pbPtr: ParmBlkPtr);</code>
+</p>
+<p>
+When MyCompletionRoutine is called, register A5 has been set to the stored<br>
+application A5 and pbPtr points to the parameter block (within the extended<br>
+parameter block) used to make the asynchronous call. 
+</p>
+<p>
+The rest of this article shows how to use asynchronous calls and completion routines to<br>
+your program's advantage and describes various techniques for working around the<br>
+limitations imposed on completion routines. 
+</p>
+<h2>THE BIG THREE TECHNIQUES</h2>
+<p>
+There are lots of techniques you can use when working with asynchronous calls. Most<br>
+are useful for solving only one or two programming problems. This section describes<br>
+the three most useful techniques -- the use of operating system queues, call chaining,<br>
+and extended parameter blocks. 
+</p>
+<p>
+<b>OPERATING SYSTEM QUEUES</b><br>
+After reading the description of operating system queues in<i>Inside Macintosh</i>Volume II,<br>
+you might assume they're for use only by the operating system. Wrong! Any program<br>
+can create an OS queue for its own purposes. OS queues are very useful in<br>
+interrupt-time code such as completion routines, because the two routines that<br>
+manipulate OS queues, Enqueue and Dequeue, have the following characteristics:
+</p>
+<ul>
+<li>They disable all interrupts while they update the queue. This is very<br>
+important because it prevents race conditions between interrupt and<br>
+noninterrupt code accessing the queue. (See "Race Conditions and OS Queues.")</li>
+<li>They can be called at interrupt time, because they don't move memory --<br>
+they only manipulate a linked list of queue elements. </li>
+<li>They're very fast and efficient, so they won't be time-consuming<br>
+operations in your completion routines. </li>
+</ul>
+<p>
+An OS queue owned by your program can hold queue elements defined by the system or<br>
+queue elements of your own design. A queue element is a record that starts with two<br>
+fields, qLink and qType. The qLink field is a QElemPtr that links queue elements<br>
+together while they're in an OS queue. The qType field is an integer value that<br>
+identifies the queue element type. In OS queues owned by your program, you may not<br>
+need to use the qType field unless the OS queue can hold more than one type of queue<br>
+element. Here's how the system defines a queue element:
+</p>
+<p>
+<code>QElem = RECORD</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;qLink:&nbsp;&nbsp;QElemPtr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Link to next queue element. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;qType:&nbsp;&nbsp;INTEGER;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Queue element type. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{ Add your data fields here. }</code><br>
+<code>END;</code>
+</p>
+<p>
+The following record types are some of the system-defined queue elements:<br>
+ParamBlockRec, CInfoPBRec, DTPBRec, HParamBlockRec, FCBPBRec, WDPBRec,<br>
+CMovePBRec, MPPParamBlock, ATPParamBlock, XPPParamBlock, DSPParamBlock,<br>
+EParamBlock, PPCParamBlockRec, TMTask, DeferredTask, and VBLTask. 
+</p>
+<p>
+To use an OS queue in your program, you need to allocate a queue header (QHdr)<br>
+variable and possibly define your own queue element type:
+</p>
+<p>
+<code>TYPE</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{ Define a queue element type. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;MyQElemRecPtr = ^MyQElemRec;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;MyQElemRec = RECORD</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;qLink:&nbsp;&nbsp;QElemPtr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;qType:&nbsp;&nbsp;INTEGER;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myData: myDataType; { Put any data fields you want here. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END;</code><br>
+<code>VAR</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{ Allocate a queue element and a queue header. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myQElem:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MyQElemRec;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myOSQueueHdr:&nbsp;&nbsp;&nbsp;QHdr;</code>
+</p>
+<p>
+You must initialize the queue header before it's used by setting its qHead and qTail<br>
+fields to NIL:
+</p>
+<p>
+<code>{ Initialize the OS queue. }</code><br>
+<code>myOSQueueHdr.qHead := NIL;</code><br>
+<code>myOSQueueHdr.qTail := NIL;</code>
+</p>
+<p>
+The queue element can then be added to the OS queue:
+</p>
+<p>
+<code>{ Add myQElem to the queue. }</code><br>
+<code>Enqueue(QElemPtr(@myQElem), @myOSQueueHdr);</code>
+</p>
+<p>
+This code shows how to remove a queue element (in this example, the first item in the<br>
+queue) from an OS queue before using it:
+</p>
+<p>
+<code>VAR</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myQElemPtr: MyQElemRecPtr;</code><br>
+<code></code><br>
+<code>myQElemPtr := MyQElemRecPtr(myOSQueueHdr.qHead);</code><br>
+<code>IF myQElemPtr &lt;&gt; NIL THEN { Make sure we have a queue element. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IF Dequeue(QElemPtr(myQElemPtr), @myOSQueueHdr) =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ We successfully removed the queue element from }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ the queue, so we can use myQElemPtr^.myData. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ In this example, we'll put the queue element back }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ in the queue when we're done with it. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Enqueue(QElemPtr(myQElemPtr), @myOSQueueHdr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ELSE</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Someone else just claimed the queue element }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ between the two IF statements and we just avoided }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ a race condition!&nbsp;&nbsp;Try again later. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;END;</code>
+</p>
+<p>
+OS queues owned by your program can be used for many purposes, including these:
+</p>
+<ul>
+<li>Completion routines can schedule work to be done by your application's<br>
+event loop by putting requests into an OS queue. </li>
+<li>Extra buffers or parameter blocks needed by completion routines can be<br>
+put into an OS queue by code called from the program's event loop. These<br>
+buffers or parameter blocks can be safely claimed and used by code running at<br>
+interrupt time. </li>
+<li>Completion routines can schedule the processing of a completed call by<br>
+putting the parameter block used to make the call into an OS queue. This is<br>
+useful when the processing might move memory or take too much time and so<br>
+can't be performed in the completion routine.</li>
+<li>Data accessed and manipulated by both interrupt code and noninterrupt<br>
+code can be protected from race conditions if it's stored in a queue element and<br>
+the Dequeue and Enqueue routines are used to claim and release ownership of<br>
+the data from an OS queue (as described earlier in "Race Conditions and OS<br>
+Queues"). </li>
+</ul>
+<p>
+<b>CALL CHAINING</b><br>
+When a multistep operation is performed via multiple asynchronous calls with<br>
+completion routines, it's called<i>call chaining.&nbsp;&nbsp;</i>Each asynchronous call's completion<br>
+routine reuses the parameter block passed to the completion routine to make the next<br>
+asynchronous call. Call chaining from completion routines allows your program to<br>
+start the next step in a multistep operation with no latency (see Figure 2). 
+</p>
+<p>
+To use call chaining, you must design your call chain; that is, you must decide the<br>
+order of the asynchronous calls you want to make. For each completion routine,<br>
+determine what step should be taken if the previous call completed successfully with<br>
+no error condition and what step should be taken if the previous call completed with an<br>
+error.
+</p>
+<p>
+A chained call sequence may have several end points or breaks in the chain, depending<br>
+on what you're trying to accomplish and what conditions are encountered along the way.<br>
+For example, you may not want to make another asynchronous call because an error<br>
+condition occurred, because the next step your program needs to take involves a call<br>
+that can't be made at interrupt time, or because all steps were completed successfully.<br>
+The easiest way for your chained call sequence to pass control back to noninterrupt<br>
+code is through an OS queue. This technique is shown in the section "Putting the Big<br>
+Three Together."
+</p>
+<p>
+<b>&nbsp;EXTENDING PARAMETER BLOCKS</b><br>
+Unless you do a little extra work, a completion routine is somewhat isolated from the<br>
+rest of your program. The only data accessible to a completion routine when it executes<br>
+is the parameter block used to make the asynchronous call and, if you preserve and<br>
+restore A5, the program's global variables. As noted before, you must be careful to<br>
+avoid race conditions when accessing global variables.
+</p>
+<p>
+<img src="img/165.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 2</b> Call Chaining
+</p>
+<p>
+&nbsp;You can extend a parameter block by attaching your own data to the end of a parameter<br>
+block, like this:
+</p>
+<p>
+<code>TYPE</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myPBRecPtr = ^myPBRec;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myPBRec = RECORD</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pb: ParamBlockRec;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myData: myDataType; { Put any data type you want here. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;END;</code>
+</p>
+<p>
+&nbsp;From within a completion routine, using the extended fields is easy:
+</p>
+<p>
+<code>&nbsp;IF thePBRecPtr^.pb.ioResult = noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;thePBRecPtr^.myData := kSomeValue;</code>
+</p>
+<p>
+&nbsp;Extending a parameter block has several benefits for asynchronous program code:
+</p>
+<ul>
+<li>By extending a parameter block to include all variables used by the<br>
+routine, you can reduce the amount of stack space used by completion routines.</li>
+<li>By keeping all data associated with a particular session in the extended<br>
+parameter block, you can support multiple independent sessions. </li>
+<li> By putting values needed by a completion routine in an extended<br>
+parameter block instead of in program global variables, you can prevent race<br>
+conditions. This provides noninterrupt code and interrupt code with a safe<br>
+method to communicate. </li>
+</ul>
+<h2>PUTTING THE BIG THREE TOGETHER</h2>
+<p>
+Now that you know about OS queues, call chaining, and extending parameter blocks,<br>
+let's look at a simple example of how these techniques can be used together. PPC<br>
+Toolbox calls, being slightly simpler, are used in this example. 
+</p>
+<p>
+In the example, the program is to receive and accept a PPC session request, read some<br>
+data, process the data, and then close the connection. To accomplish this, the program<br>
+calls PPCInform asynchronously with a completion routine, has PPCInform's<br>
+completion routine call PPCRead asynchronously with a completion routine, and then<br>
+has PPCRead's completion routine schedule processing of the data by putting a request<br>
+into an OS queue. After the data is removed from the queue and processed in the<br>
+application's main event loop, the program calls PPCClose asynchronously with a<br>
+completion routine and has PPCClose's completion routine call PPCInform again to<br>
+wait for another connection. 
+</p>
+<p>
+We begin with an extended PPC parameter block record that can hold all the data the<br>
+program needs to access from the various procedures:
+</p>
+<p>
+<code>CONST</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kPPCIOBufSize = 1024;&nbsp;&nbsp;&nbsp;{ Size of the I/O buffer. }</code><br>
+<code>TYPE</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PPCIOBuffer = ARRAY[1..kPPCIOBufSize] OF SignedByte;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PPCSessRecPtr = ^PPCSessRec;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PPCSessRec = RECORD</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pb:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PPCParamBlockRec;{ The pb must be first. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OSErr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ To catch results. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sessPortName:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PPCPortRec;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Port name returned to }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ PPCInform. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sessLocationName: LocationNameRec; { Location name returned }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ to PPCInform. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sessUserName:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Str32;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ User name returned to }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ PPCInform. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;buffer:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PPCIOBuffer;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ R/W buffer used by this }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ session. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END;</code>
+</p>
+<p>
+Next, we declare the global variables used in this example:
+</p>
+<p>
+<code>VAR</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gQuitting:&nbsp;&nbsp;&nbsp;BOOLEAN;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ True when no new sessions should }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ be allowed. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gPortRefNum: PPCPortRefNum; { PPC port reference number from }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ PPCOpen. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gReadQueue:&nbsp;&nbsp;QHdr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Where PPCRead parameter blocks }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ are scheduled to be processed. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gDoneQueue:&nbsp;&nbsp;QHdr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Where parameter blocks are put }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ when completion routines are done }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ with them. }</code>
+</p>
+<p>
+Several procedures are used in the example: DoPPCInform, InformComplete,<br>
+ReadComplete, ProcessPPCData, EndComplete, and HandlePPCErrors. Not shown in this<br>
+article is the program code for such operations as opening the PPC port, setting<br>
+gQuitting to FALSE, and initializing the two OS queue headers before DoPPCInform is<br>
+called. DoPPCInform simply fills in the parameter block, previously allocated by the<br>
+program and passed to DoPPCInform, and calls PPCInform asynchronously with<br>
+InformComplete as the completion routine. Any errors returned by PPCInform will be<br>
+handled by InformComplete. 
+</p>
+<p>
+<code>PROCEDURE DoPPCInform (pbPtr: PPCSessRecPtr);</code><br>
+<code>BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{ Call PPCInform. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PPCInformPBPtr(pbPtr)^.ioCompletion := @InformComplete;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PPCInformPBPtr(pbPtr)^.portRefNum := gPortRefNum;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PPCInformPBPtr(pbPtr)^.autoAccept := TRUE;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PPCInformPBPtr(pbPtr)^.portName := @pbPtr^.sessPortName;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PPCInformPBPtr(pbPtr)^.locationName := @pbPtr^.sessLocationName;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PPCInformPBPtr(pbPtr)^.userName := @pbPtr^.sessUserName;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{ Error conditions are ignored in this procedure because they }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{ are caught in InformComplete. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;pbPtr^.err := PPCInformAsync(PPCInformPBPtr(pbPtr));</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{ Continued at InformComplete. }</code><br>
+<code>END;</code>
+</p>
+<p>
+InformComplete is called when PPCInform completes. InformComplete first checks for<br>
+errors from PPCInform. If the result is noErr, InformComplete fills in the parameter<br>
+block and calls PPCRead asynchronously with ReadComplete as the completion routine.<br>
+Any errors returned by PPCRead will be handled by ReadComplete. If PPCInform failed<br>
+(the result is not noErr), InformComplete puts the parameter block into gDoneQueue,<br>
+where the error condition can be handled from the program's event loop. 
+</p>
+<p>
+<code>PROCEDURE InformComplete (pbPtr: PPCSessRecPtr);</code><br>
+<code>BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;IF PPCInformPBPtr(pbPtr)^.ioResult = noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ The PPCInform call completed successfully. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Call PPCRead. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PPCReadPBPtr(pbPtr)^.ioCompletion := @ReadComplete;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ We're reusing the same parameter block, so the }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ sessRefNum is already filled in. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PPCReadPBPtr(pbPtr)^.bufferLength := kPPCIOBufSize;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PPCReadPBPtr(pbPtr)^.bufferPtr := @pbPtr^.buffer;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Error conditions are ignored in this procedure }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{&nbsp;&nbsp;because theyare caught in ReadComplete. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PPCSessRecPtr(pbPtr)^.err :=</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PPCReadAsync(PPCReadPBPtr(pbPtr));</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Continued at ReadComplete. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ELSE</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ The PPCInform call failed. Drop the parameter block in }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ the "done" queue for handling later. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Enqueue(QElemPtr(pbPtr), @gDoneQueue);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Dequeued by HandlePPCErrors. }</code><br>
+<code>END;</code>
+</p>
+<p>
+ReadComplete is called when PPCRead completes. ReadComplete first checks for errors<br>
+from PPCRead. If the result is noErr, ReadComplete puts the parameter block into<br>
+gReadQueue. If PPCRead failed (the result is not noErr), ReadComplete puts the<br>
+parameter block into gDoneQueue.&nbsp;&nbsp;&nbsp;In either case, the information queued is handled<br>
+from the program's event loop. 
+</p>
+<p>
+<code>PROCEDURE ReadComplete (pbPtr: PPCParamBlockPtr);</code><br>
+<code>BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;IF PPCReadPBPtr(pbPtr)^.ioResult = noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ The PPCRead call completed successfully. Drop the }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ parameter block in the "read" queue for }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ handling later. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Enqueue(QElemPtr(pbPtr), @gReadQueue)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Dequeued by ProcessPPCData. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ELSE</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ The PPCRead call failed. Drop the parameter block }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ in the "done" queue for handling later. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Enqueue(QElemPtr(pbPtr), @gDoneQueue)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Dequeued by HandlePPCErrors. }</code><br>
+<code>END;</code>
+</p>
+<p>
+ProcessPPCData is called regularly from the program's event loop. If gReadQueue<br>
+contains a parameter block, ProcessPPCData removes the parameter block from the<br>
+queue and processes the data read in the PPCSessRec's buffer. After processing the<br>
+data, ProcessPPCData calls PPCEnd asynchronously with EndComplete as the<br>
+completion routine. Any errors returned by PPCEnd will be handled by EndComplete. 
+</p>
+<p>
+<code>PROCEDURE ProcessPPCData;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;VAR</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pbPtr: PPCSessRecPtr;</code><br>
+<code></code><br>
+<code>BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{ Check for a parameter block in the queue. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;IF gReadQueue.qHead &lt;&gt; NIL THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Get the PPCSessRec and remove it from the queue. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pbPtr := PPCSessRecPtr(gReadQueue.qHead);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IF Dequeue(QElemPtr(pbPtr), @gReadQueue) = noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Process PPCReadPBPtr(pbPtr)^.actualLength }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ bytes of data in the data buffer, }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{&nbsp;&nbsp;pbPtr^.buffer, here.Then call PPCEnd to end }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ the session. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PPCEndPBPtr(pbPtr)^.ioCompletion := @EndComplete;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Error conditions are ignored in this }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ procedure because they are caught in }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ EndComplete. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pbPtr^.err := PPCEndAsync(PPCEndPBPtr(pbPtr));</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Continued at EndComplete. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END;</code><br>
+<code>END;</code>
+</p>
+<p>
+EndComplete is called when PPCEnd completes. It first checks for errors from PPCEnd.<br>
+If the result is noErr, EndComplete either calls DoPPCInform to call PPCInform<br>
+asynchronously again or puts the parameter block into gDoneQueue. If PPCEnd failed<br>
+(the result is not noErr), EndComplete puts the parameter block into gDoneQueue. Any<br>
+queued information is handled from the program's event loop. 
+</p>
+<p>
+<code>PROCEDURE EndComplete (pbPtr: PPCParamBlockPtr);</code><br>
+<code>BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;IF PPCEndPBPtr(pbPtr)^.ioResult = noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN&nbsp;&nbsp;&nbsp;{ The PPCEnd call completed successfully. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IF NOT gQuitting THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Reuse the parameter block for another PPCInform. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DoPPCInform(PPCSessRecPtr(pbPtr))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Continued at DoPPCInform and then InformComplete. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ELSE</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Drop the parameter block in the "done" }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ queue for handling later. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Enqueue(QElemPtr(pbPtr), @gDoneQueue);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Dequeued by HandlePPCErrors. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;ELSE</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN { The PPCEnd call failed. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Drop the parameter block in the "done" queue }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ for handling later. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Enqueue(QElemPtr(pbPtr), @gDoneQueue);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Dequeued by HandlePPCErrors. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END;</code><br>
+<code>END;</code>
+</p>
+<p>
+HandlePPCErrors is called regularly from the program's event loop. If gDoneQueue<br>
+contains any parameter blocks, HandlePPCErrors removes the parameter blocks from<br>
+the queue one at a time, checks to see what PPC call failed by inspecting the csCode<br>
+field of the parameter block, and then handles the error condition appropriately. If the<br>
+call that failed was PPCRead or PPCWrite, HandlePPCErrors calls PPCEnd<br>
+asynchronously with EndComplete as the completion routine. Any errors returned by<br>
+PPCEnd will be handled by EndComplete. 
+</p>
+<p>
+<code>PROCEDURE HandlePPCErrors;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CONST</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{ PPC csCodes from async calls. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ppcOpenCmd = 1;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ppcStartCmd = 2;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ppcInformCmd = 3;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ppcAcceptCmd = 4;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ppcRejectCmd = 5;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ppcWriteCmd = 6;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ppcReadCmd = 7;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ppcEndCmd = 8;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ppcCloseCmd = 9;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IPCListPortsCmd = 10;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;VAR</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pbPtr: PPCSessRecPtr;</code><br>
+<code></code><br>
+<code>BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{ Process any parameter blocks in the queue. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;WHILE gDoneQueue.qHead &lt;&gt; NIL DO</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Get the PPCSessRec and remove it from the queue. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pbPtr := PPCSessRecPtr(gDoneQueue.qHead);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IF Dequeue(QElemPtr(pbPtr), @gDoneQueue) = noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CASE PPCEndPBPtr(pbPtr)^.csCode OF</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ppcOpenCmd..ppcRejectCmd,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ppcEndCmd..IPCListPortsCmd:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ For these calls, we'll just dispose of }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ the parameter block. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DisposePtr(Ptr(pbPtr));</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ppcWriteCmd, ppcReadCmd:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ We need to call PPCEnd after read or }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ write failures to clean up after this }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ session. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PPCEndPBPtr(pbPtr)^.ioCompletion :=</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;@EndComplete;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Error conditions are ignored in this }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ procedure because they are caught in }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ EndComplete. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pbPtr^.err :=</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PPCEndAsync(PPCEndPBPtr(pbPtr));</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Continued at EndComplete. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END;</code><br>
+<code>END;</code>
+</p>
+<p>
+In this example of extending parameter blocks and using OS queues and call chaining,<br>
+notice that asynchronous calls are chained together until an operation that can't be<br>
+accomplished at interrupt time is necessary; then the extended parameter block is put<br>
+into an OS queue where the mainprogram can access it. Very few global variables are<br>
+needed because OS queues are used to hold any data the main program code needs to<br>
+access. Local variables aren't needed by the completion routines because the extended<br>
+parameter block, PPCSessRec, holds everything the completion routines need. 
+</p>
+<h2>DEBUGGING HINTS</h2>
+<p>
+Here are the top five debugging hints for writing asynchronous code. 
+</p>
+<p>
+<b>Use Debugger or DebugStr calls and a low-level debugger. </b> Because<br>
+completion routines are called by the system, usually as a result of an interrupt,<br>
+source-level debuggers don't work with completion routines. If you're having<br>
+problems with a completion routine, first look at the parameter block used to make the<br>
+asynchronous call. Look both before and after the call by using a Debugger or DebugStr<br>
+call just before you make the asynchronous call and again at the beginning of the<br>
+completion routine (remember, register A0 points to the parameter block). 
+</p>
+<p>
+<b>Make sure parameter blocks are around for the life of the asynchronous</b><br>
+<b>call. </b> The parameter block will have a whole new meaning if you forget and allocate a<br>
+parameter block on the local stack, then make an asynchronous call with it, leave the<br>
+current procedure or function, and reuse the stack for something new. There's nothing<br>
+the system hates more than a completely bogus parameter block. If you check your<br>
+parameter block at completion time and the contents are different from what you<br>
+expected, you've probably done this. 
+</p>
+<p>
+<b>Don't reuse a parameter block that's in use. </b> A parameter block passed to an<br>
+asynchronous call is owned by the operating system until the asynchronous call<br>
+completes. If you reuse the parameter block before the asynchronous call completes, at<br>
+least one of the calls made with the parameter block will fail or crash the system. This<br>
+can happen if you use a parameter block once from one place in your program and then<br>
+forget and use it again from somewhere else. 
+</p>
+<p>
+Global parameter blocks should be avoided, because they're easy to reuse from several<br>
+places within a program. If you keep your unused parameter blocks in an OS queue,<br>
+you can safely claim one and reuse it anytime. 
+</p>
+<p>
+<b>Avoid SyncWait. </b>Does your Macintosh just sit there not responding to user events?<br>
+Drop into the debugger and take a look at the code that's executing. Does it look like<br>
+this? 
+</p>
+<p>
+<code>MOVE.W&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$0010(A0),D0</code><br>
+<code>BGT.S&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-$04,(PC)</code>
+</p>
+<p>
+That's SyncWait, the routine that synchronous calls sit in while waiting for a request<br>
+to complete.&nbsp;&nbsp;&nbsp;Register A0 points to the parameter block used to make the call, offset<br>
+$10 is the ioResult field of the parameter block, and SyncWait is waiting for ioResult<br>
+to be less than or equal to 0 (noErr). 
+</p>
+<p>
+The ioResult field is changed by code executing as a result of an interrupt. If<br>
+interrupts are disabled (because the synchronous call was made at interrupt time) or<br>
+if the synchronous call was made to a service that's busy, you'll be in SyncWait<br>
+forever. Take a look at the parameter block and where it is in memory, and you'll<br>
+probably be able to figure out which synchronous call was made at interrupt time and<br>
+which program made it. 
+</p>
+<p>
+<b>Leave a trail of bread crumbs. </b> There's nothing harder than reading chained<br>
+asynchronous source code with no comments. You should always use comments to<br>
+remind yourself where your chained call sequence goes. In the PPC code example given<br>
+above, I left comments like "Continued at EndComplete" or "Dequeued by<br>
+ProcessPPCData" to remind me where the chained call sequence will resume execution.
+</p>
+<p class="spacer">&nbsp;</p>
+<h2>COMMON PROBLEMS AND THEIR SOLUTIONS</h2>
+<p>
+This section warns of some common problems and suggests ways to work around them. 
+</p>
+<p>
+<b>TIME-CONSUMING TASKS AT INTERRUPT TIME</b><br>
+You may find a situation where a completion routine needs to perform some<br>
+time-consuming task, but that task can be performed from interrupt-time code. This<br>
+is a situation where the Deferred Task Manager may be useful. The Deferred Task<br>
+Manager allows you to improve interrupt handling by deferring a lengthy task until all<br>
+interrupts can be reenabled, but while still within the hardware interrupt cycle.
+</p>
+<p>
+<b>WAITNEXTEVENT SLEEP LATENCY</b><br>
+If you set your sleep time to a large value, maybe because you've been switched out,<br>
+polling from the program's event loop may cause additional latency. The Process<br>
+Manager's WakeUpProcess call, when available, can be used to shorten the time<br>
+between when a completion routine queues a parameter block and when your program's<br>
+event loop polls the queue header and processes the data in the parameter block.<br>
+WakeUpProcess does this by making your program eligible for execution before the<br>
+sleep time passed to WaitNextEvent expires. 
+</p>
+<p>
+The only parameter passed to WakeUpProcess is the process serial number of the<br>
+process you want to wake up. You'll need to get your program's process serial number<br>
+with the GetCurrentProcess function and add it to the extended parameter block used to<br>
+call asynchronous functions:
+</p>
+<p>
+<code>{ Zero the process serial number. }</code><br>
+<code>myPB.myPSN.highLongOfPSN := 0;</code><br>
+<code>myPB.myPSN.lowLongOfPSN := 0;</code><br>
+<code></code><br>
+<code>{ Make sure the Process Manager is available. }</code><br>
+<code>IF Gestalt(gestaltOSAttr, myFeature) = noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;IF GetCurrentProcess(myPB.myPSN) = noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; { Either we got the process serial number or it's still }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ zero. }</code>
+</p>
+<p>
+The completion routine would use the process serial number (if available) to wake up<br>
+your program immediately after queueing a parameter block:
+</p>
+<p>
+<code>{ Drop the parameter block in the "done" queue for handling }</code><br>
+<code>{ later. }</code><br>
+<code>Enqueue(QElemPtr(pbPtr), @gDoneQueue);</code><br>
+<code></code><br>
+<code>{ If we have a process serial number (myPSN &lt;&gt; 0), wake up the }</code><br>
+<code>{ process. }</code><br>
+<code>IF (pbPtr^.myPSN.highLongOfPSN&lt;&gt;0) OR</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(pbPtr^.myPSN.lowLongOfPSN&lt;&gt;0) THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;IF WakeUpProcess(pbPtr^.myPSN) = noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; { Wake up the process. }</code>
+</p>
+<p>
+<b>STACK SPACE AND CODE EXECUTING AT INTERRUPT LEVEL</b><br>
+Have you ever thought about the stack space used by interrupt code? Where does it<br>
+come from?&nbsp;&nbsp;&nbsp;How much is available? Good questions. 
+</p>
+<p>
+When interrupt code (including completion routines) is called, it borrows space from<br>
+whatever stack happens to be in use at the time. That means you have no control over<br>
+the amount of stack space available, and so should use as little of the stack as possible. 
+</p>
+<p>
+At times, very little stack space is available, because some common Macintosh system<br>
+calls temporarily use large portions of the stack. For example, some QuickDraw<br>
+routines may leave as little as 1600 bytes of stack space and MoveHHi can leave as<br>
+little as 1024 bytes of stack space under certain conditions. That's not a lot of space to<br>
+borrow. If your interrupt code will call a routine that uses more than a few bytes of<br>
+stack space, you should call the StackSpace function before calling that routine. 
+</p>
+<p>
+The typical symptom of using too much stack space is a random crash, because the<br>
+memory you trash by overflowing the stack could belong to any program -- including<br>
+the Macintosh Operating System. 
+</p>
+<p>
+Here are the easiest ways to reduce the amount of stack space used by interrupt code:
+</p>
+<ul>
+<li> Don't use local variables. Either extend your parameter block to hold any<br>
+variables needed by your completion routine or keep an OS queue of buffers<br>
+that can be used by your completion routine. </li>
+<li> Try to keep the number of calls from your completion routine to other<br>
+routines to a minimum. Each routine you call uses part of the stack to build a<br>
+stack frame. </li>
+</ul>
+<p>
+<b>PROBLEMS WITH REUSING PARAMETER BLOCKS</b><br>
+There are three problems you may run into when you reuse a parameter block:<br>
+unfortunate coercions, unfortunate overlap, and garbage in the parameter block. 
+</p>
+<p>
+<b>Unfortunate coercions. </b>Make sure parameter blocks are large enough for every<br>
+use you'll put them to.&nbsp;&nbsp;&nbsp;For example, if you use a parameter block for both PPC<br>
+Toolbox calls and File Manager calls, make sure the parameter block is large enough to<br>
+hold any of the parameter blocks used by either manager.&nbsp;&nbsp;&nbsp;One way to do this is with a<br>
+variant record:
+</p>
+<p>
+<code>variantPBRec = RECORD</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CASE INTEGER OF</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;1: (PB: ParamBlockRec);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ File Manager parameter blocks }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;2: (cInfoPB: CInfoPBRec);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;3: (dtPB: DTPBRec);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;4: (hPB: HParamBlockRec);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;5: (cMovePB: CMovePBRec);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;6: (wdPB: WDPBRec);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;7: (fcbPB: FCBPBRec);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;8: (ppcPB: PPCParamBlockRec);&nbsp;&nbsp;&nbsp;{ PPC Toolbox parameter block }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;END;</code>
+</p>
+<p>
+<b>Unfortunate overlap. </b>Don't assume variant record fields with the same name are in<br>
+exactly the same place in the variant record. If they aren't, you'll run into problems<br>
+with overlap. Check first and be sure. 
+</p>
+<p>
+<b>Garbage in the parameter block. </b>When reusing a parameter block, make sure<br>
+data from the last use doesn't affect the next call. Always initialize all input fields.<br>
+Many programmers go one step further by clearing the entire parameter block to<br>
+zeros before initializing the input fields. 
+</p>
+<p>
+<b>COMPLETION ORDER MIXUPS</b><br>
+Don't depend on a service being single-threaded (requests executed one at a time) or on<br>
+requests being handled in the order they were made (first in, first out). The File<br>
+Manager is single-threaded, but requests may not always be handled in the order they<br>
+were made. The AppleTalk drivers allow multiple requests to execute concurrently. 
+</p>
+<p>
+If the order of completion is important, don't use concurrent calls -- use chained<br>
+calls. For example, if you write some data and then expect to read that data back, don't<br>
+start an asynchronous write and then start an asynchronous read before the write<br>
+completes. If the calls aren't handled in the order they were made, the read may<br>
+complete before the write. 
+</p>
+<p>
+<b>POLLING PROBLEMS</b><br>
+If your application that polls for completion works great when it's the current<br>
+application, but slows down dramatically or stops when it's in the background, check<br>
+for these common problems. 
+</p>
+<p>
+<b>The canBackground bit. </b>If you forget to set the canBackground bit in the SIZE<br>
+resource, your application's event loop won't get called with null events while your<br>
+application is in the background.&nbsp;&nbsp;&nbsp;If you're depending on null events for polling, your<br>
+program won't poll while it's in the background. 
+</p>
+<p>
+<b>Large WaitNextEvent sleep values. </b>Did you crank up the sleep value passed to<br>
+WaitNextEvent when your application received a suspend event? Talk about additional<br>
+latency! This will do it if you're polling from the event loop. 
+</p>
+<p>
+<b>What are other applications doing? </b>Other applications can slow your event<br>
+handling down by not calling WaitNextEvent regularly. If your polling from the event<br>
+loop slows down because of that, there's not a lot you can do about it. 
+</p>
+<p>
+If your polling stops when another application is in the foreground, it could be that the<br>
+other application isn't handling its update events. See Macintosh Technical Note<br>
+"Pending Update Perils" for a description of this problem. 
+</p>
+<p>
+<b>Polling from VBL tasks in an application's heap. </b> VBL tasks in your<br>
+application's heap are removed from the VBL queue during a context switch when your<br>
+application is switched out and are added to the VBL queue when your applicaton is<br>
+switched back in. VBL tasks in the system heap are unaffected by context switches. 
+</p>
+<p>
+If you poll from a VBL task and don't want polling to stop when your application is<br>
+switched out, make sure you put your VBL task in the system heap. 
+</p>
+<h2>COMPLETION</h2>
+<p>
+There are many situations where synchronous calls work well. However, there are<br>
+times when asynchronous calls must be used to prevent system deadlock or to let your<br>
+program continue execution while waiting for time-consuming calls to complete.<br>
+Understanding the material covered in this article should help you understand when to<br>
+use asynchronous calls and give you the techniques needed to avoid the problems<br>
+commonly encountered in code that executes asynchronously. 
+</p>
+<h2>RECOMMENDED READING</h2>
+<ul>
+<li><i>Inside Macintosh</i> Volume II (Addison-Wesley, 1985), Chapter 6, "The<br>
+Device Manager," Chapter 10, "The AppleTalk Manager," and Chapter 13, "The<br>
+Operating System Utilities."</li>
+<li><i>Inside Macintosh</i> Volume V (Addison-Wesley, 1986), Chapter 28, "The<br>
+AppleTalk Manager."</li>
+<li><i>Inside Macintosh</i> Volume VI (Addison-Wesley, 1991), Chapter 7, "The<br>
+PPC Toolbox," Chapter 29, "The Process Manager," and Chapter 32, "The<br>
+AppleTalk Manager."</li>
+<li><i>Inside Macintosh: Files</i> (Addison-Wesley, 1992), Chapter 2, "The File<br>
+Manager." Previously, <i> Inside Macintosh</i> Volume II, Chapter 4.</li>
+<li><i>Inside Macintosh: Processes </i>(Addison-Wesley, 1992), Chapter 6, "The<br>
+Deferred Task Manager." Previously, <i>Inside Macintosh</i> Volume V, Chapter 25<br>
+and Macintosh Technical Note #320, "Deferred Task Traps, Truths, and Tips."</li>
+<li>Macintosh Technical Notes "MultiFinder Miscellanea" (formerly #180),<br>
+"Setting and Restoring A5" (formerly #208), "NuBus Interrupt Latency (I<br>
+Was a Teenage DMA Junkie)" (formerly #221), and "Pending Update Perils"<br>
+(formerly #304).</li>
+</ul>
+<h2>DEADLOCK BY GORDON SHERIDAN</h2>
+<p>
+Deadlock is a state in which each of two or more processes is waiting for one of the<br>
+other processes to release some resource necessary for its completion. The resource<br>
+may be a file, a global variable, or even the CPU. The process could, for example, be an<br>
+application's main event loop or a Time Manager task.
+</p>
+<p>
+When deadlock occurs on the Macintosh, usually at least one of the processes is<br>
+executing as the result of an interrupt. VBL tasks, Time Manager tasks, Deferred Task<br>
+Manager tasks, completion routines, and interrupt handlers can all interrupt an<br>
+application's main thread of execution. When the interrupted process is using a<br>
+resource that the interrupting process needs, the processes are deadlocked.
+</p>
+<p>
+For example, suppose a Time Manager task periodically writes data to a file by making<br>
+a synchronous Write request, and an application reads the data from its main event<br>
+loop. Depending on the frequency of the task and the activity level of the File Manager,<br>
+the Time Manager task may often write successfully. Inevitably, however, the Time<br>
+Manager task will interrupt the application's Read request and deadlock will occur.
+</p>
+<p>
+Because the File Manager processes only one request at a time, any subsequent<br>
+requests must wait for the current request to complete. In this case, the synchronous<br>
+request made by the Time Manager task must wait for the application's Read request to<br>
+complete before its Write request will be processed. Unfortunately, the File Manager<br>
+must wait for the Time Manager task to complete before it can resume execution. Each<br>
+process is now waiting for the other to complete, and they'll continue to wait forever.
+</p>
+<p>
+Synchronous requests at interrupt time tend to produce deadlock, because the call is<br>
+queued for processing and then the CPU sits and spins, waiting for an interrupt to<br>
+occur, which signals that the request has been completed. If interrupts are turned off,<br>
+or if a previous pending request can't finish because it's waiting to resume execution<br>
+after the interrupt, the CPU will wait patiently (and eternally) for the request to<br>
+finish -- until you yank the power cord from the wall.
+</p>
+<h2>RACE CONDITIONS AND OS QUEUES</h2>
+<p>
+When two or more processes share the same data, you must be careful to avoid <i> race</i><br>
+<i>conditions.</i> A race condition exists when data is simultaneously accessed by two<br>
+processes. On the Macintosh, the two processes are typically program code running<br>
+with interrupts enabled and code executing at interrupt time (such as a completion<br>
+routine).
+</p>
+<p>
+To prevent race conditions, you must have a method of determining ownership of the<br>
+shared data. A shared global flag isn't safe because there can be a race condition with<br>
+the flag. For example, the following code can't be used to claim ownership of a record:
+</p>
+<p>
+<code>{ This can cause a race condition. }</code><br>
+<code>IF gRecFree THEN&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Is record in use? }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;BEGIN&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ It wasn't when we checked. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gRecFree := FALSE;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Claim record. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{ Use record. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gRecFree := TRUE;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ Release record. }</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;END;</code>
+</p>
+<p>
+A race condition can occur in this code because there's a small window of time between<br>
+when the IF statement's expression is evaluated and when the record is claimed. During<br>
+this time the program can be interrupted. The only way to prevent race conditions is to<br>
+make the process of checking for and claiming ownership a step that can't be<br>
+interrupted.
+</p>
+<p>
+OS queues and the Operating System Utility routines Enqueue and Dequeue provide a<br>
+safe way to claim ownership of data. Enqueue and Dequeue briefly disable interrupts<br>
+while manipulating the queue, so they're safe from race conditions.
+</p>
+<p>
+To use an OS queue to protect data from race conditions, make the data part of a queue<br>
+element and put the queue element into an OS queue. Whenever any part of the program<br>
+wants to manipulate data in the queue element, it attempts to remove the queue element<br>
+from the OS queue. If the queue element isn't in the queue and so can't be removed, that<br>
+means another process currently has ownership of the queue element and the data<br>
+within it.
+</p>
+<h2>FUNCTION RESULTS AND FUNCTION COMPLETION</h2>
+<p>
+<b>BY SCOTT BOYD AND JIM LUTHER</b>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Not all function results are equal. Ignore some, pay attention to others. Ignore function<br>
+results from asynchronous File Manager and PPC Toolbox calls. They contain no useful<br>
+information. To get useful result information, wait for the call to complete, then check<br>
+ioResult or register D0; both contain the result.Both the File Manager and the PPC<br>
+Toolbox will always call your completion routine if you specified one. If you didn't<br>
+supply one, and instead are polling, test ioResult in your parameter block. The call has<br>
+completed if ioResult is less than or equal to noErr.
+</p>
+<p>
+Don't ignore function results from asynchronous Device Manager calls (for example,<br>
+AppleTalk driver, Serial Driver, and disk driver calls). The function result tells you<br>
+whether the Device Manager successfully delivered your request to the device driver.<br>
+Success is indicated by noErr; any other value indicates failure.
+</p>
+<p>
+The system calls your completion routine only if the Device Manager successfully<br>
+delivered your request to the driver. On completion, check whether your call succeeded<br>
+by looking in ioResult or register D0.
+</p>
+<p>
+<b>COMPLETION ROUTINE ADDRESS GENERATION</b>When you fill a parameter<br>
+block's ioCompletion field with the address of a completion routine, your compiler has<br>
+to calculate the address of the completion routine. Most compilers generate that<br>
+address either as a PC-relative reference (the address of the routine's entry point<br>
+within the local code segment) or as an A5-relative reference (the address of the<br>
+routine's jump table entry). If your compiler generates an A5-relative reference, the<br>
+code that generates the address of the completion routine <i> must </i>run with the program's<br>
+A5 world set up.
+</p>
+<p>
+<b>JIM LUTHER </b>works in Apple Developer Technical Support, focusing on AppleTalk,<br>
+the&nbsp;&nbsp;File Manager, and other lower regions of the operating system. Jim uses a<br>
+heap/stack-based organizational model in his office: there are heaps or stacks of<br>
+books, papers, disks, and hardware on every square inch of shelf space and over most<br>
+of the floor. He was last seen muttering to himself "Now where did I put that . . .?"*
+</p>
+<p>
+MPW Pascal defaults to using PC-relative references when routines are in the same<br>
+segment and uses A5-relative references when routines are in a different segment.<br>
+MPW C defaults to using A5-relative references. THINK Pascal and THINK C always use<br>
+A5-relative references. MPW Pascal and MPW C allow you to change their default<br>
+method with the <b> - b</b> compiler option.*
+</p>
+<p>
+<b>The Deferred Task Manager </b>is fully described in Chapter 6, "The Deferred Task<br>
+Manager," in <i> Inside Macintosh: Processes.</i> *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Scott Boyd, Neil Day, Martin Minow,<br>
+Gordon Sheridan *
+</p>
+</body>
+</html>

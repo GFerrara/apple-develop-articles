@@ -1,0 +1,743 @@
+<html>
+<head>
+<!-- Article ID: 51 - Extracted from develop-1993 -->
+<!-- on 2024-02-26 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>December 93 - COLOR MATCHING MADE EASY WITH QUICKDRAW GX</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>COLOR MATCHING MADE EASY WITH QUICKDRAW GX</h2>
+<h1>DANIEL LIPTON</h1>
+<p>
+<img src="img/269.gif" width="180 px"></img>
+</p>
+<p>
+<i>Accurate color matching used to be out of reach for most programmers to add to their</i><br>
+<i>applications. Then along came ColorSync, a system extension that provided a platform</i><br>
+<i>in QuickDraw for maintaining consistent color from device to device. Now with the</i><br>
+<i>advent of QuickDraw GX, which integrates ColorSync, color matching has been made</i><br>
+<i>even easier. Read on to find out how color matching works in QuickDraw GX and how to</i><br>
+<i>take full advantage of it, whether you're developing an application or a printer driver.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Remember how impossible it used to be to get color images to display faithfully on any<br>
+monitor or to print on any printer in colors that matched what the user saw on the<br>
+screen? The introduction of ColorSync finally transformed color matching in<br>
+QuickDraw from a complicated guessing game into a more-or-less predictable process.<br>
+ColorSync provided a standard API that could produce WYSIWYG color output if used by<br>
+both the application and the printer driver.
+</p>
+<p>
+QuickDraw GX goes a step farther, fully integrating ColorSync for color management.<br>
+When you create a QuickDraw GX application or printer driver, you don't need to<br>
+worry about making ColorSync calls. You simply use the QuickDraw GX API and let it<br>
+call ColorSync as appropriate.&nbsp;&nbsp;&nbsp;ColorSync does the work of converting a QuickDraw GX<br>
+color specification into terms understandable to the output device. The first part of<br>
+this article, which assumes you're somewhat familiar with QuickDraw GX, describes<br>
+color specification and outlines the conversion process.&nbsp;&nbsp;&nbsp;What's left for your<br>
+application or printer driver to do is the topic of the second part of this article.
+</p>
+<h2>COLOR SPECIFICATION IN QUICKDRAW GX</h2>
+<p>
+The starting point for color matching in QuickDraw GX is the exact specification of<br>
+color that's included in every object to be drawn. Recall that the basic building block of<br>
+QuickDraw GX graphics is the shape, an object that in turn points to other objects that<br>
+tell how it should be rendered. In particular, the ink object contains detailed<br>
+information about the color to be used. 
+</p>
+<p>
+The color information for a geometric or typographic shape is contained in the gxColor<br>
+data structure, which in abbreviated form looks like this:
+</p>
+<p>
+<code>typedef struct {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gxColorSpace&nbsp;&nbsp;space;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// the color space</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gxColorProfile profile;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// the color profile</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;union {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;. . .</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxColorValuecomponent[4];&nbsp;&nbsp;&nbsp;// the color value (one, three,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// or four color components)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;} element;</code><br>
+<code>} gxColor;</code>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The color information for a bitmap shape is handled in a slightly different way,<br>
+discussed at the end of this section. For any QuickDraw GX object, the color space,<br>
+color profile, and color value together constitute a device-independent description of<br>
+the color in which the object is to be rendered. 
+</p>
+<p>
+<b>THE COLOR SPACE AND COLOR VALUE</b><br>
+A color space is a system for specifying colors. The color space determines how many<br>
+different components are required to specify a color and what those components are.<br>
+For example, the RGB color space uses three components to specify a color (red,<br>
+green, and blue); the CMYK color space uses four (cyan, magenta, yellow, and black).<br>
+The color value is the set of components that together specify a color. In QuickDraw GX,<br>
+a color value consists of one, three, or four 16-bit integers, which are interpreted<br>
+based on the color space. For instance, for a color specified in the RGB color space, the<br>
+color value might be red = 32,768, green = 16,384, blue = 8,192. 
+</p>
+<p>
+In QuickDraw, all color is defined in the RGB color space. Unfortunately, since RGB is<br>
+a device- dependent color space (more on this later), the same RGB color can look<br>
+different on different devices. ColorSync provides a mechanism to match colors<br>
+accurately, but QuickDraw applications are still restricted to RGB. High-end desktop<br>
+publishing and photo-editing applications allow their users to work in other color<br>
+spaces, but such applications have to include large chunks of code to work around<br>
+QuickDraw in order to do this.
+</p>
+<p>
+QuickDraw GX, on the other hand, provides a wide choice of color spaces. These color<br>
+spaces can be grouped into three families: RGB, CMYK, and CIE. Within a family, one<br>
+color space can be converted to another relatively simply. Color spaces in the RGB and<br>
+CMYK families are device dependent because they're related to how a particular device<br>
+represents color. Color spaces in the CIE family, on the other hand, are device<br>
+independent because they're related to human visual perception. 
+</p>
+<p>
+<b>The RGB family of color spaces. </b>Color spaces in the RGB family are based on<br>
+controlling the intensities of red, green, and blue light, the three primary colors used<br>
+in displays. Most desktop scanners and monitors as well as some printers work in<br>
+some form of this color space. The RGB family consists of gxRGBSpace (red, green,<br>
+blue), gxHLSSpace (hue, lightness, saturation), gxHSVSpace (hue, saturation, value),<br>
+and gxGraySpace (a one-component gray scale). 
+</p>
+<p>
+<b>The CMYK color space. </b>The CMYK color space (the only member of the CMYK<br>
+family) is based on controlling the concentrations of cyan, magenta, yellow, and black<br>
+inks, the four process colors used in printing. While colors in the RGB color space are<br>
+formed by adding light sources, colors in the CMYK color space are formed by<br>
+subtracting light from an illuminating source. A component in a CMYK color value<br>
+specifies the amount of light one of the inks absorbs. In theory, cyan absorbs red light,<br>
+magenta absorbs green light, and yellow absorbs blue light.
+</p>
+<p>
+Under ideal circumstances, mixing cyan, magenta, and yellow inks together on paper<br>
+would produce a true black. However, due to ink impurities and a multitude of other<br>
+problems, the result is usually a muddy dark brown. For this reason most ink-based<br>
+devices have black ink as well.
+</p>
+<p>
+<b>The CIE family of color spaces. </b> Color spaces in the CIE family are based on a<br>
+three-component system of color specification developed by the Commission<br>
+Internationale de l'Eclairage (CIE) in 1931.&nbsp;&nbsp;&nbsp;These color spaces are device<br>
+independent because the color components are based not on intensities of light in a<br>
+display or concentrations of printer inks but on aspects of how the human eye responds<br>
+to light at different wavelengths. The CIE family of color spaces consists of<br>
+gxXYZSpace, gxCIESpace, gxLUVSpace, gxLABSpace, and gxYIQSpace.
+</p>
+<ul>
+<li>The gxXYZSpace (XYZ color specification) and gxCIESpace (xyY<br>
+specification) correspond to the 1931 Commission Internationale de<br>
+l'Eclairage color description.</li>
+<li>The gxLUVSpace and gxLABSpace are transformations of the XYZ<br>
+components that provide a more perceptually uniform color space. That is,<br>
+throughout the three-dimensional space defined by the three components, a<br>
+given distance moved numerically yields a constant perceptual change in the<br>
+color.</li>
+<li>The gxYIQSpace is based on the U.S. standard video broadcast format<br>
+defined by the NTSC. </li>
+</ul>
+<p>
+<b>THE COLOR PROFILE</b><br>
+Because of the variations in color representation among individual devices, simply<br>
+specifying a color space and a color value doesn't provide enough information for color<br>
+matching. The 50% red produced by an Apple 13-inch monitor's cathode ray tube, for<br>
+example, doesn't look the same as the 50% red produced by a PowerBook 180c's active<br>
+matrix color display. Therefore, we also need to provide information in absolute terms<br>
+about how colors look on the device on which an object is drawn. The color profile<br>
+provides this information. 
+</p>
+<p>
+A color profile is a characterization of a device associated with an object, usually the<br>
+device on which the object was created. The exact contents of the color profile depends<br>
+on the color matching method to be used, but certain header data required by Apple's<br>
+default color matching method is always present. This header data includes the device<br>
+type, manufacturer, model, and, most important, an absolute description of each of the<br>
+primary and secondary colors the device can render.
+</p>
+<p>
+This absolute description consists of a set of response curves and chromaticities. The<br>
+response curves are used to convert the color component values into linear values. The<br>
+chromaticities are XYZ triplets describing the device's red, green, blue, cyan,<br>
+magenta, yellow, black, and white. Recall that the XYZ color space is device<br>
+independent; thus, an XYZ triplet describes a color in absolute terms. 
+</p>
+<p>
+<b>SPECIFYING COLOR FOR BITMAP OBJECTS</b><br>
+While it would be possible to have a full color specification for every pixel in a bit<br>
+image, this is neither practical nor necessary. Colors in bitmap objects (whether the<br>
+object is a bitmap shape or part of a view device object) are handled slightly<br>
+differently from colors in geometric and typographic shapes. The bitmap object<br>
+contains a single color space and profile. Each pixel in the bit image contains a packed<br>
+form of the color component values.
+</p>
+<ul>
+<li>For a 16-bit RGB bitmap, the high bit is ignored, followed by five bits of<br>
+red, five bits of green, and five bits of blue.</li>
+<li>For a 32-bit RGB bitmap, the high eight bits are ignored, followed by<br>
+eight bits of red, eight bits of green, and eight bits of blue.</li>
+<li>For a 32-bit CMYK bitmap, eight bits of cyan are followed by eight bits of<br>
+magenta, eight bits of yellow, and eight bits of black.</li>
+<li>For all of the other 32-bit bitmaps (HLS, HSV, XYZ, CIE, LAB, LUV, YIQ),<br>
+the high two bits are ignored, followed by ten bits per component. </li>
+</ul>
+<p>
+Whether a component is expressed with four, five, eight, or ten bits, the bits in the<br>
+data are the most significant bits of the standard 16-bits-per-component QuickDraw<br>
+GX colors. 
+</p>
+<h2>WHERE COLORSYNC COMES IN</h2>
+<p>
+As stated earlier, QuickDraw GX uses ColorSync for color management. Basically,<br>
+QuickDraw GX calls ColorSync to do the necessary conversion from a source color to a<br>
+matching destination color based on the color specification for a QuickDraw GX object<br>
+(which includes the color profile for the source device) and the color profile for the<br>
+output device. Because QuickDraw GX calls ColorSync, your application doesn't need to.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+ColorSync uses two basic elements to perform color matching: a color profile and a<br>
+color matching method (CMM). The color profile, as you know, contains the device<br>
+characterization, while the CMM is a component that contains code to perform the<br>
+matching. Some CMMs are better thanothers, and some are more appropriate for<br>
+certain kinds of devices (for example, ink jet printers versus dye sublimation<br>
+printers). 
+</p>
+<p>
+A system will have at least one color profile for each device to be drawn on and at least<br>
+one CMM to perform the matching. ColorSync comes with one Apple CMM (the default)<br>
+and with color profiles for all Apple monitors currently being manufactured. A device<br>
+can have more than one color profile, but only one is selected for use at any given time.<br>
+The color profile specifies the CMM to be used.&nbsp;&nbsp;&nbsp;ColorSync will try to use this CMM,<br>
+but if it's not available, will use the default Apple CMM.&nbsp;&nbsp;&nbsp;ColorSync's open<br>
+architecture allows third-party developers to create their own profiles and CMMs if<br>
+they want to perform matching beyond the capabilities of the Apple CMM. 
+</p>
+<p>
+In highly simplified terms, here's how the conversion process works, assuming the<br>
+Apple CMM is used:
+</p>
+<ol>
+<li>An application makes a QuickDraw GX call to draw an object. </li>
+<li>QuickDraw GX calls ColorSync. </li>
+<li>Using the object's color specification and the Apple CMM, ColorSync<br>
+converts the color to the device-independent XYZ color space. </li>
+<li>Using the Apple CMM and the color profile provided by the driver for the<br>
+output device, ColorSync converts the color from the XYZ color space to the<br>
+output device's color space. </li>
+<li>QuickDraw GX draws the object on the output device. </li>
+</ol>
+<p>
+If a CMM other than the Apple CMM is used, steps 3 and 4 may be different, since the<br>
+CMM determines exactly how the conversion is done.
+</p>
+<p>
+Now that you have a basic grasp of the mechanism for color matching, we'll turn to a<br>
+consideration of what applications and printer drivers need to do to take full advantage<br>
+of this mechanism. 
+</p>
+<h2>WHAT AN APPLICATION NEEDS TO DO</h2>
+<p>
+If you're developing a QuickDraw GX application, there's really not much to worry<br>
+about with respect to color matching. If you create your objects with appropriate color<br>
+profiles, the colors will be rendered correctly to the extent that the output device is<br>
+capable of rendering the specified colors.&nbsp;&nbsp;&nbsp;You can make life easier for your users by<br>
+warning them when a color they choose can't be rendered on a designated printer and<br>
+by enabling them to preview what a color would look like on a designated printer. And<br>
+you can turn color matching off to improve performance in certain situations. We'll<br>
+look at these techniques one at a time. 
+</p>
+<p>
+<b>CREATE AND MANIPULATE A COLOR PROFILE</b><br>
+As we've seen, the key to color matching is providing an appropriate color profile for<br>
+every QuickDraw GX shape object your application creates. If the objects created by<br>
+your application are associated with a particular device, that device's color profile is<br>
+the one to reference in the gxColor data structure. So if you're writing a scanning<br>
+application, the bitmap objects you create should reference the color profile of the<br>
+scanner used. If you're writing a painting or drawing application, your objects should<br>
+reference the color profile of the monitor on which the objects were created.
+</p>
+<p>
+It's appropriate to set the color profile to nil when dynamically creating objects that<br>
+aren't associated with any particular device. When the color profile is set to nil,<br>
+QuickDraw GX assumes the profile to be the default color profile. The default color<br>
+profile is a color profile for some particular, perhaps imaginary, device. What the<br>
+device is doesn't really matter because when any object is drawn, its color is<br>
+automatically converted into the color space of the destination device using the<br>
+destination device's color profile.
+</p>
+<p>
+Applications can easily find out what a device's color space and color profile are. Every<br>
+QuickDraw GX view device object contains a bitmap structure that contains color space<br>
+and color profile fields.&nbsp;&nbsp;&nbsp;Files containing color profiles for particular monitors or<br>
+scanners can often be found in the ColorSync Profiles folder, which is in the<br>
+Preferences folder in your System Folder. Your code canget the ColorSync Profiles<br>
+folder by calling GetColorSyncFolderSpec. The application almost never needs to know<br>
+what the color space and profile of a printer are, because objects are seldom created<br>
+from a printer, but there<i>is</i>&nbsp;&nbsp;a way to obtain this information, as described in the next<br>
+section.
+</p>
+<p>
+Given a set of ColorSync profile data, your application can create and manipulate a<br>
+QuickDraw GX color profile object with the following functions. In all cases, the data is<br>
+treated as a ColorSync profile and the ColorSync structures for profiles can be used.
+</p>
+<p>
+<code>gxColorProfile GXNewColorProfile(long size, void *data);</code>
+</p>
+<p>
+Creates a new color profile object with the data passed in. The size parameter is the<br>
+size of the data, and the data parameter is a pointer to the data. The function result is<br>
+the color profile object. If the size is 0, color matching will be disabled for those<br>
+objects associated with this color profile object. 
+</p>
+<p>
+<code>gxColorProfile GXSetColorProfile(gxColorProfile theProfile,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;long size, void *data);</code>
+</p>
+<p>
+Changes the data stored in the color profile object passed in the first argument. The<br>
+size parameter is the size of the data, and the data parameter is a pointer to the data.<br>
+The function result is the changed color profile object. 
+</p>
+<p>
+<code>long GXGetColorProfile(gxColorProfile theProfile, void *data);</code>
+</p>
+<p>
+Retrieves the color profile data out of a color profile object. The function result is the<br>
+size of the color profile data.
+</p>
+<p>
+Here's how to get the ColorSync profile data from a color profile object:
+</p>
+<p>
+<code>size = GXGetColorProfile(myProfile, nil);</code><br>
+<code>if (size &gt; 0) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myPtr = NewPtr(size);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GXGetColorProfile(myProfile, myPtr);</code><br>
+<code>} else {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Size = 0, indicating color matching should be suppressed. */</code><br>
+<code>}</code>
+</p>
+<p>
+This function disposes of a color profile object:
+</p>
+<p>
+<code>void GXDisposeColorProfile(gxColorProfile theProfile);</code>
+</p>
+<p>
+<b>CHECK TO SEE IF A COLOR IS IN GAMUT</b><br>
+Not all colors can be rendered on all devices. Each device has a set of colors that it's<br>
+capable of reproducing, called a<i>color gamut.&nbsp;&nbsp;</i> When a color can't be duplicated on a<br>
+device, the color is said to be "out of gamut" for that device (see Figure 1). How<br>
+out-of-gamut colors are treated depends on the CMM being used: some CMMs may try<br>
+to preserve the luminance of the color while others may try to preserve the hue or the<br>
+saturation or some other aspect. 
+</p>
+<p>
+Given this state of affairs, you may want your application to warn users when a color<br>
+they choose is out of gamut for the printer their document is currently formatted for.<br>
+QuickDraw GX provides the following call to check a color against a device's color<br>
+profile to see if it's in or out of gamut for the device:
+</p>
+<p>
+<code>Boolean GXCheckColor(gxColor theColor, gxColorSpace theColorSpace,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gxColorSet theColorSet, gxColorProfile theProfile);</code>
+</p>
+<p>
+This call takes the gxColor (which contains a color profile and a color space) for the<br>
+object, and the color space, color set (similar to a QuickDraw CLUT), and color profile<br>
+for the device. The function returns true if the specified color can be rendered on the<br>
+device and false if it can't.
+</p>
+<p>
+<img src="img/270.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1</b> How the Color Gamuts of Two Different Devices Compare
+</p>
+<p>
+It's a simple matter to obtain the color profile and color space for the printer a<br>
+document is formatted for. Recall that for each printed document, there's a<br>
+corresponding QuickDraw GX job object. The job object contains global document<br>
+properties, such as the device information and the number of pages or copies. The<br>
+device information is what we're after. Here's the code that gets it for us:
+</p>
+<p>
+<code>gxColorProfile GetFormattingPrinterProfile(gxJob myDocumentJob,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxColorSpace *theSpace)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxPrinter&nbsp;&nbsp;&nbsp;&nbsp;frmtPrinter;&nbsp;&nbsp;&nbsp;// the formatting printer object</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxViewDevice printerDevice; // the printer's view device</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxShape&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;devBitmap;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// the device bitmap shape</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxBitmap&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;devBits;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// the bitmap structure</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Get the bitmap shape for the printer's device. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;frmtPrinter = GXGetJobFormattingPrinter(myDocumentJob);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Pass in 0 as the index to obtain the currently selected</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;view device from the driver's list of possible view</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;devices. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printerDevice = GXGetPrinterViewDevice(frmtPrinter, 0);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;devBitmap = GXGetViewDeviceBitmap(printerDevice);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Get the bitmap struct, dispose of the shape, return the</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;profile. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXGetBitmap(devBitmap, &amp;devBits);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXDisposeShape(devBitmap);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*theSpace = devBits.space;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (*theSpace == gxIndexedSpace)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXGetColorSet(devBits.set, theSpace, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return (devBits.profile);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+To obtain just the color profile (instead of the color profile<i>and</i> the color space, fetched<br>
+by the preceding code), you can call GXFindPrinterProfile. The prototype is as follows:
+</p>
+<p>
+<code>long GXFindPrinterProfile(gxPrinter, void *searchData, long index,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxColorProfile *returnProfile)</code>
+</p>
+<p>
+<b>PREVIEW AN OUT-OF-GAMUT COLOR</b><br>
+Using the printer's color profile, your application can also enable users to preview<br>
+what an out-of- gamut color (or whole picture) would look like on that printer:
+</p>
+<p>
+<code>Boolean MakePrinterColor(gxJob theJob, gxColor *sourceColor,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxColor *printedColor)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxColorProfile&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printerProfile;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gxColorSpace&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printerSpace;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inGamut;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Get the printer's profile. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printerProfile = GetFormattingPrinterProfile(theJob,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;printerSpace);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Copy the source color. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*printedColor = *sourceColor;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Check it and convert it into the device's color space. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inGamut = GXCheckColor(printedColor, printerSpace, nil,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printerProfile);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXConvertColor(printedColor, printerSpace, nil,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printerProfile);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return (inGamut);</code><br>
+<code>}</code>
+</p>
+<p>
+The color passed into this routine is converted into the printer's color space and<br>
+profile. The most closely matching color from the printer's gamut is converted back to<br>
+the screen's color space and profile when the color is associated with a shape and<br>
+drawn on the screen. Thus, a simulation of what the printer's output would look like is<br>
+achieved. As a function result, the code returns whether the color is in or out of gamut<br>
+for the printer.
+</p>
+<p>
+To preview an entire picture, set up an off-screen bitmap in the printer's color space<br>
+and color profile, set the gxEnableMatchPort attribute (explained in the following<br>
+section) of the view port you're using with the off-screen bitmap, draw the picture<br>
+into that off-screen bitmap, and then draw that bitmap on the screen. Make sure also<br>
+that the view port you're using to draw on the screen has gxEnableMatchPort set. 
+</p>
+<p>
+<b>TURN COLOR MATCHING OFF AND ON</b><br>
+Color matching is a computationally intensive process, so it slows down performance.<br>
+In some situations, such as during scrolling or updating, you may be willing to<br>
+sacrifice accurate color in exchange for faster drawing. QuickDraw GX enables you to<br>
+turn off color matching in these situations, either for all objects drawn into a view<br>
+port or on an object-by-object basis.
+</p>
+<p>
+You can control color matching for all objects drawn into a view port with an attribute<br>
+of the view port object called gxEnableMatchPort. When this bit in the view port's<br>
+attributes is set (using GXSetPortAttributes), color matching is performed for all<br>
+shape objects drawn into that view port.&nbsp;&nbsp;&nbsp;When this bit is cleared, the color matching<br>
+process is bypassed. The result is less-than-WYSIWYG output, but the drawing is<br>
+faster. Note that the view port's default is to bypass color matching; your application<br>
+has to set the bit to turn color matching on. 
+</p>
+<p>
+You can control color matching on an object-by-object basis by creating a color<br>
+profile object of length 0 and associating it with those objects you want to disable<br>
+matching for. If an object has the zero-length profile, it isn't matched, even if the<br>
+view port's gxEnableMatchPort attribute is set. 
+</p>
+<h2>WHAT A PRINTER DRIVER NEEDS TO DO</h2>
+<p>
+If you're developing or thinking of developing a QuickDraw GX printer driver, you<br>
+know that it's radically easier than developing a QuickDraw driver. Color matching is<br>
+easier with a QuickDraw GX driver as well. In the old world of QuickDraw, your driver<br>
+had to have special code to call out toColorSync if it wanted to do color matching. In a<br>
+QuickDraw GX driver, you don't have to call anything to get color matching for your<br>
+printer. All you need to do is specify at least one color profile.
+</p>
+<p>
+If you're developing a printer driver for a PostScript device, there are some things<br>
+you should know to obtain the highest quality color output from your printer, whether<br>
+it's a Level 1 black-and-white or color printer or a Level 2 color printer.<br>
+Specifically, with fields in the data structure that gxPostScriptImageDataHdl points to,<br>
+you can choose a color space, offload color matching to a Level 2 device, or generate<br>
+PostScript code that's Level 2 savvy but can also run on a Level 1 printer (color or<br>
+black and white) while retaining all the color information in the source data. 
+</p>
+<p>
+Incidentally, most things discussed here can be implemented in a printing extension as<br>
+well.
+</p>
+<p>
+<b>PROVIDE AT LEAST ONE COLOR PROFILE</b><br>
+Although only one color profile is used at a time in the color matching process, a<br>
+printer can have more than one color profile. Each one can be associated with a<br>
+particular format (recall that in QuickDraw GX, a format is an object containing the<br>
+properties associated with a particular page, including the paper type, which is an<br>
+object describing printing media). For instance, the Apple Color Printer has default<br>
+color profiles for coated paper, transparency film, and plain paper; a different color<br>
+profile is needed for each because paper type can affect the appearance of color.
+</p>
+<p>
+If you have only one color profile for your printer, a simple and common case, you can<br>
+store the profile data in a 'prfl' resource in your printer driver. QuickDraw GX will<br>
+read in the data from the resource (using the default implementation of the<br>
+GXFetchTaggedData message), make a color profile object out of it, and automatically<br>
+associate it with your printer. If you want to create the color profile dynamically<br>
+rather than store it in a resource, just override the GXFetchTaggedData message,<br>
+looking for the tag 'prfl' and creating the handle on the fly. 
+</p>
+<p>
+Applications can query your printer driver with a GXFindFormatProfile call to find<br>
+out which color profile will be used for a particular page of output. (Within the same<br>
+document, different pages can be printed on different paper types. For example, a<br>
+business letter document might contain an address that prints on an envelope, a letter<br>
+that prints on white paper, and a resum&#233; that prints on blue paper.) To support this<br>
+application query, your driver must override two messages:
+</p>
+<ul>
+<li>GXFindFormatProfile, which is normally sent in response to the<br>
+application's call.&nbsp;&nbsp;&nbsp;Override this message and return to the application the<br>
+profile that would be used with the specified format object.</li>
+<li>GXImagePage, which is normally sent before imaging each page of the<br>
+document.&nbsp;&nbsp;&nbsp;Override this message to set the color profile on a page-by-page<br>
+basis. Your override will be passed a format object, which will contain a<br>
+paper type object from which you can determine (and create, if necessary)<br>
+the appropriate color profile to use. Your override will also be passed an<br>
+image data handle. One of the fields in the structure that this handle points to<br>
+is a color profile. Simply set this to be the profile you want and forward the<br>
+message, and QuickDraw GX does the rest. </li>
+</ul>
+<p>
+<b>CHOOSE A COLOR SPACE</b><br>
+The preceding discussion of color profiles holds true for all three classes of QuickDraw<br>
+GX printer drivers: raster, vector, and PostScript. The remaining discussion applies<br>
+only to printer drivers for PostScript devices. 
+</p>
+<p>
+PostScript code can describe colors that the output device is to produce in any of three<br>
+different device color spaces. In each case, different operators are used. When you set<br>
+the color space, you tell QuickDraw GX what kind of PostScript operators to use when<br>
+specifying color for your printer, based on its color capabilities. 
+</p>
+<p>
+You set the color space in the field devCSpace (of type gxColorSpace) in the PostScript<br>
+image data structure. Only three values are allowed:
+</p>
+<ul>
+<li>gxRGBSpace, which tells QuickDraw GX to use the<b> setrgbcolor </b>and<br>
+<b>colorimage </b>operators in the PostScript language</li>
+<li>gxCMYKSpace, which tells it to use the<b> setcmykcolor </b>and<b> colorimage</b><br>
+operators</li>
+<li>gxGraySpace, which tells it to use the<b> setgray </b>and<b> image </b>operators</li>
+</ul>
+<p>
+QuickDraw GX calls ColorSync to convert all the colors to be printed into the specified<br>
+color space using the color profile your driver provides. It's up to you to specify<br>
+values that make sense for your printer, as QuickDraw GX does no sanity checking. For<br>
+example, if you specify gxCMYKSpace as your color space but connect to a printer on<br>
+which the<b> setcmykcolor </b>operator isn't available, you'll get PostScript errors. The<br>
+only color space guaranteed to work on all PostScript printers is gxGraySpace. You can<br>
+get around this problem by generating portable PostScript code, discussed later. 
+</p>
+<p>
+<b>OFFLOAD COLOR MATCHING</b><br>
+The PostScript Level 2 interpreter has color matching support built in. This means<br>
+that you can offload the expensive work of color matching from the Macintosh to the<br>
+PostScript device if it has a Level 2 interpreter. To take advantage of this, set fields in<br>
+the PostScript image data structure as follows:
+</p>
+<ul>
+<li>Set the languagelevel field to 2. </li>
+<li>Set the gxUseLevel2ColorOption bit in the renderoptions field. </li>
+</ul>
+<p>
+With these settings in effect, QuickDraw GX generates PostScript code that's optimized<br>
+for PostScript Level 2 and uses the color management provided by the Level 2<br>
+interpreter instead of calling ColorSync. The color space and color profile of the<br>
+objects to be printed are translated into a Level 2 color space dictionary, using the<br>
+<b>setcolorspace </b>operator. The colors for objects are then set in the graphics state<br>
+using the<b> setcolor </b>operator, and bitmaps are drawn using the dictionary form of the<br>
+<b>image </b>operator. The<b> image </b>operator is used at eight bits per component when the<br>
+source bitmap's color space is a 5- or 8-bits- per-component space, and 12 bits per<br>
+component when the source bitmap's color space is a 10-bits-per-component space.
+</p>
+<p>
+If the gxUseLevel2ColorOption bit isn't set but the language level is 2, QuickDraw GX<br>
+will generate code optimized for Level 2 but will work with color based on the<br>
+devCSpace as explained earlier. 
+</p>
+<p>
+Not all QuickDraw GX color spaces can be translated to Level 2. For a color space that<br>
+can't, QuickDraw GX performs a conversion into one that can. For example, gxCIESpace<br>
+(the CIE xyY space) can't be emulated with the<b> setcolorspace </b>operator. All colors in<br>
+gxCIESpace are converted into gxXYZSpace -- a color space that can be emulated with<br>
+the<b> setcolorspace </b>operator. 
+</p>
+<p>
+<b>GENERATE PORTABLE POSTSCRIPT CODE</b><br>
+Sometimes you don't know what kind of PostScript device your code is going to end up<br>
+on. Because all PostScript printers answer to "LaserWriter," a user can connect to<br>
+just about any kind of PostScript printer with your QuickDraw GX printer driver.<br>
+But, as mentioned earlier, if your driver specifies a color space that's not available on<br>
+the printer the user connects with, this will generate PostScript errors. To avoid this<br>
+situation, QuickDraw GX is capable of generating "portable" PostScript code -- code<br>
+that can be executed on any printer and will produce the best results that printer is<br>
+capable of, although it's not necessarily optimized for any one printer.
+</p>
+<p>
+As stated earlier, the only color space guaranteed to work on all PostScript printers is<br>
+gxGraySpace.&nbsp;&nbsp;&nbsp;However, using this color space causes output to be grayscale even if<br>
+the PostScript code is sent to a color printer. To get QuickDraw GX to produce<br>
+PostScript data that contains all color information but will also render on a<br>
+black-and-white PostScript device in grayscale, set the gxPortablePostScriptOption<br>
+bit in the renderoptions field and set the devCSpace field to gxRGBSpace.
+</p>
+<p>
+When you do this, QuickDraw GX defines PostScript procedures to emulate the color<br>
+operators when they're not present on the printer that the PostScript file lands on.<br>
+Additionally, QuickDrawGX generates PostScript code to set up a Level 2 color space<br>
+based on RGB and the color profile specified by the driver. When the PostScript file<br>
+lands on a Level 2 color printer, you get color- matched output. The source colors are<br>
+converted by ColorSync to the RGB color space using the driver's color profile. This<br>
+color profile is translated into a<b> setcolorspace </b>operator so that those RGB colors<br>
+have meaning. The translated color profile is ignored on Level 1 printers and the<br>
+normal<b> setrgbcolor </b>and<b> colorimage </b>operators are used. 
+</p>
+<p>
+<b>AN ILLUSTRATION: THE LASERWRITER GX DRIVER</b><br>
+Let's consider how the LaserWriter GX driver sets up the PostScript image data<br>
+structure. When the driver is used to print to any of the current line of Apple<br>
+PostScript printers, the data structure is set up as follows:
+</p>
+<ul>
+<li>The devCSpace field is set to gxGraySpace (because all Apple PostScript<br>
+printers are black and white).</li>
+<li>The languagelevel field is set to 1 or 2 depending on the printer. </li>
+<li>The devCProfile field is set to nil.</li>
+</ul>
+<p>
+When the LaserWriter GX driver doesn't recognize the printer it's talking to, the data<br>
+structure is set up like this:
+</p>
+<ul>
+<li>The devCSpace field is set to gxRGBSpace.</li>
+<li>The gxPortablePostScriptOption bit is set in the renderoptions field.</li>
+</ul>
+<p>
+This yields portable PostScript code, which is Level 2 savvy but can also run on a<br>
+Level 1 color or black-and-white printer while retaining all the color information in<br>
+the source data. Thus, using the LaserWriter GX driver (from either QuickDraw GX<br>
+applications or QuickDraw applications) gives better and faster output for color<br>
+images on Apple black-and-white printers, color printing on non- Apple Level 1 color<br>
+printers, and color-matched printing on Level 2 color printers. 
+</p>
+<h2>COLOR YOUR WORLD</h2>
+<p>
+Whether you're developing an application or a printer driver, color matching has<br>
+never been easier than with QuickDraw GX. You can work in whichever color space you<br>
+want and move data from device to device without worrying about losing information or<br>
+writing special code to handle the conversions. Getting basic color matching is free (no<br>
+code is necessary) and getting high-end tuned results is easy (only small amounts of<br>
+code are required). 
+</p>
+<p>
+The QuickDraw GX color publishing platform seamlessly integrates high-end text and<br>
+graphics with the capabilities offered by ColorSync and the PostScript Level 2<br>
+interpreter. And if you have a great color matching algorithm, you can easily integrate<br>
+your method with all QuickDraw GX applications and printer drivers simply by<br>
+writing a standard ColorSync color matching method and providing color profiles.<br>
+Color no longer needs to be a complicated guessing game for the user. 
+</p>
+<p>
+<b>REFERENCES</b>
+</p>
+<ul>
+<li>"Getting Started With QuickDraw GX" by Pete ("Luke") Alexander,<br>
+"Developing QuickDraw GX Printing Extensions" by Sam Weiss, and<br>
+"QuickDraw GX for PostScript Programmers" by Daniel Lipton, <i> develop</i> Issue<br>
+15.</li>
+<li>"Print Hints: Syncing Up With ColorSync" by John Wang, <i> develop</i>  Issue<br>
+14.</li>
+<li><i>Fundamentals of Interactive Computer Graphics</i>  by J. D. Foley and A. Van<br>
+Dam (Addison-Wesley, 1982).</li>
+<li><i>Inside Macintosh: Printing Extensions and Drivers </i> (Addison-Wesley,<br>
+1993).</li>
+<li><i>PostScript Language Reference Manual</i> , 2nd ed., by Adobe Systems<br>
+Incorporated (Addison-Wesley, 1990).</li>
+</ul>
+<p>
+<b>For background information about QuickDraw GX, </b>see these articles in<br>
+<i>develop</i>&nbsp;&nbsp;Issue 15: "Getting Started With QuickDraw GX" by Pete ("Luke") Alexander;<br>
+"Developing QuickDraw GX Printing Extensions" by Sam Weiss; and "QuickDraw GX for<br>
+PostScript Programmers" by yours truly. *
+</p>
+<p>
+<b>How ColorSync works with QuickDraw </b>is explained in John Wang's column<br>
+"Print Hints: Syncing Up With ColorSync" in<i>develop</i>&nbsp;&nbsp;Issue 14.*<b>For color theory</b><br>
+<b>arcana, </b>see the indispensable <i> Fundamentals of Interactive Computer Graphics</i>&nbsp;&nbsp;by J.<br>
+D. Foley and A. Van Dam.*
+</p>
+<p>
+<b>ColorSync version 1.0.3, </b> along with documentation and samples, can be found on<br>
+this issue's CD. The documentation describes how to create a CMM.*
+</p>
+<p>
+<b>The levels of PostScript </b>and all other details you could possibly want to know<br>
+about PostScript are described in the<i>PostScript Language Reference Manual</i> , second<br>
+edition.*
+</p>
+<p>
+<b>The messaging scheme for drivers and extensions </b> is described in Sam<br>
+Weiss's article "Developing QuickDraw GX Printing Extensions" in <i>develop</i>&nbsp;&nbsp;Issue 15,<br>
+and in <i>Inside Macintosh: Printing Extensions and Drivers.</i>&nbsp;&nbsp;*
+</p>
+<p>
+<b>DANIEL LIPTON </b>works on QuickDraw GX and writes for <i> develop </i> to subsidize his<br>
+songwriting career. He was recently overheard singing the following parody of the<br>
+Steely Dan song "FM":
+</p>
+<p>
+<i>Bury your cubics, mama, quadratic's fine.</i><br>
+<i>Kick off your PostScript printers, it's GX time.</i><br>
+<i>The drivers don't seem to care what's where,</i><br>
+<i>as long as the profile's there.</i><br>
+<i>Nothing but greens and blues</i><br>
+<i>and somebody else's favorite hues.</i><br>
+<i>Give us some pumped-up colors, we'll sync them nice.</i><br>
+<i>Feed us some hungry halftones, we'll print them thrice.</i><br>
+<i>The printers don't seem to care what's where,</i><br>
+<i>as long as GX is there.</i>
+</p>
+<p>
+<i>No hassle at all.&nbsp;&nbsp;GX. No hassle at all.</i>&nbsp;&nbsp;*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Pete ("Luke") Alexander, Tom Dowdy,<br>
+Dennis Farnden, Josh Horwich *
+</p>
+<p>
+<b>Special thanks </b>to dua&#241;o, Sean Allen, Chris Yerga, and Dean Yu. *
+</p>
+</body>
+</html>

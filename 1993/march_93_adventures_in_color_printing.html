@@ -1,0 +1,1324 @@
+<html>
+<head>
+<!-- Article ID: 10 - Extracted from develop-1993 -->
+<!-- on 2024-02-13 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>March 93 - ADVENTURES IN COLOR PRINTING</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>ADVENTURES IN COLOR PRINTING</h2>
+<h1>DAVE HERSEY</h1>
+<p>
+<img src="img/143.gif" width="180 px"></img>
+</p>
+<p>
+<i>Along with Color QuickDraw came the need for applications to support printing of</i><br>
+<i>pixMaps. Users need (and expect) to be able to produce realistic hard copies of their</i><br>
+<i>color screen displays. The challenge for developers is to ensure high-quality output</i><br>
+<i>regardless of the printing configuration being used. This article and its accompanying</i><br>
+<i>sample programs show you how.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Consider a 24-bit color image we've just scanned in. We'd like this image to print in<br>
+color on all color printers, whether they're color LaserWriters, ImageWriters with<br>
+color ribbons, or color ink jet printers. Similarly, we'd like to generate output that<br>
+represents the source image as closely as possible when we're using grayscale<br>
+printers such as the LaserWriter IIg with PhotoGrade, or monochrome printers such<br>
+as LaserWriters without PhotoGrade, StyleWriters, and ImageWriters with black<br>
+ribbons. And, of course, we'd like our images to look great even when the user has<br>
+chosen black-and- white printing on a color-capable printer.
+</p>
+<p>
+The challenge of producing high-quality output regardless of the printing<br>
+configuration should ideally be handled at the driver level, through new printer<br>
+drivers or solutions such as ColorSync or QuickDraw GX. But until every system<br>
+makes use of these new technologies, we're stuck with the task of working around the<br>
+pitfalls of the present printing architecture. The key is to determine the printing<br>
+configuration we're working with and then supply the routine that ensures the<br>
+highest- quality output in that particular case. 
+</p>
+<p>
+This article and the sample code that accompanies it on the<i>Developer CD Series</i>disc<br>
+will show you how to print pixMaps (or pictures containing pixMaps) faithfully on<br>
+any printer by building in a combination of approaches to cover all cases. The results<br>
+will be far better than any you can get by a "one size fits all" approach. I'll discuss<br>
+how to make use of Color QuickDraw when a printer driver can support it, how to<br>
+render color images with original QuickDraw on printers whose drivers don't support<br>
+Color QuickDraw (such as the ImageWriter), and how to convert color images to high-<br>
+resolution halftone images for printing on monochrome printers.
+</p>
+<p>
+The methods in this article apply equally well to PostScript and QuickDraw printers,<br>
+and they work correctly whether or not the new printing solutions are in place. Note,<br>
+however, that without some extra work (see the end of this article) these methods may<br>
+not be optimal for printing pictures that contain text. When text is converted to<br>
+pixMaps, all of the font information is lost, and the result can often be chunky,<br>
+poor-quality text that's hard to read.
+</p>
+<p>
+All of the techniques described here require you to have 32-Bit QuickDraw available.<br>
+This covers any Macintosh with 32-Bit QuickDraw in ROM and any machine with Color<br>
+QuickDraw in ROM that either is running System 7 or has the 32-Bit QuickDraw INIT<br>
+installed. If you have only ColorQuickDraw available (the version that predates<br>
+32-Bit QuickDraw), you can still use all of the techniques described here as long as<br>
+you implement a GWorld structure and replacements for the calls OpenCPicture,<br>
+NewGWorld, DisposeGWorld, and CopyBits with ditherCopy mode. Methods to apply<br>
+when Color QuickDraw is not available are discussed in "Making the Most of Color on<br>
+1- Bit Devices" in<i>develop</i>Issue 9. Together, the present article and the article in Issue<br>
+9 give you solutions that cover printing in any situation. 
+</p>
+<h2>THE "ONE SIZE FITS ALL" APPROACH: A BAD IDEA</h2>
+<p>
+Many applications today that deal with pixMap images don't worry about addressing all<br>
+the possible variations in printing configurations. This is unfortunate because the "one<br>
+size fits all" approach can severely limit an application's potential.
+</p>
+<p>
+Under the current printing architecture, if you provide just one printing method in<br>
+your application based on assumptions about the printing configuration most likely to<br>
+be used, you're bound to frustrate and annoy some users. For example, imagine a user<br>
+with a color laser printer who for some special purpose wants to print a color image<br>
+in black and white. If your application has failed to take this printing possibility into<br>
+account, the user will end up with a hideous Black Blob that looks nothing like the<br>
+original. Or picture a user with an ImageWriter who decides to invest in a color<br>
+ribbon so that she can print color images with her favorite paint program, only to<br>
+discover that because the program doesn't provide for this possibility, the result is --<br>
+you guessed it -- a hideous Black Blob. Or consider the users who find that documents<br>
+containing color images that print just fine on their LaserWriters at work, print<br>
+terribly on their StyleWriters, ImageWriters, or Personal LaserWriters at home.<br>
+These frustrated users will end up clogging your customer service hotline with the<br>
+kind of calls you don't want to get. The moral of the story is that under the current<br>
+printing architecture it's not enough to provide just one method to print your images. 
+</p>
+<p>
+Far superior to the "one size fits all" approach is the strategy of providing printing<br>
+routines to address the whole range of printing configurations your application might<br>
+encounter. Then all your application has to do at print time is to determine which<br>
+printing configuration it's dealing with and provide the appropriate printing routine.<br>
+That's what this article is about.
+</p>
+<p>
+We start by looking over the possible printing configurations; then we consider<br>
+routines to address each of these configurations; and finally, we look at how an<br>
+application can determine which printing configuration it's facing. 
+</p>
+<h2>THE POSSIBLE PRINTING CONFIGURATIONS</h2>
+<p>
+When you're printing from the Macintosh, there are three distinct types of printer<br>
+drivers that you might encounter:
+</p>
+<ul>
+<li>Printer drivers that support Color QuickDraw calls. For example, the<br>
+LaserWriter driver 6.0 and later in Color/Grayscale mode, printing to color,<br>
+grayscale, or monochrome laser printers; and drivers for a number of<br>
+third-party color laser printers, ink jet printers, film recorders, and so<br>
+forth. </li>
+<li>Drivers for color-capable printers that don't support Color QuickDraw<br>
+calls or data structures. For example, the ImageWriter drivers through<br>
+version 7.0 printing to an ImageWriter with a color ribbon installed. </li>
+<li>Drivers for monochrome printers that don't support Color QuickDraw<br>
+calls or data structures. For example, the ImageWriter drivers through<br>
+version 7.0 printing to an ImageWriter with a black ribbon installed, the<br>
+StyleWriter using the 7.2.2 driver, and laser printers using the LaserWriter<br>
+driver 5.2 (or 6.0 and later in Black &amp; White mode). </li>
+</ul>
+<p>
+Note that what matters to you isn't the printer being used, but the printer driver.<br>
+Thus, for example, if you print Color QuickDraw to a LaserWriter IINT using the<br>
+version 5.2 driver (which doesn't have the Color/Grayscale option), you'll end up<br>
+with nothing but stark black shapes because there's no Color QuickDraw support in the<br>
+driver. The same printer using the 7.0 driver with the Color/Grayscale option<br>
+selected will produce excellent results in response to the very same drawingcommands<br>
+-- same printer, but totally different results depending on the driver. Another good<br>
+example is the ImageWriter. Versions of the ImageWriter driver through version 7.0<br>
+don't support Color QuickDraw calls, but there are third-party drivers for the<br>
+ImageWriter that do.
+</p>
+<p>
+Note also that in the category of drivers that support Color QuickDraw calls, no<br>
+distinction needs to be made between grayscale and color printers. Based on your<br>
+experience with Color QuickDraw on the screen, you might have the impression that a<br>
+color image should be converted to a grayscale image before printing to a noncolor<br>
+device, or that you need to get the printer port's color table, GDevice, or bit depth, and<br>
+map your images to those before printing. But in fact, this is not only unnecessary but<br>
+also undesirable in the printing environment. If the driver supports Color QuickDraw,<br>
+you don't need to worry about whether your images will be printing on a color or a<br>
+grayscale printer. 
+</p>
+<p>
+<b>ABOUT PRINTER DRIVER PORTS AND COLOR QUICKDRAW SUPPORT</b><br>
+While I've categorized printer drivers by whether or not they support Color<br>
+QuickDraw, what we're really concerned with is whether they give us a cGrafPort or a<br>
+grafPort to draw in. The port I'm referring to here is the TPPrPort that the driver<br>
+returns to the application through PrOpenDoc.&nbsp;&nbsp;&nbsp;Printer drivers that give us a<br>
+cGrafPort support Color QuickDraw calls, because a cGrafPort is capable of handling<br>
+multibit pixels. On the other hand, printer drivers that give us a grafPort don't<br>
+support Color QuickDraw calls.
+</p>
+<p>
+Drawing with Color QuickDraw in a grafPort, while possible, will yield disappointing<br>
+results.&nbsp;&nbsp;&nbsp;Consider what happens if you try to CopyBits a 24-bit-deep image to the<br>
+ImageWriter (assuming you're not using ditherCopy mode in System 7). Since you're<br>
+copying to a driver port that's capable of only two colors, every one of the pixels in<br>
+your image will become either your foreground color or your background color,<br>
+whichever its value is closest to. In the usual case of a black foreground and a white<br>
+background, you'll end up with the Black Blob effect -- all colors with luminance<br>
+values of at least 50% black draw black and everything else draws white. 
+</p>
+<p>
+Although the situation is improving, at present most of the drivers that Apple ships<br>
+return grafPorts.&nbsp;&nbsp;&nbsp;(See "The Story Behind Color QuickDraw Support" for the whys<br>
+and wherefores.) The LaserWriter drivers version 6.0 and later are capable of<br>
+providing a cGrafPort for your application to draw into, but note that if the user<br>
+selects Black &amp; White mode in the color LaserWriter driver's print job dialog, even<br>
+that driver returns a grafPort; a cGrafPort is returned only when the user has chosen<br>
+Color/Grayscale mode. 
+</p>
+<p>
+Let me warn you up front that the printer driver port isn't necessarily a true<br>
+cGrafPort or grafPort -- that is, one that's valid outside the context of the Printing<br>
+Manager. In the case of Apple's printer drivers, it never is. The fact is that drivers<br>
+have a lot of leeway when it comes to the port structure they return. Since the driver<br>
+needs to replace the port's QuickDraw bottleneck procedures in order to direct the data<br>
+to a printer, there's no need for many of the fields that you would use if you were<br>
+drawing to a true grafPort or cGrafPort, such as a window on the screen. In fact, when<br>
+you make a call like
+</p>
+<p>
+<code>CopyBits(&amp;bitMap, &amp;printPort-&gt;gPort.portBits, &amp;srcRect,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&amp;destRect, srcCopy, nil);</code>
+</p>
+<p>
+the data most likely won't even end up in the driver port's bitmap. In fact, the bitmap<br>
+structure may not even exist. There's no need for it to. All that matters is that as you<br>
+draw into the grafPort or cGrafPort, your drawing commands are intercepted,<br>
+possibly translated, and then redirected to the printer.
+</p>
+<p>
+So don't assume that the printer driver's port is a true grafPort or cGrafPort, or that<br>
+the values therein have anything to do with how your image will print. You should view<br>
+the printer driver's port as a private structure, with the only public fields being the<br>
+actual pointer to the grafPort or cGrafPort (your TPPrPort pointer) and its port's<br>
+portBits bitmap. Even then, SetPort and CopyBits are the only calls you should pass<br>
+those values to. 
+</p>
+<p>
+<b>THE PROBLEM AT HAND</b><br>
+To get back to the problem at hand, we need printing routines to address each of the<br>
+three possible printing configurations. The rest of this article is devoted to describing<br>
+those routines and outlining how to determine at print time which routine is<br>
+appropriate. The routines are demonstrated by four samples in the Adventures in Color<br>
+Printing folder on the<i>Developer CD Series</i>disc.
+</p>
+<p>
+Note that all the samples implement the technique of loading and storing print records<br>
+from job to job. All printing applications should implement some sort of handling like<br>
+this so that when users attempt to print documents, their last used settings are<br>
+available, rather than the driver's defaults.
+</p>
+<p>
+All samples work under System 6 or 7. Remember that to use the methods described<br>
+here, you must have 32-Bit QuickDraw available, or if you have only Color<br>
+QuickDraw (the version that predates 32-Bit QuickDraw) available, you must<br>
+implement a GWorld structure (which is the same thing as a cGrafPort) and<br>
+replacements for the calls OpenCPicture, NewGWorld, DisposeGWorld, and CopyBits<br>
+with ditherCopy mode.
+</p>
+<h2>PRINTING WITH COLOR QUICKDRAW SUPPORT</h2>
+<p>
+The easiest color printing situation you'll come across occurs when a printer driver<br>
+gives you a cGrafPort to work in. To generate the best results we first need to deal with<br>
+setting the resolution and scaling the image. Then we want to band our image through a<br>
+32-bit-deep GWorld to avoid the potential problem of operator incompatibility. The<br>
+Color Adventures sample code demonstrates how we go about this. As mentioned<br>
+earlier, grayscale printing in a cGrafPort shouldn't be treated any differently from<br>
+color printing in a cGrafPort.
+</p>
+<p>
+<b>SETTING RESOLUTION AND SCALING THE IMAGE</b><br>
+When we print an image, a couple of different scaling operations are involved. First,<br>
+our application sets the printer driver port's resolution and, if necessary, scales the<br>
+image to that resolution; then the printer driver scales the image to the device's<br>
+physical (output) resolution during printing. The amount an image is scaled when<br>
+copied to the printer port is calculated as follows:
+</p>
+<p>
+scaleAmt = (sourceDPI / destinationDPI) * (scaling factor from Page Setup dialog)
+</p>
+<p>
+To achieve the highest-quality output, our image's resolution should ideally be the<br>
+same as the printer's physical resolution. If our image's resolution doesn't match the<br>
+printer's resolution, we can scale the image before printing, change the port's<br>
+resolution to match the image resolution, or do a combination of both (scale the source<br>
+image and the port).
+</p>
+<p>
+Here's how we proceed: First, we need to know the resolution of our source image. Most<br>
+PICT files on the Macintosh are rendered at 72 dpi, but that needn't be the case, and in<br>
+the case of scanned images is actually rather unlikely. The GetImageRes routine in the<br>
+Color Adventures sample shows how to find the resolution of any PICT. If the<br>
+OpenCPicture call was used to create the picture, the resolution information is stored<br>
+right in the picture header for easy retrieval. Otherwise, we need to determine the<br>
+resolution by parsing the picture. 
+</p>
+<p>
+Once we have the image resolution, we need to know how close the printer can be set to<br>
+that resolution. We can determine the supported resolutions for a particular printer<br>
+using PrGeneral, as discussed in the article "Meet PrGeneral" in<i>develop</i>Issue 3 and<br>
+in<i>Inside Macintosh</i>Volume V. As noted in those sources, when we call PrGeneral with<br>
+the GetRslData opcode, drivers that support PrGeneral will return a list of discrete<br>
+resolutions and possibly a range of supported resolutions that we can also specify.
+</p>
+<p>
+So, for example, if PrGeneral told us that we were capable of printing our 300-dpi<br>
+image at 300 dpi, we would set the printer port's resolution to 300 dpi x 300 dpi by<br>
+using PrGeneral with the setRsl opcode. Then all we'd need to do would be to draw the<br>
+image at its original size. That's the easy case.
+</p>
+<p>
+If we're printing to a device none of whose supported resolutions match our image's<br>
+resolution, the best choice is usually the pair of horizontal and vertical resolutions<br>
+that when multiplied yield thelargest product. We'll need to scale the image to that<br>
+resolution before printing. While this method of choosing resolutions isn't foolproof,<br>
+it should typically give us the best results. Of course, if someone comes out with a<br>
+driver for a printer that supports a resolution pair such as 600 dpi x 72 dpi, where<br>
+there's a big difference between the horizontal and the vertical resolution, there might<br>
+be problems with such an approach. Many times, we'll want the horizontal and vertical<br>
+resolutions to be equal. The section on setting resolution under "Printing in Black and<br>
+White" later in this article discusses this further. 
+</p>
+<p>
+We'll probably also want to put a ceiling on the resolution of the printer port.<br>
+Otherwise, if we're printing to a Linotronic we may have to scale our 72-dpi images<br>
+up about 3528 percent to 2540 dpi, and that will take a long, long, long time to print<br>
+and require an enormous amount of memory. Of course there may be times when 2540<br>
+dpi is exactly what we want. We can always provide the user with a list of supported<br>
+output resolutions to choose from. 
+</p>
+<p>
+Finally, suppose that we can't set the printer resolution because we're using a driver<br>
+that doesn't support PrGeneral. We can tell this because after our call to PrGeneral,<br>
+ResError is set to resNotFoundErr. In this case, we have only one recourse -- to scale<br>
+the image to the port's default resolution, 72 dpi. 
+</p>
+<p>
+Putting all this together, we end up with the GetBestDPI routine in the Final Adventure<br>
+sample for setting the best resolution with PrGeneral. GetBestDPI obtains the best<br>
+horizontal and vertical resolutions to use for printing with the selected driver. The<br>
+function looks like this:
+</p>
+<p>
+<code>void GetBestDPI(short *pxDPI, short *pyDPI, short xDPI_ceiling,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short yDPI_ceiling, Boolean wantSquareDPI);</code>
+</p>
+<p>
+The caller places an ideal resolution pair (what the caller really wants to use) in the<br>
+parameters pxDPI and pyDPI. This is also where the routine returns the resolutions it<br>
+decides on. In xDPI_ceiling and yDPI_ceiling, the caller places the maximum<br>
+resolution desired in either direction.&nbsp;&nbsp;&nbsp;For example, if you didn't want values larger<br>
+than 300 dpi returned, you'd put 300 in both of these parameters. If wantSquareDPI<br>
+is true, only square resolutions (those with equal horizontal and vertical components)<br>
+will be considered.
+</p>
+<p>
+The printer driver is expected to be closed upon entry to this routine and is therefore<br>
+opened and closed around the PrGeneral code. If PrGeneral isn't supported by this<br>
+driver, or if an error occurs, the routine returns 72 x 72 dpi, which is the default<br>
+for Macintosh printer drivers. If the ideal resolution the caller passes in is available,<br>
+we choose that, ignoring wantSquareDPI, xDPI_ceiling, and yDPI_ceiling. We figure<br>
+that the calling routine knows more about the ideal resolution it requests than we do.<br>
+Here's the code:
+</p>
+<p>
+<code>void GetBestDPI(short *pxDPI, short *pyDPI, short xDPI_ceiling,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short yDPI_ceiling, Boolean wantSquareDPI)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TGetRslBlk&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;getResRec;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;exactMatch = false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bestResX, bestResY, xDPI, yDPI,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;desiredResX, desiredResY, rec;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>// Open the driver for our PrGeneral call. Assume we'll return</code><br>
+<code>// 72 x 72 dpi until we find otherwise, and also store the desired</code><br>
+<code>// resolution that the caller passed to us through the pxDPI and</code><br>
+<code>// pyDPI parameters.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PrOpen();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;bestResX = bestResY = 72;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;desiredResX = *pxDPI;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;desiredResY = *pyDPI;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (!PrError())</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code></code><br>
+<code>// Ask PrGeneral for the resolution records for this driver.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;getResRec.iOpCode = getRslDataOp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PrGeneral((Ptr) &amp;getResRec);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if ((!ResError()) &amp;&amp; (!getResRec.iError))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code></code><br>
+<code>// First check for the exact resolution pair that the caller</code><br>
+<code>// requested.&nbsp;&nbsp;To begin with, check the range of resolutions</code><br>
+<code>// supported to see if the pair is within that.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if ((getResRec.xRslRg.iMin &lt;= desiredResX) &amp;&amp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(getResRec.xRslRg.iMax &gt;= desiredResX) &amp;&amp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(getResRec.yRslRg.iMin &lt;= desiredResY) &amp;&amp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(getResRec.yRslRg.iMax &gt;= desiredResY))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;exactMatch = true;</code><br>
+<code>// If we didn't find an exact match, check the driver's discrete</code><br>
+<code>// resolutions to see if we have one there.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for (rec = 0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(!exactMatch) &amp;&amp; (rec &lt; getResRec.iRslRecCnt);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rec++)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if ((getResRec.rgRslRec[rec].iXRsl == desiredResX) &amp;&amp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(getResRec.rgRslRec[rec].iYRsl == desiredResY))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;exactMatch = true;</code><br>
+<code></code><br>
+<code>// If we found an exact match, use it. Otherwise, loop through each</code><br>
+<code>// resolution record and find the one that best matches our</code><br>
+<code>// criteria.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (exactMatch)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bestResX = desiredResX;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bestResY = desiredResY;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for (rec = 0; (rec &lt; getResRec.iRslRecCnt); rec++)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xDPI = getResRec.rgRslRec[rec].iXRsl;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;yDPI = getResRec.rgRslRec[rec].iYRsl;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if ((xDPI &lt;= xDPI_ceiling) &amp;&amp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(yDPI &lt;= yDPI_ceiling) &amp;&amp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(!wantSquareDPI || (xDPI == yDPI)) &amp;&amp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;((xDPI * yDPI) &gt; (bestResX * bestResY)))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bestResX = xDPI;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bestResY = yDPI;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>// Return the best resolution pair we found and close the driver.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;*pxDPI = bestResX;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;*pyDPI = bestResY;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PrClose();</code><br>
+<code>}</code>
+</p>
+<p>
+The following code returns a rectangle to use when scaling from an image's bounds<br>
+(srcRect) and resolution (ixDPI, iyDPI) to a printer port's resolution (pxDPI,<br>
+pyDPI). The resulting rectangle (scaleRect) will have a top left corner of (0, 0). 
+</p>
+<p>
+<code>void GetScaleRect(Rect *srcRect, short ixDPI, short iyDPI,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short pxDPI, short pyDPI, Rect *scaleRect)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Fixed&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;scale;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;*scaleRect = *srcRect;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;OffsetRect(scaleRect, -scaleRect-&gt;left, -scaleRect-&gt;top);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;scale = FixRatio(pxDPI, ixDPI);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;scaleRect-&gt;right =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FixMul(scale, (long) scaleRect-&gt;right <<16) >>16;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;scale = FixRatio(pyDPI, iyDPI);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;scaleRect-&gt;bottom =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FixMul(scale, (long) scaleRect-&gt;bottom <<16) >>16;</code><br>
+<code>}</code>
+</p>
+<p>
+<b>BANDING THE IMAGE THROUGH A GWORLD</b><br>
+Pictures can include information that a printer driver can't understand, such as<br>
+transfer modes and structures that have been added to the system since the driver was<br>
+developed, and sometimes a driver can't reproduce certain operations that work great<br>
+on the screen. For example, PostScript doesn't understand the concept of transfer<br>
+modes, so the LaserWriter driver doesn't know what to do when it encounters such<br>
+modes as blend, ditherCopy, and addMin. Aside from transfer modes, certain<br>
+QuickDraw operations aren't supported by all drivers. For instance, CopyMask doesn't<br>
+work with any of Apple's printer drivers as of this writing. 
+</p>
+<p>
+The upshot is that if you only use DrawPicture, some pictures are bound to print<br>
+incorrectly on various printers because of operator incompatibility. The PICT named<br>
+Incompatibility Test in the sample code folder demonstrates this problem. Try<br>
+printing the picture with TeachText and comparing the output to the screen image. A<br>
+safer approach to printing an image (although one that may require more data to be<br>
+sent to the printer and thus result in slower printing) is to always send 32-bit-deep<br>
+data to the printer by banding the image through a GWorld. Of course, if you know your<br>
+application never needs 32-bit pixMaps, you can just use a GWorld deep enough for<br>
+the data you'll be printing. 
+</p>
+<p>
+Here's how it works: Create a 32-bit-deep GWorld that has room for one horizontal<br>
+(or vertical) strip of data of some arbitrary size. In the following example, we use<br>
+horizontal strips. Call SetGWorld on this GWorld and then DrawPicture, passing the<br>
+full image's picFrame. All of the picture outside the banding GWorld's bounds rectangle<br>
+is clipped. The code might look like this:
+</p>
+<p>
+<code>#define BAND_HEIGHT 144&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// 2 inches at 72 dpi.</code><br>
+<code>pictRect = (*imgPICT)-&gt;picFrame;</code><br>
+<code>bandRect = pictRect;</code><br>
+<code>bandRect.top = 0;</code><br>
+<code>bandRect.bottom = BAND_HEIGHT;</code><br>
+<code></code><br>
+<code>err = NewGWorld(&amp;bandGWorld, 32, &amp;bandRect, nil, nil, 0);</code><br>
+<code></code><br>
+<code>if (err == noErr)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;SetGWorld(bandGWorld, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;destPix = GetGWorldPixMap(bandGWorld);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;LockPixels(destPix);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DrawPicture(imgPICT, &amp;pictRect);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;UnlockPixels(destPix);</code><br>
+<code>}</code>
+</p>
+<p>
+This results in a band of the original picture being drawn to bandGWorld, which in<br>
+turn can be copied to the printer port, like so:
+</p>
+<p>
+<code>SetPort(&amp;(printPort-&gt;gPort));</code><br>
+<code>srcPix = GetGWorldPixMap(bandGWorld);</code>
+</p>
+<p>
+<code>LockPixels(srcPix);</code><br>
+<code>CopyBits((BitMap *) *srcPix, &amp;(printPort-&gt;gPort.portBits), &amp;bandRect,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&amp;bandRect, srcCopy, nil);</code><br>
+<code>UnlockPixels(srcPix);</code>
+</p>
+<p>
+To create the next band, shift bandGWorld's bounds rectangle down by one bandwidth<br>
+and repeat the process. For best results, you may want to increase the printer port's<br>
+resolution with PrGeneral, draw into a GWorld of the same resolution, and then use<br>
+CopyBits to draw that in the printer port. 
+</p>
+<p>
+When you're working with 32-bit images, it's very useful to implement some sort of<br>
+banding or picture spooling algorithm, since 32-bit images take up an enormous<br>
+amount of memory, especially when you need to scale them to higher printer<br>
+resolutions. All of the program samples on the CD have routines that implement<br>
+banding and spooling. These routines also handle the special problems introduced when<br>
+you need to dither and scale during banding. 
+</p>
+<p>
+When you send 32-bit-deep data to the printer driver, you inadvertently solve<br>
+another problem as well -- worrying about the printer's output characteristics.<br>
+Printing images as 32-bit deep will give you the best output on all color printers<br>
+whose drivers return a cGrafPort. You can be sure that when you send 32-bit-deep<br>
+data the driver and printer will do the right thing -- either print the image 32 bits<br>
+deep or map it to the device's characteristics, be it an 8-bit device or whatever. You<br>
+don't need to worry about checking the depth of the printer port or getting its GDevice<br>
+or color table, which would be futile anyway since the port probably isn't a true<br>
+cGrafPort.
+</p>
+<p>
+In general, if you don't know whether an image is 32 bits deep or 8 bits deep, you<br>
+should print it at 32 bits. This way, you won't lose any color information. Of course,<br>
+printing 32-bit-deep images means increased printer data and print times, so you<br>
+may want to let the user have some control over the decision. Getting the best output<br>
+may not be as important to a user as seeing an 8-bit draft of the image sooner.
+</p>
+<h2>OF COLOR TABLES AND THE LASERWRITER DRIVER</h2>
+<p>
+A word to the wise: The LaserWriter driver changes your image's color table. You must<br>
+be prepared for this and know how to prevent its altering your printout.
+</p>
+<p>
+Suppose you have an 8-bit color image with a custom color table. What happens when<br>
+you print this with the LaserWriter driver using CopyBits when Color/Grayscale is<br>
+selected? The driver returns a cGrafPort at PrOpenDoc time. As the drawing begins,<br>
+the driver makes a copy of your image's color table. It then replaces the first entry in<br>
+the color table with the current background color, and the last entry with the current<br>
+foreground color. Once the foreground and background colors have been placed in the<br>
+color table, the driver sends the image to the printer, passing the indexed RGB value<br>
+for each pixel.
+</p>
+<p>
+This means that if your foreground color is not the same as your last color table entry,<br>
+or your background color is not the same as your first entry, your image may be<br>
+altered when it prints. The best way to avoid this problem is to keep white in the first<br>
+color table entry and black in the last, and make sure to set the foreground color to<br>
+black and the background color to white before drawing.
+</p>
+<p>
+Because the driver alters your color table, it's not a good idea to invert an image by<br>
+inverting its color table, as some applications do. Imagine that you have an 8-bit<br>
+grayscale image of a scanned photograph. Let's say that you want to print an inverted<br>
+copy of the image and that its color table is a linear ramp of grays, from white to<br>
+black. The easy -- but incorrect -- approach is to invert the entries in the image's<br>
+color table and then print the image. The correct approach is to use CopyBits to copy<br>
+the image over itself using notSrcCopy mode before printing.
+</p>
+<p>
+Figure 1 compares printouts of an image inverted correctly and incorrectly. Notice<br>
+that the incorrect method hasn't inverted absolute (or pure) black or white pixels in<br>
+the image.
+</p>
+<p>
+Why does the driver alter your color table? Because it's attempting to perform bitmap<br>
+colorization. This is a feature of CopyBits that's not very well documented and that the<br>
+LaserWriter driver supports. The version of CopyBits in System 7 will actually<br>
+colorize an entire pixMap, although the LaserWriter driver has never been upgraded<br>
+to support this functionality. The improvements to CopyBits colorizing are discussed<br>
+in "QuickDraw's CopyBits Procedure: Better Than Ever in System 7.0" in <i> develop</i><br>
+Issue 6 and in Chapter 17 of<i>Inside Macintosh</i> Volume VI.
+</p>
+<p>
+<img src="img/144.gif" width="239 px"></img>
+</p>
+<p>
+Original
+</p>
+<p>
+<img src="img/145.gif" width="239 px"></img>
+</p>
+<p>
+Inverted correctly
+</p>
+<p>
+<img src="img/146.gif" width="239 px"></img>
+</p>
+<p>
+Inverted incorrectly
+</p>
+<p>
+<b>&nbsp;Figure 1</b> Grayscale Image Inverted Correctly and Incorrectly
+</p>
+<h2>&nbsp;PRINTING IN COLOR ON THE IMAGEWRITER</h2>
+<p>
+&nbsp;Most printer drivers today have been updated to return cGrafPorts when color ink is<br>
+used. The only exception to this rule that I know of is the ImageWriter driver. Because<br>
+all Apple ImageWriter drivers through version 7.0 return a grafPort, we can't rely<br>
+on Color QuickDraw calls and structures to give us accurate color images when we have<br>
+a color ribbon installed. We can draw only eight colors into a grafPort (traditionally<br>
+called "the original QuickDraw colors").
+</p>
+<p>
+&nbsp;Printing on the ImageWriter with DrawPicture works perfectly well as long as our<br>
+picture is made up of original QuickDraw objects (those that appear in<i>Inside</i><br>
+<i>Macintosh</i>Volume I), each preceded by a call to ForeColor to set the foreground color to<br>
+one of the eight original QuickDraw colors. For example, the following code will print<br>
+correctly on an ImageWriter with a color ribbon, whether it's simply sent to the<br>
+printer port or enclosed in a PicHandle that's then printed with DrawPicture:
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<code>SetRect(&amp;bounds, 20, 20, 120, 120);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Initial object bounds (a square).</code><br>
+<code>BackColor(whiteColor);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Set background color to white.</code><br>
+<code>ForeColor(cyanColor);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Set foreground color to cyan.</code><br>
+<code>FillRect(&amp;bounds, gray);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Fill square with 50% cyan pattern.</code><br>
+<code>OffsetRect(&amp;bounds, 70, 70); // Move down a bit.</code><br>
+<code>ForeColor(blackColor);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Select black.</code><br>
+<code>FrameRect(&amp;bounds);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Draw a black square frame.</code><br>
+<code>ForeColor(cyanColor);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Select cyan.</code><br>
+<code>PaintOval(&amp;bounds);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Draw a cyan circle in the frame.</code>
+</p>
+<p>
+&nbsp;The result is shown in Figure 2. Without the calls to ForeColor, our picture would be<br>
+recorded using our current foreground color for all objects. This is usually black and<br>
+would cause everything to print as black.&nbsp;&nbsp;If we need to print Color QuickDraw objects<br>
+on an ImageWriter with a color ribbon, we must first convert them to original<br>
+QuickDraw objects. In the case of pixMaps, we convert all of the pixMap's colors to the<br>
+eight original QuickDraw colors and make a bitmap separation of the image for each<br>
+color. The Color ImageWriter Adventures sample demonstrates how to do this. 
+</p>
+<p>
+<b>CONVERTING TO THE ORIGINAL QUICKDRAW COLORS</b><br>
+First, possibly through banding, we use CopyBits to ditherCopy the source picture into<br>
+a 4-bit GWorld whose color table is made up of the eight original colors. We obtain<br>
+this color table by passing a value of 127 to GetCTable, as explained in<i>Inside</i><br>
+<i>Macintosh</i>Volume V, page 81. 
+</p>
+<p>
+<img src="img/147.gif" width="126 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> Product of Drawing With a Sequence of Calls to ForeColor
+</p>
+<p>
+If we don't use ditherCopy, the resulting output will have colors determined by<br>
+threshold comparison. In other words, every color in the original will simply be<br>
+mapped to one of the eight original QuickDraw colors. This method will make scanned<br>
+images look fake or "painted," which is not what we're looking for. In most cases, we'd<br>
+rather have a dithered image that approximates more than eight colors by putting<br>
+different colors side by side. Since we're printing only eight real colors, dithering is a<br>
+necessity when using this method. For the curious, the Color ImageWriter Adventures<br>
+sample allows you to turn dithering off for comparison. 
+</p>
+<p>
+<b>MAKING THE SEPARATIONS</b><br>
+Once our image has been copied to the 4-bit "original color" GWorld, we can start<br>
+making our separations. We need a Color QuickDraw searchProc that returns the<br>
+position indicator for black or white, depending on whether or not the color passed<br>
+matches the color we're looking for. If it does, the routine returns black. Since we'll<br>
+be copying to a bitmap (in which a 0 pixel value indicates the background color and a 1<br>
+pixel value indicates the foreground color), this is all the code it takes:
+</p>
+<p>
+<code>pascal Boolean OQDSearch(RGBColor *anRGB, long *position)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;*position = 0;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Initially assume no color.</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if ((anRGB-&gt;red == (*gOrgQDCTab)-&gt;ctTable[gCurColor].rgb.red) &amp;&amp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(anRGB-&gt;green ==</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(*gOrgQDCTab)-&gt;ctTable[gCurColor].rgb.green) &amp;&amp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(anRGB-&gt;blue ==</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(*gOrgQDCTab)-&gt;ctTable[gCurColor].rgb.blue))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*position = 1;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Color it.</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return true;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// To indicate that we've handled the</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// color processing.</code><br>
+<code>}</code>
+</p>
+<p>
+We'll make seven separations (one for each of the eight original QuickDraw colors<br>
+except white).&nbsp;&nbsp;&nbsp;The code that follows is adapted from the Color ImageWriter<br>
+Adventures sample and stores the different separations in a picture that uses only<br>
+original QuickDraw primitives, so it can be sent with DrawPicture to the ImageWriter<br>
+driver's grafPort with great results. 
+</p>
+<p>
+The process goes like this: Once we have the dithered image in our 4-bit GWorld, we<br>
+create a 1-bit GWorld using exactly the same dimensions. We'll use this 1-bit GWorld<br>
+to create our bitmap representations of each color separation. After setting the<br>
+current GWorld to our 1-bit GWorld,colorSep, we call OpenPicture. This is critical<br>
+because OpenPicture and OpenCPicture tie each open picture to the current port.<br>
+(That's why you can have multiple pictures open at once as long as they're in different<br>
+ports.) If we change ports, we can draw all we want and the calls will not be recorded<br>
+into our picture. Only when we make the colorSep GWorld the current one will this<br>
+picture's recording be enabled. Very cool. 
+</p>
+<p>
+<code>PicHandle SeparateColors(PicHandle wPICT, Fixed scaleAmt,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Boolean useDither)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;QDErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GWorldPtr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;savedGW;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GDHandle&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;savedGDH;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PicHandle&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sepsPICT = nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Rect&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pictFrame;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GWorldPtr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OQDGWorld = nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;PixMapHandle&nbsp;&nbsp;&nbsp;&nbsp;srcPix, destPix;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GWorldPtr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;colorSep = nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;QDColor[7] =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{blackColor, yellowColor, magentaColor,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;redColor, cyanColor, greenColor, blueColor};</code><br>
+<code></code><br>
+<code>// Save the current GWorld and GDevice.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;GetGWorld(&amp;savedGW, &amp;savedGDH);</code><br>
+<code></code><br>
+<code>// Set our global color table to the eight original QuickDraw colors</code><br>
+<code>// and get the picture's frame.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gOrgQDCTab = GetCTable(127);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pictFrame = (*wPICT)-&gt;picFrame;</code><br>
+<code></code><br>
+<code>// Create a 4-bit GWorld that uses the eight original QuickDraw</code><br>
+<code>// colors. If there are no errors, band the picture, using ditherCopy</code><br>
+<code>// if desired and scaling the amount we need to. The result is a</code><br>
+<code>// representation of the image in the eight original colors.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = NewGWorld(&amp;OQDGWorld, 4, &amp;pictFrame, gOrgQDCTab,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nil, 0);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (!err)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = BandPicture(wPICT, OQDGWorld, scaleAmt, useDither);</code><br>
+<code>// Create a new 1-bit GWorld for the separations.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (!err)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = NewGWorld(&amp;colorSep, 1, &amp;pictFrame, nil, nil, 0);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>// Set the current GWorld to the 1-bit GWorld and create a picture.</code><br>
+<code>// Note that this means that the picture is tied to the 1-bit GWorld.</code><br>
+<code>// Only when that GWorld is current will data be recorded into the</code><br>
+<code>// picture.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (!err)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetGWorld(colorSep, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;srcPix = GetGWorldPixMap(OQDGWorld);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LockPixels(srcPix);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;destPix = GetGWorldPixMap(colorSep);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LockPixels(destPix);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ClipRect(&amp;pictFrame);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sepsPICT = OpenPicture(&amp;pictFrame);</code>
+</p>
+<p>
+With the picture opened, the separations can be made. We go through each of the eight<br>
+original colors (except white) and create a separation for that color. To do this, we set<br>
+the current GWorld to one that's different from our picture's GWorld (to turn off<br>
+recording). Next we install our searchProc and we CopyBits from the 4-bit GWorld to<br>
+the 1-bit one. This gives us black bits only where the color in the original matches the<br>
+current separation color. Then we delete the searchProc and set our current GWorld<br>
+back to the 1-bit one. This reenables recording into our picture, and we record the<br>
+foreground color for the current separation, followed by the separation's bitmap using<br>
+srcOr mode. After all seven passes have been completed, we will get a picture with<br>
+seven separations in it, overlaying each other to make the composite, which will differ<br>
+slightly from the original because we lose some information to dithering. (See Figure<br>
+3.) We use srcOr mode so that the white is transparent; otherwise the white for each<br>
+layer would overwrite the color from the previous layer. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for (gCurColor = 0; (gCurColor &lt; 7) &amp;&amp; !err;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gCurColor++)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetGWorld(savedGW, savedGDH);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AddSearch(OQDSearch);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CopyBits((BitMap *) *srcPix, (BitMap *) *destPix,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;pictFrame, &amp;pictFrame, srcCopy, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DelSearch(OQDSearch);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetGWorld(colorSep, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ForeColor(QDColor[gCurColor]);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CopyBits((BitMap *) *destPix,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(BitMap *) *destPix, &amp;pictFrame,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;pictFrame, srcOr, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code></code><br>
+<code>// Close the picture, restore our saved GWorld/GDevice, and dispose of</code><br>
+<code>our</code><br>
+<code>// GWorlds and the global color table. Finally, return the picture we</code><br>
+<code>// created.</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ClosePicture();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetGWorld(savedGW, savedGDH);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;UnlockPixels(srcPix);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;UnlockPixels(destPix);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (gOrgQDCTab) DisposeCTable(gOrgQDCTab);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (OQDGWorld) DisposeGWorld(OQDGWorld);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (colorSep) DisposeGWorld(colorSep);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return sepsPICT;</code><br>
+<code>}</code>
+</p>
+<p>
+After the seventh separation is made, we can jump into our print loop and print the<br>
+image with DrawPicture. The result is a nicely dithered color image. For best results,<br>
+we'd use PrGeneral to set the printer grafPort's resolution higher than 72 dpi. In the<br>
+case of a printer such as the ImageWriter, though, this has a tremendous performance<br>
+hit. Here's another good opportunity to provide some user interaction and let the user<br>
+decide what to do, via a preferences setting or by adding an item to the print job dialog.
+</p>
+<p>
+<img src="img/148.gif" width="218 px"></img>
+</p>
+<p>
+Original
+</p>
+<p>
+<img src="img/149.gif" width="218 px"></img>
+</p>
+<p>
+greenColor
+</p>
+<p>
+<img src="img/150.gif" width="218 px"></img>
+</p>
+<p>
+yellowColor
+</p>
+<p>
+<img src="img/151.gif" width="216 px"></img>
+</p>
+<p>
+blackColor
+</p>
+<p>
+<img src="img/152.gif" width="218 px"></img>
+</p>
+<p>
+redColor
+</p>
+<p>
+<img src="img/153.gif" width="218 px"></img>
+</p>
+<p>
+magentaColor
+</p>
+<p>
+<img src="img/154.gif" width="218 px"></img>
+</p>
+<p>
+cyanColor
+</p>
+<p>
+<img src="img/155.gif" width="218 px"></img>
+</p>
+<p>
+blueColor
+</p>
+<p>
+<img src="img/156.gif" width="218 px"></img>
+</p>
+<p>
+Composite
+</p>
+<p>
+<b>&nbsp;Figure 3</b> Seven Separations Created With Original QuickDraw for a Color Image
+</p>
+<p>
+<b>GOTCHAS</b><br>
+This method of printing a picture to an ImageWriter with a color ribbon will achieve<br>
+great results without doing anything special. However, there are two gotchas with it. 
+</p>
+<p>
+First, if you generate an image at a high resolution and export it to another<br>
+application, the printing application needs to know to call PrGeneral to boost the<br>
+printer port's resolution. However, you can export the pictures at 72 dpi, use a<br>
+picFrame that's correct for 72-dpi display of the image, or use OpenCPicture to store<br>
+the resolution in the picture. In any of those cases, DrawPicture will do the right thing<br>
+with the picture, even though the application doesn't. To see this, print out the sample<br>
+PICT called Separations Test to a color ImageWriter using TeachText. TeachText has no<br>
+special code to handle ImageWriter printing and yet it prints the PICTs generated by<br>
+this method just fine.&nbsp;&nbsp;&nbsp;Pictures you create this way will print to a color ImageWriter<br>
+from any application and can be pasted into word processors and such for color image<br>
+output. Pretty neat, huh? 
+</p>
+<p>
+But, unfortunately, srcOr mode doesn't necessarily print well with all printer<br>
+drivers. This means that these way-cool images may not print way-cool on printers<br>
+other than ImageWriters. This isn't a problem in the sample code because we use this<br>
+method only if we're printing on an ImageWriter.&nbsp;&nbsp;&nbsp;PICTs that are pasted into a<br>
+document might be printed on any printer, however, so exporting these pictures could<br>
+create more problems than it solves.
+</p>
+<p>
+For more details on how to do the separations, see the Color ImageWriter Adventures<br>
+sample. The sample prints color pixMaps using this method and allows you to specify<br>
+high-resolution or low- resolution output. I strongly urge you to print at least one of<br>
+the sample images using the application in ditherCopy mode and specifying<br>
+high-resolution output. The results may surprise you, as they did me. 
+</p>
+<h2>PRINTING IN BLACK AND WHITE</h2>
+<p>
+When we're printing pixMaps to a grafPort and the printer doesn't have (or the user<br>
+doesn't want to use) color capability, we need to use dithering (or more precisely, a<br>
+special kind of dithering called halftoning) to get any kind of decent output. In other<br>
+words, we need to convert pixMaps to dithered bitmaps. The Halftone Adventures<br>
+sample demonstrates three different dithering methods: the CopyBits ditherCopy<br>
+method, the "true" halftone method, and the lazy person's halftone method.&nbsp;&nbsp;&nbsp;Before we<br>
+look at these, a note about resolution. 
+</p>
+<p>
+<b>SETTING RESOLUTION</b><br>
+When printing halftoned images, it's best to set the printer to a square resolution<br>
+(equal horizontal and vertical dpi). The reason is that when we use mixed resolutions,<br>
+our halftone matrix becomes distorted, and that can distort the printed image. This<br>
+happens because dots that should be a fixed distance apart are now closer to each other<br>
+in one direction than in the other.
+</p>
+<p>
+We can compensate for this distortion when we create our halftone matrix, but it's<br>
+likely to be a great deal of work, which is only marginally justified. All of the halftone<br>
+routines in the sample code print using square resolutions. (They call the GetBestDPI<br>
+routine described earlier with the wantSquareDPI parameter set to true.)
+</p>
+<p>
+<b>THE DITHERCOPY METHOD</b><br>
+The ditherCopy method uses CopyBits to dither the image to a 1-bit GWorld at device<br>
+resolution and print that. If you're working with a device that has a low resolution<br>
+(prints big dots) and a relatively constant physical dot size -- such as the<br>
+ImageWriter -- then this method works fine. If, however, you're printing to a device<br>
+that has a high resolution and a variable pixel size (from device to device, or even<br>
+within the same device across time or due to variations in amount and type of toner,<br>
+humidity, and paper type), this method results in image distortion. Figure 4 was<br>
+dithered to a LaserWriter using this method, and the resulting distortion is very<br>
+noticeable. 
+</p>
+<p>
+The distortion you see in Figure 4 is due to pixel error (the difference between the<br>
+physical pixel drawn on the page and its size as the driver or rendering system models<br>
+it). Since dithering must occur at device resolution, it's hard to compensate for the<br>
+device pixel error when a dithered image is printed. Halftoning, on the other hand,<br>
+increases the size of each dot, negating the pixel error thatoccurs during printing.<br>
+Thus halftoning results in better output on devices such as the LaserWriter.&nbsp;&nbsp;&nbsp;This<br>
+phenomenon is discussed further in "Making the Most of Color on 1-Bit Devices"<br>
+in<i>develop</i>Issue 9 and is one of the main reasons that just doing a straight dither is not<br>
+acceptable for most cases. The ditherCopy method does, however, provide a good<br>
+benchmark to judge the other methods against.
+</p>
+<p>
+<img src="img/157.gif" width="506 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 4</b> Distorted Sample Output From the ditherCopy Method
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>THE "TRUE" HALFTONE METHOD</b><br>
+The "true" halftone method is described in "Making the Most of Color on 1-Bit<br>
+Devices" in<i>develop</i>Issue 9. You can read all about it there and try it out in the Halftone<br>
+Adventures sample. Note that the routine in the sample code uses 8 x 8 halftones, but<br>
+the algorithm described in the Issue 9 article is general and will work at any angle,<br>
+any frequency, and any resolution. Also, since the sample's routine accepts only<br>
+8-bit-deep and 32-bit-deep pixMaps, the source image is passed in as a 32-bit- deep<br>
+pixMap. When you use this sample code, an image may take one to two minutes to<br>
+render before being printed, but the code can be optimized to increase its speed. Figure<br>
+5 provides an example of the kind of output we can expect using this method. 
+</p>
+<p>
+<img src="img/158.gif" width="506 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 5</b> Sample Output From the "True" Halftone Method
+</p>
+<p>
+<b>THE LAZY PERSON'S HALFTONE METHOD</b><br>
+I came up with the lazy person's halftone method to create fast "halftone-ish" output<br>
+that looks very good and prints very fast. It works especially well on LaserWriters.<br>
+Typical images render in 12 seconds or so (before printing), and I'm sure<br>
+optimization would shorten this time. But note that this is not intended to be a general<br>
+solution like the "true" halftone method; its usefulness is restricted to halftones at one<br>
+angle, one frequency, and a square resolution. 
+</p>
+<p>
+Strictly speaking, this isn't halftone generation but rather halftone approximation<br>
+with patterns. The difference is that in "true" halftoning, a halftone matrix is<br>
+cookie-cuttered around the image, and adjacent pixels are taken into account when the<br>
+halftones are created. In this way, the appearance of strong patterns (such as vertical<br>
+stripes) can be removed. With the method I propose, the output appears to be a 0&#186; 4 x<br>
+4 halftone, not a 45&#186; 8 x 8 as in the Halftone Adventures implementation of the true<br>
+halftone method. While this approach doesn't generate strong patterns, the absence of a<br>
+45&#186; halftone is somewhat noticeable on lower-resolution printers like ImageWriters<br>
+or those with drivers that don't support PrGeneral (and therefore must be used at 72<br>
+dpi). 
+</p>
+<p>
+Here's how it works: First, we dither the original image to a 4-bit grayscale GWorld,<br>
+at 1/4 the optimal printer resolution. This may mean stretching or shrinking the<br>
+original image. Next we find out how much of the printed image will fit on the paper.<br>
+We use this information to limit the amount of data we're working with to just the<br>
+pixels that will end up on paper. If the image extended 5 inches off the right edge of the<br>
+paper, for example, it would be a waste of time to process that extra 5 inches. Once we<br>
+have the dithered data and the bounds we're working with, we create a 1-bit GWorld<br>
+that's four times as big as the 4-bit one. (This also means that it's at our printer<br>
+port's resolution.) Going through the source (4-bit) image one pixel at a time, we<br>
+create the halftoned output by matching up each pixel's index value with one of the<br>
+patterns shown in Figure 6 and drawing that 4 x 4 pattern in our 1-bit GWorld. 
+</p>
+<p>
+For example, if we find a pixel has the index value of 8, the pattern with 8 dots in it is<br>
+used. With 4 x 4 patterns, we could actually create 17 unique patterns (counting the<br>
+pattern created when no dots are used). However, this wouldn't be helpful since our<br>
+image has only 16 shades of gray in it.&nbsp;&nbsp;&nbsp;Therefore, we ignore one, and I chose to drop<br>
+the pattern for 15. (The pattern designated 15 is really one for 16.) The reason for<br>
+using the pattern for 16 in the 15 spot is that black in our image will have a value of<br>
+15, and we want to make sure that black pixels are rendered as totally black patterns.<br>
+Otherwise, the resulting image would have no solid black in it.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+</p>
+<p>
+<img src="img/159.gif" width="291 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 6</b> The Patterns Used to Approximate Halftones
+</p>
+<p>
+Once the entire image has been halftoned, we just CopyBits it to the printer port.<br>
+Figure 7 provides an example of the kind of output we can expect using this method. 
+</p>
+<p>
+&nbsp;This method works especially well when we're printing at a high resolution. On the<br>
+LaserWriter at 300 dpi, for example, the 4 x 4 patterns are so small (1/75") that<br>
+they appear as a single dot. It's hard to believe that the output in Figure 7 was printed<br>
+in just black! As you can see by comparing this output to the halftone output in Figure<br>
+5, there's very little difference between the two, and for speed considerations, the lazy<br>
+person's method may be a viable alternative. 
+</p>
+<p>
+<img src="img/160.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 7</b> Sample output from the Lazy Person's Halftone Method
+</p>
+<h2>DETECTING THE PRINTING CONFIGURATION</h2>
+<p>
+We now have the methods that enable us to obtain high-quality output from the whole<br>
+range of possible printing configurations when we print pixMaps. All we still need is a<br>
+way to decide which method to use at print time.
+</p>
+<p>
+To make this decision, we need to determine only three things:
+</p>
+<ul>
+<li>Do we have a cGrafPort or a grafPort? </li>
+<li>If a grafPort, is this an ImageWriter? </li>
+<li>If an ImageWriter, is a color ribbon installed? </li>
+</ul>
+<p>
+That's it! These things can be determined in ways that will be compatible now and in<br>
+the future.&nbsp;&nbsp;&nbsp;Let's take a quick look at the questions and how to determine their<br>
+answers. 
+</p>
+<p>
+<b>DO WE HAVE A CGRAFPORT OR A GRAFPORT?</b><br>
+We can determine whether we have a cGrafPort or a grafPort by checking the<br>
+rowBytes value in the port returned by PrOpenDoc. If it's negative (the high bit is<br>
+set), we have a cGrafPort. Otherwise, we have a grafPort. In C this reads:
+</p>
+<p>
+<code>Boolean HaveColorPrPort(THPrint hPrint, OSErr *anErr)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;haveCGrafPort = false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TPPrPort&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dummyPort;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;TPrStatus&nbsp;&nbsp;&nbsp;statusRec;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (hPrint)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Open a document and check for errors.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dummyPort = PrOpenDoc(hPrint, nil, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*anErr = PrError();</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// If no errors, check the port's rowBytes value.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (*anErr == noErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;haveCGrafPort = (dummyPort-&gt;gPort.portBits.rowBytes &lt; 0);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// We don't want to print yet, so kill the job by setting an</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// error.&nbsp;&nbsp;Clean up by closing the document and calling</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// PrPicFile to delete any spool file we may have created.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Finally, clear the error we set.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PrSetError(iPrAbort);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PrCloseDoc(dummyPort);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if ((*hPrint)-&gt;prJob.bjDocLoop == bSpoolLoop)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PrPicFile(hPrint, dummyPort, nil, nil, &amp;statusRec);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PrSetError(noErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*anErr = nilHandleErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;return haveCGrafPort;</code><br>
+<code>}</code>
+</p>
+<p>
+The routine calls PrOpenDoc, checks the value of the returned port's rowBytes<br>
+(negative means cGrafPort), and then posts an error to halt printing and calls<br>
+PrCloseDoc. Finally, it calls PrPicFile to delete any spool file that may have been<br>
+generated, clears the error it set, and returns true or false depending on whether or<br>
+not the port we looked at was a cGrafPort. It's not glamorous, but it works.
+</p>
+<p>
+If as a result of this inquiry we find that we have a cGrafPort, we give the go-ahead to<br>
+printing with Color QuickDraw calls. If not, we go on to the next question. 
+</p>
+<p>
+<b>IF A GRAFPORT, IS THIS AN IMAGEWRITER?</b><br>
+We can find out if we're talking to the ImageWriter driver by getting the high byte of a<br>
+validated print record's prStl.wDev field. If the high byte is 1 or 5, we're using the<br>
+ImageWriter or the ImageWriter LQ driver. In C:
+</p>
+<p>
+<code>#define IW_wdevID 1</code><br>
+<code>#define IWLQ_wdevID 5</code><br>
+<code>unsigned char&nbsp;&nbsp;&nbsp;devID;</code><br>
+<code></code><br>
+<code>devID = (*hPrint)-&gt;prStl.wDev >>8;</code><br>
+<code>if ((devID == IW_wdevID) || (devID == IWLQ_wdevID))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Then we have an ImageWriter. */;</code>
+</p>
+<p>
+This method is described in the Macintosh Technical Note "Optimizing for the<br>
+LaserWriter -- Techniques" and is strongly discouraged there. So why am I suggesting<br>
+that you use it? Well, unfortunately, there's no other reliable way to do this. In fact,<br>
+checking the wDev has begrudgingly become an acceptable thing; developers have<br>
+become so used to this method that we'd need to give ample warning before breaking it.<br>
+However, you should expect that one of these days, checking wDevs will not be<br>
+supported anymore. As soon as Apple provides a better method, you should jump on the<br>
+code conversion bandwagon and replace all your wDev-snooping code. 
+</p>
+<p>
+It's important to make this check<i>after</i>the cGrafPort check because there are<br>
+third-party printer drivers for the ImageWriter that support 8-bit color through<br>
+cGrafPorts. If we first check for an ImageWriter and then jump to the ImageWriter<br>
+grafPort printing code, we may be sacrificing output quality, since we may have been<br>
+able to print using the Color QuickDraw methods described for cGrafPorts. 
+</p>
+<p>
+Anyway, if we find that we have an ImageWriter, we go on to the next question.<br>
+Otherwise, we assume we have a monochrome printer and we accordingly launch the<br>
+halftoning routine for printing. 
+</p>
+<p>
+<b>IF AN IMAGEWRITER, IS A COLOR RIBBON INSTALLED?</b><br>
+In the case of the ImageWriter, we have two options for determining whether a color<br>
+ribbon is installed: we can either ask the printer or ask the user.
+</p>
+<p>
+To ask the printer, we would go through the serial driver if the ImageWriter were<br>
+connected to a serial port or through AppleTalk Printer Access Protocol (PAP) if the<br>
+printer were an AppleTalk ImageWriter. But this approach has a few problems. First,<br>
+even if the user has a color ribbon, he may not want to use it. He may be printing<br>
+rough copies of his work and want to save the color ink until he's ready to make a final<br>
+copy. Or he may know that his color ribbon is worn out and prints well only in black. A<br>
+second problem is that the printer must be turned on and selected when we query it, or<br>
+we'll hang until we time out. The delay is likely to thoroughly annoy our users.
+</p>
+<p>
+Third, there's a problem with ImageWriter I support: the "ESC ?" query sequence <br>
+(see the<i>ImageWriter Technical Reference Manual</i>) that's used to ask a serial<br>
+ImageWriter if it has a color ribbon is not supported by the ImageWriter I. This<br>
+means our query routine will hang until it times out, and we still won't know whether<br>
+the printer has a color ribbon. A final and more compelling argument against<br>
+performing the color ribbon query is that the methods that work today are unlikely to<br>
+work under QuickDraw GX. Whether or not you decide to take advantage of QuickDraw<br>
+GX's abilities, you should avoid implementing code that will make your application<br>
+incompatible with it.
+</p>
+<p>
+So we're left with the option of asking the user. The easiest way to do this is through a<br>
+preferences setting. A slightly more coding-intensive but preferred approach is to add<br>
+controls to the print job dialog. This might be a checkbox that simply says "Print in<br>
+color," a pop-up menu that offers color or black and white (as in the Apple IIGS<br>
+ImageWriter driver version 4.0), or, as I chose in the Final Adventure sample code,<br>
+radio buttons for color or halftone output. 
+</p>
+<p>
+Even with this method, there are a few problems. If we add the control to every<br>
+printer driver's job dialog, it will appear even when printers return cGrafPorts, in<br>
+which case we'll want to ignore the setting. Also, if a checkbox is added to a driver like<br>
+the 7.0 LaserWriter driver, the user will see redundant settings: a set of radio buttons<br>
+for Color/Grayscale versus Black &amp; White printing, and another checkbox for "Print<br>
+in color." The way to get around this problem is to add the output controls only when<br>
+the ImageWriter or ImageWriter LQ driver is being used, something we've already<br>
+discussed how to determine. If we implement this solution, we'll want to store the last<br>
+selected value for the control and default to it whenever the dialog is displayed. That<br>
+will spare users from possibly having to click an extra button every time they print.<br>
+However, if they change ImageWriters between print jobs, the saved flag may be<br>
+incorrect for the new printer. This is a minor glitch that will become apparent the<br>
+next time they print. 
+</p>
+<p>
+The bottom line here is that if we determine that our application is dealing with an<br>
+ImageWriter with a color ribbon installed, we print using the eight original colors.<br>
+Otherwise, we use our halftoning routine and print in black. 
+</p>
+<p>
+<b>PUTTING IT ALL TOGETHER</b><br>
+To see how this decision process translates into code, take a look at the DoPrint routine<br>
+in the Final Adventure sample on the CD. That sample rolls together into one neat<br>
+package all the methods we've discussed in this article. Study it and give it a try to see<br>
+how it works. 
+</p>
+<h2>LAST WORDS</h2>
+<p>
+In this article, we've looked at the problems associated with color printing under the<br>
+current printing architecture. We've seen that there's a real need for application<br>
+developers to provide color printing support in their applications. We've also looked at<br>
+techniques for printing high-quality representations of pictures containing pixMaps.<br>
+These techniques consist of banding images through GWorlds for color-capable<br>
+printers and drivers, creating color separations for printing on ImageWriters with<br>
+color ribbons, and creating dithered halftones for black-and-white output. 
+</p>
+<p>
+I mentioned that these techniques aren't intended for printing pictures that contain<br>
+text, because when text is converted to pixMaps, all of the font information is lost, and<br>
+the result is chunky, poor- quality text that's hard to read. You should always draw<br>
+text separately from bitmaps or pixMaps, if at all possible. One way to do this is to<br>
+write a routine to split a picture into two pictures: one with pixMaps, bitmaps, and<br>
+foreground colors, and the other with everything except pixMaps and bitmaps (we'd<br>
+want foreground colors in both). Once you have the two pictures, you can render the<br>
+first using the methods discussed in this article and the second with DrawPicture. The<br>
+order is important if we want the text to appear on top of the pixMap data. Remember<br>
+to scale both pictures to the grafPort's or cGrafPort's resolution during printing. 
+</p>
+<p>
+As more technologies make use of color on the Macintosh, and more scanners and jumbo<br>
+color monitors are shipped, users are going to need a way to get realistic hard copies of<br>
+their screen displays. And although the color capabilities of Apple drivers and printers<br>
+will continue to improve in both the short and long term (through such technologies as<br>
+QuickDraw GX, ColorSync, and new printer drivers), interim solutions such as the<br>
+ones proposed here will be needed for some time to come. 
+</p>
+<p>
+<b>THE STORY BEHIND COLOR QUICKDRAW SUPPORT</b>So why is it that the<br>
+LaserWriter didn't support cGrafPorts until the 6.0 LaserWriter driver? And why is<br>
+it that the 7.0 ImageWriter driver still doesn't support cGrafPort printing?
+</p>
+<p>
+The first answer is simple. Color QuickDraw didn't exist when the LaserWriter driver<br>
+was created back in 1985. It wasn't until 32-Bit QuickDraw came on the scene that<br>
+the driver was revised to support color/grayscale printing. Since the driver wasn't<br>
+originally designed with Color QuickDraw in mind, this support represented major<br>
+changes to the source code. As such, it took until version 6.0.2 for most of the glitches<br>
+to be worked out. Even today, the LaserWriter driver is essentially an old-style<br>
+QuickDraw driver with Color QuickDraw support&nbsp;&nbsp;patched in.
+</p>
+<p>
+The ImageWriter driver never was revised, except to add color tables to the print job<br>
+dialogs in the 6.1 version. Why wasn't the driver revised? Well, for the ImageWriter<br>
+driver to fully support Color QuickDraw, it would essentially need to be rewritten.<br>
+Since there's been no overwhelming demand and since color printing solutions are<br>
+available via the color LaserWriter driver and third-party printers and drivers, no<br>
+one has rewritten the driver to provide color support.
+</p>
+<p>
+At some point in the future, all of Apple's printer drivers will support Color<br>
+QuickDraw calls. But for now, applications should be aware that a printer driver<br>
+returns either a cGrafPort or a grafPort, and it's the application's responsibility to<br>
+"do the right thing" regardless of the port type.
+</p>
+<h2>RELATED READING</h2>
+<ul>
+<li>"Making the Most of Color on 1-Bit Devices" by Konstantin Othmer and<br>
+Daniel Lipton, <i> develop</i> Issue 9.</li>
+<li>"Print Hints From Luke &amp; Zz: CopyMask, CopyDeepMask, and<br>
+LaserWriter Driver 7.0" by Pete ("Luke") Alexander, <i>develop</i> Issue 8.</li>
+<li>"Print Hints From Luke &amp; Zz: Color Printing With LaserWriter 6.0<br>
+Revisited" by Pete ("Luke") Alexander,<i>develop</i>Issue 6.</li>
+<li>"Meet PrGeneral, the Trap That Makes the Most of the Printing Manager"<br>
+by Pete ("Luke") Alexander,<i>develop</i>Issue 3.</li>
+<li>Macintosh Technical Notes "Optimizing for the LaserWriter --<br>
+Techniques" (formerly #72) and "How to Add Items to the Print Dialogs"<br>
+(formerly #95).</li>
+<li><i>Fundamentals of Interactive Computer Graphics</i> by<br>
+D. Foley and A. Van Dam (Addison-Wesley, 1982). Pretty much the<br>
+standard in computer graphics books.</li>
+<li><i>Graphics Gems </i>edited by A. S. Glassner (Academic Press, 1990). <i>Graphics</i><br>
+<i>Gems II</i> edited by J. Arvo (Academic Press, 1991). Lots of quick routines to do<br>
+neat image processing stuff without the brain-bashing.</li>
+</ul>
+<p>
+<b>DAVE HERSEY</b> is a member of the Printing, Imaging, and Graphics (PIGs) group in<br>
+Apple Developer Technical Support. Before leaving his boyhood home of Newport,<br>
+Rhode Island, more than two years ago, Dave churned out code for a number of different<br>
+software developers, writing applications that ranged from a popular accounting<br>
+package to flatbed scanner software. When he's not absorbing radiation in front of his<br>
+computer, Dave enjoys vacationing at the family summer camp in Wayne, Maine (no<br>
+kidding), watching CNN on his 35-inch television ("It's still not big enough"), and<br>
+playing Duplos with his nephews. Even with such a busy agenda, Dave still finds time<br>
+to torment his peers with occasional practical (and impractical) jokes, in true DTS<br>
+style.*
+</p>
+<p>
+<b>The LaserWriter's physical resolution is 300 dpi</b> but printer drivers on the<br>
+Macintosh return a 72-dpi port by default, because 72 dpi is the native resolution of<br>
+QuickDraw. It's important to realize that unless you explicitly set the port's<br>
+resolution to 300 dpi, you're working in a 72-dpi port and the effective resolution is<br>
+cut by more than three quarters. *
+</p>
+<p>
+<b>The original QuickDraw colors </b>and their predefined constants are listed on page<br>
+158 of <i> Inside Macintosh</i> Volume I.*
+</p>
+<p>
+<b>Color QuickDraw searchProcs </b>are discussed in <i>Inside Macintosh</i> Volume V, pages<br>
+145-147.*
+</p>
+<p>
+<b>Adding controls to the print job dialog</b> is described in the Macintosh Technical<br>
+Note "How to Add Items to the Print Dialogs" and illustrated by PDlog Expand in the<br>
+Snippets folder on the <i> Developer CD Series</i> disc.*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Pete ("Luke") Alexander, Hugo Ayala,<br>
+Dan Lipton, Konstantin Othmer, Sean Parent*
+</p>
+</body>
+</html>

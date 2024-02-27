@@ -1,0 +1,322 @@
+<html>
+<head>
+<!-- Article ID: 11 - Extracted from develop-1993 -->
+<!-- on 2024-02-13 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>March 93 - MACINTOSH DEBUGGING: THE BELLY OF THE BEAST REVISITED</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH DEBUGGING: THE BELLY OF THE BEAST<br>
+REVISITED</h2>
+<h1>FRED HUXHAM AND GREG MARRIOTT</h1>
+<h1>ADAPTED FROM THEIR TALK AT THE WWDC BY DAVE<br>
+JOHNSON</h1>
+<p>
+<img src="img/161.gif" width="180 px"></img>
+</p>
+<p>
+<i>This is a supplement to the article "Macintosh Debugging: A Weird Journey Into the</i><br>
+<i>Belly of the Beast" in Issue 8 of </i> develop.<i> It presents&nbsp;&nbsp;a few debugging tools that were</i><br>
+<i>discussed at Apple's Worldwide Developers Conference in May 1992. Like those</i><br>
+<i>discussed in the previous article, these tools are designed to help you force the nasty,</i><br>
+<i>subtle bugs in your code to show their hideous little faces immediately, rather than</i><br>
+<i>lying in wait and biting you when you least expect it.</i>
+</p>
+<p>
+&nbsp;People often ask us, "How can I be a totally awesome, godlike debugging stud [or<br>
+studette] like you?" Unfortunately, the big truth from the Issue 8 debugging article is<br>
+just as true now as it was then:<i> debugging is hard</i>. That's just the way it is. The only<br>
+way to get better at it is to practice. Now that we've got that straight and before we get<br>
+into describing the new debugging tools, here are three pearls of wisdom to guide you<br>
+in your practice. 
+</p>
+<p>
+&nbsp;First of all, it helps to know a lot about the operating system. The better sense you<br>
+have of how the Macintosh works, the better off you'll be trying to track down a nasty<br>
+bug. Dare to delve into the bowels of the OS. Read and reread<i>Inside Macintosh</i>; take it<br>
+with you to bed, to the bathroom, out to dinner, and on dates. (You might want to invest<br>
+in a sturdy wheelbarrow, especially with the new<i> Inside Macintosh </i>volumes<br>
+proliferating like rabbits.) For that matter, read every Macintosh programming book<br>
+ever written (especially those listed at the end of this article) and every Technical<br>
+Note, Snippet, piece of Sample Code, and issue of<i>develop</i>, as well as every word on the<br>
+AppleLink Discussion boards. Also, spend lots of time in debuggers, watching the<br>
+system do its thing. If you're not dreaming in hex, you're not spending enough time in<br>
+MacsBug. 
+</p>
+<p>
+&nbsp;Second, get slammed a lot. The people who are the best at debugging are usually the<br>
+ones who've had to track down the most bugs and therefore have an encyclopedic<br>
+knowledge of them. If you have a really nasty bug in your code that crashes the machine<br>
+on a seemingly random basis and takes you three days to find and squash, then by jove<br>
+you'll remember that bug the next time you see it. Simply put, the more bugs you find,<br>
+the better you'll be at finding bugs. 
+</p>
+<p>
+&nbsp;Last, use good tools, and use them all. Reread the Issue 8 article. Turn on those tools<br>
+and stress your code. Bend, fold, staple, and mutilate it. Show no mercy. 
+</p>
+<p>
+&nbsp;These things will help you on your way to becoming a primo bug stomper, but<br>
+debugging is like any complex skill in that it can't really be taught past a certain point.<br>
+You simply have to do it a lot, andover time you'll get better. Tools and techniques such<br>
+as the ones presented here can help enormously, especially by forcing hidden bugs to<br>
+the surface, but they can never do the whole job for you. 
+</p>
+<p>
+This time there are only four new tools to talk about -- Double Trouble, Dispose<br>
+Resource, Blat, and Smart Friends -- so this article is much shorter than the last one.<br>
+The tools are available on the<i>Developer CD Series</i>disc, as well as on AppleLink and<br>
+elsewhere. We're doing this backward from the last time: first we'll present a buggy<br>
+code sample, then we'll talk about the tool that would find the bug. 
+</p>
+<h2>DOUBLE TROUBLE</h2>
+<p>
+Can you find the bug in this code sample? 
+</p>
+<p>
+<code>myHandle = NewHandle(100);</code><br>
+<code>if (myHandle) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;AddResource(myHandle, 'dumb', 10, "\p");</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;if (resError()) HandleTheError();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CloseResFile(outputFileRef);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DisposeHandle(myHandle);</code><br>
+<code>}</code>
+</p>
+<p>
+OK, time's up. This one's not too hard. The problem is that during CloseResFile the<br>
+Resource Manager disposes of all the resources in memory. The DisposeHandle call<br>
+afterward is unnecessary and is actually potentially disastrous. Normally you'll just<br>
+get an error and DisposeHandle will do nothing, but occasionally the data structures in<br>
+the Memory Manager will conspire to really screw you.
+</p>
+<p>
+Here's how: Master pointers are allocated in clumps called master pointer blocks,<br>
+which are nonrelocatable blocks in your application's heap. The master pointers that<br>
+are currently free for use are kept in a linked list by the Memory Manager. The list is<br>
+LIFO, like a stack: when you allocate a new handle, the Memory Manager uses the first<br>
+master pointer in the free list, and when you dispose of a handle the freed master<br>
+pointer is returned to the beginning of the list. 
+</p>
+<p>
+Now the plot thickens. If the first master pointer in the free list also happens to be the<br>
+first master pointer in its master pointer block (so that the master pointer and the<br>
+master pointer block have the same address) and then you dispose of a handle twice by<br>
+mistake,<i>very bad things</i>will happen. On the first dispose, everything is fine: the<br>
+Memory Manager frees the block the master pointer points to and returns the master<br>
+pointer to the start of the free list. At this time, the master pointer<i>still</i> points to a<br>
+valid block of memory, but now it's the master pointer block itself! So on the second,<br>
+unintentional dispose, when the Memory Manager dutifully frees the block for reuse,<br>
+you're set up for disaster. Subsequent memory use will likely result in writing over<br>
+many master pointers, which will of course trash you one way or another.
+</p>
+<p>
+Figure 1 illustrates this scenario. On the left is the top part of a master pointer block<br>
+that resides in the heap at address 80. The heap's free list is a standard linked list<br>
+(each entry contains the next entry's address) beginning at hFstFree. Note that the<br>
+first entry in the heap's free list is also the first master pointer in the block. This is<br>
+the first step to trouble. 
+</p>
+<p>
+<img src="img/162.gif" width="485 px"></img>
+</p>
+<p>
+<b>Figure 1</b> How Disposing of the Same Handle Twice Can Spell Disaster
+</p>
+<p>
+Now we call DisposeHandle on the master pointer at 81. DisposeHandle looks at the<br>
+block pointed to by the master pointer (in this case the block at 144, not shown),<br>
+determines that it is indeed a valid block, marks it as free for reuse, and adds the<br>
+newly freed master pointer to the front of the free list.&nbsp;&nbsp;&nbsp;So far so good. Now the master<br>
+pointer block looks like the one on the right in the figure. 
+</p>
+<p>
+Then we call DisposeHandle on 81 again by mistake. DisposeHandle looks at the block<br>
+pointed to by the master pointer (now it's the block at 80, our master pointer block!),<br>
+determines that it is indeed a valid block (uh oh), marks it as free for reuse (yikes!),<br>
+and adds the newly freed master pointer to the front of the free list -- and the heap is<br>
+now hosed for good. This Memory Manager bug is subtle and rare, but oh so nasty. 
+</p>
+<p>
+Even if you're lucky enough to avoid this particular sequence of events, a double<br>
+disposal is definitely a bug. Double Trouble is a system extension that watches calls to<br>
+DisposeHandle to make sure it's not being called on something in the free list. If it is,<br>
+Double Trouble drops into the debugger with a suitable warning.
+</p>
+<p>
+We'll be the first to admit that Double Trouble is far from perfect. It infers the<br>
+existence of heap zones by watching InitZone and then trying to figure out when a heap<br>
+isn't a heap anymore. The possibility exists that it will guess wrong and cause a bus<br>
+error when trying to walk a free list that's no longer a free list. Furthermore, in some<br>
+cases Double Trouble can noticeably slow down parts of the system. (After playing a<br>
+long QuickTime movie, for instance, the machine may freeze for almost a minute.)
+</p>
+<p>
+But despite Double Trouble's shortcomings, we do still recommend running it all the<br>
+time. Just try to remember that it's running so you don't chase your tail trying to find<br>
+the cause of occasional mysterious slowdowns. 
+</p>
+<h2>DISPOSE RESOURCE</h2>
+<p>
+Here's the code. What's the bug? 
+</p>
+<p>
+<code>myPicture = GetPicture(kPicID);</code><br>
+<code>if (myPicture) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DrawPicture(myPicture, &amp;myRect);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;DisposeHandle(myPicture);</code><br>
+<code>}</code>
+</p>
+<p>
+That's right, you should never call DisposeHandle on a resource handle. If you do, the<br>
+Memory Manager will free it just fine, but the Resource Manager has another<br>
+reference to it, stored in the resource map, that will be left dangling. Later on, since<br>
+the Resource Manager doesn't know the handle was disposed of, it may try some<br>
+manipulation with the handle. The results may not crash you immediately, or at all --<br>
+it depends on what the operation is and what's in the handle -- but they're certainly<br>
+not what was intended. Instead of DisposeHandle, you should always call<br>
+ReleaseResource on resource handles. ReleaseResource will properly dispose of the<br>
+handle<i>and</i>will update the resource map. (Note that KillPicture won't do the right thing<br>
+here either; it's intended for pictures created via OpenPicture, not for PICT<br>
+resources.)
+</p>
+<p>
+Dispose Resource is another extension a lot like Double Trouble. It also watches<br>
+DisposeHandle calls, this time looking to see if the handle being disposed of is a<br>
+resource handle. If so, you'll drop into the debugger with a suitable warning.
+</p>
+<p>
+Dispose Resource has one idiosyncrasy you should know about: it's been known to<br>
+indicate "false positives." Some parts of the system (we haven't been able to track<br>
+down which ones yet) seem to save a resource handle's state, detach the resource, and<br>
+then restore the state of the handle (restoring the resource bit!). Use Dispose<br>
+Resource. It will ensure that you don't make the same mistake. 
+</p>
+<h2>BLAT</h2>
+<p>
+This time the code's in assembler:
+</p>
+<p>
+<code>; Offset the rect by 128 pixels in each direction.</code><br>
+<code>PEA&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theRect(A6)</code><br>
+<code>MOVE.W&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$0080, -(SP)</code><br>
+<code>MOVE.W&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$0080, -(SP)</code><br>
+<code>_OffsetRect</code>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+If you have "iron man" syndrome and insist on programming in assembly language,<br>
+this can happen to you. We forgot to type a # in front of each $0080. As a result,<br>
+instead of moving the number $0080 (128) onto the stack twice in preparation for<br>
+the OffsetRect call, we're moving the contents of memory location $0080. Often this<br>
+kind of bug is immediately obvious, but not always. If you're moving a Boolean, for<br>
+instance, you have a fifty-fifty chance of getting the right value, even though you're<br>
+getting it from some random spot in memory. It's those cases that will give you<br>
+debugging headaches. 
+</p>
+<p>
+One easy (and recommended) way to avoid the problem in this example is to write in a<br>
+higher-level language. But we realize that's not always possible, and besides, this is<br>
+really a whole<i>class</i>of problems: reads and writes from places in memory you didn't<br>
+intend. The best way to catch this wild memory reference kind of problem is,<br>
+naturally, with memory protection, something that -- sadly -- the Macintosh<br>
+normally lacks. In the last article we mentioned Jasik's implementation, but now<br>
+there's something else you should know about. Bo3b Johnson has written a dcmd called<br>
+Blat that uses the MMU to protect memory locations 0-255 from both reads and<br>
+writes. 
+</p>
+<p>
+Blat has been tested and works well on the Macintosh IIfx, IIx, and SE/30. Because its<br>
+operation is so hardware dependent, it's hard to predict whether it will work on a<br>
+given machine. Some basic guidelines are that it requires an MMU and won't work with<br>
+68040 machines or with most configurations of machines with the IIci ROM (IIci,<br>
+IIsi, LC). For further details, see the release notes and the source code, thoughtfully<br>
+provided by Bo3b along with the dcmd itself. 
+</p>
+<h2>SMART FRIENDS</h2>
+<p>
+This bug is subtle, so pay close attention:
+</p>
+<p>
+<code>#pragma parameter __d0 GetA0</code><br>
+<code>Ptr GetA0(void) = {0x2008};&nbsp;&nbsp;// MOVE.l A0,D0</code><br>
+<code></code><br>
+<code>void MyCompletionRoutine()</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;saveA5;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;HooHahPtr&nbsp;&nbsp;&nbsp;myHooHah;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myHooHah = (HooHahPtr)GetA0();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;saveA5 = SetA5(myHooHah-&gt;myA5);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;gSomething[0].flag = true; // Set a flag in a global array.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;SetA5(saveA5);</code><br>
+<code>}</code>
+</p>
+<p>
+This code really tries hard to do everything right. As the name implies, it's a<br>
+completion routine, so it could be called at interrupt time. First a pointer to the data is<br>
+retrieved from A0, and then A5 is set to a previously saved value, thus allowing the<br>
+routine to access its global variables. Once A5 is set up, the global reference can be<br>
+made safely. Finally, A5 is restored to its previous value to clean up.&nbsp;&nbsp;&nbsp;Sounds great,<br>
+right? The only problem is, it doesn't work.
+</p>
+<p>
+Here's why: the MPW C compiler will actually set up the global reference<i>before</i>the<br>
+SetA5 call, so accessing the global accesses some unknown part of memory. This is<br>
+legal compiler optimization behavior! If GetA0 and SetA5 were functions or traps, the<br>
+bug would disappear, but since they're declared inline the compiler doesn't feel<br>
+compelled to delay the evaluation of the global array reference. The solution is to set<br>
+up A5, then call a different routine that does the global reference.
+</p>
+<p>
+Now in this case, how do you think we -- the debugging gods -- figured out the bug?<br>
+We tried the first few things we could think of; but then when we weren't making<br>
+headway after a few probes, we didn't just sit there and suffer in silence, banging our<br>
+heads against the proverbial wall. We called in some Smart Friends! The veil of<br>
+illusion was torn from our eyes, and we were shown the heart of the truth (in other<br>
+words, one of them had seen this bug before). The point is that in debugging, two (or<br>
+more) heads are far, far better than one. Bugs are not like germs: when you share<br>
+them, everyone benefits. Maybe your very own Smart Friends have had a similar bug<br>
+before, so they'll recognize immediately what's going on. Or maybe they'll think of<br>
+something different to try. At the very least, they'll temporarily divert you from your<br>
+frustration, maybe make you feel less stupid, and then you can all go out for pie<br>
+together. 
+</p>
+<h2>THAT'S IT!</h2>
+<p>
+Add these tools to your arsenal of bug sprays and foggers. Use them all and use them<br>
+well, and you, your code, and your customers will be far better off. 
+</p>
+<h2>FURTHER READING</h2>
+<p>
+Bedside books for the serious student of debugging:
+</p>
+<ul>
+<li><i>How to Write Macintosh Software</i>, 3rd ed., by Scott Knaster and Keith<br>
+Rollin (Addison-Wesley, 1992).</li>
+<li><i>Macintosh Programming Secrets, </i>2nd ed., by Scott Knaster and Keith<br>
+Rollin (Addison-Wesley, 1992).</li>
+<li><i>Debugging Macintosh Software with MacsBug</i> by Konstantin Othmer and<br>
+Jim Straus (Addison-Wesley, 1991).</li>
+<li><i>MC68000 Family Programmer's Reference Manual</i> (Motorola, Inc.).</li>
+</ul>
+<p>
+<b>FRED HUXHAM </b>(AppleLink FRED) was born and raised in California. He used to be a<br>
+tremendous athlete, know bazillions of babes, and go to wild parties in New York and<br>
+California with people like Andy Warhol and Keith Haring. Now he's 15 pounds<br>
+heavier, knows only one babe (his wife), and thinks a day spent sitting on his roof<br>
+deck watching boats go through the Golden Gate is really exciting.*
+</p>
+<p>
+<b>GREG MARRIOTT </b>(AppleLink GREG) is a SWM, 28, 6'0", 195 lbs., brown hair and<br>
+eyes, sincere, hardworking, good sense of humor. Enjoys music, romantic walks, quiet<br>
+evenings, and good books. Seeks nice woman for friendship and more. Send photo.*
+</p>
+<p>
+<b>In Bo3b's name, </b>the "3" is silent. *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Jim Reekes and Bryan Stearns*
+</p>
+</body>
+</html>

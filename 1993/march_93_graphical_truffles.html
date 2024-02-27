@@ -1,0 +1,395 @@
+<html>
+<head>
+<!-- Article ID: 8 - Extracted from develop-1993 -->
+<!-- on 2024-02-12 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>March 93 - GRAPHICAL TRUFFLES</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>GRAPHICAL TRUFFLES</h2>
+<h2>THE PALETTE MANAGER WAY</h2>
+<h1>EDGAR LEE AND FORREST TANAKA</h1>
+<p>
+<img src="img/133.gif" width="216 px"></img>
+</p>
+<p>
+No part of the Macintosh graphics environment is more feared, hated, or<br>
+misunderstood than the Palette Manager. The Developer Support Center gets many<br>
+questions about it from people who don't have any idea how to get it to do what they<br>
+want. We've seen many people just give up on the Palette Manager completely and<br>
+instead use lower-level routines that are much more difficult to use but easier to<br>
+understand quickly.
+</p>
+<p>
+The Palette Manager is actually very simple. It has no complicated heuristics that only<br>
+rocket scientists can understand. In this column, we'll show how the Palette Manager<br>
+gets its job done, and we'll talk about a couple of issues that you'll have to deal with to<br>
+make your palettes do what you want them to do. You'll see that the Palette Manager is<br>
+both easy to understand and a very useful part of the Macintosh Toolbox. 
+</p>
+<p>
+Before you read this column, it would be a good idea to read the Palette Manager<br>
+chapter (Chapter 20) of<i>Inside Macintosh</i>Volume VI, which lays down the terminology<br>
+that we'll use here. 
+</p>
+<p>
+<b>WHAT HAPPENS WHEN A PALETTE IS ACTIVATED</b><br>
+The critical job that the Palette Manager does is activate a palette. This happens<br>
+whenever you call SetPalette or ActivatePalette for the frontmost window and<br>
+whenever a window that has a palette is activated. When a palette is activated, the<br>
+Palette Manager loads the palette colors into the screen's color table. How it goes about<br>
+doing this is determined by the usage mode of each entry in the palette.
+</p>
+<p>
+You indicate an entry's usage mode by setting a flag in its usage field. There are four<br>
+usage modes: pmCourteous, pmTolerant, pmAnimated, and pmExplicit. You can choose a<br>
+separate usage mode or combination of usage modes for each entry in a palette, or you<br>
+can give all the entries the same usage mode. Let's take a look at what each usage mode<br>
+is good for and what effect each one has when a palette is activated. 
+</p>
+<p>
+<b>pmCourteous. </b>The pmCourteous usage mode enables you to replace RGBColor records<br>
+in your code with single integers. Thus, having a palette of courteous colors gives you<br>
+an alternative way to specify foreground and background colors. This is great for<br>
+localizers who might need to change the colors in your program to something more<br>
+meaningful in other countries, and it's great for you if you feel like changing a color<br>
+without recompiling.
+</p>
+<p>
+Activating a palette of courteous colors simply tells the Palette Manager to use your<br>
+window's palette as a sort of lookup table. When your window is the current port and<br>
+you call PmForeColor or PmBackColor with a palette index, the Palette Manager<br>
+simply retrieves the color in your window's palette at that index and uses it for any<br>
+subsequent drawing to that window. Courteous colors never change the screen's color<br>
+table -- they get mapped to the closest colors already available there. 
+</p>
+<p>
+Here's an example: Without the Palette Manager, you would draw a green oval in a<br>
+window by setting up an RGBColor record with a red component of 0, a green<br>
+component of 65,535, and a blue component of 0 and passing this record to<br>
+RGBForeColor; then you would call FrameOval. To change the oval to blue, you would<br>
+modify your RGBColor record in your source code and recompile your program. Now,<br>
+suppose instead you brought in the Palette Manager by setting up a palette resource<br>
+(resource type 'pltt') that contained one courteous entry -- green -- with an index of<br>
+0. In your code, you would call PmForeColor(0) instead of RGBForeColor with green.<br>
+When you called FrameOval, the oval would be drawn in green. To change the color to<br>
+blue, you would just use ResEdit to modify the green entry in your 'pltt' resource to<br>
+blue.&nbsp;&nbsp;So calling PmForeColor for a&nbsp;&nbsp;courteous palette entry is just like calling<br>
+RGBForeColor, but instead of supplying the RGB components, you simply pass an index<br>
+into the palette, where the index points to the color's RGB components (see Figure 1). 
+</p>
+<p>
+<b>&nbsp;pmTolerant. </b>The pmTolerant usage mode is used when you want to be sure that a<br>
+specific set of colors is available to the screens that your window is on. It's a bummer<br>
+to draw a rainbow in a window on a screen that another application has removed all the<br>
+greens and yellows from. You need a palette of tolerant colors to assert your<br>
+application's right to the colors it needs to display its images optimally. With such a<br>
+palette, you can change the colors in a screen's color table to ones that you want. 
+</p>
+<p>
+&nbsp;Before we look at how a palette of tolerant colors is activated, realize that Color<br>
+QuickDraw always wants white in the first entry of a screen's color table and black in<br>
+the last. To enforce this rule, Color QuickDraw protects these two entries from being<br>
+changed to other colors. That means a palette of tolerant colors can change all the<br>
+colors of a screen's color table except two. 
+</p>
+<p>
+&nbsp;When a palette of tolerant colors is activated, the Palette Manager checks each entry<br>
+in the palette and associates it with an entry in the screen's color table. Let's say we<br>
+have a palette with three entries -- bright green, black, and dark yellow -- attached<br>
+to a window on a 16-color screen. All three palette entries are tolerant, with a<br>
+tolerance of 0. The Palette Manager does the following: 1.&nbsp;&nbsp;It checks the first entry in<br>
+the palette, bright green, and searches the screen's color table for the same bright<br>
+green. It finds that color near the middle of the color table, and so associates palette<br>
+entry 0 with this existing bright green entry in the color table.&nbsp;&nbsp;2.&nbsp;&nbsp;It searches the<br>
+screen's color table for the second entry in the palette, black. It finds it at the very<br>
+end, so palette entry 1 corresponds to entry 15 of the color table.&nbsp;&nbsp;&nbsp;3.&nbsp;&nbsp;It searches the<br>
+screen's color table for dark yellow. There isn't one, so it chooses a color table entry<br>
+to change to dark yellow. It can't choose the black or the white entry because they're <br>
+protected and can't be changed, and it can't change the bright green entry because that<br>
+entry is already associated with entry 0 of the palette. So it chooses one of the other<br>
+color table entries and changes it to dark yellow. 
+</p>
+<p>
+<img src="img/134.gif" width="594 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1</b> Alternative Ways to Specify a Foreground Color
+</p>
+<p>
+&nbsp;Because the color table has been changed, the Palette Manager makes sure that other<br>
+windows are redrawn, just in case they were drawn using the color table entry that<br>
+was changed to dark yellow. It does this by sending update events to all windows as soon<br>
+as the palette is activated. If no color table changes were needed, the Palette Manager<br>
+doesn't bother doing this. 
+</p>
+<p>
+&nbsp;Once our three-entry palette has been activated, we can call PmForeColor, passing it<br>
+0, 1, or 2 to draw objects in bright green, black, or dark yellow, respectively. In<br>
+fact, we could call RGBForeColor, passing it bright green, black, or dark yellow<br>
+RGBColor records, and they would use the same colors that our palette loaded into the<br>
+screen's color table. Figure 1 applies to palettes of tolerant colors as well as palettes<br>
+of courteous colors.&nbsp;&nbsp;If there are more palette entries than will fit in the screen's<br>
+color table, the Palette Manager associates each palette entry with a color table entry<br>
+until no more color table entries are available and then interprets the rest of the<br>
+palette entries as courteous. For example, let's say a 20-entry palette is activated on a<br>
+16-color screen, where each palette entry is pmTolerant with a tolerance of 0 and<br>
+neither black nor white is in the palette. Beginning with the first palette entry, the<br>
+Palette Manager associates each entry with a color table entry. The 15th palette entry<br>
+can't be associated with any color table entry because the black and white entries are<br>
+protected from changes and all 14 other entries have already been associated with<br>
+palette entries. So the 15th palette entry and all entries beyond it are simply treated<br>
+as courteous colors. 
+</p>
+<p>
+<b>pmAnimated. </b>On indexed devices, the pmAnimated usage mode is used to do color table<br>
+animation, which gives you smooth, fast visual effects simply by changing the colors<br>
+in your screen's color table very quickly. You don't have to redraw anything to see this<br>
+animation; you just use the Palette Manager to change the interpretation of the colors<br>
+of your existing image. This is great for games and fast controls for image processing<br>
+applications. On direct devices, animated entries are treated as courteous entries. 
+</p>
+<p>
+Like pmTolerant entries, each pmAnimated palette entry is associated with an entry in<br>
+a screen's color table when the palette is activated, and the colors in the palette are put<br>
+into the screen's color table. But changing color table entries for color animation<br>
+changes everything on the screen that uses those same color table entries, like the<br>
+desktop or window frames. That's usually not what we want, so the Palette Manager<br>
+forces everything outside the window to be redrawn without the colors that are being<br>
+used for color animation -- those colors are off limits. In fact, the only way to use<br>
+those colors is to call PmForeColor or PmBackColor for an animated palette entry and<br>
+then draw some QuickDraw object. Remember, the big difference between tolerant and<br>
+animated colors is that color table entries that are used for tolerant colors can be used<br>
+by anyone, but animated color table entries are used only by objects drawn in the<br>
+palette's window after a call to PmForeColor or PmBackColor. 
+</p>
+<p>
+Let's use our three-entry palette as an example again, but this time assume that each<br>
+entry is animated. The Palette Manager first takes the bright green entry, picks a<br>
+color table entry on the screen, and changes it to bright green. It doesn't matter if<br>
+there's already a bright green in the color table. As usual, the Palette Manager avoids<br>
+the black and white entries at either end of the color table. It then picks another color<br>
+table entry and puts black into it, and does the same for the dark yellow entry. If you<br>
+call PmForeColor(0) and draw an object, it's drawn in bright green. But if you call<br>
+RGBForeColor for bright green and draw an object, it doesn't use the bright green<br>
+that's been defined as animated. Instead, it uses the closest color to bright green<br>
+available, aside from any color table entries that have been defined as animated. 
+</p>
+<p>
+<b>pmExplicit. </b>The pmExplicit usage mode is rarely used alone, and there's not much to<br>
+it beyond what's described in the Palette Manager chapter of<i>Inside Macintosh</i>Volume<br>
+VI. We'll discuss in the next section the more interesting case of using pmExplicit<br>
+along with the other usage modes. 
+</p>
+<p>
+<b>ARE BLACK AND WHITE NEEDED IN A PALETTE?</b><br>
+When attaching a palette to a window, the Palette Manager works in a way that affects<br>
+whether you should store black and white in the palette. We'll outline the way it works<br>
+in two different categories.&nbsp;&nbsp;&nbsp;The first category applies to palettes containing the same<br>
+number of entries as the screen's color table, and the second category applies to<br>
+palettes containing fewer entries than the screen's color table. 
+</p>
+<p>
+<b>Same number of entries in palette and color table. </b> If the palette contains the<br>
+same number of entries as the screen's color table, black and white should be stored in<br>
+the palette. If these two entries aren't stored in the palette, the Palette Manager will<br>
+ignore two entries in the palette when loading the palette colors into the screen's color<br>
+table, to avoid overwriting the color table's black and white entries. The Palette<br>
+Manager will decide which palette entries to ignore based on the usage field for each<br>
+palette entry.
+</p>
+<p>
+As an example, let's take the case of a palette all of whose entries are defined as<br>
+pmTolerant + pmExplicit. Because the pmExplicit flag tells the Palette Manager to<br>
+store each palette entry in its respective index in the screen's color table, the choice<br>
+of which palette entry to ignore is fairly straightforward. The colors stored at the<br>
+first and last entry of the palette correspond to the protected entries in the screen's<br>
+color table, so these entries will be ignored.
+</p>
+<p>
+In the case of a palette containing entries not defined with the pmExplicit flag set, the<br>
+decision of which two palette colors to ignore can seem somewhat random. This is<br>
+because the decision is based on the current distribution of the palette entries in the<br>
+screen's color table, where the distribution is derived from the tolerance values of the<br>
+palette entries and the existing colors in the screen's color table before the palette was<br>
+activated. 
+</p>
+<p>
+For example, suppose we have a 16-entry palette and a 4-bit screen color table as<br>
+shown in Figure 2 (we've used the default color table). Figure 3 shows how the<br>
+screen's color table will look in two different cases when the palette of the frontmost<br>
+window has been activated. In these figures, the explicit entries are distributed<br>
+sequentially in the screen's color table, whereas the nonexplicit entries are scattered<br>
+throughout the color table.
+</p>
+<p>
+<img src="img/135.gif" width="366 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> An Example Palette and Color Table
+</p>
+<p>
+<img src="img/136.gif" width="366 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 3</b> The Color Table With the Palette of the&nbsp;&nbsp;Frontmost Window Active
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+For the explicit entries, we see that the first and last entries of the palette are not<br>
+loaded into the screen's color table, to protect the color table's white and black entries.<br>
+However, for the nonexplicit entries, the two palette colors ignored aren't necessarily<br>
+the first and last entries of the palette. When determining where the nonexplicit<br>
+palette entries should be stored in the color table, the Palette Manager first checks to<br>
+see which colors in the screen's color table already match those in the palette. If<br>
+there's a match within the specified tolerance, that palette entry is stored at the index<br>
+of the matching color in the screen's color table. 
+</p>
+<p>
+And one other thing: When multiple nonexplicit palette entries match (within the<br>
+specified tolerance) the same color in the screen's color table, all those palette entries<br>
+are stored at the same index in the color table. This means that only one slot in the<br>
+color table is needed rather than as many slots as there are palette entries. 
+</p>
+<p>
+<b>Fewer entries in the palette. </b>Now, if the window's palette contains fewer entries<br>
+than the screen's color table, the palette entries' usage field plays a large part in<br>
+determining whether black and white should be included in the palette. The reason for<br>
+this is similar to the previous case for nonexplicit entries.
+</p>
+<p>
+<b>&nbsp;Figure 4</b> Another Example Palette and Color Table
+</p>
+<p>
+<img src="img/137.gif" width="369 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 5</b> The Color Table With the Palette of the Frontmost Window Active
+</p>
+<p>
+&nbsp;If all the entries in a palette are defined without the pmExplicit flag set, the presence<br>
+of black and white in the palette isn't as critical, since the palette entries will likely<br>
+be scattered throughout the screen's color table while avoiding the protected white and<br>
+black colors stored in the first and last slots of the screen's color table. Since there<br>
+are fewer palette entries than color table entries, we needn't worry about palette<br>
+entries getting ignored. So in this case, creating a palette without a black entry or a<br>
+white entry is perfectly fine as long as there are enough slots in the screen's color<br>
+table to hold all the palette entries and the two protected colors. 
+</p>
+<p>
+&nbsp;However, if the palette entries are all defined with the pmExplicit flag set, there's a<br>
+good chance that one of the palette's entries will be ignored. And the palette entry that<br>
+does get ignored will usually be the first entry in the palette, because this entry<br>
+shares the same index as the protected white entry in the screen's color table. 
+</p>
+<p>
+&nbsp;For example, suppose we have a 192-entry palette and an 8-bit screen color table as<br>
+shown in Figure 4 (again, we've used the default color table). Figure 5 shows how the<br>
+screen's color table will look in two different cases when the palette of the frontmost<br>
+window has been activated. 
+</p>
+<p>
+&nbsp;Again, the explicit entries are distributed sequentially in the screen's color table,<br>
+starting with the first entry in the color table. Because the first entry in the screen's<br>
+color table is protected from being overwritten, the first entry in the palette is<br>
+ignored. But in the nonexplicit case, the entries are distributed somewhat differently.<br>
+Depending on what colors are already in the screen's color table, the nonexplicit<br>
+entries can be stored anywhere throughout the color table. And in this example, since<br>
+there are clearly more slots in the screen's color table than needed by the palette<br>
+entries, all the colors in the palette appear in the color table; none are ignored. So<br>
+again in this case, including black and white in the palette really isn't necessary. 
+</p>
+<p>
+<b>&nbsp;WHERE TO PUT BLACK AND WHITE IN THE PALETTE</b><br>
+We've seen how the way the Palette Manager works can affect whether you decide to<br>
+store black and white in your palette. In all the instances we mentioned, the positions<br>
+of the black entry and white entry were always the same: white first and black last.<br>
+However, in certain cases, you may not want to position white first and black last.
+</p>
+<p>
+&nbsp;In the case where you'd like to create just one palette to handle devices at multiple bit<br>
+depths, the black and white entries should be stored as the first two colors in the<br>
+palette. This ensures that the two colors used on a 1-bit device are present. Likewise,<br>
+to ensure that the optimal colors are used at depths 2, 4, and 8, we do the same thing<br>
+for each additional depth. We store the preferred colors at the appropriate position in<br>
+the palette. Figure 6 shows how a typical palette could be configured to handle multiple<br>
+bit depths. 
+</p>
+<p>
+&nbsp;In our sample palette, the first 16 colors are defined as shades of gray, because we've<br>
+decided our window would look best when displayed in grayscale on a 1-, 2-, or 4-bit<br>
+device. For the 1-bit and 2- bit&nbsp;&nbsp;devices, we simply choose the appropriate shades for<br>
+those depths and store them in the first four slots of our palette. But for an 8-bit<br>
+device, we include as many colors as we can for the optimal display at that depth. For<br>
+this example, we added the nongrayscale colors from the standard 8-bit color table to<br>
+the remaining slots in our palette. Because the Palette Manager only uses the<br>
+maximum number of colors it can (starting at the first index in the palette) for a<br>
+specific bit depth, only the colors we want shown will be shown. Also, because the<br>
+placement of the colors determines which colors are available at a certain depth, all<br>
+the palette entries must be defined as explicit entries. 
+</p>
+<p>
+<img src="img/138.gif" width="374 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 6</b> A Palette Configured to Handle Multiple Bit Depths
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;Another way of ensuring that certain palette entries are available at certain depths is<br>
+to apply the inhibit usage categories to the palette entries. These inhibit constants tell<br>
+the Palette Manager which entries are available under the current color environment.<br>
+Depending on which inhibit constant is used, the palette entries can be inhibited from a<br>
+specific bit depth and from a color or grayscale device. So by combining various<br>
+inhibit constants to our sample palette, we can inhibit the colors outside the current<br>
+depth's range from being used. In our example, if entry number 16 were defined with
+</p>
+<p>
+&nbsp;pmInhibitC2 + pmInhibitC4 + pmInhibitG2 + pmInhibitG4
+</p>
+<p>
+&nbsp;this entry would be available only on an 8-bit or deeper color or grayscale device. 
+</p>
+<p>
+<b>&nbsp;ONE LAST WORD</b><br>
+The Palette Manager works very simply, but it has so many options and effects that it<br>
+can seem complicated. By understanding how the Palette Manager makes its decisions,<br>
+you should find it easy to figure out how to make it do precisely what you want. We<br>
+hope this column has made this clear, so that you can use the Palette Manager and avoid<br>
+fussing with the alternatives. 
+</p>
+<p>
+<b>&nbsp;EDGAR LEE</b> (AppleLink EDGAR) Before Edgar's dog, Sunny, departed for the East<br>
+Coast, we asked her if she could tell us a little about him. Here's what she had to say:<br>
+"Edgar . . . is that his name? Oh yeah, nice human. A little hairless for my taste, but a<br>
+good guy. He works over there in DTS or something. He used to come home late all the<br>
+time. At first I thought he was seeing another dog, then I realized he's just a nerd. And<br>
+how is he to me? Well, let's see, he takes care of me, entertains me. I bark once, he<br>
+feeds me; I bark twice, we go out for a walk. Not bad for an owner; I've heard worse<br>
+stories. Does he ever get upset with me? I suppose at times he does. I probably deserve<br>
+it; carpet cleaning isn't cheap, you know. But hey, I see a clean spot, I go&nbsp;&nbsp;for it."*
+</p>
+<p>
+<b>&nbsp;FORREST TANAKA</b> (AppleLink TANAKA) has spent the last couple of months<br>
+learning how to be a domestic kind of guy. Once worried about paying the rent, he's now<br>
+worried about paying the mortgage. Once worried about his downstairs neighbors, he's<br>
+now worried about getting the best fertilizer. Now he's even the stepparent of an old<br>
+dog and a cat with an attitude. As a final blow to his carefree days of youth, he has to<br>
+mow the lawn! *
+</p>
+<p>
+<b>Indexed and direct devices </b>are discussed in the Graphics Overview chapter<br>
+(Chapter 16) of <i> Inside Macintosh</i> Volume VI.*
+</p>
+<p>
+<b>The inhibit constants </b>are discussed in the Palette Manager chapter (Chapter 20)<br>
+of <i> Inside Macintosh</i> Volume VI.*
+</p>
+<p>
+<b>Thanks </b>to Bill Guschwan, Shannon Holland, Guillermo Ortiz, Konstantin Othmer,<br>
+Brigham Stevens, and John Wang for reviewing this column. Special thanks to Joseph<br>
+Maurer and Faith Pai. *
+</p>
+</body>
+</html>

@@ -1,0 +1,678 @@
+<html>
+<head>
+<!-- Article ID: 20 - Extracted from develop-1993 -->
+<!-- on 2024-02-14 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by copyright of their respective owners -->
+<title>June 93 - MACINTOSH Q & A</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH Q &amp; A</h2>
+<h2>MACINTOSH DEVELOPER TECHNICAL SUPPORT</h2>
+<p>
+<b>Q</b><i> When a request for information is passed to me through an Apple event, the direct</i><br>
+<i>object parameter of my reply event is a descriptor list that includes an AERecord of</i><br>
+<i>my information. When I use AEPutPtr and the AEPutParamDesc, is the data copied or</i><br>
+<i>merely referenced? Should I be disposing of the AERecord and/or the descriptor list,</i><br>
+<i>or should I expect AEProcessAppleEvent to dispose of them?</i>
+</p>
+<p>
+<b>A </b> Whenever you make one of the AEPutXXXX calls, the Apple Event Manager <i> copies</i> the<br>
+data you put into the list, event, or record, so as soon as you make the call you can<br>
+dispose of the data you put. Thus, the following is correct:
+</p>
+<p>
+<code>AEPutParamDesc(&amp;theEvent, keyDirectObject, &amp;theSpec);</code><br>
+<code>AEDisposeDesc(&amp;theSpec);</code>
+</p>
+<p>
+&nbsp;And so is this:
+</p>
+<p>
+<code>HLock(myTextHandle);</code><br>
+<code>AEPutParamPtr(&amp;theEvent, keyDirectObject, typeText,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;(Ptr)*myTextHandle, GetHandleSize(myTextHandle));</code><br>
+<code>DisposeHandle(myTextHandle);</code>
+</p>
+<p>
+&nbsp;The <i>only</i> two descriptors disposed of by the Apple Event Manager itself (at the<br>
+conclusion of AEProcessAppleEvent) are the original Apple event and the reply Apple<br>
+event. So, anything that you create and manipulate yourself should be disposed of by<br>
+you when you add it to another Apple event record or when you're done with it. The two<br>
+that you don't dispose of yourself are theEvent and reply, which are passed to you, as<br>
+in:
+</p>
+<p>
+<code>pascal OSErr AEXXXHandler(AppleEvent *theEvent, AppleEvent *reply,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long refIn)</code>
+</p>
+<p>
+&nbsp;This even holds true for AESend. When you send an event, you can immediately dispose<br>
+of your copy of the event, as follows:
+</p>
+<p>
+<code>AESend(&amp;myEvent, nil, kAENoReply, kAENormalPriority,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;kAEDefaultTimeout, nil, nil);</code><br>
+<code>AEDisposeDesc(&amp;myEvent);</code>
+</p>
+<p>
+<b>Q</b><i> The System 7.1 Digest has a disturbing comment about GetMHandle -- namely that it</i><br>
+<i>was never supported and will no longer work. Is this true?</i>
+</p>
+<p>
+<b>A </b> This warning is misleading and is being corrected in future release notes. It applies<br>
+<i>only </i>to pop- up menus created with the pop-up menu control. Before System 7.1,<br>
+after a control was created GetMHandle would return the menu handle for the control,<br>
+although it was never documented as doing so. In System 7.1 it was changed so that the<br>
+menu would be inserted into the menu list only when the control was getting ready to<br>
+pop up the menu and deleted as soon as the control was done with it, so you could no<br>
+longer use GetMHandle to retrieve the menu handle. The proper way to get the menu<br>
+handle is from the mHandle field of the popupPrivateData structure. The handle to this<br>
+structure is in the contrlData field of the pop-up menu's control record.
+</p>
+<p>
+&nbsp;A corollary is that the pop-up control has always checked to see if the menu is already<br>
+in the menu list. If it is, the control doesn't get the menu from the menu resource and<br>
+doesn't delete the menu when it's done. You can use this feature, for example, if you<br>
+want to create a menu with NewMenu rather than getting it from a resource. In this<br>
+case, and all other cases where the application inserts and deletes the pop-up menu in<br>
+the menu list itself, GetMHandle can be used to retrieve the menu handle because it's<br>
+under the control of the application.
+</p>
+<p>
+<b>Q</b><i> I read that Photo CD discs can be read by the AppleCD SC Plus and the AppleCD 150.</i><br>
+<i>Does this mean a plain vanilla AppleCD SC can't read them? Is this a hardware</i><br>
+<i>limitation, or will there be a software fix?</i>
+</p>
+<p>
+<b>A </b> Apple erroneously reported that the original AppleCD SC could not read<br>
+single-session Photo CD discs. This turns out not to be the case; all of Apple's CD-ROM<br>
+drives can read single- session Photo CD discs.
+</p>
+<p>
+&nbsp;Two levels of support are available for Kodak Photo CDs: the ability to read the first<br>
+session on the Photo CD itself, and the ability to deal with more than just the initial<br>
+session of a multisession CD. The AppleCD 300i is the first CD-ROM player from<br>
+Apple to support multisession Photo CDs. For details about both support levels, check<br>
+the Tech Info Library on AppleLink.
+</p>
+<p>
+<b>Q</b><i> Inside Macintosh Volume V, page 103, says that when a PICT pattern opcode (for</i><br>
+<i>instance, 0x0012) comes along, and the pattern isn't a dither pattern, the full pixMap</i><br>
+<i>data follows the old-style 8-byte pattern. The pixMap data structure shown on page</i><br>
+<i>104 starts with an unused long (baseAddr placeholder), followed by the rowBytes,</i><br>
+<i>bounds, and so on. However, looking at the Pict.r file on the October 1992 Developer</i><br>
+<i>CD, at the same opcode (BkPixPat == 0x0012), the first data field after the old-style</i><br>
+<i>pattern (hex string[8]) is the rowBytes field (broken down into three bitstrings).</i><br>
+<i>The baseAddr placeholder field isn't there. Which is correct?</i>
+</p>
+<p>
+<b>A </b> The <i>Inside Macintosh</i> Volume V documentation on pages 103-104 is wrong. The<br>
+Pict.r file correctly describes the format of the PnPixPat and BkPixPat opcodes. So<br>
+there shouldn't be a baseAddr field in the pixMap record of a pattern as stored in the<br>
+PnPixPat of a PICT. However, the baseAddr does occur in a 'ppat' resource as described<br>
+on page 79. Thanks for pointing out this discrepancy.
+</p>
+<p>
+<b>Q</b><i> How do I find the correct time values to pass to GetMoviePict, to get all the sequential</i><br>
+<i>frames of a QuickTime movie?</i>
+</p>
+<p>
+<b>A </b> The best way to find the correct time to pass to get movie frames is to call the<br>
+GetMovieNextInterestingTime routine repeatedly. Note that the first time you call<br>
+GetMovieNextInterestingTime its flags parameter should have a value of<br>
+nextTimeMediaSample + nextTimeEdgeOK to get the first frame. For subsequent calls<br>
+the value of flags should be nextTimeMediaSample. Also, the whichMediaTypes<br>
+parameter should include only tracks with visual information, 'vide' and 'text'. Check<br>
+the Movie Toolbox chapter of the QuickTime documentation for details about the<br>
+GetMovieNextInterestingTime call. For a code example, see the revised SimpleInMovie<br>
+on this issue's CD. The routine to look at is called DoGetMoviePicts in the file<br>
+SimpleInPicts.c.
+</p>
+<p>
+<b>Q</b><i> My routine uses a dialog hook to set and retrieve certain values in new items added to</i><br>
+<i>the default box. Previously, with SFPPutFile, I was able to use a hit on the Save item</i><br>
+<i>to retrieve and save the values. This also works with CustomPutFile unless the</i><br>
+<i>Replace/Cancel dialog box appears, because the dialog hook routines are also called for</i><br>
+<i>it! With the dialog pointer now pointing at the small alert, any reference to expected</i><br>
+<i>items leads to disaster, since they don't exist. Isn't calling the dialog hook routine to</i><br>
+<i>respond to hits in the alert box wrong and therefore a bug?</i>
+</p>
+<p>
+<b>A </b> Both Standard File and the Edition Manager in System 7 allow you to have control in<br>
+your filter when one of the subdialog boxes comes up. You can differentiate between the<br>
+main dialog and the subdialogs by looking in the refCon field of the dialog record passed<br>
+to you. In Standard File's case, if the dialog is the main dialog, the refCon will be:
+</p>
+<p>
+<code>/* From StandardFile.h */</code><br>
+<code>/* The refCon field of the dialog record during a modalfilter</code><br>
+<code>or dialoghook contains one of the following: */</code><br>
+<code>#define sfMainDialogRefCon&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'stdf'</code><br>
+<code>#define sfNewFolderDialogRefCon 'nfdr'</code><br>
+<code>#define sfReplaceDialogRefCon&nbsp;&nbsp;&nbsp;'rplc'</code><br>
+<code>#define sfStatWarnDialogRefCon&nbsp;&nbsp;'stat'</code><br>
+<code>#define sfLockWarnDialogRefCon&nbsp;&nbsp;'lock'</code><br>
+<code>#define sfErrorDialogRefCon&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'err '</code>
+</p>
+<p>
+&nbsp;This is described in detail on page 26-18 of <i> Inside Macintosh</i> Volume VI, in the<br>
+middle of the section that describes all the callbacks and pseudo items for Standard File<br>
+under System 7. The main purpose of this is to allow your additional dialog items to<br>
+react properly when another dialog box is brought up in front of them, not to allow you<br>
+access to the subdialogs. Also, since Standard File has no idea what types of items<br>
+you've added to the dialogs, giving you control during subdialogs allows you to change<br>
+the look of your subitems, or to keep them active if they need periodic time for any<br>
+reason.
+</p>
+<p>
+<b>Q</b><i> How do I find the current KCHR resource?</i>
+</p>
+<p>
+<b>A </b> Here's a method for getting a copy of the KCHR resource currently being used by the<br>
+system. This method works for both System 6 and System 7.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;keyScript, KCHRID;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Handle&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;KCHRHdl;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* First get the current keyboard script. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;keyScript = GetEnvirons(smKeyScript);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Now get the KCHR resource ID for that script. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;KCHRID = GetScript((short)keyScript, smScriptKeys);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/* Finally, get your own copy of this KCHR. Now you can pass</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;a proper KCHR pointer to KeyTrans. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;KCHRHdl = GetResource('KCHR', KCHRID);</code><br>
+<code>}</code>
+</p>
+<p>
+<b>Q</b><i> When I use CopyBits to move a cGrafPort's portPixMap to another cGrafPort (my</i><br>
+<i>printing port), it works like a charm when background printing is turned on, but</i><br>
+<i>when CopyBits gets called with background printing turned off, the image that prints</i><br>
+<i>isn't the image at all. Why is this happening?</i>
+</p>
+<p>
+<b>A </b> You should be aware that since you're copying the pixels directly from the screen,<br>
+the baseAddr pointer for the screen's pixMap may be 32-bit addressed. In fact, with<br>
+32-Bit QuickDraw, this is the case. This in itself isn't a problem, since CopyBits<br>
+knows enough to access the baseAddr of the port's pixMap in 32-bit mode, as follows:
+</p>
+<p>
+<code>mode = true32b;</code><br>
+<code>SwapMMUMode(&amp;mode);// Make sure we're in 32-bit addressing mode.</code><br>
+<code>// Access pixels directly; make no other system calls.</code><br>
+<code>SwapMMUMode(&amp;mode);// Restore the current mode.</code>
+</p>
+<p>
+&nbsp;That's how you'd normally handle things if you were accessing the pixels directly<br>
+yourself. Unfortunately, the LaserWriter driver doesn't know enough to do the<br>
+SwapMMUMode and instead ends up copying garbage (from a 32-bit pointer stripped<br>
+to a 24-bit pointer).
+</p>
+<p>
+&nbsp;So why does background printing work? Because when you print in the background,<br>
+everything is rolled into a PICT, which the driver saves off for PrintMonitor. Since<br>
+the driver is using the standard QuickDraw picture bottlenecks to do this, and CopyBits<br>
+knows to swap the MMU mode before copying the data into the picture, everything<br>
+works great. Later, at PrintMonitor time, the picture is played back. Since the data is<br>
+no longer 32-bit addressed, the LaserWriter driver doesn't have to call<br>
+SwapMMUMode to do the right thing; it can just play the picture back. The solution we<br>
+propose for you is something similar. At print time (before your PrOpenPage call),<br>
+call OpenPicture, copy the data from the screen with CopyBits, call ClosePicture, and<br>
+then call DrawPicture within your PrOpenPage/PrClosePage loop. That should do the<br>
+trick.
+</p>
+<p>
+&nbsp;Note that copying bits directly from the screen is not something we recommend.<br>
+Unless you have no alternative, you should <i> always</i> copy from the original source of the<br>
+data instead.
+</p>
+<p>
+<b>Q</b><i> Is there a way to read Greenwich Mean Time offsets from the Map control panel?</i>
+</p>
+<p>
+<b>A </b> There's actually a system-level call to find out where you are. It's a Script Manager<br>
+call named ReadLocation (used by the Map control panel), which returns a structure<br>
+giving you all the information you need. Here's a description of the call, copied from<br>
+MPW 411:
+</p>
+<p>
+<code>pascal void ReadLocation(MachineLocation *loc)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;= {0x205F,0x203C,0x000C,0x00E4,0xA051};</code><br>
+<code>File {CIncludes}script.h</code>
+</p>
+<p>
+&nbsp;In C:
+</p>
+<p>
+<code>pascal void ReadLocation(MachineLocation *loc);</code><br>
+<code>pascal void WriteLocation(const MachineLocation *loc);</code>
+</p>
+<p>
+&nbsp;These routines access the stored geographic location and time zone information for the<br>
+Macintosh from parameter RAM. For example, the time zone information can be used to<br>
+derive the absolute time (GMT) that a document or mail message was created. With<br>
+this information, when the document is received across time zones, the creation date<br>
+and time are correct. Otherwise, documents can appear to be created after they're read.<br>
+(For example, someone could create a message in Tokyo on Tuesday and send it to San<br>
+Francisco, where it's received and read on Monday.) Geographic information can also<br>
+be used by applications that require it.
+</p>
+<p>
+&nbsp;If the MachineLocation has never been set, it should be &lt;0,0,0&gt;. The top byte of the<br>
+gmtDelta should be masked off and preserved when writing: it's reserved for future<br>
+extension. The gmtDelta is in seconds east of GMT; for example, San Francisco is at<br>
+minus 28,800 seconds (8 hours * 3600 seconds per hour). The latitude and longitude<br>
+are in fractions of a great circle, giving them accuracy to within less than a foot,<br>
+which should be sufficient for most purposes. For example, Fract values of 1.0 = 90&#186;,<br>
+-1.0 = -90&#186;, and -2.0 = -180&#186;. In C:
+</p>
+<p>
+<code>struct MachineLocation {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Fract&nbsp;&nbsp;&nbsp;latitude;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;Fract&nbsp;&nbsp;&nbsp;longitude;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;union {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;&nbsp;&nbsp;&nbsp;dlsDelta;&nbsp;&nbsp;/* signed byte; daylight savings delta */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;gmtDelta;&nbsp;&nbsp;/* must mask - see documentation */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;} gmtFlags;</code><br>
+<code>};</code>
+</p>
+<p>
+&nbsp;The gmtDelta is really a 3-byte value, so you must take care to get and set it<br>
+properly, as in the following C code examples:
+</p>
+<p>
+<code>long GetGmtDelta(MachineLocation myLocation)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;long internalGMTDelta;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;internalGMTDelta = myLocation.gmtDelta &amp; 0x00ffffff;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// need to sign extend</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if ( (internalGMTDelta >> 23) &amp; 1 )</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;internalGmtDelta = internalGmtDelta | 0xff000000;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return (internalGmtDelta);</code><br>
+<code>}</code>
+</p>
+<p>
+<code>void SetGmtDelta(MachineLocation *myLocation, long myGmtDelta)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;char tempSignedByte;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;tempSignedByte = myLocation-&gt;dlsDelta;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myLocation-&gt;gmtDelta = myGmtDelta;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myLocation-&gt;dlsDelta = tempSignedByte;</code><br>
+<code>}</code>
+</p>
+<p>
+<b>Q</b><i> Did you hear that they had computer music at Clinton's inauguration?</i>
+</p>
+<p>
+<b>A </b> Yes, they danced to Al Gore Rhythms.
+</p>
+<p>
+<b>Q</b><i> What (if at all) is the limitation on the number of files in a folder? In other words,</i><br>
+<i>is there a number N, such that if I have N files in a folder, and I try to Create file</i><br>
+<i>number N+1, I'll get some error?</i>
+</p>
+<p>
+<b>A </b> In general, the number of files that can be put in an HFS directory is unlimited;<br>
+there isn't any point at which you'll receive an error from Create, because new file<br>
+description records can almost always be created. The only way you can get a disk full<br>
+error back from Create is if the catalog file needs to grow to add your new record and<br>
+the disk is full, but this should be extremely rare; even when the disk is full, there's<br>
+generally room to create dozens of files or folders before the catalog file will need to be<br>
+enlarged, as it's grown in relatively large chunks.
+</p>
+<p>
+&nbsp;There are, however, a couple of related limits on large numbers of files. Because HFS<br>
+allocates space in "allocation blocks," and there can be at most 65,536 allocation<br>
+blocks on a volume, there's a limit of 65,536 files that contain data on a volume. If<br>
+your disk is full with 65,536 one- block files, you'll probably be able to create more<br>
+files (Create will succeed), but no data will be able to be written to them. In reality,<br>
+the limit on the number of files is somewhat smaller; the catalog and extents files will<br>
+each occupy space. Also, because the allocation block size needs to be an even multiple<br>
+of 512 bytes, most volumes won't have a full 65,536 allocation blocks; they'll have as<br>
+many as they can, somewhere between 32,767 and 65,536 (except for small<br>
+volumes, which may have less). In addition, each fork (either the data fork or the<br>
+resource fork) of a file needs to be separately allocated, so each counts as a file for<br>
+this calculation.
+</p>
+<p>
+&nbsp;There's also a practical limit on how many files can be placed in a folder. HFS can<br>
+maintain as many files as required in a directory; however, because the index field is a<br>
+short, if there are more than 32,767 files in a folder, they can't be enumerated. Thus,<br>
+while they can be identified and opened by name, there's no way to index through them<br>
+to determine what's in the directory without deleting or moving some of the files.
+</p>
+<p>
+&nbsp;These limit descriptions apply to HFS only; other file systems may be available on the<br>
+Macintosh, such as MFS, MS-DOS, ISO 9660, or virtually any file system via an<br>
+AppleTalk Filing Protocol (AFP) translator. These descriptions also don't include<br>
+limitations of the Finder, the Standard File Package, or any other intermediaries. The<br>
+Finder and Standard File are likely to become quite unusable long before you run into<br>
+the limits of HFS. Also, while HFS will continue to function, it wasn't designed for<br>
+optimum performance with extremely large numbers of files; for more dire warnings<br>
+on this subject, see the Macintosh (Overview) Technical Note "Don't Abuse the<br>
+Managers" (formerly #203).
+</p>
+<p>
+<b>Q</b><i> In the two-byte script version of our application, we need to insert certain</i><br>
+<i>characters such as "-" and "%" into some of our strings. How can we do this, since</i><br>
+<i>these are obviously only one character long in C?</i>
+</p>
+<p>
+<b>A </b> All 7-bit ASCII characters (codes less than 127) are maintained as such in all<br>
+two-byte scripts. If your routines just concatenate existing (localized) strings and<br>
+characters, you don't have to worry about anything. Otherwise, you'll need to call<br>
+CharByte (<i> Inside Macintosh</i> Volume V, page 306, and Volume VI, pages&nbsp;&nbsp;14-45,<br>
+14-114, and 14-124) while walking the bytes in the string.
+</p>
+<p>
+&nbsp;In the Macintosh (Text) Technical Note "Fond of FONDs," the part about<br>
+OutlineMetrics was updated recently to be "two-byte aware." The code fragment there<br>
+should help you with strings containing text for two-byte scripts. See also the article<br>
+"Writing Localizable Applicatio n s" in this issue.
+</p>
+<p>
+<b>Q</b><i> The Icon Utilities routine GetIconCacheData leaves two bytes of garbage on the stack.</i><br>
+<i>This surfaced as a problem for me because it prevented a saved register from getting</i><br>
+<i>restored properly. SetIconCacheData probably has the same problem, since it calls the</i><br>
+<i>same trap internally. I solved the problem by encapsulating GetIconCacheData within</i><br>
+<i>my own static function, like so:</i>
+</p>
+<p>
+<code>static OSErr _GetIconCacheData( Handle theCache, void **theData )</code><br>
+<code>{</code><br>
+<code>returnGetIconCacheData( theCache, theData );</code><br>
+<code>}</code><br>
+<code>#define GetIconCacheData_GetIconCacheData</code>
+</p>
+<p>
+<i>&nbsp;I then call GetIconCacheData normally. The #define redirects my call to my static</i><br>
+<i>wrapper function. The extra two bytes on the stack are recovered when the wrapper</i><br>
+<i>function UNLKs and returns. This method has the advantage that the calling code will</i><br>
+<i>still work even after the trap is fixed. Am I correct?</i>
+</p>
+<p>
+<b>A </b> You're quite correct; this is a bug. Here's the offending code from the source:
+</p>
+<p>
+<code>EXIT&nbsp;&nbsp;&nbsp;&nbsp;MOVEA.L (SP)+, A0&nbsp;&nbsp;&nbsp;; Pop return address into A0</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ADDQ.L&nbsp;&nbsp;#6, SP&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; Point stack at return value</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MOVE.W&nbsp;&nbsp;D0, (SP)&nbsp;&nbsp;&nbsp;&nbsp;; Put return value on the stack</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;JMP (A0)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; Return</code>
+</p>
+<p>
+&nbsp;As you can see, the exit routine is adding 6 to the stack to clear up the input<br>
+parameters instead of 8 (handle and handle), so an extra word of garbage is being left<br>
+on the stack. Thanks for letting us know about the problem.
+</p>
+<p>
+<b>Q</b><i> When I double-click a document that launches my application, the current directory</i><br>
+<i>for the Standard File Package (at location $398 in memory) is set to the directory of</i><br>
+<i>my application and not my document. This seems to be a bug according to the text on</i><br>
+<i>page 3-31 of the new Inside Macintosh: Files manual. Is there anything special I have</i><br>
+<i>to do?</i>
+</p>
+<p>
+<b>A </b> You're right. The behavior described in <i> Inside Macintosh: Files</i> isn't entirely<br>
+correct. It should say that the first time your application calls one of the Standard File<br>
+Package routines, the default current directory (that is, the directory whose contents<br>
+are listed in the dialog box) is determined by the way your application was launched.
+</p>
+<ul>
+<li>f the user launched your application directly (perhaps by double-clicking<br>
+its icon in the Finder), the default directory is the directory in which your<br>
+application is located.</li>
+<li>If the user launched your application indirectly (perhaps by<br>
+double-clicking one of your application's document icons) and your<br>
+application is passed Finder information, the default directory is the directory<br>
+of the last document listed in the Finder information. The Finder information<br>
+is the data referenced by AppParmHandle and accessed by the Segment Loader<br>
+routines CountAppFiles, GetAppFiles, ClrAppFiles, and GetAppParms.</li>
+</ul>
+<p>
+&nbsp;Note that applications that are high-level event aware are passed the list of documents<br>
+to open or print in a kAEOpenDocument or kAEPrintDocument Apple event. There's no<br>
+Finder information (AppParmHandle will be NIL) and the default directory is the<br>
+directory in which your application is located.
+</p>
+<p>
+<b>Q</b><i> Sometimes, at the beginning of a PBRead on a serial port, I get back a result code of </i><br>
+<i>-90 in the completion routine. I don't quite know how to handle this error, because I</i><br>
+<i>can't find a -90 result code anywhere. Any idea what -90 means?</i>
+</p>
+<p>
+<b>A </b> According to the MPW Errors.h interface file, -90 is a BreakRecd result. (The<br>
+interface files are always a good place to look for error codes and calls that you can't<br>
+find.) The serial driver returns that error to a pending Read if the SCC chip detects a<br>
+break condition.
+</p>
+<p>
+<b>Q</b><i> Why does MacApp use the Initialize and Free methods instead of the normal C++</i><br>
+<i>constructor and destructor methods?</i>
+</p>
+<p>
+<b>A </b> MacApp doesn't use constructors for historical reasons. Object Pascal was used in<br>
+MacApp 2.0.1, which doesn't have constructors and destructors as part of the language,<br>
+and as a result these facilities had to be provided as part of MacApp instead of the<br>
+language.
+</p>
+<p>
+&nbsp;MacApp 3.0 designers tried to achieve backward compatibility with applications<br>
+written with older versions of MacApp based on Object Pascal. Because of this, the<br>
+designers decided to stay with the Initialize and Free functions rather than just have an<br>
+instance of the object declared and destroyed with <b>new</b> and <b>free</b>.
+</p>
+<p>
+<b>Q</b><i> Can I use the CompressPicture routine to spool in a source picture from disk by</i><br>
+<i>overriding the QuickDraw proc getPicProc as documented in Inside Macintosh Volume</i><br>
+<i>V, pages 88-89? I'm trying to save the contents of an off-screen GWorld as a</i><br>
+<i>compressed PICT resource. Unfortunately there's no direct way to compress the</i><br>
+<i>GWorld's pixel map to a resource.</i>
+</p>
+<p>
+<b>A </b> We definitely don't recommend trying to spool in or out the results of<br>
+CompressPicture or CompressImage. We recommend doing one of the following instead:
+</p>
+<ul>
+<li>You can compress the GWorld using CompressImage and then call<br>
+OpenPicture, DecompressImage, and ClosePicture using a data-unloading<br>
+picture proc. The drawback here is that you need to have a copy of the<br>
+compressed image in memory.</li>
+<li>If it's unacceptable to have an entire compressed image in memory, you<br>
+can consider banding along with data unloading: Call OpenPicture, then<br>
+CompressImage and DecompressImage on a band, CompressImage and<br>
+DecompressImage on another band, and so on. When all bands are done, call<br>
+ClosePicture. The drawback for this is that the compressed picture will have<br>
+bands of image data that won't display well dithered. This could be an issue, but<br>
+the best way to find out is to try it.</li>
+</ul>
+<p>
+&nbsp;The second suggestion is probably the best idea if you want to keep your memory<br>
+footprint small. But much of the decision depends on your application.
+</p>
+<p>
+<b>Q</b><i> Our product's sound/video synchronization is way off with QuickTime 1.5; it worked</i><br>
+<i>perfectly with QuickTime 1.0. The video can't keep up with the sound, especially on the</i><br>
+<i>full-screen movies. The movies are playing much slower with 1.5. Isn't QuickTime</i><br>
+<i>1.5 supposed to make movies play faster?</i>
+</p>
+<p>
+<b>A </b> Your movies probably aren't properly interleaved. When you add sound to a movie<br>
+with SoundToMovie, the sound is added to the end of the video data. We recommend that<br>
+sound and video be interleaved so that the hard drive doesn't have to spend extra time<br>
+seeking between media that store video and media that store audio on a hard drive. The<br>
+data handler prefers to be able to sequentially read through a movie file. This is<br>
+especially important for slower Macintosh models that don't have the extra CPU and<br>
+SCSI access speed to spare.
+</p>
+<p>
+&nbsp;QuickTime can accommodate for some noninterleaved data by caching an entire sound<br>
+track of a movie if small enough. However, the size of a cache is internal to QuickTime<br>
+and can't be depended on. It's possible that different QuickTime versions could have<br>
+different cache sizes since we've been recommending that video and sound movies be<br>
+interleaved. The result could be that the extra disk-seeking time has caused sound and<br>
+video to be out of sync for slower machines such as the Macintosh LC.
+</p>
+<p>
+&nbsp;One way to check interleaving is to resave the movie using Movie Converter (or some<br>
+other program that flattens movies) in a flattened format. Movie Converter uses<br>
+QuickTime's FlattenMovie call to do this. The steps Movie Converter takes are: choose<br>
+Save As, select "Make movie self-contained," and save to a new movie file. This new<br>
+movie should play back with correct video and sound sync.
+</p>
+<p>
+&nbsp;You can actually see the problem if you examine the movie with MovieShop, a program<br>
+that lets you deal with QuickTime movies at a movie data level. For example, if you<br>
+select the Play information button that's in the window after you open a movie, the<br>
+program will display a time graph showing you where the video and sound data are<br>
+saved in the continuous data stream. If the movie is interleaved, the green (for video)<br>
+and red (for sound) indicators are interleaved. If the movie isn't interleaved, the<br>
+green indicators are clumped together in the beginning of the file, and the red<br>
+indicators (for sound) are at the end.
+</p>
+<p>
+&nbsp;The latest version of MovieShop and documentation is available on this issue's CD.<br>
+MovieShop and related information are discussed in the article "Making Better<br>
+QuickTime Movies" in this issue.
+</p>
+<p>
+<b>Q</b><i> How long can a Macintosh filename be on an international system? Our program</i><br>
+<i>currently assumes a maximum filename length of 31. What does the length byte of a</i><br>
+<i>Pascal string signify on an international system -- the actual length in bytes of the</i><br>
+<i>string, the logical length (the number of international characters), or neither?</i>
+</p>
+<p>
+<b>A </b> The Macintosh file systems -- the flat (MFS) and the hierarchical (HFS) -- have<br>
+(reasonable) limitations on the length of filenames. The limits on the lengths refer to<br>
+the number of <i> bytes</i> required for the strings. Usually, filenames are represented as<br>
+Pascal strings. The first byte of a Pascal string indicates the number of bytes occupied<br>
+by the string. In the worst case in a two- byte script, only 15 two-byte characters fit<br>
+into a Str31. Compared to one-byte scripts, this isn't so bad, however: two-byte<br>
+characters tend to carry much more meaning than two of our familiar one-byte<br>
+characters!
+</p>
+<p>
+<b>Q</b><i> What is QuickTime for Windows and what hardware do you need to run it?</i>
+</p>
+<p>
+<b>A </b> QuickTime for Windows makes QuickTime a cross-platform technology that you can<br>
+use in both the Macintosh and the Microsoft Windows programs that you're developing.<br>
+With it, you can create multimedia programs on the Macintosh and be able to add the<br>
+playback of QuickTime movies to any PC application running Microsoft Windows 3.1.
+</p>
+<p>
+&nbsp;The <i>minimum </i>hardware configuration required for QuickTime for Windows is the<br>
+following:
+</p>
+<ul>
+<li>A personal computer with an 80386SX or greater CPU</li>
+<li>A CPU speed of 20 MHz or higher</li>
+<li>4 MB of conventional and extended memory</li>
+<li>A hard disk with at least 4 MB free for the basic QuickTime for Windows<br>
+software</li>
+<li>A graphics adapter and mouse (or other pointing device) supported by<br>
+Microsoft Windows</li>
+</ul>
+<p>
+&nbsp;Optional hardware:
+</p>
+<ul>
+<li>A CD-ROM drive supported by Microsoft Windows (if installing from a<br>
+CD)</li>
+<li>A sound card supported by Microsoft Windows</li>
+<li>Additional free disk space if you want to keep movies and pictures on your<br>
+hard disk</li>
+</ul>
+<p>
+&nbsp;The software requirement for running QuickTime for Windows is Microsoft Windows<br>
+3.1. To write QuickTime for Windows programs, you must have (in addition to the<br>
+QuickTime for Windows Developer's Kit) a development package such as Borland C++<br>
+3.1 or Microsoft C/C++ 7.0. The sample QuickTime for Windows executables may be<br>
+played under Windows 3.1 immediately following QuickTime for Windows installation<br>
+and configuration, without C or C++ being present.
+</p>
+<p>
+<b>Q</b><i> I tried to unmount a volume shared with Macintosh File Sharing from my program </i><br>
+<i>as follows: I shut down the file service with the SCShutDown server control call; I&nbsp;&nbsp;call</i><br>
+<i>SCPollServer to make sure the file service is really off (scServerState =</i><br>
+<i>SCPSJustDisabled); then I call PBUnmountVol to attempt to unmount the volume.&nbsp;&nbsp;It</i><br>
+<i>didn't work because PBUnmountVol fails with fBsyErr (-47). I broke on the</i><br>
+<i>_UnmountVol trap because the AppleShare PDS file, where the file server keeps the</i><br>
+<i>access privilege and share-point information for the shared volume, was open. Why is</i><br>
+<i>AppleShare PDS still open when I've turned the file service off? How can I close it and</i><br>
+<i>unmount the volume?</i>
+</p>
+<p>
+<b>A </b> SCPollServer returns the&nbsp;&nbsp;state of the file service, not the file server application<br>
+(in this case, File Sharing Extension is the file server application). When<br>
+SCPollServer returns a server state of SCPSJustDisabled, the file service is off;<br>
+however, the file server application may or may not still be running. The AppleShare<br>
+PDS file will eventually get closed before the file server application quits.
+</p>
+<p>
+&nbsp;There's an easy way to determine when the File Sharing Extension application has quit<br>
+(and thus when the AppleShare PDS file is closed): just use the Process Manager<br>
+GetNextProcess and GetProcessInformation calls to find out when File Sharing<br>
+Extension is no longer running. The File Sharing Extension application has a<br>
+processType of 'INIT' and a processSignature of 'hhgg'. Here's a function you can use to<br>
+see if File Sharing Extension is running:
+</p>
+<p>
+<code>FUNCTION FileSharingAppIsRunning: Boolean;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;CONST</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FileSharingSignature = 'hhgg';&nbsp;&nbsp;{Macintosh File Sharing}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;VAR</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OSErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myPSN:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ProcessSerialNumber;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myPInfoRec:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ProcessInfoRec;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myPSN.highLongOfPSN := 0;&nbsp;&nbsp;&nbsp;{Start at beginning of process list}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myPSN.lowLongOfPSN := kNoProcess;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myPInfoRec.processInfoLength := sizeOf(ProcessInfoRec);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myPInfoRec.processName := NIL;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{Don't need process name}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;myPInfoRec.processAppSpec := NIL;&nbsp;&nbsp;&nbsp;{Don't need process location}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;FileSharingAppIsRunning := FALSE;&nbsp;&nbsp;&nbsp;{Haven't found it yet}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;WHILE (GetNextProcess(myPSN) = noErr) DO</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IF GetProcessInformation(myPSN, myPInfoRec) = noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IF (myPInfoRec.processSignature =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FileSharingSignature) THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FileSharingAppIsRunning := TRUE;&nbsp;&nbsp;&nbsp;&nbsp;{Found it}</code><br>
+<code>END;</code>
+</p>
+<p>
+&nbsp;After shutting down the file service, your event loop will need to poll with<br>
+FileSharingAppIsRunning because you must give the file server application processing<br>
+time to close files, dispose of memory, and perform other shutdown operations. If you<br>
+poll with FileSharingAppIsRunning without giving other processes time, File Sharing<br>
+Extension will never shut down.
+</p>
+<p>
+<b>Q</b><i> I'm having trouble understanding the problems of dealing with potentially infinite</i><br>
+<i>loops in interconnected, distributed applications. Can you help me?</i>
+</p>
+<p>
+<b>A </b> Please see the next message.</p><p><b>Q</b><i> I'm having trouble understanding the problems of</i><br>
+<i>dealing with potentially infinite loops in interconnected, distributed applications. Can</i><br>
+<i>you help me?</i>
+</p>
+<p>
+<b>A </b> Please see the previous message.
+</p>
+<p>
+<b>Kudos to our readers </b> who care enough to ask us terrific and well thought-out<br>
+questions. The answers are supplied by our teams of technical gurus in Apple's<br>
+Developer Support Center; our thanks to all. Special thanks to Pete ("Luke")<br>
+Alexander, Mark Baumwell, Brian Bechtel, Cameron Birse, Joel Cannon, Matt<br>
+Deatherage, Tim Dierks, Steve Falkenburg, Nitin Ganatra, Bill Guschwan, C. K. Haun,<br>
+Dave Hersey, Scott Kuechle, Edgar Lee, Jim Luther, Joseph Maurer, Kevin Mellander,<br>
+Martin Minow, Ed Navarrete, Guillermo Ortiz, Dave Radcliffe, Brigham Stevens, Dan<br>
+Strnad, Forrest Tanaka, and John Wang for the material in this Q &amp; A column. *
+</p>
+<p>
+<b>Have more questions? </b>Need more answers? Take a look at the Macintosh Q&amp;A<br>
+Technical Notes on this issue's CD and in the Dev Tech Answers library on AppleLink.*
+</p>
+</body>
+</html>
