@@ -1,0 +1,583 @@
+<html>
+<head>
+<!-- Article ID: 16 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 94 - THE ZEN OF WINDOW ZOOMING</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>THE ZEN OF WINDOW ZOOMING</h2>
+<h1>DEAN YU</h1>
+<p>
+<img src="img/155.gif" width="180 px"></img>
+</p>
+<p>
+<i>Window zooming is a feature of the Macintosh user interface that's rarely implemented</i><br>
+<i>correctly. Because a lot of calculation and pixel-tweaking is required toachieve the</i><br>
+<i>"perfect" window zoom, few applications go through the effort to properlyzoom their</i><br>
+<i>document windows. This article discusses proper zooming etiquette andprovides a</i><br>
+<i>routine that deals with all the details of zooming windows.</i>
+</p>
+<p>
+About once a year, I go on a tirade about how few programs zoom their windows<br>
+properly. Most programs zoom to the full size of the main screen; other applications<br>
+make the window only as big as they need to but still move it to the main screen, even<br>
+if the window is on another screen. The System 7 Finder comes close to making me<br>
+happy, but every once in a while it zips a window to the main screen for reasons<br>
+known only to the Finder engineers. 
+</p>
+<p>
+As I was writing some application code recently, I took the opportunity to make it zoom<br>
+windows the way I wish all other programs would zoom windows. The resulting code<br>
+(which is on this issue's CD) is the basis for this article. The zooming behavior that<br>
+this code implements reflects all the documentation Apple has ever published about<br>
+window zooming, from the old Human Interface notes to the Window Manager chapter<br>
+in<i>Inside Macintosh: Macintosh Toolbox Essentials</i> . 
+</p>
+<h2>THE ETIQUETTE OF ZOOMING</h2>
+<p>
+First let's look at the subtle effects of a user's actions on how a window should be<br>
+zoomed. After some basic definitions, we'll go over a few rules that govern zooming<br>
+behavior. If you couldn't care less about these preliminaries, you can skip to the<br>
+section "The Zooming Code" (however, if you do this, you'll hurt the author's feelings,<br>
+since he spent a perfect Saturday afternoon indoors to write this article). 
+</p>
+<p>
+<b>THE STATES OF A WINDOW</b><br>
+A window is zoomed between two states, the<i>user state</i>&nbsp;&nbsp;and the<i> standard state</i> . The user<br>
+state is any size and position in which the user can place the window on the desktop.<br>
+The Window Manager updates the user state when it calls a WDEF to recalculate a<br>
+window's regions.
+</p>
+<p>
+The standard state of a window is defined to be the size that can best display the data<br>
+contained in the window. For example, in word processing applications the standard<br>
+state of a document window would most likely be the size of a printed page. For some<br>
+types of windows the standard state depends on the window's contents and so is<br>
+determined dynamically by the application when the user zooms the window. In the<br>
+Finder, for instance, the standard state of a window in an icon view would be the<br>
+smallest size that can display all the icons in that window. The position of a window in<br>
+its standard state varies depending on the position of the user state when the window<br>
+was zoomed and on other factors, as explained later. 
+</p>
+<p>
+Figure 1 shows the user state and standard state of a Finder window displayed in the<br>
+"small icon" view. 
+</p>
+<p>
+<img src="img/156.gif" width="543 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1</b> The User and Standard States of a Window
+</p>
+<p>
+<b>RULES OF THE ROAD</b><br>
+In addition, there are a few rules that govern how a window should be zoomed in<br>
+different situations.&nbsp;&nbsp;&nbsp;These rules can be divided into two categories: rules on size and<br>
+rules on position. 
+</p>
+<p>
+<b>Rules on size. </b>Although the standard state of a window is defined to be the best size<br>
+for displaying the window's contents, this state is actually constrained by the size of<br>
+the screen to which the window is being zoomed. If the ideal size for the standard state<br>
+is larger than the destination screen, the window should be pinned to the size of the<br>
+screen, minus some slop pixels. For example, Figure 2 shows the height of the<br>
+standard state being pinned on the main screen. (Note that space was also left for the<br>
+menu bar.)
+</p>
+<p>
+If a window is being zoomed to the main screen and the ideal size for the standard state<br>
+would take up the entire width of the screen, a strip of space should be left on the right<br>
+side of the screen to let the first column of Finder icons show through.
+</p>
+<p>
+<img src="img/157.gif" width="458 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2</b> Pinning to the Screen Size
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Rules on position. </b>The basic guideline for positioning a window during a zoom is<br>
+that the window should move as little as possible, to avoid distracting the user. 
+</p>
+<p>
+A window in its standard state should be positioned so that it's entirely on one screen.<br>
+If a window straddles more than one screen in the user state and is subsequently<br>
+zoomed to the standard state, it should be zoomed to the screen that contains the largest<br>
+portion of the window's content region.&nbsp;&nbsp;&nbsp;(See Figure 3.)When a window is zoomed<br>
+from the user state to the standard state, it should be anchored at its current top left<br>
+corner if possible. If the standard state size will fit on the screen without moving the<br>
+window, the window can simply be resized. If the standard state of the window cannot<br>
+fit with the top left corner anchored, the window should be "nudged" so that the parts<br>
+that were off the screen fall just on screen. (See Figure 4.)
+</p>
+<h2>THE ZOOMING CODE</h2>
+<p>
+This section goes through the window zooming code chunk by chunk, discussing the<br>
+logic behind each step. 
+</p>
+<p>
+ZoomTheWindow is the entry point to the window zooming code. It determines the best<br>
+screen to zoom the window to, and nudges the window into position in case part of it<br>
+falls off the edge of the screen. Applications should call this routine instead of calling<br>
+the Toolbox routine ZoomWindow directly.
+</p>
+<p>
+<img src="img/158.gif" width="473 px"></img>
+</p>
+<p>
+<b>Figure 3</b>Zooming to the Best Screen
+</p>
+<p>
+<img src="img/159.gif" width="566 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 4</b> Nudge Zooming
+</p>
+<p>
+ZoomTheWindow has the following prototype:
+</p>
+<pre>void ZoomTheWindow(WindowPeek theWindow, short zoomState,
+            CalcIdealDocumentSizeProcPtr calcRoutine);</pre>
+<p>
+The first two parameters, theWindow and zoomState, are identical to the first two<br>
+parameters of ZoomWindow. The last parameter, calcRoutine, is an<br>
+application-supplied callback routine that calculates the ideal size for the window<br>
+without taking the user's screen configuration into consideration. The prototype of the<br>
+CalcIdealDocumentSizeProcPtr function type is as follows:
+</p>
+<pre>typedef void (*CalcIdealDocumentSizeProcPtr)
+            (WindowPtr theWindow, Rect *idealContentSize);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Given the window to be zoomed, the callback routine returns (in local coordinates) the<br>
+ideal rectangle for the window in the idealContentSize parameter. The window will be<br>
+the current graphics port when the callback routine is invoked. 
+</p>
+<p>
+ZoomTheWindow calls two utility routines, CalculateWindowAreaOnScreen and<br>
+CalculateOffsetAmount. CalculateWindowAreaOnScreen calculates the area of a window<br>
+on a screen. The screen that contains the largest portion of the window is the screen<br>
+that the window will be zoomed to. If ZoomTheWindow determines that anchoring the<br>
+window at its current top left corner will result in part of the window lying off the<br>
+screen, it calls CalculateOffsetAmount to find out how many pixels the window needs to<br>
+be nudged so that it's entirely on the screen. These utility routines are described in<br>
+detail following the discussion of ZoomTheWindow below. 
+</p>
+<p>
+<b>THE ZOOMDATA STRUCTURE</b><br>
+The ZoomData structure is used by ZoomTheWindow to hold information about the<br>
+screen the window should be zoomed to. ZoomTheWindow uses DeviceLoop to find the<br>
+screen containing the largest portion of the window. The DeviceLoop drawing procedure<br>
+updates the ZoomData structure as DeviceLoop calls it for each active screen device. 
+</p>
+<pre>struct ZoomData {
+    GDHandle    screenWithLargestPartOfWindow;
+    unsigned    long largestArea;
+    Rect        windowBounds;
+};
+typedef struct ZoomData ZoomData, *ZoomDataPtr;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The screenWithLargestPartOfWindow field is a handle to the screen device that the<br>
+window should be zoomed to. The largestArea field holds the area of the largest portion<br>
+of the window encounteredso far, as DeviceLoop iterates through the screens. The<br>
+windowBounds field is the portion of the window that's currently visible on the<br>
+desktop. 
+</p>
+<p>
+<b>THE ZOOMTHEWINDOW ROUTINE</b><br>
+About 90% of the code in ZoomTheWindow executes only when the window is to be<br>
+zoomed to the standard state. The routine starts by setting up the current graphics port<br>
+and getting some frequently used fields out of the window record. 
+</p>
+<pre>void ZoomTheWindow(WindowPeek theWindow, short zoomState,
+                    CalcIdealDocumentSizeProcPtr calcRoutine)
+{
+    ZoomData    zoomData;
+    Rect        newStandardRect, scratchRect, screenRect, portRect;
+    Rect        contentRegionBoundingBox, structureRegionBoundingBox;
+    Rect        deviceLoopRect;
+    GrafPtr     currentPort;
+    RgnHandle   scratchRegion, contentRegion, structureRegion;
+    GDHandle    mainDevice;
+    short       horizontalAmountOffScreen, verticalAmountOffScreen;
+    short       windowFrameTopSize, windowFrameLeftSize;
+    short       windowFrameRightSize, windowFrameBottomSize;
+
+    GetPort(&amp;currentPort);
+    SetPort((WindowPtr) theWindow);
+    contentRegion = GetWindowContentRegion(theWindow);
+    structureRegion = GetWindowStructureRegion(theWindow);
+    GetWindowPortRect(theWindow, &amp;portRect);
+    contentRegionBoundingBox = (**contentRegion).rgnBBox;
+    structureRegionBoundingBox = (**structureRegion).rgnBBox;
+    windowFrameTopSize = contentRegionBoundingBox.top -
+                            structureRegionBoundingBox.top;
+    windowFrameLeftSize = contentRegionBoundingBox.left -
+                            structureRegionBoundingBox.left;
+    windowFrameRightSize = structureRegionBoundingBox.right -
+                            contentRegionBoundingBox.right;
+    windowFrameBottomSize = structureRegionBoundingBox.bottom -
+                            contentRegionBoundingBox.bottom;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Determining the proper screen. </b>The code then determines which screen contains<br>
+the largest portion of the window, as follows:
+</p>
+<pre>// If the window is being zoomed to the standard state, calculate the
+// best size to display the window's information.
+mainDevice = GetMainDevice();
+if (zoomState == inZoomOut) {
+    zoomData.screenWithLargestPartOfWindow = mainDevice;
+    zoomData.largestArea = 0;
+   
+    // Get the portion of the window that's on the desktop.
+    scratchRegion = NewRgn();
+    SectRgn(GetGrayRgn(), contentRegion, scratchRegion);
+    if (EmptyRgn(scratchRegion))
+        zoomData.windowBounds = structureRegionBoundingBox;
+    else
+        zoomData.windowBounds = contentRegionBoundingBox;
+   
+    // Use DeviceLoop to walk through all the active screens to find
+    // the one with the largest portion of the zoomed window.
+    deviceLoopRect = zoomData.windowBounds;
+    GlobalToLocal((Point *)&amp;deviceLoopRect);
+    GlobalToLocal((Point *)&amp;deviceLoopRect.bottom);
+    RectRgn(scratchRegion, &amp;deviceLoopRect);
+    DeviceLoop(scratchRegion, &amp;CalcWindowAreaOnScreen,
+         (long) &amp;zoomData, (DeviceLoopFlags) singleDevices);
+    DisposeRgn(scratchRegion);
+    screenRect = (**(zoomData.screenWithLargestPartOfWindow)).gdRect;
+   
+    // If the window will be zoomed to the main screen, change the
+    // top of the usable screen area so that the window's title bar
+    // won't be placed under the menu bar.
+    if (zoomData.screenWithLargestPartOfWindow == mainDevice)
+        screenRect.top += GetMBarHeight();</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+ZoomTheWindow sets up default values in the ZoomData structure so that the window<br>
+will zoom to the main screen by default. Normally, the content area of the window is<br>
+used to determine the area of the window that's on each screen. However, if the user<br>
+has the window positioned such that only the title bar (or a portion of the title bar) is<br>
+visible on the desktop, the structure region of the window is used to determine the<br>
+screen that contains the largest portion of the title bar. 
+</p>
+<p>
+One of the little-known facts about the universe is that inspiration actually comes<br>
+from subatomic particles flying around in deep space. These particles occasionally hit<br>
+a sentient brain, resulting in a flash of inspiration. One of these events resulted in the<br>
+use of DeviceLoop to iterate through the list of active screen devices. (Of course, this<br>
+means that the zooming code requires System 7; for a System 6 alternative to<br>
+DeviceLoop, see "Graphical Truffles: Multiple Screens Revealed" in<i>develop</i> Issue 10.)<br>
+The CalcWindowAreaOnScreen routine is the DeviceLoop drawing procedure. The<br>
+ZoomData structure is passed to DeviceLoop as the userData value, and the DeviceLoop<br>
+flags are set so that DeviceLoop will call its drawing procedure for each screen device.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Determining the ideal size for the window. </b>After determining the proper<br>
+screen to zoom to, the application's callback routine is called to get back the ideal<br>
+content size for the window. This rectangle is then anchored at the window's current<br>
+top left corner and expanded to include the window frame. 
+</p>
+<pre>    // Figure out the perfect size for the window as if we had an
+    // infinitely large screen.
+    (*calcRoutine)((WindowPtr) theWindow, &amp;newStandardRect);
+   
+    // Anchor the new rectangle at the current top left corner of the
+    // window.
+    OffsetRect(&amp;newStandardRect, -newStandardRect.left,
+                -newStandardRect.top);
+    OffsetRect(&amp;newStandardRect, contentRegionBoundingBox.left,
+                contentRegionBoundingBox.top);
+   
+    // Add the window frame to the ideal content rect.
+    newStandardRect.top -= windowFrameTopSize;
+    newStandardRect.left -= windowFrameLeftSize;
+    newStandardRect.right += windowFrameRightSize;
+    newStandardRect.bottom += windowFrameBottomSize;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Fitting the ideal size onto the screen. </b>This is the tedious part of the code. At<br>
+this point, newStandardRect holds the ideal size for the window being zoomed. Since a<br>
+window in its standard state must be entirely on one screen, we ensure that the window<br>
+fits on the screen, maintaining its ideal size if possible. 
+</p>
+<pre>    // If the new rectangle falls off the edge of the screen, nudge it
+    // so that it's just on the screen. CalculateOffsetAmount
+    // determines how much of the window is off the screen.
+    SectRect(&amp;newStandardRect, &amp;screenRect, &amp;scratchRect);
+    if (!EqualRect(&amp;newStandardRect, &amp;scratchRect)) {
+        horizontalAmountOffScreen = CalculateOffsetAmount(
+                            newStandardRect.left,
+                            newStandardRect.right,
+                            scratchRect.left, scratchRect.right,
+                            screenRect.left, screenRect.right);
+        verticalAmountOffScreen = CalculateOffsetAmount(
+                            newStandardRect.top,
+                            newStandardRect.bottom,
+                            scratchRect.top, scratchRect.bottom,
+                            screenRect.top, screenRect.bottom);
+        OffsetRect(&amp;newStandardRect, horizontalAmountOffScreen,
+                            verticalAmountOffScreen);
+    }
+       
+    // If we're still falling off the edge of the screen, the perfect
+    // size is larger than the screen, so shrink the standard size.
+    SectRect(&amp;newStandardRect, &amp;screenRect, &amp;scratchRect);
+    if (!EqualRect(&amp;newStandardRect, &amp;scratchRect)) {
+    // First shrink the width. If the window is wider than the screen
+    // it's being zoomed to, just pin the standard rectangle to the
+    // edges of the screen, leaving some slop; otherwise, we know we
+    // just nudged the window into position, so do nothing.
+        if ((newStandardRect.right - newStandardRect.left) &gt;
+                (screenRect.right - screenRect.left)) {
+            newStandardRect.left = screenRect.left + kNudgeSlop;
+            newStandardRect.right = screenRect.right - kNudgeSlop;
+       
+            if ((zoomData.screenWithLargestPartOfWindow ==
+                    mainDevice) &amp;&amp;
+                (newStandardRect.right &gt;
+                   (screenRect.right - kIconSpace)))
+                newStandardRect.right =
+                    screenRect.right - kIconSpace;
+        }
+   
+    // Move in the top of the window. As with the width of the
+    // window, do nothing unless the window is taller than the
+    // height of the screen.
+    if ((newStandardRect.bottom - newStandardRect.top) &gt;
+            (screenRect.bottom - screenRect.top)) {
+        newStandardRect.top = screenRect.top + kNudgeSlop;
+        newStandardRect.bottom = screenRect.bottom - kNudgeSlop;
+        }
+    }
+
+    // We've got the best possible window position. Remove the
+    // frame, slam it into the WStateData record and let ZoomWindow
+    // take care of the rest.
+    newStandardRect.top += windowFrameTopSize;
+    newStandardRect.left += windowFrameLeftSize;
+    newStandardRect.right -= windowFrameRightSize;
+    newStandardRect.bottom -= windowFrameBottomSize;
+    SetWindowStandardState(theWindow, &amp;newStandardRect);
+} // if (zoomState == inZoomOut)
+else
+    GetWindowUserState(theWindow, &amp;newStandardRect);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+We call CalculateOffsetAmount to determine how much to nudge the window if it falls<br>
+off the edge of the screen in its ideal size. After nudging the window, we double check to<br>
+see if the window is entirely on the screen. If it still isn't, that means that the ideal<br>
+size of the window is larger than the screen that it's zooming to, so the window has to<br>
+be shrunk to fit on the screen. The code shrinks the window so that there's a small area<br>
+of slop space between the edge of the window and the screen boundary. Additionally, if<br>
+the screen that the window is zooming to is the main screen, space is left for the menu<br>
+bar and a column of Finder icons.&nbsp;&nbsp;After all that, newStandardRect contains the best<br>
+size for the window for that screen. After we remove the window frame, the stdState<br>
+field of the WStateData record can be filled with this rectangle. 
+</p>
+<p>
+There's also the simple case of zooming to the user state. Since the Window Manager<br>
+takes care of keeping the userState field of the WStateData record up to date, that<br>
+rectangle is easy to get. 
+</p>
+<p>
+<b>Zooming the window. </b>Finally, all that's left to do is to actually zoom the window.<br>
+One final optimization that can be performed is that if the top left corner of the window<br>
+hasn't moved, SizeWindow can be called instead of ZoomWindow, reducing the amount<br>
+of redrawing that needs to be done. The window's clipping region is reset to be the size<br>
+of the window to ensure that the window's contents are entirely erased before<br>
+ZoomWindow is called. 
+</p>
+<pre>    // If the window is still anchored at the current top left corner,
+    // just resize it.
+    if ((newStandardRect.left == contentRegionBoundingBox.left) &amp;&amp;
+            (newStandardRect.top == contentRegionBoundingBox.top)) {
+        OffsetRect(&amp;newStandardRect, -newStandardRect.left,
+                    -newStandardRect.top);
+        SizeWindow((WindowPtr) theWindow, newStandardRect.right,
+                    newStandardRect.bottom, true);
+    }
+    else {
+        scratchRegion = NewRgn();
+        GetClip(scratchRegion);
+        ClipRect(&amp;portRect);
+        EraseRect(&amp;portRect);
+        ZoomWindow((WindowPtr) theWindow, zoomState, false);
+        SetClip(scratchRegion);
+        DisposeRgn(scratchRegion);
+    }
+    SetPort(currentPort);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>THE CALCWINDOWAREAONSCREEN ROUTINE</b><br>
+CalcWindowAreaOnScreen, the DeviceLoop drawing procedure for the zooming code,<br>
+doesn't actually do any drawing, but instead simply calculates the area of the window<br>
+that's on a screen. If there's more content area on one screen than any of the other<br>
+screens that have been encountered so far, CalcWindowAreaOnScreen saves the<br>
+GDHandle of this screen in the ZoomData structure as the potential screen to zoom the<br>
+window to. 
+</p>
+<pre>pascal void CalcWindowAreaOnScreen(short depth, short deviceFlags,
+GDHandle targetDevice, long userData)
+{
+#pragma unused (depth, deviceFlags)
+    ZoomDataPtr     zoomData = (ZoomDataPtr) userData;
+    unsigned long   windowAreaOnScreen;
+    Rect            windowPortionOnScreen;
+   
+    // Find the rectangle that encloses the intersection of the
+    // screen and the document window.
+    SectRect(&amp;(zoomData-&gt;windowBounds), &amp;((**targetDevice).gdRect),
+    &amp;windowPortionOnScreen);
+   
+    // Offset this rectangle so that its right and bottom are also
+    // its width and height.
+    OffsetRect(&amp;windowPortionOnScreen, -windowPortionOnScreen.left,
+                -windowPortionOnScreen.top);
+
+    // Calculate the area of the part of the window that is on this
+    // screen.
+    windowAreaOnScreen = windowPortionOnScreen.right *
+    windowPortionOnScreen.bottom;
+   
+    // If this is the largest area that has been encountered so far,
+    // remember this screen as the potential screen to zoom to.
+    if (windowAreaOnScreen &gt; zoomData-&gt;largestArea) {
+        zoomData-&gt;largestArea = windowAreaOnScreen;
+        zoomData-&gt;screenWithLargestPartOfWindow = targetDevice;
+    }
+}</pre>
+<p>
+<b>THE CALCULATEOFFSETAMOUNT ROUTINE</b><br>
+The zooming code calls the CalculateOffsetAmount routine to calculate the number of<br>
+pixels the window needs to be nudged to be entirely on the screen. This routine works<br>
+in one dimension at a time, so ZoomTheWindow calls it twice, once for the width of a<br>
+window and once for the window's height. If CalculateOffsetAmount determines that the<br>
+window is larger than the screen, it returns 0 for the offset, since the window will be<br>
+resized later. 
+</p>
+<pre>short CalculateOffsetAmount(short idealStartPoint,
+        short idealEndPoint, short idealOnScreenStartPoint,
+        short idealOnScreenEndPoint, short screenEdge1,
+        short screenEdge2)
+{
+    short offsetAmount;
+   
+    // Check to see if the window fits on the screen in this
+    // dimension.
+    if ((idealStartPoint &lt; screenEdge1) &amp;&amp;
+            (idealEndPoint &gt; screenEdge2))
+        offsetAmount = 0;
+    else {
+        // Find out how much of the window lies off this screen by
+        // subtracting the amount of the window that's on the screen
+        // from the size of the entire window in this dimension. If
+        // the window is completely off-screen, offset the window so
+        // that it's placed just on the screen.
+        if ((idealOnScreenStartPoint - idealOnScreenEndPoint) == 0) {
+            // See if the window is lying to the left or above the
+            // screen.
+            if (idealEndPoint &lt; screenEdge1)
+                offsetAmount =
+                    screenEdge1 - idealStartPoint + kNudgeSlop;
+            else
+                // Otherwise, it's below or to the right of the
+                // screen.
+                offsetAmount =
+                    screenEdge2 - idealEndPoint - kNudgeSlop;
+        }
+        else {
+            offsetAmount = (idealEndPoint - idealStartPoint) -
+                            (idealOnScreenEndPoint -
+                                idealOnScreenStartPoint);
+                           
+            // If we're nudging, add slop pixels.
+            if (offsetAmount != 0)
+                offsetAmount += kNudgeSlop;
+
+            // Check to see which side of the screen the window was
+            //  fallingoff of, so that it can be nudged in the
+            // opposite direction.
+            if (idealEndPoint &gt; screenEdge2)
+                offsetAmount = -offsetAmount;
+        }
+    }
+    return offsetAmount;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+CalculateOffsetAmount determines the nudge amount by calculating the amount of<br>
+overlap of two line segments. The first line segment, described by the idealStartPoint<br>
+and idealEndPoint parameters, is the width or height of the window being zoomed. The<br>
+second line segment, described by the idealOnScreenStartPoint and<br>
+idealOnScreenEndPoint parameters, is the part of the window's width or height that is<br>
+on the screen the window will be zoomed to. The number of pixels the window will be<br>
+nudged is the difference between the lengths of these two line segments, plus some slop.<br>
+If the length of the second line segment is 0, the window is entirely off the screen that<br>
+it will be zoomed to. In this case, CalculateOffsetAmount will return the number of<br>
+pixels the window will have to be nudged to be just on the screen. A third line segment,<br>
+describing the screen width or height, is used to check whether the window is larger<br>
+than the screen and to determine the direction to nudge the window. 
+</p>
+<h2>ZOOMING AWAY</h2>
+<p>
+The code presented in this article takes care of most of the work of zooming windows.<br>
+All your application needs to do is supply the code that determines the ideal size for<br>
+your windows. Hopefully, many more applications will implement proper zooming<br>
+behavior in the near future. This will make the people in the offices around me<br>
+especially happy, since it's one less thing I'll have to complain about. 
+</p>
+<h2>RECOMMENDED READING</h2>
+<ul>
+<li>"DeviceLoop Meets the Interface Designer" by John Powers, <i> develop</i> <br>
+Issue 13. How to use DeviceLoop the correct way.</li>
+<li><i>Making It Macintosh: The Macintosh Human Interface Guidelines</i><br>
+<i>Companion</i>&nbsp;&nbsp;(Apple Computer, 1993). Anyone who wants to write programs on<br>
+the Macintosh should be required to go through this CD first. APDA<br>
+#R0450LL/A.</li>
+<li><i>Sourcery</i>  by Terry Pratchett (Signet, 1989). Find out about inspiration<br>
+particles, magicons, and other subatomic particles and how they interact with<br>
+ducks.</li>
+</ul>
+<p>
+<b>A lot of people think </b> the Window Manager has some magic value stashed away in a<br>
+dark corner that tells it whether a window is in its user state or its standard state. In<br>
+reality, it's not that sophisticated. It's actually the WDEF that does all the work, since<br>
+it's the thing that really needs to know which state a window is in. To make this<br>
+decision, the standard document WDEF takes a window's portRect, converts it to global<br>
+coordinates, and then compares it with the user and standard state rectangles to<br>
+determine which state the window is in. *
+</p>
+<p>
+<b>If the structure region </b> is always used to calculate the screen containing most of<br>
+the window, there's actually a scenario in which the code will zoom to the wrong<br>
+screen. If the user has a multiscreen setup and places a window so that it sits across<br>
+two screens, with only the title bar showing on one screen but a sliver of the content<br>
+region showing on the other, and there's more title bar than content showing, the<br>
+window will zoom to the first screen. However, since there is content area on the<br>
+second screen, the window should zoom to that screen. *
+</p>
+<p>
+<b>DEAN YU </b>recently went on a cross-country road trip in his new car. In retrospect,<br>
+he decided that the time off wasn't worth the emotional trauma of being pelted by<br>
+marble-sized hail in Cheyenne, Wyoming, being salt-blasted in the Utah salt flats,<br>
+being nearly blown off the road as an 18-wheeler passed him at 95 miles an hour in<br>
+the dead of night, and having his windshield chipped by gravel falling off a dump truck.<br>
+Dean didn't even get the satisfaction of finding out exactly how fast he can drive without<br>
+getting pulled over for speeding in Nebraska. Sympathy notes and donations for getting<br>
+his car repaired can be sent to Dean in care of <i> develop</i> .*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>C. K. Haun, Elizabeth Moller, Dave<br>
+Owens, Craig Prouse *
+</p>
+</body>
+</html>

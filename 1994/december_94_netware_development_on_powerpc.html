@@ -1,0 +1,662 @@
+<html>
+<head>
+<!-- Article ID: 52 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 94 - NetWare Development on PowerPC</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>NetWare Development on PowerPC</h2>
+<h1>JAMIE OSBORNE</h1>
+<p>
+<img src="img/255.gif" width="180 px"></img>
+</p>
+<p>
+<i>Apple and Novell recently announced a PowerPC version of NetWare. Under NetWare,</i><br>
+<i>network services such as file servers, print spoolers, and electronic mail dispatchers</i><br>
+<i>are written as NetWare loadable modules, or NLMs. By providing a software layer</i><br>
+<i>between the NLMs and the hardware they run on, NetWare makes more efficient use of</i><br>
+<i>the available hardware, improves portability, and allows programs to run on mixed</i><br>
+<i>networks tying together different platforms. This article shows you how to get started</i><br>
+<i>with NLM development.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Novell's NetWare has been around for years, and is considered by many to be the<br>
+networking standard in the DOS/Windows world. NetWare servers have always been<br>
+able to handle AppleTalk clients, too, but they have not been as prevalent in<br>
+predominantly Macintosh environments. As a result, most Macintosh developers have<br>
+never had the need or inclination to learn how to write software for NetWare servers.<br>
+With Apple's NetWare for PowerPCTM, you can now port your existing network<br>
+products, or create new ones, to run on Apple Workgroup Servers under NetWare.
+</p>
+<p>
+In this article, we'll take a brief tour of the NetWare environment and what it takes to<br>
+write software for it. The article is intended primarily for developers of networking<br>
+software, particularly running on networks using Apple Workgroup Servers or<br>
+multiple platforms -- but you should also find it of interest if you're just curious<br>
+about NetWare or want to know about the available options for writing networking<br>
+software.
+</p>
+<p>
+NetWare is a<i>network operating system,</i> a framework for providing network services.<br>
+Instead of running application programs, NetWare runs<i>NetWare loadable modules,</i> or<br>
+<i>NLMs,</i> which typically implement network-based services such as file storage,<br>
+printing, and electronic mail. An NLM can be loaded either on demand or automatically,<br>
+and uses the NetWare Operating System (NOS) to allocate memory, communicate with<br>
+clients, and interact with the underlying hardware. Once loaded, an NLM becomes an<br>
+integral part of the operating system, with no architectural "middlemen" to slow it<br>
+down. Figure 1 shows an overview of the NetWare architecture.
+</p>
+<p>
+<b>&nbsp;The information in this article </b>is based on Apple's NetWare for PowerPC, an<br>
+implementation of Novell's NetWare 4.1. Earlier versions of NetWare are still in wide<br>
+use, but NetWare 4.0 added some new features such as directory services and<br>
+improved security. NetWare 4.1 is a more robust version of 4.0 and improves still<br>
+further on these new features. Though earlier versions of NetWare client software can<br>
+connect to NetWare 4.1 networks, they may not be able to use all the features of the<br>
+available NLMs. If you want your NLMs to support all versions of NetWare clients, the<br>
+NOS provides the necessary support libraries.*
+</p>
+<p>
+<img src="img/256.gif" width="518 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>The NetWare architecture
+</p>
+<h2>WHY NETWARE?</h2>
+<p>
+If you're a Macintosh developer, why should you make the leap to NetWare<br>
+development? To make your product available to the greatest number of users.<br>
+NetWare is used on more than 60% of all servers in the DOS-compatible world. Here<br>
+are some of the reasons NetWare is so popular.
+</p>
+<p>
+<b>EFFICIENT RESOURCE ALLOCATION</b><br>
+In a typical Macintosh network installation, a single server machine provides file<br>
+storage, printing service, a mail server, and maybe even a scheduling server or other<br>
+network services. Any one of these services might deliver acceptable performance on<br>
+its own; but when you try to put them all on the same "box," they must contend for<br>
+limited resources such as processor time, memory, and disk access. The result is that<br>
+they all suffer performance degradation: even on a blindingly fast machine, such<br>
+resource contention can slow all of your network services to a crawl.
+</p>
+<p>
+NetWare helps alleviate this problem in three ways:
+</p>
+<ul>
+<li>OS-level resource access. Unlike other operating systems (such as<br>
+UNIX&#174;), NetWare has no protection scheme to prevent a process from<br>
+accessing memory outside its domain. Once loaded, NLMs become part of the<br>
+operating system itself, with unrestricted access to memory and other<br>
+hardware resources. NLMs run faster without the overhead associated with<br>
+memory protection. The cost, of course, is that an unprotected NLM can bring<br>
+the entire system down if it crashes.</li>
+<li>"Lightweight" threads.  The NOS is multithreaded, with threads from<br>
+NLMs existing alongside those belonging to the system itself. Because they<br>
+operate at the system level, NLM threads carry very little overhead and can be<br>
+spawned, executed, and switched very quickly.</li>
+<li>Nonpreemptive multitasking.  NetWare is a nonpreemptive multitasking<br>
+system: the burden of deciding when to switch threads is placed on the<br>
+individual NLMs, rather than on the operating system itself. So long as all<br>
+NLMs are "good citizens," they can work cooperatively to produce a more<br>
+efficient system.</li>
+</ul>
+<p>
+<b>CENTRALIZED DIRECTORY SERVICES</b><br>
+One of the biggest headaches for many network administrators is maintaining user and<br>
+group lists for multiple servers and services. A single user may have an account on<br>
+two or three file servers, a mail server, and who-knows-what else. Keeping the<br>
+different accounts for that one person up to date can be a significant chore.
+</p>
+<p>
+NetWare helps ease this burden by making centralized directory services available to<br>
+all NLMs.&nbsp;&nbsp;&nbsp;NetWare users log directly into the network itself, not into a particular<br>
+server. Using interfaces that NetWare provides, NLMs can access the directory<br>
+services and use them for authentication. Thus a mail server and a file server, for<br>
+example, can share the same user list instead of each maintaining its own. This<br>
+centralized approach to directory services benefits everyone. NLM developers don't<br>
+have to write the code to store, edit, and maintain their own user lists; network<br>
+administrators only need to maintain a single centralized directory; and users don't<br>
+have to remember half a dozen different passwords and authenticate themselves every<br>
+time they move from one network service to another.
+</p>
+<p>
+<b>PORTABILITY</b><br>
+Networks are growing larger everywhere, as users discover that computers linked<br>
+together, sharing services over a network, are far more useful than isolated<br>
+workstations. While this growth presents many opportunities for developers of<br>
+network services, it also presents the problem of diversity. The days are gone when a<br>
+company's computers all ran the same operating system. Today, Macintosh computers,<br>
+DOS-based PCs, and UNIX workstations must all coexist on the same network.
+</p>
+<p>
+Porting a network service such as a mail server from one hardware platform to<br>
+another can take a great deal of time and effort. Building your server as an NLM,<br>
+however, gives it instant portability to any platform for which NetWare is<br>
+implemented. NetWare's uniform API "virtualizes the hardware," so that NLMs don't<br>
+have to interact directly with the platform they're running on. Since the interface to<br>
+NetWare is the same from one platform to another, porting your NLM is a simple<br>
+matter of recompiling.
+</p>
+<h2>THE RIGHT TOOLS FOR THE JOB</h2>
+<p>
+By now you should be convinced that NetWare has a lot of advantages to offer. The rest<br>
+of this article details what it takes to build an NLM that will run on NetWare for<br>
+PowerPC. Included on this issue's CD is sample code for a simple multithreaded NLM.
+</p>
+<h2>CHOOSING A DEVELOPMENT ENVIRONMENT</h2>
+<p>
+If you're already developing software for Power Macintosh computers, you probably<br>
+have most of the tools you need to develop software for NetWare for PowerPC. In the<br>
+next section, we'll see how to use these tools to do NetWare development in a Macintosh<br>
+environment; but there are non- Macintosh options as well:
+</p>
+<ul>
+<li>If you have an IBM RS/6000 computer, you can use the<b>cset</b> compiler to<br>
+develop your NetWare NLMs. (You'll need version 2.1.1 or later of the<br>
+compiler, which can generate PowerPC code.) This is the method Apple used to<br>
+port many of the NLMs that are part of NetWare itself.</li>
+<li>If you have a DOS-compatible machine, you may be able to use Novell's<br>
+UnixWare in conjunction with the Cygnus C/C++ Compiler for PowerPC (a<br>
+PowerPC version of<b>gcc</b>). You should have at least an 80386 processor for<br>
+this option, but an 80486 or Pentium is recommended.</li>
+</ul>
+<p>
+If you already have the hardware and software, either of these non-Macintosh options<br>
+can help you quickly begin producing high-quality code. But if you aren't already using<br>
+an RS/6000 or a DOS- compatible system, you'll probably do better to go the<br>
+Macintosh route. Purchasing an RS/6000 can be quite expensive, not to mention the<br>
+additional cost of setup and maintenance. You can get DOS- compatible machines for<br>
+much less, but not all of them are compatible with UnixWare. (Any certified<br>
+UnixWare reseller should be able to help you determine whether UnixWare will run<br>
+on your hardware.)
+</p>
+<p>
+This article will focus exclusively on Macintosh development options. However,<br>
+general information about NetWare's interfaces applies to any development platform<br>
+you choose.
+</p>
+<p>
+<b>NETWARE DEVELOPMENT THE MACINTOSH WAY</b><br>
+MPW Pro (available from APDA) includes a PowerPC C/C++ compiler and linker that<br>
+run as tools under Macintosh Programmer's Workshop (MPW). The compiler, PPCC,<br>
+produces PowerPC object (.o) files, which you then pass to the PPCLink tool to<br>
+produce an XCOFF (eXtended Common Object File Format) file.
+</p>
+<p>
+Ordinarily, the next step would be to pass the XCOFF file, in turn, to the MakePEF tool,<br>
+which turns it into a PEF (Preferred Executable Format) file ready to run as a<br>
+Macintosh application. To build an NLM, however, you don't use MakePEF. Instead, you<br>
+pass your object files to a special- purpose NLM linker that translates them into a<br>
+finished NLM, using information about imports and exports taken from a<i>definition file</i><br>
+you supply. (See the next section for more information on the structure and contents<br>
+of the definition file.) You invoke the NLM linker with an MPW script, NLMLink. As<br>
+shown in Figure 2, you pass it your definition file along with the usual PowerPC<br>
+runtime library, PPCRuntime.o, and another library, Prelude.o (provided with the<br>
+NetWare for PowerPC Software Development Kit), that allows NetWare to load your<br>
+NLM. The NLMLink script can also accept a list of .o files as arguments, in which case<br>
+it calls the standard PowerPC linker, PPCLink, for you.
+</p>
+<p>
+&nbsp;To run and test your NLMs, you'll need the developer's version of NetWare for<br>
+PowerPC from Novell. You can install it on any Power Macintosh computer.
+</p>
+<p>
+<b>THE DEFINITION FILE</b><br>
+In addition to your NLM's object (.o) files, you must provide the NLMLink tool with a<br>
+definition (.def) file. This file, which is usually named<i>NLMName</i> .def (where<i>NLMName</i><br>
+is the name of your NLM), contains information that NLMLink needs in order to turn<br>
+your linked object file into a finished NLM. Among other things, the definition file<br>
+includes a list of all routines imported to and exported from your NLM. Listing 1<br>
+shows an example definition file, taken from the sample NLM on this issue's CD.
+</p>
+<p>
+&nbsp;The keywords <b>description, copyright,</b> and <b> version</b> give the information that<br>
+will be displayed on the NetWare console when the NLM is loaded.
+</p>
+<p>
+<img src="img/257.gif" width="498 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2. </b>Building an NLM with MPW
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;The keyword <b>reentrant</b> specifies that the NLM can be loaded multiple times on the<br>
+console, but only one copy of the NLM will reside in memory, with all threads sharing<br>
+that same copy of the code.
+</p>
+<p>
+&nbsp;The keywords <b>input</b> and <b>output</b> tell the linker what file or files to read and what to<br>
+name the file it produces.
+</p>
+<p>
+&nbsp;The keywords <b>start</b> and <b> exit</b> identify routines to execute when the NLM is loaded and<br>
+unloaded, respectively. The Prelude.o file that you pass to the NLMLink tool defines<br>
+default start and exit routines, named _Prelude and _Stop, to set up your NLM's<br>
+threads at load time and clean them up at unload. If your NLM is reentrant, you'll<br>
+probably supply a start routine of your own to handle reentrant loading; if not, you<br>
+can just omit the<b>start</b>keyword (to use the default start routine_Prelude).&nbsp;&nbsp;If you<br>
+define your own start routine, make sure it calls _Prelude the first time your NLM is<br>
+loaded.
+</p>
+<p>
+The keyword <b>import</b> is followed by a list of the routines that your NLM needs to have<br>
+available at run time. These routines usually come from the NetWare C Interface, but<br>
+they could be exported by any other NLM running on the server. Any routine your code<br>
+calls that is not part of your NLM must be listed here, or the NLMLink tool will report<br>
+an error.
+</p>
+<p>
+Finally, the keyword <b>export</b> is followed by a list of the routines that your NLM makes<br>
+available for other NLMs on the server to call. You need not export any routines at all;<br>
+however, if you want to give other NLMs access to any of your routines, you must list<br>
+them here. (Our sample NLM doesn't actually export any routines, but we've included a<br>
+fictitious one in the sample definition file, just for illustration.)
+</p>
+<p>
+These are just some of the keywords you can use in a definition file. The NetWare for<br>
+PowerPC Software Development Kit documentation describes all of the possible<br>
+keywords and how to use them.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 1. </b>Example definition file
+</p>
+<pre>description "AppleTalk Demo NLM"
+copyright "Apple Computer, Inc."
+version 1, 1, 1
+reentrant
+input ATDemo.out
+output ATDEMO.NLM
+start HandleMultipleLoad
+exit _Stop
+import
+    ATAtpClose
+    ATAtpGet
+    ATAtpOpen
+    ATAtpSendRsp
+    ATDdpNetinfo
+    ATNbpParseEntity
+    ATNbpRegister
+    ATNbpRemove
+    ATZipGetMyZone
+    exit
+    free
+    GetFileServerName
+    malloc
+    printf
+    strcat
+    strlen
+    strncat
+    _StartNLM
+    ImportSymbol
+    _TerminateNLM
+    _SetupArgv
+    atexit
+    __get_errno_ptr
+    BeginThread
+    ExitThread
+    strcpy
+export
+    FooBar</pre>
+<h2>A BRIEF TOUR OF THE NETWARE INTERFACE</h2>
+<p>
+The NetWare C Interface provides more than 1000 functions for interfacing with the<br>
+NOS. It's a load-time interface, meaning that function calls are resolved at the time an<br>
+NLM is loaded rather than at link time. Trying to document the entire NetWare<br>
+interface here would be like trying to summarize all of<i>Inside Macintosh.&nbsp;&nbsp;</i> We can,<br>
+however, look at some highlights. The NLMs that make up the NetWare C Interface<br>
+include, among others, CLIB (<b>C LIB</b>rary), DSAPI (<b>D</b>irectory<b>S</b>ervices<b>API</b>), <br>
+THREADS, NWSNUT (<b>N</b>et<b>W</b>are<b> S</b>cree<b>N UT</b>ility), and TLI (<b>T</b>ransport<b>L</b>ayer<br>
+<b>I</b>nterface).&nbsp;&nbsp;&nbsp;Together, these NLMs offer interfaces to the following NetWare services:
+</p>
+<ul>
+<li>high- and low-level I/O</li>
+<li>directory services</li>
+<li>file manipulation</li>
+<li>memory management</li>
+<li>threads</li>
+<li>communications protocols</li>
+<li>math functions</li>
+<li>human interface utilities</li>
+</ul>
+<p>
+These services (which are described in more detail below) are actually only a few of<br>
+thoseavailable through the NetWare C Interface. Currently, more than 40 different<br>
+services(analogous to Macintosh Toolbox managers) are available to developers of<br>
+NLMs. The NetWare for PowerPC Software Development Kit contains documentation on<br>
+all of these services, as well as the latest development utilities and sample code.
+</p>
+<p>
+<b>INPUT/OUTPUT</b><br>
+NetWare provides APIs for both synchronous and asynchronous I/O.
+</p>
+<p>
+<b>DIRECTORY SERVICES</b><br>
+The Directory Services API provides access to the distributed directory services<br>
+database on a NetWare 4.1 network. NetWare directory services offer functionality<br>
+very similar to that of the Apple Open Collaboration Environment (AOCE) -- in fact,<br>
+Apple and Novell are pursuing ways to integrate the two services. Typical calls include<br>
+NWDSAuthenticate, NWDSCreateObject, and NWDSSearch.
+</p>
+<p>
+<b>FILE MANIPULATION</b><br>
+NetWare provides several sets of interfaces for file manipulation. Calls such as open,<br>
+fopen, DFSOpen, and AFPOpenFileFork all open a disk file, but take different<br>
+parameters and follow different I/O models. You decide which you need, depending on<br>
+whether you want speed, convenience, or compatibility.
+</p>
+<p>
+<b>MEMORY MANAGEMENT</b><br>
+NetWare uses the standard C malloc/free model for memory management. NetWare<br>
+doesn't use a virtual-memory scheme to increase a server's memory capacity beyond<br>
+that of the available physical RAM, so you must be careful to allocate only as much<br>
+memory as you actually intend to use. It's also a good idea to include code for handling<br>
+low-memory conditions in a graceful way.
+</p>
+<p>
+<b>THREADS</b><br>
+NetWare is a nonpreemptive operating system, meaning that each NLM is responsible<br>
+for voluntarily giving up control of the processor from time to time, to allow other<br>
+NLMs to run. Every NLM has at least one thread of execution, known as the<i>main thread,</i><br>
+created when the NLM is initially loaded. The NLM can then optionally spawn as many<br>
+additional threads as it needs. At any given time, exactly one thread is in active control<br>
+of theprocessor; all others are temporarily suspended. The NOS maintains a<i>run queue</i><br>
+of such suspended threads awaiting execution.
+</p>
+<p>
+The NetWare interface provides a set of routines for thread management, including<br>
+BeginThread, Delay, EnterCritSec, and ThreadSwitch. The "good citizen" routines<br>
+CYieldIfNeeded, CYieldWithDelay, and CYieldUntilIdle yield control of the processor to<br>
+give other NLMs their turn at bat. In addition, many other system calls automatically<br>
+block (suspend the execution of a thread) while waiting for some external occurrence<br>
+such as the arrival of a packet on the network, so it isn't always necessary to<br>
+relinquish the processor explicitly.
+</p>
+<p>
+<b>COMMUNICATIONS</b><br>
+NetWare's AppleTalk interface implements all of the protocols defined in<i>Inside</i><br>
+<i>AppleTalk,</i> from the Datagram Delivery Protocol (DDP) to the AppleTalk Filing<br>
+Protocol (AFP). NetWare also provides native interfaces to IPX/SPX and TCP/IP. For<br>
+greater flexibility, you can use the NetWare Transport Layer Interface (TLI). Because<br>
+TLI functions are independent of the underlying transport layer, they allow you to use<br>
+a variety of protocols, such as AppleTalk, IPX/SPX, and TCP/IP, without having to<br>
+write extra code.
+</p>
+<p>
+<b>MATH FUNCTIONS</b><br>
+The Math Services API provides common mathematical functions like min, sqrt, and<br>
+cos. For maximum efficiency, the implementation on PowerPC servers uses the<br>
+processor's built-in floating- point capabilities whenever possible.
+</p>
+<p>
+<b>HUMAN INTERFACE UTILITIES</b><br>
+Many NLMs present a human interface on the server machine, allowing an operator or<br>
+administrator to perform needed server-management tasks. If you want your NLM to<br>
+have a graphical (as opposed to a command-line) interface, you can use the NetWare<br>
+NLM User Interface Services to create windows, menus, and dialog boxes on the server<br>
+console. Although the interfaces aren't as sophisticated as those of the Macintosh<br>
+Toolbox, they can help you provide a convenient human interface to your NLM.
+</p>
+<h2>A SIMPLE NLM</h2>
+<p>
+To illustrate how NLMs are written, we'll look at two examples. Both will run on any<br>
+server running NetWare. You'll find the code for both examples on this issue's CD.
+</p>
+<p>
+Our first sample NLM is the obligatory "Hello, world" example, which we'll name<br>
+HELLO.NLM.&nbsp;&nbsp;&nbsp;The code is short enough that we can show it right here:
+</p>
+<pre>/* HELLO.NLM
+    This NLM prints the traditional message "Hello, world."
+    on the serve console. Type "Load Hello" on the server
+    to see it run.
+*/
+#include &lt;stdio.h&gt;
+main()
+    {
+    printf("Hello, world.\n");
+    }</pre>
+<p>
+Pretty painless, right? The reason for including this example is to show that writing<br>
+an NLM doesn't require you to learn an entirely new programming method. Much of the<br>
+programming you do when writing an NLM is the same as if you were writing an<br>
+application for Macintosh or UNIX.
+</p>
+<h2>A MORE INTERESTING NLM</h2>
+<p>
+Now let's look at another sample NLM, named ATDEMO.NLM. When loaded on your<br>
+server, ATDEMO watches for an incoming AppleTalk connection and provides the client<br>
+with server statistics on request, such as the number of clients connected, directory<br>
+listings, and so forth. (The CD also contains a small Macintosh client application that<br>
+connects to the server and queries ATDEMO for this information. The client application<br>
+is provided in "fat binary" form so that it can run in native mode on both PowerPC and<br>
+680x0 platforms. We won't examine its code in this article, but it's included on the CD<br>
+in case you're interested.)
+</p>
+<p>
+ATDEMO demonstrates three important points about writing NLMs:
+</p>
+<ul>
+<li>how to make calls to the NetWare C Interface</li>
+<li>how to use the AppleTalk protocol in an NLM</li>
+<li>how to create and schedule threads for execution by the NOS</li>
+</ul>
+<p>
+The code for the entire NLM is contained in a single file, ATDemo.c. It begins with a list<br>
+of #include macros. Some of these, such as stdio.h and stdlib.h, are standard ANSI<br>
+includes. Others, such as nwenvrn.h, nwthread.h, and nbp.h, are headers for the NOS.<br>
+Remember that all routines you call from these header files, even the ANSI C routines,<br>
+are linked at load time and implemented by the NLMs described earlier. <i>Do not</i> use the<br>
+ANSI headers from your MPW CIncludes folder -- there may be subtle differences in<br>
+the header files that could cause debugging nightmares later on.
+</p>
+<p>
+Like all C programs, an NLM written in C must have a main routine. Macintosh<br>
+applications typically have a structure based on a main event loop:
+</p>
+<pre>main()
+    {
+        /* Do preliminary setup and initialization. */
+        ...
+       
+        do {
+            ...
+            WaitNextEvent(...);
+            ...
+        } while (1);
+       
+        /* Do final cleanup and exit. */
+        ...
+    }</pre>
+<p>
+The structure of an NLM is a bit different, because the server itself is doing the event<br>
+processing.&nbsp;&nbsp;&nbsp;Instead of polling the system for events and processing them one at a time<br>
+in our main thread, we block for action and spawn a separate thread to handle each<br>
+incoming event. This removes the bottleneck associated with a single point of event<br>
+processing, with each spawned thread doing its own work and blocking only for its own<br>
+needs. 
+</p>
+<p>
+The structure of ATDEMO looks like this:
+</p>
+<pre>main()
+    {
+        /* Do preliminary setup and initialization. */
+        ...
+       
+        do {
+            ATAtpGet(...);
+            ...
+            BeginThread(...);
+        } while (1);
+
+        /* Do final cleanup and exit. */
+        ...
+    }</pre>
+<p>
+At first glance, our NLM seems to spend all its time in a busy <b>do-while</b> loop. In fact,<br>
+this is not the case. ATAtpGet is a NOS function that waits to receive an ATP (AppleTalk<br>
+Transaction Protocol) packet. Like many other functions in the NetWare C Interface,<br>
+ATAtpGet is a <i>blocking function:</i> it suspends execution of the calling thread while<br>
+waiting for an ATP packet to arrive, allowing the NOS to run other scheduled threads in<br>
+the meantime. The thread calling the blocking function gets placed at the end of the run<br>
+queue; eventually it will work its way back to the front of the queue and resume<br>
+execution from the point of the suspension. (If our NLM didn't call such a blocking<br>
+function, we could instead call ThreadSwitchWithDelay at the end of our <b>do-while</b><br>
+loop, to relinquish control of the processor explicitly and allow other threads to run.)
+</p>
+<p>
+When the server eventually receives an ATP packet addressed to our NLM, it<br>
+reactivates our main thread, causing control to return from the ATAtpGet call and<br>
+resume with the next instruction. Our NLM next calls the NOS function BeginThread to<br>
+create a new thread to respond to the packet.&nbsp;&nbsp;&nbsp;The actual code issues this call by means<br>
+of a subsidiary function, SpinNewSession:
+</p>
+<pre>int SpinNewSession(...)
+    {
+        int completionCode;
+   
+        completionCode = BeginThread(HandleClientSession, ...);
+        return completionCode;     
+    }</pre>
+<p>
+BeginThread takes a function pointer as its main parameter, creates a new thread to<br>
+execute the function, and adds the thread to the NOS's run queue. When the time comes<br>
+to run this thread, the NOS will call the specified function (in this case, an ATDEMO<br>
+function named HandleClientSession). Thus, instead of a single thread of execution that<br>
+handles all communications with all clients, we have a main thread that waits for new<br>
+clients to initiate communications and spins off a subsidiary thread for each such<br>
+client connection.
+</p>
+<p>
+Like our main function, HandleClientSession also has a<b>do-while</b>loop that uses<br>
+ATAtpGet as the main blocking function:
+</p>
+<pre>void HandleClientSession(...)
+    {
+        /* Allocate data structures and open a connection. */
+        ...
+       
+        ATAtpSendRsp(...);
+       
+        do {
+            ATAtpGet(...);
+            quitRequest = HandleRequest(...);
+            if (quitRequest) {
+                ATAtpClose(...);
+                ExitThread();
+            }
+        } while (1);
+    }</pre>
+<p>
+ATAtpGet will continue getting packets from the client until the client notifies the<br>
+server to break the connection. Each time HandleClientSession receives a packet, it<br>
+calls another ATDEMO function, HandleRequest, to examine the content of the message<br>
+and determine what specific information the client is requesting. When HandleRequest<br>
+reports that the client has asked to break the connection, HandleClientSession calls the<br>
+NOS function ATAtpClose to close the connection and then destroys the thread with the<br>
+NOS function ExitThread.
+</p>
+<h2>NETWARE DEVELOPMENT TIPS</h2>
+<p>
+Here are some key points to keep in mind when writing an NLM or porting an existing<br>
+program to NetWare.
+</p>
+<ul>
+<li>Don't rule out a NetWare version of your software just because it's not<br>
+"real Macintosh." Apple's future plans for client/server solutions feature<br>
+NetWare as a core OS.</li>
+<li>Try to make your NLM platform-independent, if possible. If you avoid the<br>
+platform-specific features of NetWare for PowerPC, you'll be able to port<br>
+your NLM to NetWare running on other platforms, including DOS-compatible<br>
+machines, with little effort.</li>
+<li>Remember that your NLM runs on a server that handles many different<br>
+clients.&nbsp;&nbsp;&nbsp;Try to make it compatible with clients of any type.</li>
+<li>If your NLM is intended to run on multiple platforms or support multiple<br>
+transport protocols, use the NetWare Transport Layer Interface (TLI) rather<br>
+than native protocols. This will save you time and effort when porting to<br>
+another platform.</li>
+<li>Be careful when developing NLMs with a Macintosh development<br>
+environment.&nbsp;&nbsp;&nbsp;You're writing an application that has no Macintosh Toolbox<br>
+underneath: use only the headers and libraries that come with the NetWare for<br>
+PowerPC Software Development Kit.</li>
+<li>Test your NLM carefully and extensively. While in development, an NLM<br>
+can be run in isolation, where it can't damage anything but itself. Once it's<br>
+ready for prime time, it will be loaded as part of the NOS; then if it crashes, it<br>
+may bring the entire server down with it.</li>
+<li>NetWare is a nonpreemptive multitasking operating system. Be sure to<br>
+design your threads of execution so that they relinquish the processor<br>
+frequently, to give other NLMs their fair share of processor time.</li>
+<li>Because NetWare servers have no virtual memory, they're limited to the<br>
+physical memory available in the computer. Don't be a memory pig!</li>
+<li>Be sure to take advantage of the numerous developer programs and<br>
+information available from Apple and Novell.</li>
+</ul>
+<p>
+Once you've finished developing and testing your NLM, you'll probably want to get it<br>
+certified by Novell before you release it to the world. Following the guidelines above<br>
+will help make that process as speedy and painless as possible.
+</p>
+<h2>WHAT NEXT?</h2>
+<p>
+This article should give you enough basic information to get started with NetWare and<br>
+NLMs.&nbsp;&nbsp;&nbsp;Novell recommends that anyone interested in setting up a NetWare system hire<br>
+a trained specialist called a Certified NetWare Engineer, or CNE, to help with the<br>
+installation. Many NetWare developers also attend training classes to learn how to port<br>
+their existing software or develop new NLMs. If you don't want to go to the time and<br>
+expense of a training course, a couple of good books can go a long way to help you learn<br>
+what you need to know. See the list at the end of this article for some suggestions.
+</p>
+<p>
+Before embarking on serious development, you'll definitely want to get Novell's<br>
+NetWare for PowerPC Software Development Kit (which should be available soon if not<br>
+by the time you read this). In it you'll find a complete set of software and<br>
+documentation to assist you in developing your own NLMs. For more information, call<br>
+Novell at 1-800-NETWARE (1-800-638-9273). For information from Apple on<br>
+NetWare developer programs, call Apple's Developer Support Center at<br>
+(408)974-4897 or send a message to AppleLink DEVSUPPORT. In today's networking<br>
+environment,&nbsp;&nbsp;more and more products, especially client/server programs, are being<br>
+written for multiple platforms. NetWare gives you a convenient way to develop<br>
+portable network software without having to rewrite all your code separately for each<br>
+new platform. Whether you're porting an existing network application or writing a<br>
+new one, you can benefit greatly by doing it in NetWare.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>RECOMMENDED READING</b>
+</p>
+<p>
+Here are some suggestions for further reading on the subject of NetWare and NLMs:
+</p>
+<ul>
+<li><i>Novell's Guide to NetWare 4.0 NLM Programming</i>  (Novell Press, 1993).</li>
+<li>"Writing Your Own NetWare Loadable Modules," <i>PC Magazine</i>  Volume 12<br>
+Issue 20 (November 23, 1993), pages 355-364.</li>
+<li>"Concurrent Programming With the Thread Manager" by Eric Anderson<br>
+and Brad Post, <i> develop</i>&nbsp;&nbsp;Issue 17. Information on multithreaded programming.</li>
+</ul>
+<p>
+<b>JAMIE OSBORNE </b>(AppleLink JWO) In the short space of a year, Jamie Osborne has<br>
+gone from doing three-dimensional user interfaces to working on exception-handling<br>
+routines for a PowerPC Memory Manager to programming NetWare NLMs. When he's<br>
+not sitting in front of a computer (which, according to his fianc&#201;e, is "only when he's<br>
+sleeping, and maybe not even then"), he keeps busy writing television scripts for<br>
+Paramount to reject.&nbsp;&nbsp;He hasn't quite figured out what he<i>really </i> wants to do with his<br>
+life, but he's reasonably certain&nbsp;&nbsp;it involves long days lounging about in a large house<br>
+in the hills of New Hampshire.*
+</p>
+<p>
+<b>Thanks </b>to our technical reviewers Rob Hawley, Bob Heldt, Rich Kubota, Michael<br>
+McDaniel, and Clara McKenzie. *
+</p>
+<p>
+<b>If you found this article interesting </b> and would like to see more in-depth<br>
+NetWare articles in the future, send a note to AppleLink NWDEV.*
+</p>
+</body>
+</html>

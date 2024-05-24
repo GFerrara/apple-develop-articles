@@ -1,0 +1,1199 @@
+<html>
+<head>
+<!-- Article ID: 24 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 94 - Displaying Hierarchical Lists</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Displaying Hierarchical Lists</h2>
+<h1>MARTIN MINOW</h1>
+<p>
+<img src="img/188.gif" width="180 px"></img>
+</p><p class="spacer">&nbsp;</p><p class="spacer">&nbsp;</p><p class="spacer">&nbsp;</p><p class="spacer">&nbsp;</p>
+<p>
+<i>Much of the data you manage on a Macintosh has a hierarchical nature. This article</i><br>
+<i>shows how your application can provide a clear, coherent data organization with a</i><br>
+<i>user-controlled display by using classic linked lists, storing the list data in handles,</i><br>
+<i>and displaying it with the List Manager. A triangular button mechanism, similar to</i><br>
+<i>that used in the Finder to open and close folders in list views, lets the user decide how</i><br>
+<i>much data to view on the screen.</i>
+</p>
+<p>
+If your application makes its hierarchical data accessible but not overwhelming, it<br>
+will have an advantage over applications that provide only two alternatives -- "throw<br>
+it all on the screen" or "hide everything." You can find many examples of flexible<br>
+organization: The Finder presents file and folder information in a variety of display<br>
+formats revealing more or less information according to the user's own desires.<br>
+Document-based applications such as NewsWatcher provide a hierarchy of text<br>
+information. The JMP statistical application provides buttons that reveal more<br>
+detailed information about an analysis. Programming languages such as Frontier allow<br>
+the programmer to display as much of a module's code as is needed. 
+</p>
+<p>
+This article shows how to do the following:
+</p>
+<ul>
+<li>store hierarchical data in a linked list along with the information needed<br>
+to display it properly</li>
+<li>extend the List Manager by storing a button object in a List Manager cell<br>
+that controls how the data hierarchy is displayed</li>
+<li>build the data hierarchy and display it</li>
+<li>let the user manipulate the buttons to view more or less of the data</li>
+</ul>
+<p>
+The accompanying code on this issue's CD includes a sample library that stores data,<br>
+displays it, and manages the buttons, and a simple application that uses the library.<br>
+The techniques described in the article are appropriate for displaying and organizing<br>
+moderate amounts of data; they're less useful for static data or large amounts of data<br>
+and are inefficient with small amounts of data. 
+</p>
+<p>
+Figure 1 shows a Finder-like window that was created with this library; the files<br>
+displayed are from the sample library. I've called the library<i>TwistDown</i> to emphasize<br>
+how the display acts when you click the buttons. The Finder development team calls the<br>
+buttons<i>triangular buttons</i> . 
+</p>
+<p>
+<img src="img/189.gif" width="446 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1. </b>Window created with TwistDown library
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<h2>STORING DATA IN A LINKED LIST</h2>
+<p>
+There isn't much in this article on linked lists or handles; I assume you struggled with<br>
+"classical" list processing when you learned to program and have done enough<br>
+programming on the Macintosh to understand how handle-based storage operates. Keep<br>
+in mind that two kinds of lists are discussed here: linked lists and Macintosh List<br>
+Manager display lists. To keep confusion to a minimum,<i>element</i> refers to a component<br>
+of a linked list and<i>cell</i> refers to a component of a List Manager list. Note also that<br>
+linked lists contain the data, while the List Manager list only controls the appearance<br>
+of that data. A good understanding of the List Manager is needed to follow the code<br>
+examples later in the article. (For details on the List Manager, see<i>Inside Macintosh:</i><br>
+<i>More Macintosh Toolbox</i> , or<i> Inside Macintosh</i> Volume IV.)
+</p>
+<p>
+In the context of this article, a list element is a chunk of data, a few flags, and two<br>
+linkages. This section discusses the linkages, which connect list elements into<br>
+sequences and hierarchies, and the creation and disposal of list elements. The flags,<br>
+which simplify formatting the data, are discussed later in the section "Controlling Data<br>
+Appearance."
+</p>
+<p>
+Figure 2 illustrates the linkages that connect list elements. The important thing to<br>
+remember about the hierarchical linked lists we're using is that any element may have<br>
+a<i>successor</i> -- the sibling element that follows it -- and a<i>descendant</i> -- a child<br>
+element that begins a lower level of the hierarchy. For example, a document outline<br>
+has a sequence of chapters (siblings) and each chapter has, as its descendants, a<br>
+sequence of sections. 
+</p>
+<p>
+In the sample code, each list element is stored in a handle. This allows the Memory<br>
+Manager to reorganize memory to store data efficiently. However, don't forget that the<br>
+application program is responsible for disposing of data that's no longer needed. 
+</p>
+<p>
+Two library functions manage the list elements: MakeTwistDownElement creates an<br>
+element and connects it to the list hierarchy and DisposeTwistDownElement deletes an<br>
+element along with its descendants and successors. 
+</p>
+<p>
+<img src="img/190.gif" width="513 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2. </b>List element organization
+</p>
+<p>
+<b>&nbsp;CREATING A LIST ELEMENT</b><br>
+&nbsp;Listing 1 shows the definition of our element structure, TwistDownRecord. Each field<br>
+of this structure will be explained as it's encountered in the sample code.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>&nbsp;Listing 1. </b>TwistDownRecord
+</p><p class="spacer">&nbsp;</p>
+<pre>struct TwistDownRecord {
+  struct TwistDownRecord  **nextElement; /* -&gt; successor element  */
+  struct TwistDownRecord  **subElement;  /* -&gt; descendant element */
+  short                   indentLevel;   /* Indentation depth */
+  unsigned short          flag;          /* Control flags */
+  unsigned short          dataLength;    /* Actual data length */
+  unsigned char           data[1];       /* Data to display */
+};
+typedef struct TwistDownRecord  TwistDownRecord,
+        *TwistDownPtr, **TwistDownHandle;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;MakeTwistDownElement (Listing 2) is called with the data to store in the element and<br>
+a handle to its predecessor. The predecessor is either NULL or the previous (elder)<br>
+sibling element. For example, when creating element 3 in the list shown in Figure 2,<br>
+the previous element is element 1. 
+</p>
+<p>
+&nbsp;TwistDownRecord is a variable-length structure and NewHandle creates an instance<br>
+that's large enough to hold the caller's data record. The structure definition, however,<br>
+contains one bit of trickery that's required by the ANSI C standard -- it must specify<br>
+at least one byte for the data [] placeholder. This is why the parameter to NewHandle<br>
+adjusts the handle size to eliminate the extra byte. 
+</p>
+<p>
+<b>&nbsp;DISPOSING OF A LIST ELEMENT</b><br>
+&nbsp;The DisposeTwistDownHandle function disposes of a list element and then disposes of<br>
+its descendant and successor lists. To dispose of an entire list, call this function with<br>
+the first list element. 
+</p>
+<p>
+&nbsp;A simplified version of DisposeTwistDownHandle is shown in Listing 3. The library<br>
+implementation allows the application developer to specify a function that's called<br>
+when disposing of each element in the list. This is needed if an application has to store<br>
+complex structures -- themselves containing Ptr or Handle references -- in a<br>
+TwistDownHandle.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>&nbsp;Listing 2. </b>MakeTwistDownElement
+</p><p class="spacer">&nbsp;</p>
+<pre>OSErr MakeTwistDownElement(TwistDownHandle  previousElement,
+                           short            indentLevel,
+                           unsigned short   dataLength,
+                           Ptr              dataPtr,
+                           TwistDownHandle  *result)
+{
+    TwistDownHandle twistDownHandle;
+
+    twistDownHandle =
+        (TwistDownHandle) NewHandle(sizeof(TwistDownRecord)
+                        - sizeof(unsigned char) + dataLength);
+    *result = twistDownHandle;
+    if (twistDownHandle != NULL) {
+        if (previousElement != NULL)
+            (**previousElement).nextElement = twistDownHandle;
+        (**twistDownHandle).nextElement = NULL;
+        (**twistDownHandle).subElement = NULL;
+        (**twistDownHandle).indentLevel = indentLevel;
+        (**twistDownHandle).flag = 0;
+        (**twistDownHandle).dataLength = dataLength;
+        if (dataPtr != NULL)
+            BlockMove(dataPtr, (**twistDownHandle).data, dataLength);
+    }
+    return (MemError());
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 3. </b>DisposeTwistDownHandle
+</p><p class="spacer">&nbsp;</p>
+<pre>void DisposeTwistDownHandle(TwistDownHandle twistDownHandle)
+{
+    TwistDownHandle nextElement, subElement;
+
+    while (twistDownHandle != NULL) {
+        nextElement = (**twistDownHandle).nextElement;
+        subElement = (**twistDownHandle).subElement;
+        DisposeHandle((Handle) twistDownHandle);
+        if (subElement != NULL)
+            DisposeTwistDownHandle(subElement);
+        twistDownHandle = nextElement;
+    }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Note that DisposeTwistDownHandle is a recursive function; it calls itself to dispose of<br>
+the descendants of a hierarchy. If it's called with the list shown in Figure 2, it disposes<br>
+of elements in the order 1, 2, and 3.
+</p>
+<p>
+<b>&nbsp;Using recursion </b>simplifies the list-management algorithms in the TwistDown<br>
+function library. However, it's not without its pitfalls in the real world. Each time a<br>
+function such as DisposeTwistDownHandle encounters a subelement list, it calls itself<br>
+to dispose of that list, and each of these calls uses stack space. While this isn't usually<br>
+a problem for applications, you should avoid recursive algorithms in device drivers or<br>
+other nonapplication code segments because they must work within the constraints of<br>
+some other application's stack.*
+</p>
+<h2>CONTROLLING DATA APPEARANCE</h2>
+<p>
+Once the data is organized as a hierarchical list, the application could simply display<br>
+the whole list by just storing handles to the list elements in List Manager cells.<br>
+However, if your application lets the user control how much of the data is displayed,<br>
+there must be a way for the user to browse through the data and to specify which<br>
+elements are visible and which are hidden.
+</p>
+<p>
+A familiar mechanism for doing this exists in the Finder, where small buttons indicate<br>
+which cells have subhierarchies and whether the subhierarchy is visible. These<br>
+triangular buttons have two stable states: one for closed (invisible) hierarchies and <br>
+one for open (visible) hierarchies. There are also three transient states: an<br>
+intermediate button is displayed briefly when the user clicks a triangular button to<br>
+change between the open and closed states; and the closed and open buttons are drawn<br>
+filled when a mouse-down event is located on the button.&nbsp;&nbsp;To manage these buttons and<br>
+the display of visible data, each list element needs a few flags and an indentation<br>
+variable. These are stored in the TwistDownRecord structure.
+</p>
+<p>
+The indentation variable -- indentLevel -- specifies the hierarchical depth of an<br>
+element and is used to display sublists so that the data for an element appears under its<br>
+parent, but indented to show its place in the hierarchy. 
+</p>
+<p>
+The bits in the flag field are used to record the record's state and to communicate<br>
+between the application and the List Manager's list definition function (LDEF):
+</p><p class="spacer">&nbsp;</p>
+<pre>/* These are the values that can appear in the flag word. */
+#define kHasTwistDown      0x0001  /* This element has a sublist */
+#define kShowSublist       0x0002  /* Display the sublist content */
+#define kOldShowSublist    0x0004  /* Saved kShowSublist state */
+#define kSelectedElement   0x0008  /* Copy "selected" from list */
+#define kDrawButtonFilled  0x0010  /* Signal "mouseDown" in button */
+#define kOnlyRedrawButton  0x0020  /* Signal "tracking mouse" */
+#define kDrawIntermediate  0x0040  /* Draw the animation polygon */
+#define kEraseButtonArea   0x0080  /* Need complete button redraw */</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>&nbsp;The flag field is defined </b> as an unsigned short with explicitly defined bits rather<br>
+than as a bitfield, which would have made the program slightly easier to read.<br>
+However, the ANSI C standard doesn't specify how the bits in a bitfield are arranged,<br>
+and different compilers are free to choose their own organization of the bits. This<br>
+means that if you write parts of your code using several compilers, or distribute<br>
+modules in object form for others to use, you may cause a debugging nightmare. This is<br>
+especially true if you use bitfields to construct data records that are sent in network<br>
+messages between different systems. The flag bits could have been defined as an enum,<br>
+but this can also cause portability problems. Using explicit bit definitions will also<br>
+make it easier to convert your code to run on the Power Macintosh. *
+</p>
+<p>
+The first four flag bits have the following meanings:
+</p>
+<ul>
+<li>kHasTwistDown is set if the element should have a triangular button when<br>
+it's drawn. While you might assume that the existence of a non-null<br>
+subElement pointer would be sufficient, the Finder illustrates a better design:<br>
+it displays triangular buttons for all folders, even if there are no files in a<br>
+folder. This immediately tells the user that the line on the display represents<br>
+a folder, rather than a file. </li>
+<li>kShowSublist is set if the sublist should be displayed. This is normally<br>
+controlled by the user clicking a triangular button, which changes the<br>
+kShowSublist state. </li>
+<li>kOldShowSublist is used to save the old kShowSublist setting in case you<br>
+need to temporarily change the display hierarchy. This lets you undo a display<br>
+state change or provide a Show All Hierarchies command. It's not used in the<br>
+sample code. </li>
+<li>kSelectedElement records the selection state of the list cell. It's needed to<br>
+properly retain the selection status of visible cells. </li>
+</ul>
+<p>
+The other flag bits are needed to handle mouse events. They're set by the mouse-down<br>
+event handler and the LDEF references them to control its actions:
+</p>
+<ul>
+<li>kDrawButtonFilled is set when the user presses a button (the cursor is<br>
+over a triangular button while the user has the mouse buttton held down). It<br>
+causes the LDEF to fill the triangular button to indicate that the user is<br>
+pressing it. </li>
+<li>kOnlyRedrawButton is set to constrain the LDEF so that the entire display<br>
+line doesn't blink when the user presses a button.&nbsp;&nbsp;As the user moves the<br>
+cursor in and out of the button, the drawing procedure must redraw the button<br>
+to show whether the user is pressing the button. However, there's no need to<br>
+redraw the actual data contents. This flag tells the LDEF to redraw only the<br>
+button. </li>
+<li>kDrawIntermediate is set when the user releases the mouse button within<br>
+thebutton area: the button state changes from closed to open or vice versa.&nbsp;&nbsp;&nbsp;To<br>
+indicate this change, the LDEF draws the button in an intermediate state,<br>
+delays for an instant, and then draws the button in its new, stable state. </li>
+<li>kEraseButtonArea is set to erase the button area before it's drawn. If not<br>
+set, the button is redrawn in its new form, but not erased; this eliminates<br>
+unnecessary button flicker.</li>
+</ul>
+<p>
+The TwistDown library uses the following four macros internally to access the flag<br>
+word:
+</p><p class="spacer">&nbsp;</p>
+<pre>#define SetTDFlag(tdHandle, mask)      ((**tdHandle).flag |= (mask))
+#define ClearTDFlag(tdHandle, mask)    ((**tdHandle).flag &amp;= ~(mask))
+#define InvertTDFlag(tdHandle, mask)   ((**tdHandle).flag ^= (mask))
+#define TestTDFlag(tdHandle, mask) (((**tdHandle).flag &amp;(mask)) != 0)</pre>
+<p class="spacer">&nbsp;</p>
+<h2>CREATING THE LIST RECORD</h2>
+<p>
+When you first look at the List Manager, it may appear to be the solution to all your<br>
+display needs.&nbsp;&nbsp;&nbsp;Unfortunately, it has a number of characteristics that restrict its<br>
+usefulness. It's designed to store limited amounts of data, and performance slows<br>
+appreciably as you increase the number of cells or the amount of data stored in the<br>
+cells. Also, if your list cells are not all the same size or your application needs fine<br>
+control over scrolling, you'll probably find life simpler if you create your own<br>
+function library. For example, both MacApp and the THINK Class Library offer<br>
+flexible libraries for displaying and managing structured data. However, the List<br>
+Manager serves well for straightforward lists of a small number of items -- and with<br>
+the addition of the triangular buttons it becomes a very useful tool. 
+</p>
+<p>
+The TwistDown subroutine library creates a one-column list with a vertical scroll<br>
+bar. The code has only two unusual features:
+</p>
+<ul>
+<li>NewTwistDownList stores a small amount of private information in a<br>
+handle that's stored in the userHandle field of the list record. This includes a<br>
+pointer to a user-defined drawing function, the display font and font size, and<br>
+a flag that signals whether clicking on cell data should highlight the cell<br>
+contents. </li>
+<li>It establishes a private LDEF that manages the visual display. Normally,<br>
+the LDEF is stored in a resource. In the sample code, however, it's linked into<br>
+the application and a stub resource is created for the benefit of the List<br>
+Manager. This stub, a three-instruction procedure that the List Manager<br>
+calls, jumps to the twist- down LDEF. This is not necessary for this library<br>
+-- it could have been separately compiled -- but is useful for debugging and<br>
+for LDEF procedures that need to access application globals. </li>
+</ul>
+<p>
+<b>&nbsp;When you recompile </b>this program to run on a Power Macintosh as a "native"<br>
+application (rather than in 680x0-compatibility mode), you'll have to redo this<br>
+sequence slightly. The time to worry about conversion is now, before your customers<br>
+are tapping you on the shoulder asking, "Not today? How about next Tuesday?" There's<br>
+more on converting for Power Macintosh at the end of this article. *
+</p>
+<p>
+Note that there are two separate drawing procedures: the twist-down LDEF manages<br>
+the buttons and drawing for simple text displays, while the application program can<br>
+specify its own drawing function to draw more complex data.
+</p>
+<p>
+<b>THE TWISTDOWNPRIVATERECORD</b><br>
+The twist-down LDEF requires a small amount of global information to properly<br>
+process the list. This is stored in a handle-based structure defined as shown in Listin g<br>
+4.&nbsp;&nbsp;Two Boolean variables in this record haven't been described: canHiliteSelection and<br>
+isLeftJustify.&nbsp;&nbsp;&nbsp;The canHiliteSelection field controls whether the LDEF highlights<br>
+selected cells. The isLeftJustify flag is set for left-to-right languages (such as<br>
+English) and cleared for languages such as Arabic and Hebrew. This flag isn't used in<br>
+the code shown in this article, but the TwistDown library on the CD shows how an<br>
+application might handle a right-to-left language. 
+</p>
+<p>
+<b>CREATING TRIANGULAR BUTTON POLYGONS</b><br>
+The triangular buttons are defined as QuickDraw polygons, rather than as bitmaps,<br>
+with the advantage that the function is independent of the list cell size and script<br>
+direction. This is useful for localization or for programs used by people who are<br>
+visually impaired or have diminished motor skills: the program will display larger<br>
+buttons if the application or user chooses a large font. It also lets the program draw<br>
+the closed and intermediate buttons pointing in the proper direction for right- to-left<br>
+script systems such as Arabic and Hebrew. Figure 3 illustrates an expanded view of<br>
+the triangular buttons. As an example, the code in Listing 5 shows how you would<br>
+create the polygons for a left-to-right script. See the sample on the CD for more<br>
+general code, which accounts for the writing direction of the script.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 4. </b>TwistDownPrivateRecord
+</p><p class="spacer">&nbsp;</p>
+<pre>struct TwistDownPrivateRecord {
+  TwistDownDrawProc   drawProc;   /* User-defined drawing function */
+  PolyHandle          openTriangle;         /* The expanded button */
+  PolyHandle          closedTriangle;         /* The closed button */
+  PolyHandle          intermediateTriangle;   /* Animation */
+  short               tabIndent;              /* Child indentation */
+  short               fontSize;               /* For TextSize */
+  short               fontNumber;             /* For TextFont */
+  Boolean             canHiliteSelection;     /* Highlight cell OK? */
+  Boolean             isLeftJustify;          /* GetSystJust value */
+  short               triangleWidth;          /* Button width */
+};
+typedef struct TwistDownPrivateRecord   TwistDownPrivateRecord,
+        *TwistDownPrivatePtr, **TwistDownPrivateHandle;</pre>
+<p><p class="spacer">&nbsp;</p>
+<img src="img/191.gif" width="549 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 3. </b>The triangular buttons
+</p>
+<h2>PUTTING DATA INTO THE LIST</h2>
+<p>
+After creating the List Manager list, the application builds its hierarchical structure<br>
+(the linked list).&nbsp;&nbsp;&nbsp;List elements are created by the MakeTwistDownElement function.<br>
+As described earlier in "Creating a List Element," MakeTwistDownElement obtains the<br>
+necessary (handle) storage, initializes all flags, and stores the application data in the<br>
+list element. It also links the new element to the previous (elder sibling) element in<br>
+the list. 
+</p>
+<p>
+Normally, a twist-down list is built by a recursive function such as the one shown in<br>
+Listing 6, MyBuildHierarchy. MyBuildHierarchy calls a function named MyGetInfo<br>
+that stores a small amountof data into a structure called MyInfoRecord. Neither of<br>
+these is defined here: they're application specific. 
+</p>
+<h2>CREATING THE VISIBLE DISPLAY</h2>
+<p>
+After you've built the data hierarchy, the next step is to determine which elements are<br>
+visible initially and build the visible list. The CreateVisibleList function constructs a<br>
+new visible display given the head of a hierarchical list and a List Manager handle. It<br>
+stores the head in the first cell (cell [0, 0]) and calls BuildVisibleList to store the<br>
+visible elements in the subsequent cells. 
+</p>
+<p>
+<b>Listing 5. </b>Creating triangular button polygons
+</p><p class="spacer">&nbsp;</p>
+<pre>GetFontInfo(&amp;info);
+buttonSize = info.ascent;          /* The button height */
+buttonSize &amp;= ~1;              /* Round down to an even number */
+halfSize = buttonSize / 2;         /* For 45-degree triangles */
+intermediateSize = (buttonSize * 3) / 4;
+(**privateHdl).openTriangle = OpenPoly();
+    MoveTo(0, halfSize);
+    LineTo(buttonSize, halfSize);
+    LineTo(halfSize, buttonSize);
+    LineTo(0, halfSize);
+ClosePoly();
+(**privateHdl).closedTriangle = OpenPoly();
+    MoveTo(halfSize, 0);
+    LineTo(buttonSize, halfSize);
+    LineTo(halfSize, buttonSize);
+    LineTo(halfSize, 0);
+ClosePoly();
+(**privateHdl).intermediateTriangle = OpenPoly();
+    MoveTo(intermediateSize, 0);
+    LineTo(intermediateSize, intermediateSize);
+    LineTo(0, intermediateSize);
+    LineTo(intermediateSize, 0);
+ClosePoly();</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 6. </b>Building a twist-down list
+</p><p class="spacer">&nbsp;</p>
+<pre>TwistDownHandle MyBuildHierarchy(ListHandle theList,
+                    short indentLevel)
+{
+    OSErr           status;
+    TwistDownHandle previousElement, thisElement, firstElement;
+    MyInfoRecord    myInfoRecord;
+    Boolean         isHierarchy;
+    EventRecord     currentEvent;
+
+    firstElement = NULL;
+    previousElement = NULL;
+    /*** Other initialization here */
+    do {
+        /*** Call EventAvail here to give time to background tasks.*/
+        EventAvail(everyEvent, &amp;currentEvent);
+        status = MyGetInfo(&amp;myInfoRecord, &amp;isHierarchy);
+        if (status == noErr)
+            status = MakeTwistDownElement(previousElement,
+                indentLevel, sizeof(MyInfoRecord),
+                (Ptr) &amp;myInfoRecord, &amp;thisElement);
+        if (status == noErr) {
+            /*** Remember the first element in this sibling        */
+            /*** sequence;                                         */
+            /*** it's needed by our caller.                        */
+            if (firstElement == NULL)
+                firstElement = thisElement;
+            /*** If this data begins a hierarchy, descend by       */
+            /*** calling this function recursively. Store the      */
+            /*** first element of the new sublist in the           */
+            /*** subElement pointer. (flag &amp; kHasTwistDown)    */
+            /*** will be TRUE even if the child list is empty.     */
+            if (isHierarchy) {
+                SetTDFlag(thisElement, kHasTwistDown);
+                (**thisElement).subElement =
+                        MyBuildHierarchy(theList, indentLevel + 1);
+            }
+            /*** Set sibling linkage for next element.             */
+            previousElement = thisElement;
+        }
+    } while (status == noErr);
+    return (firstElement);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+BuildVisibleList is called in two situations: when the application first constructs the<br>
+list and when the user changes the visual hierarchy by clicking a triangular button. It<br>
+calls CountVisibleElements to determine the number of cells needed, adjusts the size of<br>
+the list to the desired number, and calls a recursive function, SetElementsInList, to do<br>
+the actual storage. SetElementsInList needs what is essentially a global counter to know<br>
+which cell will receive the current list element. 
+</p>
+<p>
+BuildVisibleList associates list cells with elements in the hierarchical list as follows:
+</p>
+<ol>
+<li>It copies the current selection status of each list cell from the List<br>
+Manager cell to the associated TwistDownHandle element.</li>
+<li>It counts the number of elements that will be displayed and adds or<br>
+removes rows from the List Manager list as needed. </li>
+<li>Finally, it stores references to the visible elements in the list cells,<br>
+updating the selection status as needed. </li>
+</ol>
+<p>
+The utility functions used in adding and removing elements from the List Manager list<br>
+aren't shown here but may be examined in the sample library. BuildVisibleList uses<br>
+several local, recursive functions to process the hierarchical list that all have a<br>
+similar overall structure. For example, CountVisibleElements (Listing 7) computes<br>
+the number of list elements that should be displayed.
+</p>
+<h2>HANDLING MOUSE EVENTS</h2>
+<p>
+Now that we have a visible list, we're ready to let the user manipulate the hierarchy<br>
+by clicking the triangular buttons. When the user presses the mouse button, the<br>
+application decides whether the cursor is in one of its windows and whether this<br>
+window might just happen to have a twist-down list.&nbsp;&nbsp;&nbsp;If so, the application calls<br>
+DoTwistDownClick with the list handle, a pointer to an event record, and a pointer to a<br>
+Cell structure that identifies the selected cell on exit. DoTwistDownClick returns one<br>
+of five action states, as shown in Table 1. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 7. </b>CountVisibleElements
+</p><p class="spacer">&nbsp;</p>
+<pre>short CountVisibleElements(TwistDownHandle twistDownHandle)
+{
+    short       result;
+
+    result = 0;
+    while (twistDownHandle != NULL) {
+        ++result;
+        if (TestTDFlag(twistDownHandle, kShowSublist))
+            result +=
+                CountVisibleElements((**twistDownHandle).subElement);
+    }
+    return (result);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Table 1</b><br>
+DoTwistDownClick action states
+</p>
+<p><table border="0"><tr><td><b>Action State</b></td><td><b></b><b>Meaning</b></td></tr>
+<tr><td>kTwistDownNotInList</td><td>The mouse-down event was not in the list area.</td></tr>
+<tr><td></td><td>Your application should handle this event.</td></tr>
+<tr><td>kTwistDownNoClick</td><td>The user pressed the mouse button in a triangular</td></tr>
+<tr><td></td><td>button but released it outside the button. Your</td></tr>
+<tr><td></td><td>application should ignore this click.</td></tr>
+<tr><td>kTwistDownButtonClick</td><td>The mouse click was in the triangular button.</td></tr>
+<tr><td></td><td>DoTwistDownClick has handled this, but your</td></tr>
+<tr><td></td><td>application may need to do further processing.</td></tr>
+<tr><td>kTwistDownClick</td><td>The user clicked, once, on list data. Your</td></tr>
+<tr><td></td><td>application may need&nbsp;&nbsp;to do further processing.</td></tr>
+<tr><td>kTwistDownDoubleClick</td><td> The user double-clicked on list data. Your</td></tr>
+<tr><td></td><td>application may need to do further processing.</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>&nbsp;The techniques described here </b>for handling mouse events can be used to create<br>
+lists whose cells contain other kinds of active elements, such as buttons or checkboxes<br>
+.&nbsp;&nbsp;*
+</p>
+<p>
+DoTwistDownClick, together with the subroutines it calls, hides a fairly complex<br>
+process consisting of the following steps; these steps are described further in the<br>
+following sections and illustrated in the simplified version of DoTwistClick shown in<br>
+Listing 8. 
+</p>
+<ol>
+<li>Check that the mouse-down event is in the list area. </li>
+<li>Check that the user pressed a triangular button. </li>
+<li>Track the mouse while it's held down. </li>
+<li>Take appropriate action when the mouse button is released. </li>
+</ol>
+<p>
+<b>Did the user press in the list rectangle?</b>Get the mouse location in local<br>
+coordinates and the window rectangle that contains the list and its scroll bar. If the<br>
+mouse location is not in the list, just return. 
+</p>
+<p>
+<b>Did the user press a triangular button?</b>The user pressed in the list area; is it<br>
+in a button? The code sample on the CD has a test for left or right alignment (so that<br>
+you can use the function with Arabic or Hebrew script systems) but that test is<br>
+ignored here. The central algorithm determines the rectangle that encloses all the cell<br>
+buttons. If the cursor is in that area, it then checks whether there is a cell under the<br>
+cursor and, if so, whether this cell actually displays a button. 
+</p>
+<p>
+<b>Track the mouse while it's in the button area.</b>If we get past all that, we know<br>
+that the user pressed a triangular button. The click-handler sets and clears flag bits<br>
+that the LDEF references when redrawing the list cell. The LDEF starts by drawing the<br>
+button in its active (filled) state. Note that each call to LDraw redraws the list cell --<br>
+but, as pointed out earlier, the kOnlyRedrawButton flag prevents the entire display<br>
+line from blinking. 
+</p>
+<p>
+The sequence beginning with "if (StillDown ())" in the code shows how you can track<br>
+your own visual elements, such as icons, as if they were normal buttons. You can also<br>
+use this technique to add checkboxes or other button-like objects to list cells. 
+</p>
+<p>
+<b>The user released the mouse button.</b>When the user releases the mouse button in<br>
+the triangular button area, the application changes the button state (for example, from
+</p>
+<p>
+<img src="img/192.gif" width="39 px"></img>
+</p>
+<p>
+&nbsp;to 
+</p>
+<p>
+<img src="img/193.gif" width="59 px"></img>
+</p>
+<p>
+&nbsp;). This is a two-step process that briefly flashes an intermediate button ( 
+</p>
+<p>
+<img src="img/194.gif" width="50 px"></img>
+</p>
+<p>
+) to give the user the illusion of change. While your application would certainly work<br>
+without this subtle touch, it wouldn't look as good. Call<br>
+theExpandOrCollapseTwistDownList function after flashing the intermediate button to<br>
+redraw the button in its new state. Note that kEraseButtonArea is set so that the<br>
+intermediate button is drawn properly. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 8. </b>DoTwistDownClick
+</p><p class="spacer">&nbsp;</p>
+<pre>TwistDownClickState
+    DoTwistDownClick(ListHandle          theList,
+                     const EventRecord   *eventRecordPtr,
+                     Cell                *selectedListCell)
+{
+    Cell             theCell;      /* Current list cell            */
+    Rect             hitRect;      /* The button area in this cell */
+    Boolean          inHitRect;    /* Cursor is in the button area */
+    Boolean          newInHitRect; /* Cursor moved into the button */
+    short            cellHeight;   /* Height of a list cell        */
+    short            visibleTop;   /* Top pixel in the list area   */
+    TwistDownHandle  twistDownHandle;/* Current twist-down element */
+    TwistDownPrivateHandle  privateHandle;  /* Private data        */
+    Point            mousePt;      /* Where the mouse is located   */
+    TwistDownClickState  result;   /* Function result              */
+    long             finalTicks;   /* For the Delay function       */
+
+    /*** 1. Did the user press in the list rectangle?              */
+    mousePt = eventRecordPtr-&gt;where;
+    GlobalToLocal(&amp;mousePt);     /* Mouse in local coordinates */
+    hitRect = (**theList).rView;           /* Here's the list area */
+    hitRect.right += kScrollBarWidth;/* Include the scroll bar, too*/
+    if (PtInRect(mousePt, &amp;hitRect) == FALSE) {
+        result = kTwistDownNotInList;
+        return (result);
+    }
+
+    /*** 2. Did the user press a triangular button?                */
+    privateHdl = (TwistDownPrivateHandle) (**theList).userHandle;
+    hitRect.right = (**theList).rView.left + (**theList).indent.h
+                        + (**privateHdl).triangleWidth;
+    inHitRect = FALSE;
+    if (PtInRect(mousePt, &amp;hitRect)) {
+        /*** The mouse is in the button area; is there a cell?     */
+        cellHeight = (**theList).cellSize.v;
+        theCell.h = 0;
+        theCell.v = ((mousePt.v - (**theList).rView.top) / cellHeight
+                    + (**theList).visible.top;
+        /*** This is a list cell that should have data. Get the    */
+        /*** twistdown element handle. If there's no data, or no   */
+        /*** hierarchy, the click will be ignored.                 */
+        twistDownHandle = GetTwistDownElementHandle(theList, theCell);
+        if ((twistDownHandle != NULL)
+         &amp;&amp; TestTDFlag(twistDownHandle, kHasTwistDown))
+            inHitRect = TRUE;
+    }
+    if (inHitRect == FALSE) {
+        /*** There's no button here, or the user didn't click it.  */
+        /*** Just call the normal list click-handler and return    */
+        /*** its value.  This is needed to handle scroll bars      */
+        /*** correctly.                                            */
+        if (LClick(mousePt, eventRecordPtr-&gt;modifiers, theList))
+            return (kTwistDownDoubleClick);
+        else {
+            return (kTwistDownClick);
+        }
+    }
+
+    /*** 3. Track the mouse while it's in the button area.         */
+    SetTDFlag(twistDownHandle,
+        kDrawButtonFilled | kOnlyRedrawButton);
+    LDraw(theCell, theList);
+    /*** Set hitRect to the triangular button dimensions.          */
+    hitRect.top = (theCell.v - (**theList).visible.top) * cellHeight
+                    + (**theList).rView.top;
+    hitRect.bottom = hitRect.top + cellHeight;
+    /*** Track the mouse while it's still down: if it moves into   */
+    /*** the rectangle, redraw it filled; if it moves out, redraw  */
+    /*** it unfilled.                                              */
+    if (StillDown()) {
+        while (WaitMouseUp()) {
+            GetMouse(&amp;mousePt);
+            newInHitRect = PtInRect(mousePt, &amp;hitRect);
+            if (newInHitRect != inHitRect) {
+                /*** The cursor moved into or out of the triangle. */
+                InvertTDFlag(twistDownHandle, kDrawButtonFilled);
+                LDraw(theCell, theList);
+                inHitRect = newInHitRect;
+            }
+        }
+    }
+   
+    /*** 4. The user released the mouse button.                    */
+    if (inHitRect == FALSE) {
+        /*** The user canceled the operation by releasing the      */
+        /*** mouse outside the triangular button area.             */
+        /*** drawButtonFilled will normally be clear. It can be    */
+        /*** set, however, if the user clicks so briefly that the  */
+        /*** StillDown() test above is FALSE                       */
+        if (TestTDFlag(twistDownHandle, kDrawButtonFilled)) {
+            ClearTDFlag(twistDownHandle), kDrawButtonFilled);
+            LDraw(theCell, theList);
+        }
+        ClearTDFlag(twistDownHandle), kOnlyRedrawButton);
+        return (kTwistDownNoClick);
+    }
+    SetTDFlag(twistDownHandle,
+        (kDrawIntermediate | kEraseButtonArea));
+    LDraw(theCell, theList);
+    Delay(kAnimationDelay, &amp;finalTicks);
+    ClearTDFlag(twistDownHandle,
+        (kDrawIntermediate | kDrawButtonFilled | kEraseButtonArea));
+    ExpandOrCollapseTwistDownList(theList, theCell);
+    *selectedListCell = theCell;
+    ClearTDFlag(twistDownHandle, kOnlyRedrawButton);
+    return (kTwistDownButtonClick);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>EXPAND OR COLLAPSE THE HIERARCHY</b><br>
+ExpandOrCollapseTwistDownList (Listing 9) is normally called directly by<br>
+DoTwistDownClick, as shown in the preceding section. It can also be called directly by<br>
+the application. When called, it inverts the "expansion" state of the designated list cell,<br>
+redraws the triangular button, and calls BuildVisibleList (described earlier in<br>
+"Creating the Visible Display") to revise the visible hierarchy.&nbsp;&nbsp;&nbsp;Note that<br>
+BuildVisibleList will modify the display starting with the current cell: the cells above<br>
+will not change and thus need not be modified or redrawn. 
+</p>
+<h2>DRAWING THE LIST CELL</h2>
+<p>
+When the contents of a list cell change or the display requires updating, the List<br>
+Manager calls the TwistDownLDEF function. This function draws the button in its<br>
+current state and either draws the list cell (for simple text cells) or calls a<br>
+user-defined drawing function to draw more complex cells.&nbsp;&nbsp;&nbsp;The code is generally<br>
+straightforward (again, ignoring right or left considerations). Basically, it examines<br>
+the state of the kOnlyRedrawButton flag and proceeds as follows: * If the flag is set,<br>
+"shrink" the display rectangle so that only the button is redrawn.&nbsp;&nbsp;&nbsp;Choose the correct<br>
+triangular polygon and draw it in its proper state.&nbsp;&nbsp;&nbsp;* If the flag is clear, draw the cell<br>
+data and the triangular polygon. 
+</p>
+<p>
+Let's look more closely at the TwistDownLDEF drawing code (Listing 10):
+</p>
+<ol>
+<li>First we determine what to draw. To begin drawing the list, we first need<br>
+the cell content. This is the handle that contains the list element. We also check<br>
+that userHandle has been set up correctly. Note that we don't use the List<br>
+Manager's LFind function because the data might not be aligned in the list cell<br>
+storage.&nbsp;&nbsp;&nbsp;(Actually, the data is aligned, because only handles are stored in the<br>
+cells, but it doesn't hurt to be suspicious.) If the handle contains a list<br>
+element, the values of the flags determine what to draw. </li>
+<li>Next, we call DrawTriangle to draw the triangular button. The value of<br>
+theFlag determines the button state and its location.</li>
+<li>Finally, after checking to be sure kOnlyRedrawButton is not set and that<br>
+we have the data, TwistDownLDEF redraws the cell data with the proper<br>
+indentations.&nbsp;&nbsp;&nbsp;Here's where the code allows you to specify a user-defined<br>
+drawing function.</li>
+</ol>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 9. </b>ExpandOrCollapseTwistDownList
+</p><p class="spacer">&nbsp;</p>
+<pre>twistDownHandle = GetTwistDownElementHandle(theList, theCell);
+if ((twistDownHandle != NULL)
+ &amp;&amp; TestTDFlag(twistDownHandle, kHasTwistDown)) {
+    InvertTDFlag(twistDownHandle, kShowSublist);
+    /*** Redraw the triangular button in its new state.            */
+    ClearTDFlag(twistDownHandle, kDrawButtonFilled);
+    SetTDFlag(twistDownHandle,
+        (kOnlyRedrawButton | kEraseButtonArea));
+    LDraw(theCell, theList);
+    ClearTDFlag(twistDownHandle,
+        (kOnlyRedrawButton | kEraseButtonArea));
+    /*** If some other part of the list will change, rebuild the   */
+    /*** List Manager cells and redraw the list.                   */
+    if ((**twistDownHandle).subElement != NULL)
+        BuildVisibleList(theList, theCell.v);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 10. </b>TwistDownLDEF drawing code
+</p><p class="spacer">&nbsp;</p>
+<pre>pascal void TwistDownLDEF(
+        short               listMessage,
+        Boolean             listSelect,
+        Rect                *listRect,
+        Cell                listCell,           /* Unused          */
+        short               listDataOffset,     /* Unused          */
+        short               listDataLen,
+        ListHandle          theList
+    )
+{
+    short           indent;           /* Cell data indentation     */
+    TwistDownHandle twistDownHandle;  /* The cell data             */
+    TwistDownPtr    twistDownPtr;     /* Cell data (locked handle) */
+    short           cellSize;         /* sizeof(TwistDownHandle)   */
+    PolyHandle      polyHandle;       /* Button polygon            */
+    Point           polyPoint;        /* Where to draw the button  */
+    Rect            viewRect;         /* Actual cell drawing area  */
+    signed char     elementLockState; /* twistDownHandle lock state*/
+
+    #define TestFlag(flagBit) ((theFlag &amp; (flagBit)) != 0)
+
+    . . . /*** Other LDEF processing isn't shown.                  */
+
+    /*** 1. Determine what to draw.                                */
+    cellSize = sizeof twistDownHandle;
+    LGetCell(&amp;twistDownHandle, &amp;cellSize, listCell, theList);
+    if ((cellSize == sizeof twistDownHandle)
+         &amp;&amp; twistDownHandle != NULL) {
+        /*** There is a list element. (This if statement extends   */
+        /*** all the way to the end of the sequence.) Lock the     */
+        /*** element in memory and look at the flag values. Set    */
+        /*** viewRect to the part of the List Manager cell that    */
+        /*** will be drawn.                                        */
+        elementLockState = HGetState((Handle) twistDownHandle);
+        HLock((Handle) twistDownHandle);
+        twistDownPtr = (*twistDownHandle);
+        privateHdl = (TwistDownPrivateHandle) (**theList).userHandle;
+        viewRect = *listRect;
+        theFlag = (*twistDownPtr).flag;
+        if (TestFlag(kOnlyRedrawButton)) {
+            /*** Shrink the display area when only the button is   */
+            /*** redrawn.                                          */
+            viewRect.right = viewRect.left + (**theList).indent.h
+                                + (**privateHdl).triangleWidth;
+        }
+        if (TestFlag(kOnlyRedrawButton) == FALSE
+         || TestFlag(kEraseButtonArea))
+            EraseRect(&amp;viewRect);
+
+        /*** 2. Draw the triangular button.                        */
+        if (TestFlag(kHasTwistDown)) {
+            polyPoint.v = listRect-&gt;top + 1;
+            polyPoint.h = listRect-&gt;left + (**theList).indent.h
+                            + kTriangleOutsideGap;
+            if (TestFlag(kDrawIntermediate))
+                polyHandle = (**privateHdl).intermediateTriangle;
+            else if (TestFlag(kShowSublist))
+                polyHandle = (**privateHdl).openTriangle;
+            else
+                polyHandle = (**privateHdl).closedTriangle;
+            DrawTriangle(polyHandle, polyPoint,
+                         theFlag &amp; kDrawButtonFilled);
+        }
+        /*** 3. Draw the cell data.                                */
+        if (TestFlag(kOnlyRedrawButton) == FALSE
+         &amp;&amp; (*twistDownPtr).dataLength &gt; 0) {
+            /*** Indent the text to show the depth of the          */
+            /*** hierarchy. Then build a display rectangle for the */
+            /*** cell text and set the pen to the leftmost         */
+            /*** position of the text.                             */
+            indent = (**theList).indent.h
+                    + (**privateHdl).triangleWidth
+                    + ((**privateHdl).tabIndent
+                       * (*twistDownPtr).indentLevel);
+            viewRect = *listRect;
+            viewRect.left += indent;
+            TextFont((**privateHdl).fontNumber);
+            TextSize((**privateHdl).fontSize);
+            /*** If the user didn't provide a drawing procedure,   */
+            /*** draw a text string. Otherwise, call the user's    */
+            /*** procedure.                                        */
+            if ((**privateHdl).drawProc == NULL) {
+                MoveTo(viewRect.left, viewRect.top
+                    + (**theList).indent.v);
+                DrawText((*twistDownPtr).data, 0,
+                    (*twistDownPtr).dataLength);
+            }
+            else {
+                /* Call user's drawing function */
+                (*(**privateHdl).drawProc)(
+                  theList,                     /* The list handle  */
+                  (const Ptr) (*twistDownPtr).data,/* Data to draw */
+                  (*twistDownPtr).dataLength,  /* Size of the data */
+                  &amp;viewRect);              /* Where to draw it */
+            }
+        }                            /* If we're drawing cell data */
+        HSetState((Handle) twistDownHandle, elementLockState);
+    }                                      /* If we have cell data */
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>THE DRAWTRIANGLE FUNCTION</b><br>
+If you look closely at the triangular buttons on a color or grayscale display, you'll<br>
+notice that the button is filled with a grayish background color. (The Finder uses the<br>
+color the user assigned to the file, while we use a light gray color.) The DrawTriangle<br>
+function called by TwistDownLDEF takes three parameters: the polygon, where it's to<br>
+be drawn, and a Boolean that specifies whether the user is currently pressing the<br>
+triangular button. DrawTriangle uses the DeviceLoop procedure, DrawThisTriangle,<br>
+which calls the actual drawing function for each type of device so that drawing can be<br>
+optimized for different screen depths. (See Listing 11.)
+</p>
+<p>
+<b>&nbsp;The DeviceLoop procedure </b>is described in "DeviceLoop Meets the Interface<br>
+Designer," <i> develop</i>&nbsp;&nbsp;Issue 13, and in <i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI.*
+</p>
+<h2>THE SAMPLE PROGRAM</h2>
+<p>
+The sample program illustrates how you can use twist-down lists to display a<br>
+directory of all files on a volume. It's a very simple program and you would be well<br>
+advised not to use it on a huge disk with many folders and files, because there's no<br>
+protection against storage overflow.
+</p>
+<p>
+The sample program compiles and runs in five environments: THINK C 6.0,<br>
+Metrowerks DR1, and MPW 3.2 for the 680x0-based Macintosh; and, for the Power<br>
+Macintosh, Metrowerks DR1 and the MPW provided in the Macintosh on RISC Software<br>
+Developer's Kit. Converting the code for Power Macintosh took about one day (it was<br>
+my lab exercise when I took the Apple Developer University "PowerPC BootCamp"<br>
+course). To learn more about what I did to accomplish this conversion, see "Converting<br>
+for Power Macintosh."
+</p>
+<p>
+When you start up the sample program, it begins enumerating the disk; you can click<br>
+to stop it at any time. The hierarchical list is built using the algorithm illustrated<br>
+bythe MyBuildHierarchy function, described in the section "Putting Data Into the<br>
+List."
+</p>
+<p>
+<b>Listing 11. </b>DrawTriangle and DrawThisTriangle
+</p>
+<pre>typedef struct      TriangleInfo {   /* Passed to DrawThisTriangle */
+    PolyHandle      polyHandle;      /* The polygon to draw        */
+    Point           polyPoint;       /* Where to draw it         */
+} TriangleInfo, *TriangleInfoPtr;
+
+static void DrawTriangle(PolyHandle   polyHandle,
+                         Point        polyPoint,
+                         Boolean      isSelected
+    )
+{
+    TriangleInfo        triangleInfo;
+    RgnHandle           drawingRgn;
+    long                savedA5;
+
+    /*** Refresh A5 so that we can use the current QuickDraw       */
+    /*** globals.                                                  */
+    savedA5 = SetCurrentA5();
+    triangleInfo.polyHandle = polyHandle;      /* Save our drawing */
+    triangleInfo.polyPoint = polyPoint;        /*  parameters.     */
+    /*** Position the polygon properly on the display.             */
+    OffsetPoly(polyHandle, polyPoint.h, polyPoint.v);
+    if (isSelected)
+        FillPoly(polyHandle, &amp;qd.black);
+    else {
+        /*** Get drawing region and call DeviceLoop to do the work */
+        drawingRgn = NewRgn();
+        OpenRgn();
+        FramePoly(polyHandle);
+        CloseRgn(drawingRgn);
+        DeviceLoop(
+            drawingRgn,              /* Region to draw into        */
+            (DeviceLoopDrawingProcPtr) DrawThisTriangle,
+            (long) &amp;triangleInfo,       /* Drawing parameters  */
+            0                        /* DeviceLoop flags (ignored) */
+        );
+        DisposeRgn(drawingRgn);
+    }
+    /*** Frame the button in black and move the polygon back to    */
+    /*** its default [0,0] position.                               */
+    FramePoly(polyHandle);
+    OffsetPoly(polyHandle, -polyPoint.h, -polyPoint.v);
+    SetA5(savedA5);
+}
+static pascal void DrawThisTriangle(      /* Called by DeviceLoop  */
+        short            depth,           /* Screen pixel depth    */
+        short            deviceFlags,     /* Device info (ignored) */
+        GDHandle         targetDevice,    /* The display (ignored) */
+        TriangleInfoPtr  triangleInfoPtr  /* The data to be drawn  */
+    )
+{
+    RGBColor                    foreColor;
+    RGBColor                    saveForeColor;
+    RGBColor                    backColor;
+    short                       i;
+    Rect                        polyRect;
+
+    polyRect = (**(*triangleInfoPtr).polyHandle).polyBBox;
+    LocalToGlobal(&amp; ((Point *) &amp;polyRect)[0]);
+    LocalToGlobal(&amp; ((Point *) &amp;polyRect)[1]);
+    if (depth &gt; 1) {
+        /*** Drawing in color or grays: fill the triangle with a   */
+        /*** very light gray.                                      */
+        GetForeColor(&amp;foreColor);
+        saveForeColor = foreColor;
+        GetBackColor(&amp;backColor);
+        /*** This loop sets foreColor to a very light gray.        */
+        for (i = 0; i &lt; 8; i++) {
+            if (GetGray(GetGDevice(), &amp;backColor,
+                    &amp;foreColor) == FALSE)
+                break;
+        }
+        RGBForeColor(&amp;foreColor);
+        FillPoly((*triangleInfoPtr).polyHandle, &amp;qd.black);
+        RGBForeColor(&amp;saveForeColor);
+    }
+    else {
+        /*** Monochrome: erase the interior of the polygon.        */
+        ErasePoly((*triangleInfoPtr).polyHandle);
+    }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<h2>CONVERTING FOR POWER MACINTOSH</h2>
+<p>
+Here's a simplified checklist of the kinds of things you'll need to do to convert code for<br>
+the Power Macintosh, based on what I did to convert my program (see the sample code<br>
+on the CD, especially TwistDownList.c). I borrowed heavily from the document<br>
+"Moving Your Source to PowerPC" on the Macintosh on RISC Software Developer's Kit<br>
+CD.
+</p>
+<ul>
+<li>Convert to standard C using the most restrictive environment so that the<br>
+application runs correctly in&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;THINK C and MPW with no compiler or linker<br>
+errors or warnings. In THINK C, for example, you would&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;enable the Check<br>
+Pointer Types and Require Prototypes options and remove the MacHeaders<br>
+option. In&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;all cases, you should add prototypes and explicit function return<br>
+types and fix potential trigraph problems.&nbsp;&nbsp;&nbsp;&nbsp;</li>
+<li>Replace all instances of int and unsigned by explicit short and long<br>
+declarations. Be very careful about&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;structure definitions that are shared<br>
+among code modules (or written to files or resources), as the Power&nbsp;&nbsp;&nbsp;&nbsp;<br>
+Macintosh aligns structures differently from the 680x0-based Macintosh: you<br>
+may need to add #pragma&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;statements to override the compiler.&nbsp;&nbsp;&nbsp;&nbsp;</li>
+<li>Create a makefile for the MPW development system. Try to build "fat<br>
+binaries" that will run native on&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;both the 680x0-based Macintosh and<br>
+Power Macintosh.&nbsp;&nbsp;&nbsp;&nbsp;</li>
+<li>If at all possible, convert to the universal interfaces provided in the<br>
+Software Developer's Kit (and on this&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;issue's CD). In particular, ProcPtr<br>
+references must be converted to UniversalProcPtr. Also, all low-memory&nbsp;&nbsp;&nbsp;&nbsp;<br>
+references must be replaced by the access functions provided as part of the<br>
+universal interfaces.&nbsp;&nbsp;&nbsp;&nbsp;</li>
+<li>Isolate system and compiler dependencies by using #ifdef statements. For<br>
+MPW-based compilers, add <b>-d MPW=1</b> to your makefiles. This lets you add<br>
+compiler- and system-dependent #pragmas and code&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sequences without<br>
+encountering compiler warnings.
+
+<pre>#ifdef THINK_C /* THINK C */
+#ifdef __powerc /* Power Macintosh */
+#ifdef MPW /* MPW: see above */
+#ifdef applec /* Apple compilers */</pre></li>
+
+<li>Remove or isolate all assembly language and inline statements. You can<br>
+probably eliminate all assembly&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;language from your Power Macintosh<br>
+applications.&nbsp;&nbsp;&nbsp;&nbsp;</li>
+<li>Power Macintosh will not support a number of obsolete system traps;<br>
+when you convert your program,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;you may need to rewrite small sections of<br>
+your code. Of course, you should check new code on both the&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;680x0-based<br>
+Macintosh and Power Macintosh.&nbsp;&nbsp;&nbsp;&nbsp;</li>
+<li>Applications must explicitly allocate space for the QuickDraw globals. Add<br>
+the following to your&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;application's main program file:
+
+<pre> #ifdef __powerc
+QDGlobalsqd;
+#endif</pre></li>
+
+<li>Avoid storing application-specific data in your application's data fork: the<br>
+Power Macintosh stores its&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;code there. (You can reserve a fixed amount of<br>
+space at the beginning of the data fork, if necessary.)&nbsp;&nbsp;&nbsp;&nbsp;</li>
+<li>Add a 'cfrg' (code fragment) resource to your application's resource fork.<br>
+This tells the Process Manager&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;that you've built a Power Macintosh native<br>
+application.
+
+<pre> #ifdef __powerc
+#include "CodeFragmentTypes.r"
+resource 'cfrg' (0) {
+    {
+        kPowerPC,
+        kFullLib,
+        kNoVersionNum, kNoVersionNum,
+        0, 0,
+        kIsApp, kOnDiskFlat,
+        kZeroOffset, kWholeFork,
+        "MyFirstPowerPCApp"
+    }
+};
+#endif</pre></li>
+
+<li>Make good use of the compatibility built into the Power Macintosh: your<br>
+application should run native on Power Macintosh and still run correctly on a<br>
+680x0-based machine. The user shouldn't notice any difference.</li>
+<li>In most cases, native Power Macintosh applications will be about the same<br>
+size as their 680x0 counterparts. Of course, if you use the compatible "fat<br>
+binary" capability, the application file size will increase.</li>
+</ul>
+<p>
+The above list isn't complete by any means, but, together with the sample code, it<br>
+should get you started. Also, there are several Developer University courses available<br>
+to help bring you up to speed quickly.
+</p>
+<h2>TWISTED LISTERS</h2>
+<p>
+So, what's this method of displaying data good for? If you have data that's hierarchical,<br>
+coherent, line-oriented, and not too large, you'll find that the twist-down list<br>
+functions are both useful and easy to incorporate into your applications.&nbsp;&nbsp;&nbsp;*<br>
+Hierarchical. If the data doesn't separate into a strict hierarchy, the presence of<br>
+triangular buttons will only confuse your users: they're expecting your application to<br>
+operate like the Finder. Also, if the hierarchy is very limited (a single topic with a<br>
+block of text), you'll probably find some other solution easier to use. 
+</p>
+<ul>
+<li> Coherent. Your users expect consistency between the parent "title" and<br>
+child "content" data. Try another technique if clicking a triangular button does<br>
+something other than reveal a lower-level hierarchy. For example, the JMP<br>
+statistical package uses standard Macintosh buttons to expand a hierarchy.<br>
+Clicking a button may reveal a table of data or a graphical element. (JMP<br>
+hierarchies are also quite shallow.)</li>
+<li> Line-oriented. Again, the user is expecting Finder-like behavior. If the<br>
+data is not line-oriented, you'll discover that coaxing the List Manager to deal<br>
+with your data isn't worth the considerable effort it takes. In particular, avoid<br>
+varying the height of each line as this makes the triangular buttons look weird<br>
+(some small, some large) unless you normalize their size. </li>
+<li> Not too large. This is a restriction of the List Manager. Because of the way<br>
+it stores data, there's an absolute limit of 32,767 cells in a list, but it<br>
+becomes very slow and clumsy with more than a few hundred cells. </li>
+</ul>
+<p>
+I wrote the TwistDown library because I wanted to display an AOCE catalog<br>
+specification that can contain many internal components of varying size and<br>
+complexity. It offered a friendly interface into a structure that is convoluted, warped,<br>
+and -- indeed -- twisted.
+</p>
+<p>
+<b>REFERENCES</b>
+</p>
+<ul>
+<li>"Standalone Code on PowerPC" by Tim Nichols, <i>develop </i> Issue 17.</li>
+<li>"Making the Leap to PowerPC" by Dave Radcliffe, <i>develop </i>  Issue 16.</li>
+<li><i>Inside Macintosh: More Macintosh Toolbox</i>  (Addison-Wesley, 1993),<br>
+Chapter 4, "List Manager," or <i>Inside Macintosh</i>&nbsp;&nbsp;Volume IV (Addison-Wesley,<br>
+1986), Chapter 30, "The List Manager Package."</li>
+<li>"DeviceLoop Meets the Interface Designer" by John Powers,<i>develop</i>  Issue<br>
+13. DeviceLoop is also described in <i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI<br>
+(Addison-Wesley, 1991) on page 21-23.</li>
+</ul>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>MARTIN MINOW</b> (AppleLink MINOW, Internet minow@apple.com) is an aged,<br>
+wrinkled hacker who, having determined that it's far too late to whine about his<br>
+receding hairline, instead takes perverse delight in informing his young colleagues at<br>
+excessive length how much better programming was when you had to punch out your<br>
+programs, one machine word after another, on oily paper tape, back in the good old<br>
+days when hex digits were KSNJFL, words were 40 bits long, and a supercomputer had<br>
+1024 of them. In real life, he works at Apple's Developer Support Center, drinks<br>
+beer, and runs marathons.*
+</p>
+<p>
+<b>ACKNOWLEDGMENTS</b> The TwistDown library is generally based on code from the<br>
+NewsWatcher application by Steve Falkenburg. Steve's code is based on code written by<br>
+John Norstad, author of Disinfectant. *
+</p>
+<p>
+<b>Thanks</b> to our technical reviewers Jon Callas, Godfrey DiGiorgi, Steve Falkenburg,<br>
+Dave Radcliffe, and Dean Yu. And thanks to Richard Clark for the PowerPC BootCamp<br>
+course. *
+</p>
+</body>
+</html>

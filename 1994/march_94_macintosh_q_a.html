@@ -1,0 +1,548 @@
+<html>
+<head>
+<!-- Article ID: 8 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 94 - MACINTOSH Q & A</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MACINTOSH Q &amp; A</h2>
+<h1>MACINTOSH DEVELOPER TECHNICAL SUPPORT</h1>
+<p>
+<b>Q</b><i> In QuickDraw GX, if the QuickDraw clipping region of a window (set by</i><br>
+<i>SetClip(aRgn)) is not rectangular, the shapes drawn to the window's viewPort are</i><br>
+<i>sometimes clipped incorrectly. Is this a bug?</i>
+</p>
+<p>
+<b>A</b> This is not a bug. QuickDraw GX doesn't honor any of the QuickDraw clipping regions<br>
+except the one that's connected to a viewPort, created by calling the<br>
+GXNewWindowViewPort routine.
+</p>
+<p>
+&nbsp;Here's why: So that QuickDraw GX can draw into viewPorts associated with windows,<br>
+it patches the Window Manager. When the user moves a window, or when your<br>
+application calls BeginUpdate and EndUpdate, QuickDraw GX updates the viewPort<br>
+caches and clip shape. The clip shape is set to the visRgn of the window. However, all<br>
+other QuickDraw regions are ignored.
+</p>
+<p>
+&nbsp;If you want to do some smart window clipping, you can. But you can't play directly<br>
+with the viewPort attached to the window: that viewPort is maintained by the<br>
+QuickDraw GX system and is therefore off limits to the application. (If you do try to<br>
+manipulate it, you'll receive an error.) You need to attach a child viewPort to the<br>
+window's viewPort; then you can convert the QuickDraw region you want to clip to into<br>
+a GX shape (with the GX Translator) and set the child viewPort's clip shape to this new<br>
+shape. Your QuickDraw GX shapes will then be clipped correctly.
+</p>
+<p>
+<b>Q</b><i> Calling GXSetStyleRunControls on a layout shape with the "track" field set doesn't</i><br>
+<i>always have any visible effect, although the track value is always safely stored in the</i><br>
+<i>layout shape and can be retrieved with GXGetStyleRunControls. You can see this in</i><br>
+<i>GXWrite by adjusting the track kerning of some Tekton text: that works fine. If you</i><br>
+<i>switch to the Hoefler font, however, no track kerning is performed. Can you explain</i><br>
+<i>this?</i>
+</p>
+<p>
+<b>A</b> When a track kerning value is specified, QuickDraw GX looks to the tables in the font<br>
+to see how the kerning should be performed. A narrow text face with a large x-height,<br>
+like Avant Garde, can probably take much tighter track kerning than something like<br>
+Hoefler Italic can; only the font designer really knows how the kerning should behave.<br>
+The font designer tells QuickDraw GX how to do track kerning by setting values in the<br>
+'trak' table of the font. This table contains one or more "reference points" -- values<br>
+between -2 and 2 -- each of which tells how much to adjust space between the glyphs<br>
+for any number of point sizes. If the specified track kerning value lies between<br>
+reference points, QuickDraw GX interpolates accordingly.
+</p>
+<p>
+&nbsp;Hoefler Italic contains only one reference point -- "normal" kerning (value 0). It<br>
+does contain values for several different point sizes, but the font designer doesn't want<br>
+the face more tightly or loosely kerned than in his original design. Since there's only<br>
+one 'trak' point, QuickDraw GX winds up interpolating those entries with themselves<br>
+and nothing really happens for the values you specify in the run controls. As you've<br>
+noted, those values are still there, and they would be used if you switched those runs to<br>
+a different text face, but they're having exactly the effect Jonathan Hoefler wanted --<br>
+none at all.
+</p>
+<p>
+<b>Q</b><i> We're developing a QuickDraw GX printer driver for a 24-bit continuous-tone</i><br>
+<i>device. First, what should halftone fields be set to for a continuous-tone device (are</i><br>
+<i>they ignored?). Second, do we have to override GXDefaultPrinter and GXDefaultJob?</i><br>
+<i>The ImageWriter example shows building a default colorset inside GXDefaultPrinter.</i>
+</p>
+<p>
+<b>A</b> The answer to your first question is that you can stop QuickDraw GX from using the<br>
+halftone information by setting the gxDontSetHalftone flag in the plane flags field of<br>
+each plane in the 'rdip' resource. That's it -- the halftone fields will be ignored.
+</p>
+<p>
+&nbsp;The messages GXDefaultPrinter, GXDefaultDesktopPrinter, GXDefaultJob,<br>
+GXDefaultPaperType, and GXDefaultFormat may be appropriate for your driver to<br>
+override in order to modify default objects. You don't need to override these messages<br>
+unless you have a reason to change the default object.
+</p>
+<p>
+&nbsp;The ImageWriter driver with QuickDraw GX adds a list of view devices that are<br>
+appropriate for the printer that's being used. Specifically, it adds a 144-dpi<br>
+black-and-white view device and, if color is available, a 144-dpi color view device. If<br>
+the driver didn't add these, the default printer view device (24-bit at 72 dpi) would<br>
+be used. Overrides of a GXDefaultxxx message typically forward the message first to<br>
+obtain the default object, and then modify that object as needed. So if you want more<br>
+than one view device to be installed by your driver, you should override<br>
+GXDefaultPrinter. That's what the ImageWriter driver is doing.
+</p>
+<p>
+<b>Q</b><i> What is the correct way to recognize PowerTalk letters? Is it by checking for the</i><br>
+<i>file type 'lttr' or by looking at Finder flag bit 0x0200? Should I be saving letters as</i><br>
+<i>type 'lttr' or as my own file type, and should I be setting the bit?</i>
+</p>
+<p>
+<b>A</b> The correct way of checking whether a particular document is a letter is to check the<br>
+isLetter bit of the Finder info field. It's bit 9, mask 0x0200, and occupies the space<br>
+formerly used by the "changed" bit.
+</p>
+<p>
+&nbsp;Checking for file type 'lttr' doesn't work, since letters may have whatever file type<br>
+the sending application desires. In fact, an application may support multiple letter<br>
+types, and may have a different file type and icon for each type. This allows additional<br>
+flexibility, since an application may have some idea what content the letter contains by<br>
+checking its type, even before opening the letter.
+</p>
+<p>
+&nbsp;Note that when your application saves a letter to disk, nothing special needs to be done<br>
+with either the Finder flags or the file type to ensure that the Finder notices that the<br>
+file created is a letter. SMPBeginSave and SMPEndSave will automatically set the<br>
+isLetter bit for you, and the Finder will realize from this bit that your file is indeed a<br>
+letter.
+</p>
+<p>
+&nbsp;One final piece of information: Since letters may have a file type other than 'lttr', an<br>
+additional hook was added to the Finder drag and drop mechanism to allow applications<br>
+to have any letter drop-opened on them, regardless of the letter's file type. If you add a<br>
+BNDL/FREF pair with the type 'ltr*' to your application, the Finder will highlight<br>
+your icon whenever any letter is dragged over it. This mechanism works in the same<br>
+way that '****' does for the universal drag and drop wildcard.
+</p>
+<p>
+<b>Q</b><i> Can we use a different A5 world with QuickTime? Our plug-in architecture uses A5</i><br>
+<i>for global access, but we allow the A5 world to move. QuickTime doesn't seem to</i><br>
+<i>appreciate this and doesn't think that EnterMovies has been called after the A5 world</i><br>
+<i>moves. We currently work around this by locking down our A5 world but would rather</i><br>
+<i>not. Is locking down the A5 world even good enough? </i>
+</p>
+<p>
+<b>A</b> You can use a different A5 world with QuickTime. QuickTime allocates a new set of<br>
+state variables for each A5 world that's active when EnterMovies is called. However,<br>
+since QuickTime uses A5 to identify each QuickTime client, if you move your plug-in's<br>
+A5 world QuickTime will no longer recognize that you've called EnterMovies for that<br>
+client. So you can use a different A5 world, but you'll have to lock it down.
+</p>
+<p>
+<b>Q</b><i> We're trying to display a QuickTime movie in a frame that can be panned, cropped,</i><br>
+<i>and overlaid by other objects. The movie controller doesn't seem to understand that the</i><br>
+<i>badge may lie entirely outside the frame. Is there some way to tell the movie</i><br>
+<i>controller where to place the badge? </i>
+</p>
+<p>
+<b>A</b> Unfortunately, QuickTime isn't flexible about this. The code that positions the badge<br>
+calculates it from the bounding box of the movie region, and insets it six pixels from<br>
+the left and bottom. There's no sane way to work around this, other than not to use the<br>
+standard badge, but instead use your own badge and perform your own badge tracking.
+</p>
+<p>
+<b>Q</b><i> I've noticed some interesting behavior using the standard compression dialog and was</i><br>
+<i>wondering if someone could explain it to me. I'm trying to provide session-wide </i><br>
+<i>defaults for compressing sequences of images. If I don't prime the dialog by doing an</i><br>
+<i>SCRequestSequenceSettings, then when I do an SCCompressSequenceBegin the dialog is</i><br>
+<i>displayed. Is there any way to prevent this, and to use some set of defaults (without</i><br>
+<i>using an image to derive the defaults)?</i>
+</p>
+<p>
+<b>A</b> The compression dialog components allow you to get settings with the SCGetInfo call,<br>
+and to set them with SCSetInfo. The first time, you should display the dialog with<br>
+SCRequestSequenceSettings, and then use SCGetInfo to retrieve the settings. After that,<br>
+you can apply the same parameters before starting a compression sequence by using<br>
+SCSetInfo. If you provide settings before calling SCCompressSequenceBegin, the dialog<br>
+won't be displayed; otherwise it will be. See <i> Inside Macintosh: QuickTime Components,</i><br>
+page 3-8 and pages 3-15 through 3-25, for details about the format of the settings.
+</p>
+<p>
+&nbsp;Also, as you may know, you can generate default parameters that also avoid the dialog<br>
+by using the SCDefaultPixMapSettings, SCDefaultPictHandleSettings, and<br>
+SCDefaultPictFileSettings routines. But these do require an image. This way you can<br>
+avoid displaying the dialog for the first sequence, and still generate valid settings. See <br>
+<i>Inside Macintosh: QuickTime Components,</i>&nbsp;&nbsp;pages 3-26 through 3-28, for more<br>
+information about these routines.
+</p>
+<p>
+<b>Q</b><i> When a user pastes a movie into a movie-controller movie, the added movie is</i><br>
+<i>inserted in the top left corner of the movie. Is there a way for the user to choose where</i><br>
+<i>the movie is pasted, and if not, how can I give the movie controller or Movie Toolbox an</i><br>
+<i>offset to use rather than have the editing operations use the top left corner?</i>
+</p>
+<p>
+<b>A</b> When you paste a movie into a movie-controller movie, the movie controller&nbsp;&nbsp;is<br>
+simply calling PasteMovieSelection to insert the source movie. All the characteristics<br>
+of the movie are inserted, and therefore the movie is inserted in the top left corner of<br>
+the movie. There's no easy way to specify an offset directly to the movie controller. If<br>
+you want to change the offset of the pasted movie, you'll have to modify the movie<br>
+yourself after the paste using Movie Toolbox commands. Once you're done changing the<br>
+movie, be sure to call MCMovieChanged so that the movie controller updates correctly.
+</p>
+<p>
+&nbsp;The actual modification is simple: call GetTrackMatrix, add your offset to the matrix,<br>
+and call SetTrackMatrix. The difficulty is in determining which tracks to modify, since<br>
+the paste may either create a new track or use an existing one. We recommend doing<br>
+this by gathering all track indexes before the paste, and then comparing with the track<br>
+indexes after the paste. Since most movies these days have just a few tracks, this<br>
+shouldn't require much overhead. (But be warned: some movies <i>do</i>&nbsp;&nbsp;have a lot of<br>
+tracks!) To get the track information, you can call GetMovieTrackCount and<br>
+GetMovieIndTrack.
+</p>
+<p>
+&nbsp;One last idea: If you don't mind changing the source movie, an alternative is to simply<br>
+offset the source movie before the paste.
+</p>
+<p>
+<b>Q</b><i> Has Apple defined a codec type for a codec that does CCITT Group IV FAX</i><br>
+<i>compression/decompression? If not, how does one go about registering a brand new</i><br>
+<i>codec type with Apple?</i>
+</p>
+<p>
+<b>A</b> We're not aware of any standard codec type for CCITT Group IV FAX. Apple doesn't<br>
+have any mechanism in place for registering codec types. We suggest that developers<br>
+use the creator code for their applications, since creator codes are unique, as long as<br>
+they register them with us. We hope to have a better solution than this sometime in the<br>
+future.
+</p>
+<p>
+<b>Q</b><i> When I called Gestalt with the gestaltKeyboardType selector and my new Apple</i><br>
+<i>Adjustable Keyboard using System 7.1, I expected Gestalt to return a response that</i><br>
+<i>wasn't in GestaltEqu.h, but instead it returned an error of -5550, meaning "Couldn't</i><br>
+<i>obtain response." Is there something more I need to do? Should I expect Gestalt to</i><br>
+<i>return an error when I get new hardware?</i>
+</p>
+<p>
+<b>A</b> Gestalt is in error in not being able to identify the adjustable keyboard. But&nbsp;&nbsp;the real<br>
+problem (which the adjustable keyboard exacerbates) is that the gestaltKeyboardType<br>
+selector doesn't really do what you want it to do. What you want Gestalt to do is<br>
+enumerate the features of a system; however, gestaltKeyboardType tells you the type<br>
+of keyboard most recently touched, which is of limited utility. In the past, it's been<br>
+very rare to have more than one keyboard on a system, so the gestaltKeyboardType<br>
+selector could give you a unique answer. But the adjustable keyboard is two separate<br>
+keyboards -- one&nbsp;&nbsp;for the keyboard and one for the numeric keypad -- so<br>
+gestaltKeyboardType can't give you a unique answer. Because of these problems, we<br>
+consider this selector to be obsolete.
+</p>
+<p>
+&nbsp;What you need is a way to list all the keyboard devices on a system. You can use the<br>
+ADB Manager's GetADBInfo call to get the information for all the ADB keyboards<br>
+connected. You'll see two keyboards connected if the whole adjustable setup is installed.<br>
+The first will be at address $02 (all keyboards have an original address of $02); the<br>
+second will be at an address between $08 and $0F, due to ADB remapping. Your first<br>
+task would be to determine which ADB devices are keyboards. You can do this by using<br>
+CountADBs to tell you how many devices there are, and then having a loop that calls<br>
+GetIndADB for each device. For each device, you would test the original address field; if<br>
+it's $02, you have a keyboard of some type. You can then use the handler ID of the<br>
+device to identify the keyboard. The names and device handler IDs of the three main<br>
+adjustable keyboards and the adjustable keypad are as follows:
+</p>
+<pre>U.S. standard adjustable keyboard   $10
+ISO standard adjustable keyboard    $11
+Japan adjustable keyboard           $12
+Adjustable keyboard's keypad        $0E</pre>
+<p>
+&nbsp;Note that the keypad will usually be the one remapped and there's no way to guarantee<br>
+that it will be remapped to a specific address. That's why you have to use CountADBs<br>
+and GetIndADB to get the information.
+</p>
+<p>
+<b>Q</b><i> Someone told me recently that the glue on postage stamps is made from horse hooves</i><br>
+<i>and other mammalian unmentionables. Is this true? I'm a strict vegetarian.</i>
+</p>
+<p>
+<b>A</b> The glue used on postage stamps is not made from hooves or any other animal<br>
+products. Although we're not sure exactly what it <i> is</i>&nbsp;&nbsp;made of, we've been assured by<br>
+the United States Post Office that the glue they use is vegan <i> and</i>&nbsp;&nbsp;kosher. (International<br>
+readers should check with their local postal services.)
+</p>
+<p>
+<b>Q</b><i> Is there any reliable way of extracting the scaling information from a page setup</i><br>
+<i>record? We want to display a summary of the page setup in terms of paper size and</i><br>
+<i>scaling (for example, 8.5" by 11", 50%) instead of virtual page size (such as 17" by</i><br>
+<i>22"). Can we assume that the editText item with a numerical value is the scaling</i><br>
+<i>field?</i>
+</p>
+<p>
+<b>A</b> There is no reliable way to extract the scaling information. You certainly can't<br>
+assume an editText item in a dialog is the scaling field -- it could be anything. Don't<br>
+assume anything about the items or their order, because printer driver developers are<br>
+free to do whatever they feel like, and most of them have. The ImageWriter allows only<br>
+50% reduction, for example, so it's a checkbox, not a numerical field. In some drivers<br>
+such options may even be in the job dialog for "user convenience."
+</p>
+<p>
+&nbsp;We've tried for a long time to come up with a reliable way to do this, and there just<br>
+isn't one. Drivers can and do store scaling values, if they support them, anywhere they<br>
+like in the print record. You can't compare the page rectangle to that returned by<br>
+PrintDefault because the user may have picked a paper size other than the default.<br>
+(You wouldn't want the user to choose legal paper and see 8.5" by 11", scaled 100%<br>
+horizontally, 122% vertically!) This mechanism was designed to be transparent so<br>
+that applications wouldn't have to do anything, but it was designed <i>too</i>&nbsp;&nbsp;transparently:<br>
+applications can't tell what the scaling is even if they want to. Note that the new<br>
+printing architecture of QuickDraw GX actually lets you find out things like this.
+</p>
+<p>
+<b>Q</b><i> I'm trying to draw text to a rectangle and am using TextBox, which works fine. What</i><br>
+<i>I want to do is determine the vertical coordinates of the bottom of the text in the text</i><br>
+<i>box. I want to draw a line right under the bottom of the text, and the text is arbitrary</i><br>
+<i>in length. One time it may be a single word, other times an entire sentence that wraps</i><br>
+<i>in the rectangle. Do you know any way to calculate what I need?</i>
+</p>
+<p>
+<b>A</b> Unfortunately, you can't do it. TextBox doesn't leave the port in any state that can be<br>
+counted on. However, all is not lost: TextBox is a relatively simple operation and can<br>
+be easily duplicated with a few lines of code. If you duplicate TextBox, you can access<br>
+the TextEdit record before it's destroyed. With access to the TextEdit record you can<br>
+easily measure the text drawn. Try the code below. Also see "The TextBox You've<br>
+Always Wanted" in <i> develop </i> Issue 9 for a very flexible, fast replacement to TextBox.
+</p>
+<pre>void MyTextBox(Ptr text, long length, Rect *box, short just)
+{
+    // Replacement for TextBox that will draw a line under the last
+    // line of text.
+    TEHandle te;
+    Rect UnderRect;
+   
+    te = TEStyleNew(box, box);
+    TESetJust(just, te);
+    TESetText(text, length, te);
+    TEUpdate(box, te);
+   
+    UnderRect = (*box);
+    UnderRect.top = TEGetHeight(32767, 0, te) + UnderRect.top;
+    UnderRect.bottom = UnderRect.top + 1;
+    TEDispose(te);
+    FrameRect(&amp;UnderRect);
+}</pre>
+<p>
+<b>Q</b><i> Is there any way for an application to mount an AppleShare volume in System 6? In</i><br>
+<i>System 7, the PBVolumeMount function allows you to do this if you have the right</i><br>
+<i>information. Is this call or a similar one supported in System 6? </i>
+</p>
+<p>
+<b>A</b> The PBVolumeMount, PBGetVolMountInfoSize, and PBGetVolMountInfo calls are all<br>
+supported in System 6 <i>if</i>&nbsp;&nbsp;the AppleShare 3.0 or later Chooser extension has been<br>
+installed. These versions of the Chooser extension have been tested back to System<br>
+6.0.4, and work fine.
+</p>
+<p>
+<b>Q</b><i> Our product needs to access the DCD signal from the modem port to function</i><br>
+<i>correctly when talking to an external modem. Most documentation doesn't say anything</i><br>
+<i>about the DCD signal being available. However, we have a hardware diagram that shows</i><br>
+<i>that pin 7 on the mini-8 connector is connected to give a DCD signal on later Macintosh</i><br>
+<i>models. In most documentation pin 7 is shown as not connected. Is pin 7 connected to</i><br>
+<i>anything, so that I can wire it to the DCD signal from the modem? If so, how can I</i><br>
+<i>access the status of pin 7 to see when DCD is asserted or negated? If I can do this, what</i><br>
+<i>models of Macintosh will it work on, and will it stay like that in future releases?</i>
+</p>
+<p>
+<b>A</b> There is ongoing confusion regarding the Macintosh serial ports and how to wire<br>
+them for serial operation. Macintosh serial ports are RS-422. By shorting the<br>
+positive receive pin to ground, you create an RS-423 port, which is an RS-232<br>
+emulation. The table below shows a pin-wiring schematic from the Macintosh DIN-8<br>
+to DB-25 RS-232 serial cable, which supports hardware handshake and DCD<br>
+transmission (arrows show the direction of signal transmission):
+</p>
+<p class="spacer">&nbsp;</p>
+<p><table border="0"><tr><td><b>DIN-8</b><td></td><td><b></b><b>DB-25</b></td></tr>
+<tr><td>HSKo</td><td>1 --&gt; 4, 20</td><td>RTS, DTR</td></tr>
+<tr><td>HSKi</td><td>2 &lt;-- 5</td><td>CTS</td></tr>
+<tr><td>TxD-</td><td>3 --&gt; 2</td><td>TxD</td></tr>
+<tr><td>GnD, RxD+</td><td>4, 8 -- 7</td><td>GnD</td></tr>
+<tr><td>RxD-</td><td>5 &lt;-- 3</td><td>RxD</td></tr>
+<tr><td>TxD+</td><td>6</td><td></td></tr>
+<tr><td>GPi</td><td>7 &lt;-- 8</td><td>DCD</td></tr>
+<tr><td>Shield</td><td>1 --- 1</td><td>Shield</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;Notice that we connect the DCD signal to the GPi input pin. As you know, the GPi trace<br>
+isn't implemented on all Macintosh CPUs. Additionally, there is no serial driver call<br>
+implemented to obtain the current state of the GPi pin. Rather than have a complete<br>
+list of which CPUs it's connected on, you can fairly easily make your application<br>
+dynamically find this out on a particular CPU at run time. So you can tell the user<br>
+whether DCD from a modem can be detected on a particular installation, with no need<br>
+for a priori knowledge. See the Macintosh Technical Note "Serial GPi<br>
+(General-Purpose Input)" (Devices 16) for a description of using GPi and Gestalt.
+</p>
+<p>
+<b>Q</b><i> I use the OpenPicture, draw, ClosePicture sequence to create a picture handle. Since</i><br>
+<i>the handle can be quite large, and since I dispose of it fairly quickly, it would make</i><br>
+<i>sense to allocate it in temporary memory. But I haven't found any reasonable way to do</i><br>
+<i>that. Any suggestions? Both these situations arise because my application runs in a</i><br>
+<i>fairly small (800K) partition. I do this so that other applications have adequate space</i><br>
+<i>to work with it, since one of my main functions is to interact with other applications</i><br>
+<i>using Apple events. However, I occasionally need more memory for a few seconds at a</i><br>
+<i>time.</i>
+</p>
+<p>
+<b>A</b> There are two ways to cause OpenPicture to use temporary memory. A simple way to<br>
+do it is to allocate a block of temporary memory, then create a new&nbsp;&nbsp;heap zone in that<br>
+block and make it the current zone just before you call OpenPicture. This will cause<br>
+subsequent memory allocations to happen in your temporary block, and will work fine.<br>
+See <i>Inside Macintosh: Memory</i>&nbsp;&nbsp;for more information about creating heap zones.
+</p>
+<p>
+&nbsp;Another way is to replace the putPicProc, as is commonly done when spooling a<br>
+picture to disk, and instead spool it to temporary memory. If you're not familiar with<br>
+picture spooling, see<i> Inside Macintosh</i>&nbsp;&nbsp;Volume V, page 89, which has code for spooling<br>
+a picture to disk as it's created. This is the same technique as documented there, only it<br>
+spools the picture to temporary memory instead.
+</p>
+<p>
+&nbsp;You create a handle in temporary memory the size of a picture and fill in its size and<br>
+picFrame fields so that it looks like a normal picture handle. In your putPicProc you<br>
+copy the data in, continually resizing the handle if necessary to fit the data. After you<br>
+call ClosePicture, remove your putPicProc; then you can use the temporary handle<br>
+just like a normal picture.
+</p>
+<p>
+&nbsp;The advantage of this method over the first one is that you can make the picture as<br>
+large as temporary memory will let you, and you end up using just enough memory.<br>
+The first technique, while technically easier to implement, limits you to the size of the<br>
+heap you initially create, and you also may use a lot more temporary memory than you<br>
+need. If you're able to come up with a good guess of how large your pictures are going to<br>
+be, use the first technique; if not, use the second one.
+</p>
+<p>
+<b>Q</b><i> I think I may have found a bug in the System 7 TrueType rasterizer code: under some</i><br>
+<i>clipping conditions it may crash/freeze the system inside the DrawText call. I'm</i><br>
+<i>really not doing anything out of the ordinary; the key to making it die apparently lies</i><br>
+<i>in the placement of an obstructing window that just barely overlaps the text being</i><br>
+<i>drawn. Investigating the problem in MacsBug reveals that somewhere deep in the</i><br>
+<i>TrueType rasterizer some code is trashing the A3 register and not restoring it</i><br>
+<i>properly.</i>
+</p>
+<p>
+<b>A</b> This is a bug in QuickDraw's text-drawing routine, introduced when support for<br>
+TrueType was added: QuickDraw (under certain circumstances, like foreground not<br>
+black or background not white) allocates an off-screen buffer for the text on the stack.<br>
+If there isn't enough stack space, the string is cut in pieces, and the code reentered for<br>
+each piece separately. (If that still doesn't help, no text is drawn at all.) The bug is<br>
+that A3 is assumed to hold the port throughout the text-drawing code, but when we<br>
+added support for TrueType, we reused A3, forgetting the previous convention for the<br>
+case where the string had to be subdivided. This probably won't be fixed before the<br>
+rewritten QuickDraw is released in PowerPC processor-based machines.
+</p>
+<p>
+&nbsp;The workaround is to preflight available stack space before issuing text-drawing calls<br>
+for long strings and large point sizes, and draw the string in pieces yourself if<br>
+necessary. You may also want to allocate more stack space at startup via
+</p>
+<p>
+<code>&nbsp;SetApplLimit(GetApplLimit() - </code><i><code>something</code></i><code> );</code>
+</p>
+<p>
+&nbsp;with <i>something</i>&nbsp;&nbsp;empirically determined. For a big application with a large minimal<br>
+partition size, 16K or 32K more or less in the heap shouldn't matter; but it's a big<br>
+win for QuickDraw's reliability, and generally a good recommendation.
+</p>
+<p>
+<b>Q</b><i> I would like to be able to determine the clock speed of any CPU. I know that I could</i><br>
+<i>write a routine and calculate the time it took to execute the code, but can you tell me a</i><br>
+<i>more direct way?</i>
+</p>
+<p>
+<b>A</b> You can use the GetCPUSpeed routine to check the current clock speed of the<br>
+PowerBooks (after checking gestaltPowerMgrAttr to make sure that the Power<br>
+Manager is present). This routine is documented in the Power Manager chapter of <br>
+<i>Inside Macintosh</i>&nbsp;&nbsp;Volume VI (page 31- 20).
+</p>
+<p>
+&nbsp;Unfortunately, there's no way to check the clock speed of other Macintosh models. The<br>
+only thing you might be able to use as a crude way of comparing relative speeds is the<br>
+low-memory global, TimeDBRA ($0D00). TimeDBRA gives you the number of<br>
+iterations of DBRA per millisecond, which can help in a relative speed comparison.
+</p>
+<p>
+<b>Q</b><i> A wonderful thing about MacsBug is that you can save logs, and our testers use it to</i><br>
+<i>log crashes of our programs under development. Unfortunately, some of our more lazy</i><br>
+<i>testers just send a log without a description of how they made the crash occur. I was</i><br>
+<i>wondering if there's a way a user can enter a comment in MacsBug that will get saved</i><br>
+<i>in a log but won't be interpreted by MacsBug. This way, users could put the whole bug</i><br>
+<i>report in one nice consolidated log, without going and editing it later in a text editor.</i>
+</p>
+<p>
+<b>A</b> You can enter text into your MacsBug log by using the printf dcmd in MacsBug. It's<br>
+similar to the C printf function. If your testers want to add anything to the log file,<br>
+they can simply type
+</p>
+<pre> printf "interesting comment that I wanted to make"</pre>
+<p>
+&nbsp;For more on the printf dcmd, see the MacsBug 6.2 reference manual.
+</p>
+<p>
+<b>Q</b><i> I have problems linking my QuickDraw GX printing extension when I include MPW's</i><br>
+<i>StdClib.o, evidently because I call sprintf. I was told this is because of global variables</i><br>
+<i>in the StdClib.o library. Does MPW have a parallel library for use with standalone</i><br>
+<i>code -- something like THINK C's ANSI-A4 library?</i>
+</p>
+<p>
+<b>A</b> The problem is that two of the routines in StdCLib.o use global data. You can get<br>
+around this problem by redeclaring the problem routines in your code. First #include<br>
+&lt;StdIO.h&gt; in one of your source files or included header files. Add the following to your<br>
+source:
+</p>
+<pre>size_t fwrite(const void *, size_t, size_t, FILE *) { return 0; }
+int _flsbuf(unsigned char, FILE *) { return 0; }</pre>
+<p>
+&nbsp;These lines redefine fwrite and _flsbuf, the offending routines, so that they don't use<br>
+global data (or do anything, for that matter, except return 0). Make sure that the<br>
+object file containing the above routines appears in your Link instruction <i> before</i> <br>
+StdCLib.o, since only the first declaration will be used. Of course, this means that you<br>
+can't use the fwrite and _flsbuf routines, but it's unlikely you'll want to in a printing<br>
+extension anyway. Also, sprintf never calls them. The linker will generate "duplicate<br>
+symbol definition" warnings for the two routines, of course, unless you specify <b>-msg</b><br>
+<b>nodup</b> in your Link instruction. In addition, don't forget to link with RunTime.o.
+</p>
+<p>
+&nbsp;The sprintf routine is great for debugging, since you can easily get formatted debugger<br>
+output, as follows:
+</p>
+<pre>OSErr err;
+Str255pStr;
+
+// Do stuff that might cause an error
+. . .
+
+if (err) {
+    pStr[0] = sprintf(&amp;pStr[1], "Error %d", err);
+    DebugStr(pStr);
+}</pre>
+<p>
+&nbsp;Also, check out the dprintf command in QuickDraw GX's GXExceptions.h file; it's<br>
+similar to this.
+</p>
+<p>
+<b>Q</b><i> What is the correct term for the little depression above the center of my upper lip?</i><br>
+<i>In high school we called it a "curvicle," but I'm pretty sure we made that up. </i>
+</p>
+<p>
+<b>A</b> The correct term is "philtrum." Biologists debate heatedly about its real purpose,<br>
+but there's no doubt that it makes a good place to rest the tip of your index finger<br>
+during periods of deep thought.
+</p>
+<p>
+<b>These answers are supplied </b>by the technical gurus in Apple's Developer Support<br>
+Center. Special thanks to Pete ("Luke") Alexander, Matt Deatherage, Godfrey DiGiorgi,<br>
+Steve Falkenburg, Mark ("The Red") Harlan, Dave Hersey, Elli Howe, Joseph Maurer,<br>
+Kevin Mellander, Jim Mensch, and Brigham Stevens&nbsp;&nbsp;for the material in this Q &amp; A<br>
+column. *
+</p>
+<p>
+<b>Have more questions? </b>Need more answers? Take a look at the Macintosh Q&amp;A<br>
+Technical Notes on this issue's CD and in the Dev Tech Answers library on AppleLink.*
+</p>
+</body>
+</html>

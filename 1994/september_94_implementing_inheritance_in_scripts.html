@@ -1,0 +1,615 @@
+<html>
+<head>
+<!-- Article ID: 41 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 94 - Implementing Inheritance In Scripts</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Implementing Inheritance In Scripts</h2>
+<h1>PAUL G. SMITH</h1>
+<p>
+<img src="img/232.gif" width="180 px"></img>
+</p>
+<p>
+<i>"Programming for Flexibility: The Open Scripting Architecture" in </i>&nbsp;&nbsp;develop<i> Issue 18</i><br>
+<i>showed you how to use scripts to increase your program's flexibility. This article</i><br>
+<i>builds on that one and explains how to implement an inheritance scheme in your</i><br>
+<i>application that will enable your AppleScript scripts to share handlers and properties</i><br>
+<i>and to support global variables. You'll also learn a way to support inheritance in other</i><br>
+<i>OSA languages with just a little extra work.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+In Issue 18 of<i>develop</i> , I showed you how to attach scripts to application-domain<br>
+objects and how to delegate the handling of Apple events to those scripts. I left you with<br>
+a challenge: to figure out how to support global variables and to enable scripts to share<br>
+subroutines and handlers. To meet this challenge you need to implement inheritance.<br>
+The AppleScript 1.1 API gives you all the necessary calls to implement inheritance in<br>
+embedded AppleScript scripts, but not all are documented yet in<i>Inside Macintosh</i> . This<br>
+article documents the calls you need and describes an inheritance scheme that relies on<br>
+them. 
+</p>
+<p>
+In a nutshell, here's the scheme :
+</p>
+<ol>
+<li>Decide what kind of script inheritance hierarchy to use. </li>
+<li>Link your scripts together in an inheritance chain. </li>
+<li>Create a shared handlers script to define subroutines and Apple event<br>
+handlers that are shared among all scripts. Make this script the parent of all<br>
+other scripts in your program, in effect putting it at the end of the inheritance<br>
+chain. </li>
+<li>Create a global variables script and add this to the start of the inheritance<br>
+chain so that it's the first script to receive incoming messages. Save this<br>
+script to disk when the program exits and reload it when the program<br>
+restarts, so that variables persist. </li>
+</ol>
+<p>
+You can use much the same scheme to implement inheritance in other Open Scripting<br>
+Architecture (OSA) languages, but more work is required to link scripts together in<br>
+an inheritance chain, and you must forgo the luxury of sharing global variables<br>
+between scripts. At the end of this article, the section "Inheritance in Other OSA<br>
+Languages" describes the extra work your program must do.
+</p>
+<p>
+The sample program SimpliFace2 on this issue's CD demonstrates the inheritance<br>
+mechanisms discussed here. SimpliFace2 is an extension of SimpliFace, the basic<br>
+interface builder used to illustrate the article in Issue 18. The SimpliFace2 sample<br>
+code has a compile-time flag qUseOSAinheritance, defined in the header file<br>
+SimpliFace2Common.h. If this flag is undefined, the program uses the<br>
+AppleScript-specific inheritance scheme described in the bulk of this article.&nbsp;&nbsp;If the<br>
+flag is defined, SimpliFace2 uses a general-purpose scheme that involves the extra<br>
+work outlined in the section on inheritance in other OSA languages. 
+</p>
+<h2>&nbsp;CHOOSE A SCRIPT INHERITANCE HIERARCHY</h2>
+<p>
+&nbsp;&nbsp;The first thing to do is to decide what kind of script inheritance hierarchy to use.<br>
+Youcan use a runtime containment hierarchy (like that used by HyperCard and<br>
+FaceSpanTM), a class hierarchy (like that used by AgentBuilder), or some hybrid of<br>
+the two, as demonstrated by SimpliFace2. Let's look at each of these hierarchy types in<br>
+turn. 
+</p>
+<p>
+<b>&nbsp;FaceSpan (formerly Frontmost) </b> is the interface builder bundled with the<br>
+AppleScript 1.1 Software Development Toolkit. Perhaps the best known OSA "client,"<br>
+FaceSpan was developed by Lee Buck (of "WindowScript" fame) of Software Designs<br>
+Unlimited, Inc. AgentBuilder, from commstalk hq and Full Moon Software Inc., is a<br>
+framework for the creation of communications and information-processing agents that<br>
+uses embedded OSA scripts to customize agent behavior. *
+</p>
+<p>
+&nbsp;Figure 1 shows a runtime containment hierarchy. In this kind of hierarchy, objects<br>
+inherit behavior from their containers at run time. In the object containment<br>
+hierarchy used by HyperCard, for example, the scripts of buttons and fields within<br>
+cards are at the bottom of the hierarchy. Above them are the scripts of the cards that<br>
+contain the buttons and fields, and above each card script is the script of the<br>
+background that contains the card. Above each background script, in turn, is the script<br>
+of the stack that contains all the backgrounds. The handlers in each container's script<br>
+are shared by the scripts of all the objects it contains. 
+</p>
+<p>
+&nbsp;Figure 2 shows a class hierarchy. In this kind of hierarchy, objects inherit behavior<br>
+from their parent classes. For instance, the behavior of AgentBuilder objects is<br>
+defined in an "ancestor" object of each class, which is the parent of all instances of that<br>
+class. This permits the standard scripted behavior of object classes to be overridden in<br>
+derived class instances.
+</p>
+<p>
+<img src="img/233.gif" width="297 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>A runtime containment hierarchy
+</p>
+<p>
+<img src="img/234.gif" width="243 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 2. </b>A class hierarchy
+</p>
+<p>
+&nbsp;Figure 3 shows the hybrid script inheritance hierarchy used in SimpliFace2. In<br>
+SimpliFace2, the scripts of user-interface objects -- such as windows, labels, and<br>
+buttons -- are organized so that they inherit behavior from the runtime containment<br>
+hierarchy. However, the script of the application object isn't included in the<br>
+inheritance chain for the script of any user-interface object, and the shared handlers<br>
+script becomes the ultimate parent of all other scripts. I chose to use this hybrid<br>
+hierarchy in order to demonstrate a wider range of techniques, not for any reason<br>
+intrinsic to the program design. 
+</p>
+<p>
+&nbsp;The kind of script inheritance hierarchy to use depends on the nature of the messages<br>
+being handled in your program. Using a class hierarchy is most appropriate if the<br>
+messages are Apple events defined in the program's 'aete' resource. If the incoming<br>
+messages are primarily user-defined subroutines being&nbsp;&nbsp;handled inside scripts, using<br>
+a runtime containment hierarchy is probably more natural for the scripter.
+</p>
+<p>
+<img src="img/235.gif" width="323 px"></img>
+</p>
+<p>
+<b>Figure 3. </b>The hybrid script inheritance hierarchy used in SimpliFace2
+</p>
+<p>
+&nbsp;Another way to look at this choice is that if you want to enable users to customize your<br>
+program's capabilities by attaching scripts to application-domain objects, using a<br>
+runtime containment hierarchy isn't always the best idea. Because different<br>
+application-domain objects handle the same Apple event message in different ways (in<br>
+other words, the semantic meaning of the message differs depending on what object it's<br>
+directed at), unwanted side effects could result from an object's handling an Apple<br>
+event message intended for a different level in the containment hierarchy. Using a<br>
+class hierarchy ensures that messages will be dealt with only by objects of the class<br>
+that understands them.
+</p>
+<p>
+&nbsp;Once you've chosen the type of script inheritance hierarchy most appropriate for<br>
+your program, you can link scripts together in an inheritance chain.
+</p>
+<h2>LINK SCRIPTS IN AN INHERITANCE CHAIN</h2>
+<p>
+Linking scripts together in an AppleScript inheritance chain is as simple as setting<br>
+their parent properties. Before I tell you how to do that, though, let's review a few<br>
+facts about script objects and inheritance. As mentioned in the Issue 18 article, a<br>
+script context (a script compiled using the AppleScript OSA component) is equivalent<br>
+to a script object in the AppleScript language, so everything I say here about script<br>
+objects applies to script contexts as well.
+</p>
+<p>
+<b>&nbsp;ABOUT APPLESCRIPT SCRIPT OBJECTS AND INHERITANCE CHAINS</b><br>
+Script objects can contain global variables, properties, and handlers for Apple event<br>
+messages and subroutine calls. A script object can have as its parent property an<br>
+object specifier or another script object. Thus, one script object can become the<br>
+parent of another, and the child script object can inherit properties and handlers from<br>
+the parent script object. Parent and child script objects are linked together in an<br>
+inheritance chain; this is the path from child to parent to grandparent and so on in an<br>
+inheritance hierarchy, as illustrated in Figure 4.
+</p>
+<p>
+<b>&nbsp;For (a lot) more on object specifiers, </b>see&nbsp;&nbsp;"Apple Event Objects and You" by<br>
+Richard Clark in <i> develop</i>&nbsp;&nbsp;Issue 10.*
+</p>
+<p>
+<img src="img/236.gif" width="369 px"></img>
+</p>
+<p>
+<b>Figure 4. </b>A script inheritance chain
+</p>
+<p>
+An incoming Apple event message is received by the child script object at the start of<br>
+the inheritance chain. If AppleScript can't resolve a reference to a handler or variable<br>
+name within this script object, it searches through the entire inheritance chain to find<br>
+it. The handler or variable is resolved wherever it's found in the inheritance chain.<br>
+When a handler continues a message (that is, passes the message to its parent),<br>
+AppleScript starts searching in its parent script object. Messages that target objects<br>
+outside the program's domain, or that aren't handled anywhere in the script<br>
+inheritance chain (such as Apple events defined in the program's 'aete' resource,<br>
+which are handled in the program code instead), or that are continued out of the<br>
+inheritance chain, are redispatched as Apple events.
+</p>
+<p>
+<b>SETTING A SCRIPT'S PARENT PROPERTY</b><br>
+Now that you understand the dynamics of script inheritance, I'll show you how to set a<br>
+script's parent property and thus link it to an inheritance chain. In the AppleScript<br>
+language, you simply say what you'd like the parent set to, as illustrated here:
+</p>
+<pre>script mom
+    on getName()
+        return "Fenella"
+    end getName
+end script
+
+script toddler
+    property parent : mom
+    on getName()
+        set myMom to continue getName()
+        return "Bart, son of " &amp; myMom
+    end getName
+end script
+
+getName() of toddler --&gt; returns "Bart, son of Fenella"</pre>
+<p>
+To set the parent of a script context from a programming language, you can use the<br>
+AppleScript routine OSASetProperty. This general-purpose routine (defined in the<br>
+header file ASDebugging.h, which was added with the AppleScript 1.1 API) accesses<br>
+either a predefined property or a user- defined variable, depending on the AEDesc<br>
+passed to it. To access a predefined property -- the parent property -- you create a<br>
+descriptor of typeProperty (<i>not</i>&nbsp;&nbsp;typeType), specifying the property ID as the data.<br>
+The parameters to the call are (1) the scripting component (probably the AppleScript<br>
+component), (2) a mode flag (we use the null mode, indicating no special action should<br>
+be taken; alternatively, we could instruct AppleScript to replace the property only if<br>
+it already exists), (3) the script context ID that's to be changed, (4) the AEDesc, and<br>
+(5) the value you're setting the property to, in our case the new parent. The OSA<br>
+routine OSAGetProperty performs the converse function: you can use it to inspect the<br>
+values of properties and variables.
+</p>
+<p>
+Here's a fragment from SimpliFace2 that sets the parent of a script by calling<br>
+OSASetProperty:
+</p>
+<pre>OSAError    err = noErr;
+AEDesc      nameDesc;
+DescType    thePropCode = pASParent;
+
+err = AECreateDesc(typeProperty, (Ptr)&amp;thePropCode,
+                sizeof(thePropCode), &amp;nameDesc);
+if (err == noErr) {
+    err = OSASetProperty(scriptingComponent, kOSAModeNull, contextID,
+            &amp;nameDesc, newParentID);
+    AEDisposeDesc(&amp;nameDesc);
+}</pre>
+<p>
+The structure of the inheritance chain is static; each parent link needs to be set up<br>
+only once, as long as no scripts are replaced. The only exception to this is that the<br>
+parent property of the global variables script used in SimpliFace2 needs to be set<br>
+every time an incoming Apple event message is handled, as I'll explain later. Whenever<br>
+a script in the chain is replaced by a new one, the script's OSAID will change and you'll<br>
+need to set the parent property in the new script and in its children again.
+</p>
+<p>
+<b>STRIPPING COPIED PARENT SCRIPTS</b><br>
+By setting the parent properties of scripts and thus linking them in inheritance<br>
+chains, your program limits unnecessary duplication of script objects. Still, when<br>
+AppleScript sets the parent of a script, it stores a copy of the script's parent (and of<br>
+the parent's parent, and so on) with the original script.&nbsp;&nbsp;&nbsp;This is the basis of the trick<br>
+that allows SimpliFace to simulate sharing scripts between objects: every script<br>
+carries with it a copy of all the scripts it shares. But this is wasteful -- it means<br>
+that, for instance, each button script for a window contains a copy of the window's<br>
+script, when only one copy is necessary. Because your program is directly controlling<br>
+script inheritance chains, you'll want to block this behavior when it loads and stores<br>
+scripts. You can do it by specifying the kOSAModeDontStoreParent flag when you call<br>
+OSAStore and recreating the inheritance chain when the scripts are reloaded.
+</p>
+<p>
+Listing 1 shows the routine used to set the script property of an object in<br>
+SimpliFace2. Note how it's changed from the routine used in SimpliFace: it now strips<br>
+the copied parent scripts from the incoming script so that SimpliFace2 can manage the<br>
+inheritance chain itself. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 1. </b>TScriptable Object::SetProperty
+</p>
+<pre>OSErr TScriptableObject::SetProperty (DescType propertyID,
+        const AEDesc *theData)
+{
+    OSAError            err = errAEEventNotHandled;
+
+    switch (propertyID) {
+    case pScript:
+        OSAID theValueID = kOSANullScript;
+        if (theData-&gt;descriptorType == typeChar
+                || theData-&gt;descriptorType == typeIntlText)
+            err = OSACompile(gScriptingComponent, theData,
+                      kOSAModeCompileIntoContext, &amp;theValueID);
+        else {  // If it's not text, we assume script is compiled.
+            err = OSALoad(gScriptingComponent, theData, kOSAModeNull,
+                      &amp;theValueID);
+            // The following new section strips any existing parent
+            // script.
+            if (err == noErr) {
+                AEDesc      newData;
+                err = OSAStore(gScriptingComponent, theValueID,
+                          typeOSAGenericStorage,
+                          kOSAModeDontStoreParent,
+                          kOSAModeDontStoreParent, &amp;newData);
+                if (err == noErr) {
+                    OSADispose(gScriptingComponent, theValueID);
+                    theValueID = kOSANullScript;
+                    err = (OSErr)OSALoad(gScriptingComponent,
+                              &amp;newData,kOSAModeNull, &amp;theValueID);
+                    AEDisposeDesc(&amp;newData);
+                }
+            }
+        }
+        if (err == noErr) {
+            if (fAttachedScript != kOSANullScript)
+                OSADispose(gScriptingComponent, fAttachedScript);
+            fAttachedScript = theValueID;
+            err = SetCurParent(fParentObj);
+            // This fixes up the references in any object that
+            // has the current object as its parent.
+            this-&gt;FixUpScriptReferences(this);
+        }
+        break;
+    }
+    return (OSErr)err;
+}</pre>
+<h2>ATTACH SHARED HANDLERS AND GLOBAL VARIABLES<br>
+SCRIPTS</h2>
+<p>
+Now the plot thickens. You're going to use the inheritance chain you've set up to make<br>
+it possible for your program's AppleScript scripts to share handlers and properties<br>
+and to support global variables.
+</p>
+<p>
+Our strategy, as demonstrated in SimpliFace2, is to attach a shared handlers script to<br>
+the application object and a global variables script to the global script administrator<br>
+object (which, as in SimpliFace, is responsible for fetching the script attached to<br>
+objects and preparing it for execution). The shared handlers script, which as a<br>
+convenience for the scripter I've made a property of the application object (in addition<br>
+to the application object's attached script), defines common subroutines for all the<br>
+object scripts known to the program. This script is added to the end of the inheritance<br>
+chain so that it becomes the parent of all other scripts. Globals are created in the<br>
+global variables script, which is always inserted at the start of the AppleScript<br>
+inheritance chain when an Apple event is handled by a script.
+</p>
+<p>
+Let me explain why the global variables script is necessary. The AppleScript OSA<br>
+component creates global variables in the script context that received the current<br>
+message, the one at the start of the inheritance chain. If the variables weren't<br>
+predefined as properties when the parent script was defined, they won't be visible to<br>
+all scripts. But we'd like variables that are declared in handlers with the Global<br>
+keyword to be available to handlers in all scripts. We achieve this by adding the global<br>
+variables script that we create to the start of the inheritance chain. Thus, the only<br>
+script actually to be dispatched messages is the global variables script, and its parent<br>
+becomes the currently resolved object's script. Because its parent changes to whatever<br>
+is the appropriate script in the inheritance chain, messages are handled by the correct<br>
+targets.
+</p>
+<p>
+<b>HOW IT ALL WORKS</b><br>
+The AppleScript-only inheritance approach demonstrated in SimpliFace2 works like<br>
+this: Whenever the Apple event prehandler receives an event that might be handled in a<br>
+script, it tries to resolve the object that should handle it. If it can't resolve an object<br>
+it assumes that the application object's script should handle the event instead. It then<br>
+attaches the global variables script (the script that receives all incoming events) to<br>
+the start of the inheritance chain that ends with the shared handlers script (the parent<br>
+of all scripts). In between is the script of the object to which the event was targeted; if<br>
+that object is a button or a field in a window, the inheritance chain also contains the<br>
+window's script. The result is the inheritance chain shown in Figure 5. 
+</p>
+<p>
+The Apple event prehandler routine in SimpliFace2 calls the global script<br>
+administrator object to manage the scripts, as shown in this extract from the<br>
+prehandler:
+</p>
+<pre>TScriptableObject*  theScriptableObj = NULL;
+TScriptableObject*  savedParent = NULL;
+
+if (err == noErr &amp;&amp; theToken)
+    err = gScriptAdministrator-&gt;GetAttachedScript
+            (theToken-&gt;GetTokenObj(), theScriptableObj, savedParent);
+if (err == noErr) { // Pass to script for handling.
+    if (theScriptableObj)
+        err = ExecuteEventInContext(theEvent, theReply,
+                 theScriptableObj);
+    else
+        err = errAEEventNotHandled;
+    if (theToken)
+        gScriptAdministrator-&gt;ReleaseAttachedScript
+            (theToken-&gt;GetTokenObj(), savedParent);
+}</pre>
+<p>
+<img src="img/237.gif" width="335 px"></img>
+</p>
+<p>
+<b>Figure 5. </b>The script inheritance chain used in SimpliFace2
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;The script administrator function GetAttachedScript (Listing 2) is responsible for<br>
+adding the global variables script to the start of the inheritance chain by setting its<br>
+parent to the script of the target object. Here's how it works: First, it asks the<br>
+scriptable object that's the target for the Apple event message to deliver its attached<br>
+script. If there's no attached script, the parent of the global variables script is set to<br>
+be the shared handlers script. If the object does have an attached script, that script<br>
+becomes the parent of the global variables script. 
+</p>
+<p>
+<b>&nbsp;Listing 2. </b>TScriptAdministrator::GetAttachedScript
+</p>
+<pre>OSAError    TScriptAdministrator::GetAttachedScript (
+                       TScriptableObject* theObj,
+                       TScriptableObject* &amp;useObject,
+                       TScriptableObject* &amp;savedParent)
+{
+    OSAError        err = noErr;
+    OSAID           theObjScript = kOSANullScript;
+   
+    if (theObj)
+        theObjScript = theObj-&gt;GetObjScript();
+    if (theObjScript != kOSANullScript)
+        err = StartUsing(theObj, savedParent);
+    else   // If target has no script, new parent is shared handlers.
+        err = StartUsing(NULL, savedParent);
+    if (err != noErr)
+        useObject = NULL;
+    else
+        useObject = this;   // If OK, return global variables script.
+    return err;
+}</pre>
+<p>
+GetAttachedScript returns the ID of the global variables script so that the prehandler<br>
+can send the Apple event to the inheritance chain that the script now starts. The global<br>
+variables script receives the Apple event message in the function<br>
+ExecuteEventInContext, called from the prehandler. The StartUsing function in Listing<br>
+3, which is inherited by the script administrator from TScriptableObject, returns the<br>
+current parent of the script so that it can be saved for subsequent restoration by the<br>
+script administrator function ReleaseAttachedScript. 
+</p>
+<p>
+<b>Listing 3. </b>TScriptableObject::StartUsing
+</p>
+<pre>OSAError TScriptableObject::SetCurParent
+            (TScriptableObject* theParent)
+{
+    OSAError        err = noErr;
+    OSAID           newParentScriptID = GetParentScript();
+
+    if (fAttachedScript != kOSANullScript)
+        err = gScriptAdministrator-&gt;SetScriptParent
+                  (gScriptingComponent, fAttachedScript,
+                   newParentScriptID);
+    return err;
+}
+
+OSAError TScriptableObject::StartUsing (TScriptableObject* newParent,
+                               TScriptableObject* &amp;oldParent)
+{
+    oldParent = fParentObj;     // Returned in case it must be saved.
+    return SetCurParent(newParent);
+}</pre>
+<p>
+The parent of the global variables script must be saved and restored every time the<br>
+Apple event prehandler handles an Apple event. This is because Apple events are<br>
+dispatched recursively during the execution of scripts: you should assume that any<br>
+Apple event handler can be interrupting the processing of another Apple event. For the<br>
+same reason, if you need to set the resume/dispatch procedure differently in different<br>
+handlers you must carefully save and restore it each time. The sample code in<br>
+SimpliFace2 contains examples of how you might do this.
+</p>
+<p>
+SimpliFace2 also shows how you can make global variables persistent, by saving the<br>
+global variables script in a script file in the Preferences folder when the program<br>
+exits and reloading it when the program starts up again. The code to handle this is in<br>
+the script administrator routines SaveGlobalVariables and LoadGlobalVariables. 
+</p>
+<p>
+<b>A RUN HANDLER WRINKLE</b><br>
+Be aware of a wrinkle: If you ever intend to dispatch the Run ('oapp') Apple event to an<br>
+AppleScript inheritance chain, each script in the chain must contain a continue run<br>
+handler. 
+</p>
+<pre>on run
+    continue run
+end run</pre>
+<p>
+The reason for this is that when AppleScript compiles a script into a script context it<br>
+collects all the top-level statements in the script (those not contained in any handler)<br>
+into a default run handler, so that if the script is simply executed the top-level<br>
+statements will run. If there are no top-level statements, an empty run handler is<br>
+created. The trouble is, this default handler doesn't realize you want it to continue the<br>
+Run message, so the message will be caught and lost in the script, never to be seen<br>
+farther along in the inheritance chain. 
+</p>
+<h2>INHERITANCE IN OTHER OSA LANGUAGES</h2>
+<p>
+The inheritance scheme just described is specific to AppleScript scripts because it<br>
+relies on OSASetProperty to set up the inheritance chain. This call and others in the<br>
+AppleScript 1.1 API aren't part of the required OSA API, so not all scripting<br>
+components support them. If your program is to support inheritance in scripts<br>
+written in other OSA languages, it must take control of the message passing between<br>
+scripts in the chain at script execution time. 
+</p>
+<p>
+Your application can do this by simulating, entirely under program control, the<br>
+mechanism that AppleScript uses. Messages that aren't handled in a particular script<br>
+in the chain are passed along to the next script in the chain. If they're continued out of,<br>
+or not handled in, the chain, the program routes them to its standard Apple event<br>
+handlers. The drawback to this approach is that scripting becomes a little more rigid,<br>
+because handlers are resolved only toward the parent rather than wherever they are<br>
+in the chain. The advantage is that it will work with any OSA language that supports the<br>
+event handling API and the Subroutine Apple event, which is the message protocol<br>
+AppleScript uses to call subroutines.
+</p>
+<p>
+When your program's Apple event prehandler deals with an incoming Apple event<br>
+message by passing it to a script, it's responsible for manually redispatching messages<br>
+that aren't handled or that are continued along the inheritance chain. The SimpliFace2<br>
+routine ExecuteEventInContext (Listing 4) shows how to do this. The first and second<br>
+parameters to this routine are the Apple event and reply; the third parameter is the<br>
+scriptable object that is to handle the message. This routine is first called from the<br>
+prehandler, which passes it the scriptable object that starts the inheritance chain<br>
+(the object to which the message was originally sent). The scriptable object has a field<br>
+that's a reference to its parent object, which can be read using the accessor function<br>
+GetParentObj. If the current object has a parent, the routine sets the OSA<br>
+resume/dispatch procedure to be a recursive call to ExecuteEventInContext, passing<br>
+the address of the parent object as the reference constant. If the current object doesn't<br>
+have a parent (if the end of the chain has been reached), the routine sets the<br>
+resume/dispatch procedure to be the program's standard Apple event handler, ignoring<br>
+the prehandler. 
+</p>
+<p>
+If the Apple event message isn't handled in the script of the current object, the<br>
+routineOSADoEvent returns the error errAEEventNotHandled. At this point you must<br>
+manually redispatch the message, mirroring the OSA's resume/dispatch mechanism: if<br>
+the current object has a parent, you recursively call ExecuteEventInContext, passing<br>
+it the address of the parent object. If you've reached the end of the inheritance chain,<br>
+you simply call the program's standard Apple event handler.
+</p>
+<h2>WHERE YOU'VE BEEN, WHERE YOU'RE GOING</h2>
+<p>
+You've learned that implementing inheritance starts with choosing an appropriate<br>
+script inheritance hierarchy. With this hierarchy in mind, you can link scripts in an<br>
+inheritance chain, either by setting their parent properties (if you're working only<br>
+with embedded AppleScript scripts) or by directly controlling inheritance at script<br>
+execution time (if your program needs to support scripts in other OSA languages).<br>
+Then you're ready to create a shared handlers script and put it at the end of the<br>
+inheritance chain, making it the parent of all scripts, and (if you're working only<br>
+with AppleScript scripts) to add a global variables script to the start of the<br>
+inheritance chain where it can receive incoming messages and route them to the<br>
+correct targets. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 4. </b>ExecuteEventInContext
+</p>
+<pre>static pascal OSErr ExecuteEventInContext (AppleEvent *theEvent,
+           AppleEvent *theReply, TScriptableObject* theScriptableObj)
+{
+    OSAError    err = errAEEventNotHandled;
+    OSAID       theScriptID = kOSANullScript;
+   
+    if (theScriptableObj)
+        theScriptID = theScriptableObj-&gt;GetObjScript();
+    else if (gScriptAdministrator)
+        theScriptID = gScriptAdministrator-&gt;GetSharedScript();
+    if (theScriptID != kOSANullScript) { 
+                                      // Pass to script for handling.
+        AEHandlerProcPtr        oldResumeProc;
+        long                    oldRefcon;
+        TScriptableObject*      parentObj = NULL;
+        OSAGetResumeDispatchProc(gScriptingComponent,
+            &amp;oldResumeProc, &amp;oldRefcon);
+        if (theScriptableObj) {
+            parentObj = theScriptableObj-&gt;GetParentObj();
+            err = OSASetResumeDispatchProc(gScriptingComponent,
+                      (AEHandlerProcPtr)&amp;ExecuteEventInContext,
+                      (long)parentObj);
+        }
+        else
+            err = OSASetResumeDispatchProc(gScriptingComponent,
+                      kOSAUseStandardDispatch, kOSADontUsePhac);
+        if (err == noErr) {
+            err = OSADoEvent(gScriptingComponent, theEvent,
+                      theScriptID, kOSAModeAlwaysInteract, theReply);
+            if (err == errAEEventNotHandled) {
+                                            // Not handled in script.
+                if (theScriptableObj)   // Make recursive call.
+                    err = ExecuteEventInContext(theEvent, theReply,
+                              parentObj);
+                else   
+                    // Otherwise, dispatch directly to standard
+                    // handler.
+                    err = StdAEvtHandler(theEvent, theReply, 0);
+            }
+        }
+        OSASetResumeDispatchProc(gScriptingComponent, oldResumeProc,
+             oldRefcon);
+    }
+    return (OSErr)err;
+}</pre>
+<p>
+You've seen these techniques illustrated by the sample program SimpliFace2. You can<br>
+simply drop the classes from SimpliFace2 into your own programs, use them as the<br>
+basis of new programs, or use them as a guide to restructuring existing programs.<br>
+Armed with the information in this article and its predecessor, you should now be able<br>
+to implement an inheritance scheme for scripts in your own software.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>PAUL G. SMITH </b> (AppleLink COMMSTALK.HQ) took time out from his preferred<br>
+occupation of snoozing on a beach to write this article. He also occasionally takes time<br>
+out to write software for Full Moon Software Inc., provide consultancy services to<br>
+corporate clients, and watch his cat, Mack, dismember his Macintosh's mouse. He was<br>
+the lead developer of AgentBuilder and wrote ScriptWizard, the AppleScript debugger,<br>
+before he found his true, totally prone, calling. *
+</p>
+<p>
+<b>Thanks </b>to our technical reviewers Kevin Calhoun, Ron Karr, and Jeroen Schalk, and<br>
+to Lee Buck of Software Designs Unlimited.*
+</p>
+</body>
+</html>

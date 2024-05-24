@@ -1,0 +1,304 @@
+<html>
+<head>
+<!-- Article ID: 28 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 94 - Newton Q & A: Ask the Llama</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Newton Q &amp; A: Ask the Llama</h2>
+<h1>Newton Developer Techical Support</h1>
+<p>
+<b>Q</b><i> Here's something that's been puzzling me a bit: I want to pop up something like a</i><br>
+<i>copyright message for ten seconds when my application starts up. So I drew up a layout</i><br>
+<i>called Presents with a protoFloater containing all the necessary text. In my main</i><br>
+<i>layout is a link to Presents called presentsLink. The following is the viewShowScript</i><br>
+<i>for the topmost view in my application:</i>
+</p><p class="spacer">&nbsp;</p>
+<pre>func()
+begin
+    presentsLink:open();
+    AddDelayedAction(presentsLink:close(), nil, 10000)
+end</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<i>&nbsp;This says to me: open the linked view, wait ten seconds, and close it. And that's exactly</i><br>
+<i>what it does, except that after the view is closed, there's an exception. What am I doing</i><br>
+<i>wrong and how do I fix it?</i>
+</p>
+<p>
+<b>A </b>The short answer is that the second argument to the AddDelayedAction function is of<br>
+the wrong type. This argument is supposed to be an array of parameters to be passed to<br>
+the delayed function, and nil is not an array. The proper syntax for no arguments is&nbsp;&nbsp;[]<br>
+instead of nil.
+</p>
+<p>
+&nbsp;But there's more: Although the closure you supplied in the first argument works in<br>
+this case, you should get out of the habit of using that type of function call for delayed<br>
+or deferred actions. You're better off providing a full closure and sending in the view<br>
+you want closed, as in this:
+</p><p class="spacer">&nbsp;</p>
+<pre>func()
+begin
+    // Define a closure to use in the delayed action.
+    local myClose := func(whichView)
+          whichView:Close();
+
+    presentsLink:Open();
+    AddDelayedAction(myClose, [presentsLink], 10000);
+end</pre>
+<p>
+&nbsp;Unfortunately, things do not end there. You also need to make sure that the myClose<br>
+function is in internal RAM. The best way to do this is to use DefConst to define the<br>
+function:
+</p><p class="spacer">&nbsp;</p>
+<pre>// In your ProjectData file:
+DefConst('kDelayedClose, func(whichView) whichView:Close());
+
+// This changes the function above:
+func()
+begin
+    presentsLink:Open();
+    AddDelayedAction(EnsureInternal(kDelayedClose),
+          [presentsLink], 10000);
+end</pre>
+<p>
+&nbsp;However, there is an easier solution. Instead of doing a delayed action you can use the<br>
+view idle mechanism to do what you want. All you need to do is add a viewIdleScript and<br>
+viewIdleFrequency to the presentsLink top-level view. The viewIdleScript simply<br>
+sends a Close message. The viewIdleFrequency is set to the desired delay (10000 in<br>
+this case).
+</p>
+<p>
+&nbsp;The really short answer is that you can just use protoGlance. This proto has the<br>
+show-and- disappear behavior built in. You can set the viewIdleFrequency to 10000<br>
+to get the behavior you want.
+</p>
+<p>
+<b>Q</b><i> I have an alphabetically sorted list of items in a protoTable and I want to use</i><br>
+<i>protoa2z to quickly move through the table (like the cardfile overview). How do I do</i><br>
+<i>it?</i>
+</p>
+<p>
+<b>A </b>The first thing you need to do is find the index in the protoTable of the correct item<br>
+(that is, find the right item in the def.tabValues array of the protoTable). How you do<br>
+this will depend on what type of data you're representing. Then you can figure out how<br>
+high each item in the protoTable is, set the VOrg slot of the table to the correct line,<br>
+and force the protoTable to redraw. You probably want to make sure that you don't<br>
+scroll off the bottom of the table. Below is a method you can add to your protoTable that<br>
+will do what you want. You can then send the message from your a2zChanged method<br>
+(make sure you send the message to the protoTable).
+</p>
+<pre>func(index)
+begin
+    // Figure out the height of an item in the table.
+    local childHeight := if def.tabProtos.viewFont exists then
+          fontHeight(def.tabProtos.viewFont)
+    else
+          fontHeight(viewFont);
+
+    // Make sure that the table will not scroll off the end
+    // by calculating the index of the bottommost item that
+    // will be displayed.
+    local largestIndex := def.tabDown - ((:LocalBox().bottom -
+          :LocalBox().top) DIV childHeight) - 1;
+
+    // Use the bottommost item (largestIndex) to make sure
+    // the table has no empty space on the bottom.
+    vOrg := MIN(index, largestIndex);
+
+    // Now force the table to redraw.
+    :RedoChildren();
+end</pre>
+<p>
+<b>Q</b><i> I would like to use the protoa2z sample code in my application, but I can't figure out</i><br>
+<i>how to set the highlighted letter when the user scrolls through my data.</i>
+</p>
+<p>
+<b>A </b>It's easy once you realize that protoa2z is based on a protoPictIndexer. All you have<br>
+to do is a SetValue of the currIndex slot to the correct index. This will change the<br>
+highlighting of the protoa2z.
+</p>
+<p>
+&nbsp;Note that using SetValue will not call the IndexClickScript, but this is probably what<br>
+you want. If you do want it to be called, you'll have to manually unhighlight the current<br>
+selection, set the currIndex slot, and then highlight the new item. The appropriate code<br>
+would be
+</p>
+<pre>a2z:Unhilite();
+a2z.currIndex := newIndex;
+a2z:Hiliter(newIndex);</pre>
+<p>
+<b>Q</b><i> What is your quest?</i>
+</p>
+<p>
+<b>A </b>To answer the questions of those who develop for Newton.
+</p>
+<p>
+<b>Q</b><i> I tried to use a protoPictRadioButton in my application but the highlight rectangle</i><br>
+<i>isn't the right size. I know that I need to write some code to draw the correct-sized</i><br>
+<i>highlight, but where do I hook it in?</i>
+</p>
+<p>
+<b>A </b>Minimally you need to override the viewDrawScript of the protoPictRadioButton.<br>
+You may also want to change the viewFormat since it defaults to a thick<br>
+rounded-rectangle border. Assuming that you wanted some sort of rectangle highlight<br>
+around the selected button, you could use the following viewDrawScript:
+</p>
+<pre>func()
+begin
+    // If the button is selected, highlight it.
+    if viewValue then
+    begin
+    // Get the bounds of the protoPictRadioButton.
+    local b := :LocalBox();
+
+    // Inset the bounds.
+    b.top := b.top + 2;
+    b.left := b.left + 2;
+    b.bottom := b.bottom - 2;
+    b.right := b.right - 2;
+
+    // Now draw a rectangle.
+    :DrawShape(MakeRect(b.left, b.top, b.right, b.bottom), nil);
+    end;
+end</pre>
+<p>
+<b>Q</b><i> What is the AutoClose checkbox in the Newton Toolkit for? Why should I use it?</i>
+</p>
+<p>
+<b>A </b>The AutoClose flag causes all other AutoClose applications to be closed when your<br>
+application is clicked. The effect is that only one "auto-close" application can be open<br>
+at one time. You should <i>always</i>&nbsp;&nbsp;make your application auto-close,&nbsp;&nbsp;to help conserve<br>
+memory and other resources, unless it's providing special functionality to other<br>
+applications (like the built-in Calculator or Styles application).
+</p>
+<p>
+<b>Q</b><i> How do I create my own class of binary object?</i>
+</p>
+<p>
+<b>A </b>To get a binary object of your own class, you first need to create a binary object,<br>
+then change its class to your own. The easiest way to do this is to create a string that's<br>
+the same length as your intended binary object and then change (coerce) the class of<br>
+this new object to your own class. You can use the string class as your basic binary<br>
+object.
+</p>
+<p>
+&nbsp;Suppose you wanted to have a binary class called CharID for an ID consisting of four<br>
+ASCII characters. You could write a NewID function in your ProjectData file that would<br>
+create the object and optionally initialize it, like this:
+</p>
+<pre>// Define a constant for a default CharID object. This constant
+// can be cloned at run time. kDefaultCharIDObj will be a CharID
+// object with 4 bytes that are set to 0x00.
+DefConst('kDefaultCharIDOBj, SetClass(SetLength("", 4),
+         'CharID));
+
+// CharString is a string of 4 characters or nil.
+NewCharID := func(CharString)
+begin
+    // Create a binary object of the correct length.
+    local newObj := Clone(kDefaultCharIDObj);
+
+    // Optionally initialize it.
+    if CharString then
+    for i := 0 to 3 do
+          StuffChar(newObj, i, CharString[i]);
+
+    // Return the new object.
+    newObj;
+end;</pre>
+<p>
+&nbsp;To see this code in action, you can type it into the Inspector window in the Newton<br>
+Toolkit and evaluate it. Note that you cannot use DefConst in the Inspector since it's a<br>
+compile-time function. Just substitute the second argument in the DefConst function<br>
+for kDefaultCharIDObj in the function to evaluate it. Then you can try things like this:<br>
+<i><code>x := :NewCharID(nil);</code></i><br>
+<code>#440DD01 &lt;CharID, length 4&gt;</code><br>
+<i><code> ExtractChar(x, 2);</code></i><br>
+<code>&nbsp;#6 $\00</code><br>
+<i><code> x := NewCharID("abcd");</code></i><br>
+<code>&nbsp;#4410FC9 &lt;CharID, length 4&gt;</code><br>
+<i><code> ExtractChar(x, 2);</code></i><br>
+<code>&nbsp;#636 $c</code><br>
+<i><code> ExtractByte(x, 2);</code></i><br>
+<code>&nbsp;#18C 99</code>
+</p>
+<p>
+<b>Q</b><i> What is your favorite color?</i>
+</p>
+<p>
+<b>A </b>Llama fur beige.
+</p>
+<p>
+<b>Q</b><i> In my application I have a clPictureView that can display a variable number of</i><br>
+<i>pictures. Right now I create a bunch of picture slots in my application and then make</i><br>
+<i>another slot at run time that is an array of those items. There must be an easier way.</i>
+</p>
+<p>
+<b>A </b>You're right; there is an easier way. You can use the GetPictAsBits function in your<br>
+ProjectData file to read in the bitmaps. Note that you'll first have to open the resource<br>
+file that contains the pictures.
+</p>
+<pre>// Open the resource file that contains the pictures.
+// Assumes the file "Pictures" exists in the project folder.
+r := OpenResFileX("Pictures");
+
+// Get an array of pictures.
+myPictures := [
+    GetPictAsBits("TARDIS", nil),
+    GetPictAsBits("Planet", nil)
+];
+
+// Now close the resource file.
+CloseResFileX(r);</pre>
+<p>
+&nbsp;Once you have the myPictures array, you can create a slot of type Evaluate and just<br>
+type "myPictures" in the editor for the slot. Then you can use SetValue to set the icon<br>
+slot of the clPicture view to one of the elements of the array.
+</p>
+<p>
+<b>Q</b><i> How do I put my own default person in the fax information slip?</i>
+</p>
+<p>
+<b>A </b>You can set up a default person in your SetupRoutingSlip method, which is called<br>
+before the fax slip is shown. The argument to that method is used to set up the<br>
+particular routing slip. In the case of a fax slip, there's a slot called "alternatives"<br>
+which is an array of cardfile entries for the possible people to fax to. If there's just<br>
+one entry, that's the person. The fax number will be set from the cardfile entry. So<br>
+your SetupRoutingSlip method would look like this:
+</p>
+<pre>func(fields)
+begin
+    // Check for a fax.
+    if fields.category = 'faxSlip then
+    fields.alternatives := SmartCFQuery("Llama");
+    // Do other stuff here, like put a title for the out box.
+end</pre>
+<p>
+&nbsp;Note that the fields.category is set to the same value you set in the routeSlip slot of a<br>
+frame in your application's entry in the global routing frame. The SmartCFQuery<br>
+function returns an array of cardfile entries that have strings starting with the string<br>
+passed in.
+</p>
+<p>
+<b>Q</b><i> I noticed that every soup entry has a _uniqueID slot. Just how unique is it?</i>
+</p>
+<p>
+<b>A </b>The _uniqueID slot is only unique within that soup on that particular store. The ID<br>
+will never be reused in that soup on that store. However, it's not necessarily unique<br>
+across stores (say, RAM and a PCMCIA card).
+</p>
+<p>
+<b>Q</b><i> What is the ground velocity of an unladen llama climbing a 5% grade?</i>
+</p>
+<p>
+<b>A </b>What do you mean -- Mexican or Venezuelan?
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>The llama is </b><b>Thanks </b><b>Have more questions?</b>
+</p>
+</body>
+</html>

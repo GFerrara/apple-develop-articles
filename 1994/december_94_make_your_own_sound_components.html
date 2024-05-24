@@ -1,0 +1,727 @@
+<html>
+<head>
+<!-- Article ID: 60 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 94 - Make Your Own Sound Components</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Make Your Own Sound Components</h1>
+<h2>Kip Olson</h2>
+<p>
+<img src="img/270.gif" width="192 px"></img>
+</p>
+<p>
+<i>Sound Manager 3.0, Apple's current audio software release, has an extensible</i><br>
+<i>architecture based on sound components that makes it easy for developers to add</i><br>
+<i>support for third-party audio hardware and any compressed audio format. Inside</i><br>
+<i>Macintosh: Sound gives the theory of how to do this; this article illustrates how to</i><br>
+<i>implement the theory, with examples of a sound output component and a sound</i><br>
+<i>decompression component.</i>
+</p>
+<p>
+Since its release as a system extension in June 1993, Sound Manager 3.0 has offered<br>
+developers the possibility of obtaining high-quality digital audio output from the<br>
+Macintosh using third-party audio hardware and any compressed audio format. Sound<br>
+Manager 3.0 is now built into all shipping Macintosh computers and is fully integrated<br>
+into System 7.5. QuickTime 2.0 also takes advantage of new Sound Manager features to<br>
+provide an even higher level of audio support for multimedia applications.<br>
+"Somewhere in QuickTime: What's New With Sound Manager 3.0" in <i>develop</i> Issue 16<br>
+gives a brief sketch of Sound Manager 3.0 and the new vistas it open.
+</p>
+<p>
+The Sound Manager architecture and the sound component programming interface are<br>
+described in detail in <i>Inside Macintosh: Sound</i>. What you won't find there is an<br>
+illustration of how Sound Manager features are implemented in practice. This article<br>
+fills that gap by offering two examples of sound components. On this issue's CD you'll<br>
+find NoiseMaker, a sound output component, and MewLaw, a sound decompression<br>
+component. After briefly describing how Sound Manager 3.0 works, I'll explain how to<br>
+make a sound output component and a sound decompression component, with reference<br>
+to these examples.
+</p>
+<h1>HOW SOUND MANAGER 3.0 WORKS</h1>
+<p>
+Sound Manager 3.0 uses an architecture based on sound components to process audio<br>
+samples for playback. A sound component is a software module that performs a specific<br>
+task, usually some kind of audio processing like decompression, rate conversion,<br>
+sample format conversion, or mixing. Sound components use the Component Manager<br>
+for registration, loading, and execution.
+</p>
+<p>
+Figure 1 diagrams a typical sound playback scenario and the sound components that are<br>
+used. Basically, the sequence is as follows: When an application wants to produce a<br>
+sound, it calls the Sound Manager to open a sound channel and play the sound. In<br>
+response the Sound Manager creates a chain of sound components for this channel,<br>
+where each component performs a specific operation on the audio data. The Sound<br>
+Manager passes the audio data to the first component in the chain, which can be a<br>
+decompression component if the data is compressed, a format conversion component if<br>
+the sample size needs to be changed, or a rate conversion component if the sample rate<br>
+needs to be adjusted. These components can be applied in series to completely process<br>
+the audio data into the required format. The mixer component then sums all these audio<br>
+streams together and provides a single audio source for the sound output component,<br>
+which uses hardware to convert it to an audible sound.
+</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h2></h2><img src="img/271.gif" width="600 px"></img>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p><p class="spacer">&nbsp;</p><p class="spacer">&nbsp;</p><p class="spacer">&nbsp;</p><p class="spacer">&nbsp;</p><p class="spacer">&nbsp;</p><p class="spacer">&nbsp;</p>
+<h2>Figure 1. A typical playback scenario</h2>
+<p>
+The sound output component (sometimes called the sound output device component or<br>
+the output device component) is a software module that identifies, controls, and plays<br>
+audio samples on some audio hardware device. This device can be a plug-in audio board,<br>
+a telecommunications pod, or just about anything else that can play sound. Apple<br>
+provides a sound output component for the built-in audio hardware on every Macintosh<br>
+except the Macintosh Plus, SE, and Classic machines.
+</p>
+<p>
+All the sound output components installed on a Macintosh have icons displayed in the<br>
+Sound control panel that ships with Sound Manager 3.0. The user selects which sound<br>
+output component to play sounds with by clicking an icon. Figure 2 shows a situation<br>
+where two sound output components are available: the standard built-in Macintosh<br>
+sound output component and our example sound output component, NoiseMaker.
+</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h2></h2><img src="img/272.gif" width="498 px"></img>
+<h2>Figure 2. The Sound control panel</h2>
+<p>
+When the Sound Manager wants to play a sound, it opens the selected sound output<br>
+component and sends it commands to start playing the sound. The component is closed<br>
+when sound playback is completed. The sound output component is responsible for<br>
+opening a mixer component, which handles the complicated work of allocating chains of<br>
+sound components and processing the audio data. Our example sound output component,<br>
+NoiseMaker, shows how this works.
+</p>
+<p>
+Apple provides sound components for mixing, rate conversion, sample format<br>
+conversion, and decompression. In addition, sound components can be defined to expand<br>
+compressed audio from any other format into a format that can be used by other<br>
+components and played by the hardware. Our example decompression component,<br>
+MewLaw, illustrates this.
+</p>
+<h1>MAKING A SOUND OUTPUT COMPONENT</h1>
+<p>
+Now I'll explain how to make your own sound output component, using NoiseMaker as<br>
+an example. NoiseMaker doesn't actually control an audio hardware device but rather<br>
+plays sounds using normal Sound Manager routines. It can be installed on any<br>
+Macintosh running Sound Manager 3.0 and is meant to be used as a template to manage<br>
+your own audio hardware.
+</p>
+<p>
+Here's how NoiseMaker works: The NoiseMaker component is loaded at system startup<br>
+if the Register method called at that time indicates that the corresponding hardware is<br>
+available. When the Sound Manager plays a sound using NoiseMaker, it first calls the<br>
+Open method to open the component, followed by a call to the InitOutputDevice method<br>
+to have NoiseMaker do any hardware initializations and open a mixer component. It<br>
+then calls the PlaySourceBuffer method to start the sound playing. When the sound has<br>
+finished playing, the Sound Manager calls the Close method to have NoiseMaker release<br>
+the audio hardware and dispose of any memory it created.
+</p>
+<p>
+I'll refer to NoiseMaker as I describe how to register a sound output component, the<br>
+structure of a sound output component, the dispatcher, and the methods and interrupt<br>
+routine that must be implemented.
+</p>
+<h2>REGISTRATION AND LOADING</h2>
+<p>
+In order for a sound component to be recognized by the Sound Manager, it must be<br>
+registered with the Component Manager. This is most easily done by creating a file of<br>
+type 'thng' containing a 'thng' resource that describes your sound component. When you<br>
+place this file in the Extensions folder, the Component Manager will automatically load<br>
+the sound component every time the Macintosh starts up. Listing 1 is a 'thng' resource<br>
+describing our example sound output component.
+</p>
+<p>
+<b>Listing 1. </b>The 'thng' resource for NoiseMaker
+</p>
+<pre>#define cmpWantsRegisterMessage   (1 << 31)
+#define componentDoAutoVersion    (1 << 0)
+#define kNoiseMakerVersion        0x00010000
+#define kNoiseMakerComponentID    128
+
+resource 'thng' (kNoiseMakerComponentID, purgeable) {
+   'sdev',                             // sound output component type
+   'NOIS',                             // subtype of this component
+   'appl',                             // manufacturer
+   cmpWantsRegisterMessage, 0,         // component flags
+   'proc', kNoiseMakerComponentID,     // code resource
+   'STR ', kNoiseMakerComponentID,     // component name
+   'STR ', kNoiseMakerComponentID+1,   // component description
+   'ICON', kNoiseMakerComponentID,     // component icon
+   kNoiseMakerVersion,                 // component version
+   componentDoAutoVersion,             // registration flags
+   0, 0                                // icon family ID, platform
+};</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>For full details on the 'thng' resource, </b>see the Component Manager<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;documentation in <i>Inside Macintosh: More Macintosh Toolbox</i>.*
+</p>
+<p>
+The component type and subtype in the 'thng' resource identify the component so that<br>
+the Sound Manager can find it. The subtype must be unique for each hardware device<br>
+connected and must contain at least one uppercase character (Apple has dibs on<br>
+all-lowercase types); it's usually advisable to use an application creator type that has<br>
+been registered with Apple's Developer Support Center to avoid conflicts with other<br>
+companies. Similarly, the manufacturer name should identify your company and must<br>
+contain at least one uppercase character; in our example, Apple is the manufacturer so<br>
+we can get away with using all lowercase letters.
+</p>
+<p>
+Setting the cmpWantsRegisterMessage bit in the component flags causes the Component<br>
+Manager to call the sound component with the Register method during the startup<br>
+process so that the component can determine whether its hardware is available (more<br>
+on this later). The code resource is the resource type and ID of the code that<br>
+implements your component. The component description is a string that describes the<br>
+function of the component to the user. The component name and component icon are<br>
+used in the Sound control panel, as shown in Figure 2.
+</p>
+<p>
+The component version and the registration flags are used by the Component Manager<br>
+during loading to determine whether this component should replace an existing one. If<br>
+the componentDoAutoVersion bit is set in the registration flags, the Component<br>
+Manager will install this component only if the version given here is greater than for<br>
+any other existing component.
+</p>
+<p>
+The icon family ID and platform fields aren't used by our component.
+</p>
+<h2>THE COMPONENT'S STRUCTURE</h2>
+<p>
+Sound output components use the standard format required by the Component Manager.<br>
+The main entry point is a dispatcher, which uses a selector to call the appropriate<br>
+subroutines (methods). The standard Component Manager methods must be supported,<br>
+along with a number of additional methods defined for sound output components. The<br>
+sound output component also contains an interrupt routine that functions as its<br>
+heartbeat.
+</p>
+<p>
+Sound output components can create globals that are passed to each method. In addition,<br>
+there can be one set of global variables that the Component Manager maintains even<br>
+when the sound output component is closed, which is useful for storing state<br>
+information. (More about this later when I describe the InitOutputDevice method.)
+</p>
+<h2>THE DISPATCHER</h2>
+<p>
+The first routine in the component is the dispatcher, which uses a given selector to<br>
+call the appropriate method. Selectors used by the dispatcher have three ranges,<br>
+described in Table 1.
+</p>
+<p>
+<img src="img/273.gif" width="600 px"></img>
+</p>
+<p>
+A number of methods are defined for sound components that don't need to be<br>
+implemented by every type of sound component. For example, the method<br>
+SoundComponentAddSource is used only by mixer components and shouldn't be<br>
+implemented by sound output components. When a component receives a selector that it<br>
+doesn't support but that can be delegated, it should delegate that selector to its source<br>
+component and let that component take care of it.
+</p>
+<p>
+Listing 2 is the dispatcher from our example sound output component. This dispatcher<br>
+calls an internal utility routine called GetComponentRoutine that returns the address<br>
+of the routine to call based on the selector. If the sound output component doesn't<br>
+implement a method, it returns kDelegateComponentCall (-1) as the routine address,<br>
+which is a flag that this method should be delegated. If the routine returns nil, this is a<br>
+nondelegatable selector not supported by this component, and an error should be<br>
+returned. Otherwise, this is a valid method address and the method should be called.
+</p>
+<p>
+<b>Listing 2. </b>The dispatcher from NoiseMaker
+</p>
+<pre>#define kDelegateComponentCall   -1
+
+pascal ComponentResult NoiseMaker(ComponentParameters *params,
+                                    GlobalsPtr globals)
+{
+   ComponentRoutine   theRtn;
+   ComponentResult      result;
+
+   // Get address of component routine.
+   theRtn = GetComponentRoutine(params-&gt;what);
+
+   if (theRtn == nil)
+      // Selector isn't implemented.
+      result = badComponentSelector;
+   else if (theRtn == kDelegateComponentCall)
+      // Selector should be delegated.
+      result = DelegateComponentCall(params,
+         globals-&gt;sourceComponent);
+   else
+      // Call appropriate method.
+      result = CallComponentFunctionWithStorage((Handle) globals,
+                     params, (ComponentFunctionUPP) theRtn);
+   return (result);
+}</pre>
+<h2>STANDARD COMPONENT MANAGER METHODS</h2>
+<p>
+The Component Manager requires that every sound component implement five standard<br>
+methods, as listed in Table 2. I'll describe each of these methods here; look at the<br>
+NoiseMaker code to see them in practice.
+</p>
+<p>
+<img src="img/274.gif" width="600 px"></img>
+</p>
+<p>
+The Open method is the first method called when a component is opened. This method<br>
+must create the component globals and store them with the Component Manager, which<br>
+will then pass these globals to all subsequent methods. While this sounds fairly simple<br>
+to implement, there are a number of nuances that frequently escape the attention of<br>
+component writers and wreak havoc; read "Pitfalls of the Open Method" and be<br>
+forewarned!
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PITFALLS OF THE OPEN METHOD</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Implementing the Open method can be straightforward if you watch out for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;some common pitfalls. Most important, <i>do not access or even look for your</i><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>hardware in the Open method! </i>There is a separate method (InitOutputDevice)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for initializing hardware. The Open method should only allocate instance<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;globals and return. There are two reasons for this:
+</p>
+<ul>
+<li style="margin-left: 70px;">If you access hardware in the Open method that isn't available, you<br>
+might crash or make bad assumptions. The possibility that you might<br>
+try to access hardware that isn't available is a real one because the<br>
+Component Manager calls the Open method before it calls the method<br>
+that checks to see whether your hardware is installed (the Register<br>
+method).</li>
+<li style="margin-left: 70px;">Sometimes the component is opened when sound is already playing,<br>
+to get status information like sample rates and sizes. For instance, the<br>
+Sound control panel does this to display hardware settings to the user.<br>
+Resetting or changing hardware in any way during this kind of Open<br>
+component operation would obviously be disruptive to the sound.</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Another tricky interaction with the Component Manager comes into play when<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;you're trying to decide where to create the component globals. Because the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sound output component is shared by all applications that are playing sound,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the Component Manager will attempt to load the component in the system heap.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;In this case, your component should create its globals in the system heap as<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;well, so you aren't dependent on any application heaps.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;However, if the Component Manager can't find enough space in the system heap<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to load the component, it will load it in the application heap. In this case,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;you'll want to create your globals in the application heap as well.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The Component Manager gives you a way to determine where you should create<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;your globals. The call GetComponentInstanceA5 returns the A5 world for the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;component. If it returns 0, the component was loaded in the system heap and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the globals should go there as well; otherwise, the component is in the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;application heap and the globals should also be created there. The NoiseMaker<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;code shows how this works. The Close method is called to release all memory<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;allocated and all hardware set up by the component. If the Open method fails<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for some reason and returns an error, the Component Manager calls the Close<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;method. This means the Close method must always check to see if there are<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;valid globals before using or disposing of them. The Close method also must not<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;access the hardware unless the InitOutputDevice method has been called, for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the same reasons described in "Pitfalls of the Open Method."
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+The CanDo method is used to determine whether a selector is implemented by this<br>
+component. In our example code, the CanDo method calls the internal utility routine<br>
+GetComponentRoutine to determine whether a selector is implemented.
+</p>
+<p>
+The Version method returns the version of the component, specified as a fixed-point<br>
+number. If you're using the auto-version feature of the 'thng' resource, this version<br>
+must agree with the one specified there.
+</p>
+<p>
+If the cmpWantsRegisterMessage bit is set in the component flags of the 'thng'<br>
+resource, the Register method is called by the Component Manager at startup time so<br>
+that you can see if your hardware is installed and determine whether your component<br>
+should be loaded. Typically, the Register method should just try to find your hardware.<br>
+If it's successful, it should return 0; if not, it should return 1, in which case the<br>
+component won't be registered and won't show up in the Sound control panel. Note that<br>
+the Open method is always called before the Register method.
+</p>
+<h2>OUTPUT COMPONENT METHODS</h2>
+<p>
+In addition to the standard Component Manager methods just described, the sound<br>
+output component must support the methods listed in Table 3. Again, I'll describe these<br>
+methods here and leave it up to you to take a look at how they're implemented in the<br>
+NoiseMaker code.
+</p>
+<p>
+<img src="img/275.gif" width="600 px"></img>
+</p>
+<p>
+The InitOutputDevice method is called by the Sound Manager after it opens the<br>
+component to set up the hardware. This method should initialize the output hardware to<br>
+a known state and then set the hardware to the default settings stored in the<br>
+component's permanent globals. "Managing Sound Component Preferences" describes<br>
+an easy way to manage permanent globals.
+</p>
+<p>
+<b>MANAGING SOUND COMPONENT PREFERENCES</b>
+</p>
+<p>
+Sound Manager 3.0 provides an easy way to save and recall preferences for your sound<br>
+component. It maintains a file called Sound Preferences in the Preferences folder and<br>
+provides two routines to manage this file: SetSoundPreference and<br>
+GetSoundPreference.
+</p>
+<pre>pascal OSErr SetSoundPreference(OSType type,
+   Str255 name, Handle settings);</pre>
+<p>
+The SetSoundPreference routine saves a handle of data in the Sound Preferences file<br>
+tagged with the OSType
+</p>
+<p>
+and name you provide. Typically, the name and type will be the same as your sound<br>
+component's.
+</p>
+<pre>pascal OSErr GetSoundPreference(OSType type,
+   Str255 name, Handle settings);</pre>
+<p>
+The GetSoundPreference routine retrieves a handle from the Sound Preferences file<br>
+based on the OSType and name provided. Typically, the name and type will be the same<br>
+as your sound component's, and you'll store the handle in the refCon of your<br>
+component, as shown below.
+</p>
+<pre>OSErr GetPreferences(ComponentInstance self, Handle prefsHandle)
+{
+   Handle                     componentName;
+   ComponentDescription      componentDesc;
+   OSErr                     err;
+
+   componentName = NewHandle(0);   // Space for name
+   if (componentName == nil)
+      return (MemError());
+
+   // Get name and subtype of sound component.
+   err = GetComponentInfo(self, &amp;componentDesc, componentName,
+      nil, nil);
+   if (err != noErr)
+      return (err);
+
+    // Get preferences for this component from file.
+   HLock(componentName);
+   err = GetSoundPreference(componentDesc.componentSubType,
+      *componentName, prefsHandle);
+   DisposeHandle(componentName);
+
+   // Keep preferences in component's refCon.
+   if (err == noErr)
+      SetComponentRefcon(self, (long) prefsHandle);
+   return (err);
+}</pre>
+<p>
+The InitOutputDevice method must also open a sound mixer component that will be its<br>
+source for all further sound operations. The mixer does all the hard work of<br>
+maintaining separate chains of sound components and calling back to the Sound Manager<br>
+to get more data, while mixing down all the sounds into the single stream of audio data<br>
+required by your sound output component. Your component simply has to specify the<br>
+type of sound it needs in the SoundComponentData structure, and the mixer will take<br>
+care of the rest.
+</p>
+<p>
+Listing 3 shows how NoiseMaker opens a mixer that will produce a 16-bit, stereo,<br>
+44.1 kHz sample stream. For 8-bit data, the format field must be kOffsetBinary,<br>
+while for 16-bit data, the format must be kTwosComplement. The sampleRate field<br>
+contains an unsigned fixed-point sampling rate in samples per second. The sampleSize<br>
+and numChannels fields specify sample size and the mono/stereo setting. The<br>
+sampleCount field specifies the size of the mixer's output buffer in samples. Every<br>
+time it's called, the mixer returns a buffer of this size that can then be copied directly<br>
+to the hardware buffers.
+</p>
+<p>
+<b>Listing 3. </b>NoiseMaker's InitOutputDevice method
+</p>
+<pre>pascal ComponentResult __InitOutputDevice(GlobalsPtr globals,
+                                                long actions)
+{
+#pragma unused (actions)
+
+   ComponentResult   result;
+   PreferencesPtr   prefsPtr;
+
+   // Open the mixer and tell it the type of data it should produce.
+   // The description includes sample format, sample rate, sample
+   // size, number of channels, and the size of your optimal
+   // interrupt buffer. If a mixer can't be found that will produce
+   // this type of data, an error is returned.
+
+   // Get settings from preferences.
+   prefsPtr = *globals-&gt;prefsHandle;
+
+   // Set to hardware defaults.
+   globals-&gt;hwSettings.flags = 0;
+   globals-&gt;hwSettings.format = (prefsPtr-&gt;sampleSize == 8) ?
+      kOffsetBinary : kTwosComplement;
+   globals-&gt;hwSettings.sampleRate = prefsPtr-&gt;sampleRate;
+   globals-&gt;hwSettings.sampleSize = prefsPtr-&gt;sampleSize;
+   globals-&gt;hwSettings.numChannels = prefsPtr-&gt;numChannels;
+   globals-&gt;hwSettings.sampleCount = kInterruptBufferSamples * 2;
+
+   // Open mixer that will produce this format.
+   result = OpenMixerSoundComponent(&amp;globals-&gt;hwSettings, 0,
+                  &amp;globals-&gt;sourceComponent);
+   if (result != noErr)
+      return (result);
+
+   // Set the hardware to these settings.
+   result = SetupHardware(globals);
+   if (result == noErr) {
+      // Hardware is ready to go.
+      globals-&gt;hwInitialized = true;
+      // Lock prefs so that we can use them at interrupt time.
+      HLock((Handle) globals-&gt;prefsHandle);
+   }
+
+   return (result);
+}</pre>
+<p>
+The GetInfo method returns information about the hardware settings. The information<br>
+returned is based on a four-character selector and is different for each selector; see<br>
+<i>Inside Macintosh: Sound</i> for the details. The SetInfo method changes hardware settings.<br>
+All sound output components must support the GetInfo and SetInfo selectors listed in<br>
+Table 4. All other selectors must be delegated to the mixer component.
+</p>
+<p>
+<img src="img/276.gif" width="600 px"></img>
+</p>
+<p>
+The PlaySourceBuffer method is used to begin playing a sound. This method has to first<br>
+delegate the call to the mixer to start it playing the sound and then make sure the<br>
+hardware is turned on before returning, by checking the kSourcePaused bit in the<br>
+actions parameter.
+</p>
+<p>
+Similarly, the StartSource method is used to begin playing a sound that has previously<br>
+been paused. In this case, the mixer isn't returning any data for this sound, and the<br>
+sound output component may have turned off the hardware if no other sounds were<br>
+playing. Like PlaySourceBuffer, this method has to first delegate the call to the mixer<br>
+to start it playing the sound again and then make sure the hardware is turned on before<br>
+returning.
+</p>
+<h2>THE INTERRUPT ROUTINE</h2>
+<p>
+The interrupt routine is the heartbeat of a sound output component. It's called<br>
+whenever the audio hardware needs to play another buffer of audio data. It's entirely<br>
+defined by the component, so it doesn't have a selector or a programming interface.<br>
+Still, all interrupt routines share the same common features.
+</p>
+<p>
+First, the interrupt routine should check to see whether any requests have been made<br>
+to change the hardware settings as a result of the SetInfo method. If so, the hardware<br>
+should be reset to the new settings. It's important to do this at interrupt time so that<br>
+the mixer can be synchronized to the new settings without a glitch in the sound.
+</p>
+<p>
+Second, the interrupt routine must make sure the mixer has provided a load of data. It<br>
+does this by checking the state of the SoundComponentData structure last returned by<br>
+the mixer and asking the mixer for more data if needed with the GetSourceData method,<br>
+described in the next section. Remember, the mixer always returns a buffer of the<br>
+same size, so it's a simple matter to copy the data to the hardware in fixed sizes. The<br>
+only exception occurs at the end of the sound, when it might not fill up an entire mixer<br>
+buffer. In this case, you should copy only as much data as the mixer returned.
+</p>
+<p>
+Finally, if the mixer has no more data, all sounds have completed playing and the<br>
+interrupt routine can turn off the hardware.
+</p>
+<p class="spacer">&nbsp;</p>
+<h1>MAKING A SOUND DECOMPRESSION COMPONENT</h1>
+<p>
+Sound components can also be defined to expand compressed audio into a form that can<br>
+be used by other components and played by the available hardware. The Sound Manager<br>
+tells a decompression component what format it should use for the data it produces so<br>
+that when a sound is played it will decompress to the correct sample size, sample<br>
+format, and number of channels. Our example sound decompression component,<br>
+MewLaw, decompresses audio data encoded in u-law format.
+</p>
+<p>
+When your sound decompression component is installed, the Sound Manager will be<br>
+able to automatically play sounds compressed in your format, so most applications will<br>
+be able to play your compressed sounds without any modification. To determine which<br>
+decompressor to call, the Sound Manager matches the compression format types stored<br>
+in AIFF files and 'snd ' resources (described in detail in <i>Inside Macintosh: Sound</i>)<br>
+against the subtype you specify in the 'thng' resource.
+</p>
+<p>
+The structure of a decompression component is similar to that of a sound output<br>
+component, with a few exceptions and some additional methods, described in the<br>
+following sections.
+</p>
+<h2>EXCEPTIONS TO THE OUTPUT COMPONENT MODEL</h2>
+<p>
+Because there is no hardware associated with a decompression component, no<br>
+initialization is needed beyond the Open call, and only one selector has to be<br>
+implemented for the GetInfo method. The 'thng' resource should have 'sdec' for a type<br>
+and your compression OSType for a subtype. The component flags must also be set to<br>
+describe your format, as documented in <i>Inside Macintosh: Sound</i>. The flags should<br>
+specify the data formats supported by your component in terms of the sample sizes,<br>
+sample formats, and number of channels that your component can handle.
+</p>
+<p>
+In the case of a sound decompression component, the GetInfo method returns<br>
+information about your compression algorithm. Your component needs to support only<br>
+the siCompressionFactor selector. The infoPtr parameter passed in will point to a<br>
+CompressionInfo data structure, which must be filled out with information describing<br>
+your compression algorithm. On entry, the format field of the CompressionInfo record<br>
+will contain the OSType of the compression format. The fields that you must fill out are<br>
+as follows:
+</p>
+<p>
+<img src="img/277.gif" width="498 px"></img>
+</p>
+<p>
+Just like in the output component, the PlaySourceBuffer method is called when the<br>
+Sound Manager needs to play a new sound. In the case of a sound decompression<br>
+component, though, your routine should clear out any pointers to the source data that<br>
+you're keeping. It should <i>not </i>reset your compression state variables, as this new<br>
+buffer is probably a continuation of a previous sound. Be sure to delegate this call to<br>
+your source component (the component immediately preceding yours in the chain)<br>
+before you return.
+</p>
+<h2>ADDITIONAL METHODS</h2>
+<p>
+Besides the methods supported by the sound output component, the sound<br>
+decompression component must support the methods listed in Table 5. MewLaw<br>
+demonstrates the use of these methods.
+</p>
+<p>
+<img src="img/278.gif" width="600 px"></img>
+</p>
+<p>
+The SetSource method is used by the Sound Manager to tell your component who to call<br>
+to get more data. The source field should be stored for later use; then the SetOutput<br>
+method should be called on this source to tell it the type of input needed by the<br>
+decompressor.
+</p>
+<p>
+The SetOutput method is used by the Sound Manager to tell your component what kind of<br>
+output to produce. A SoundComponentData record is passed in specifying the output the<br>
+Sound Manager is requesting. If your component can't produce data using this format,<br>
+it should set the actual field to the kind of output it can produce and return paramErr.<br>
+The Sound Manager will then try to convert your output to the format it needs.
+</p>
+<p>
+The GetSourceData method does the work of getting compressed data from the source,<br>
+decompressing the data into an internal buffer, and returning this buffer to the<br>
+component that called it. A couple of subtle features must be supported:
+</p>
+<ul>
+<li> If the source returns data that's already in the required output format, no<br>
+decompression needs to take place, and the source data pointer should be passed<br>
+back.</li>
+<li> If the source buffer is nil, that means that the Sound Manager is<br>
+requesting that the mixer produce silence for this channel, and your<br>
+component should just pass the data pointer through.</li>
+</ul>
+<p>
+If neither of these is the case, there is valid compressed source data that your routine<br>
+should decompress. First you have to decide whether the sound is playing in reverse<br>
+(that is, backward). Many applications (such as QuickTime applications) need to play<br>
+sounds backward. The Sound Manager supports this by setting a bit in the flags field of<br>
+the SoundComponentData record telling the components to play the sound backward.<br>
+Decompression can't go backward, but the decompression component can decompress<br>
+chunks of the sound starting at the end of the source buffer and working toward the<br>
+beginning. (Because the internal buffer is typically fairly small, decompression<br>
+components often need to decompress source data in chunks.) It passes these<br>
+decompressed chunks to the format conversion component, which takes care of actually<br>
+reversing the samples. The example code on the CD shows how this is done.
+</p>
+<p>
+Once you've determined the right source data to decompress, you simply call your<br>
+decompression routine, update the information in your SoundComponentData record,<br>
+and return a pointer to this record.
+</p>
+<p>
+The StopSource method is called when the Sound Manager needs to stop a sound from<br>
+playing. Your routine should clear out any pointers to the source data and reset all<br>
+compression state information. Be sure to delegate this call to your source component<br>
+before you return.
+</p>
+<p class="spacer">&nbsp;</p>
+<h1>PLAY ON</h1>
+<p>
+With Sound Manager 3.0 so widely available, you'll want to take advantage of the<br>
+support it offers for third-party audio hardware and for the full range of compressed<br>
+audio formats by making your own sound components. Look to <i>Inside Macintosh: Sound</i><br>
+for the technical details of how to proceed, and examine the code for NoiseMaker and<br>
+MewLaw to see examples of how it's done. Then start making some noises of your own!
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;REFERENCES</b>
+</p>
+<ul>
+<li style="margin-left: 70px;"><i>Inside Macintosh: More Macintosh Toolbox </i>(Addison-Wesley,<br>
+1993), Chapter 6, "Component Manager."</li>
+<li style="margin-left: 70px;"><i>Inside Macintosh: Sound</i> (Addison-Wesley, 1994), Chapter 5,<br>
+"Sound Components."</li>
+<li style="margin-left: 70px;">"Somewhere in QuickTime: What's New With Sound Manager 3.0"<br>
+by Jim Reekes,<i>develop</i> Issue 16.</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>KIP OLSON </b>received a watch for Christmas last year that records vertical feet skied.<br>
+To test it out, he had to abandon his post working on QuickTime at Apple while he went<br>
+on a two-month ski odyssey with his shredder-pal KON. When they weren't arguing<br>
+about unfair scoring on the Puzzle Page, they managed to rack up 537,460 vertical<br>
+feet in 340 runs over 28 days, a feat akin to skiing down Mt. Everest 18 times.
+</p>
+<p>
+<b>Thanks </b>to our technical reviewers Bob Aron, Ray Chiang, and Jim Reekes.
+</p>
+</body>
+</html>

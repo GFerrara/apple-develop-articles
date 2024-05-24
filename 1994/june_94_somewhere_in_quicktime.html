@@ -1,0 +1,355 @@
+<html>
+<head>
+<!-- Article ID: 20 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 94 - Somewhere in QuickTime</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>SOMEWHERE IN QUICKTIME</h1>
+<h2>Basic Movie Playback Support</h2>
+<h2>PETER HODDIE</h2>
+<p>
+<img src="img/172.gif" width="216 px"></img>
+</p><p class="spacer">&nbsp;</p>
+<p>
+Adding basic QuickTime movie playback support to most applications is simple, often<br>
+just one day's work. Developers who want to do this turn first to <i> Inside Macintosh:</i><br>
+<i>QuickTime</i> , where it says to use a movie controller component. In <i> Inside Macintosh:</i><br>
+<i>QuickTime Components,</i>&nbsp;&nbsp;you find some elementary movie controller code samples,<br>
+followed by a large reference section. This is usually enough to get started, but there<br>
+are a few common problems. This column addresses some of them, with special<br>
+attention to compatibility with future QuickTime releases. It assumes you're familiar<br>
+with basic QuickTime and movie controller concepts.
+</p>
+<p>
+<b>OPENMOVIEFILE</b><br>
+All QuickTime movie files contain a movie resource, usually stored in the file's<br>
+resource fork, and the actual movie data, stored in the file's data fork. To support<br>
+cross-platform QuickTime movies, QuickTime's Movie Toolbox also allows the movie<br>
+resource to be stored in the data fork along with the movie's data. (To learn&nbsp;&nbsp;how this<br>
+is done, see John Wang's Somewhere in QuickTime column in <i> develop </i> Issue 17.) The<br>
+usual sequence of calls to load a QuickTime movie from a file is: OpenMovieFile,<br>
+NewMovieFromFile, CloseMovieFile.
+</p>
+<p>
+In the common case of the movie resource stored in&nbsp;&nbsp;the resource fork, OpenMovieFile<br>
+returns a file reference to the resource fork of the movie file, NewMovieFromFile<br>
+loads the movie resource from that resource fork and creates a QuickTime movie, and<br>
+CloseMovieFile closes the resource fork.
+</p>
+<p>
+But if the movie was created on a computer running Microsoft Windows and QuickTime<br>
+for Windows (using AdobeTM Premiere, for example), the file won't have a resource<br>
+fork. Still, you can use the exact same sequence of calls. When OpenMovieFile is called,<br>
+the file reference returned refers to the data fork; NewMovieFromFile loads the movie<br>
+from the data fork, and CloseMovieFile closes the data fork.
+</p>
+<p>
+Some developers don't use OpenMovieFile; they use FSpOpenResFile instead. While this<br>
+works fine with movies made specifically for the Macintosh, it fails miserably<br>
+otherwise. There's a sample movie with no resource fork, QuickBuck, on this issue's<br>
+CD, so you can test this situation with your applications.
+</p>
+<p>
+If you need to know whether OpenMovieFile opened the resource fork or the data fork,<br>
+you can examine the file reference it returns, as follows:
+</p>
+<pre>pascal Boolean IsDataFork(short fileReference)
+{
+    FCBPBRec    anFCB;
+    Str63       fName;
+
+    anFCB.ioVRefNum = 0;
+    anFCB.ioRefNum = fileReference;
+    anFCB.ioFCBIndx = 0;
+    fName[0] = 0;
+    anFCB.ioNamePtr = (StringPtr)fName;
+
+    if (PBGetFCBInfoSync(&amp;anFCB) != noErr)
+        return false;
+
+    return (anFCB.ioFCBFlags &amp; 0x0200) == 0;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>NEWMOVIECONTROLLER</b><br>
+When you need a user interface for playing a movie, you should use<br>
+NewMovieController to create a movie controller appropriate for use with that movie.
+</p>
+<p>
+A common mistake is to instead use the Component Manager routine<br>
+FindNextComponent or OpenDefaultComponent to locate a movie controller. This finds<br>
+the first movie controller in the system's list of registered components. QuickTime has<br>
+always contained only one movie controller, so this worked fine. However, future<br>
+versions of QuickTime will almost certainly include other movie controllers, so the<br>
+first one isn't necessarily the most appropriate one.
+</p>
+<p>
+To help track down those offending applications that don't use NewMovieController,<br>
+there's a system extension on this issue's CD which contains a different movie<br>
+controller. You'll also find a movie, Other Controller Movie, that <i> should</i>&nbsp;&nbsp;invoke the<br>
+sample movie controller. If any other movie invokes the sample movie controller, or<br>
+if Other Controller Movie invokes the standard movie controller, the application<br>
+you're testing isn't using NewMovieController. This will cause undesirable results in<br>
+the not-so-distant future.
+</p>
+<p>
+<b>UPDATE EVENTS</b><br>
+If you use a movie controller in the recommended way (that is, you allow all events to<br>
+be filtered through MCIsPlayerEvent), it updates all areas of the window covered by<br>
+the movie and the movie's controls. Usually that's all a window contains, so all update<br>
+events are completely handled by the movie controller. This works so well that some<br>
+developers actually forget to support update events at all.
+</p>
+<p>
+Unfortunately, it's not always so simple. QuickTime movies aren't always rectangular.<br>
+If the movie is round and the window is rectangular (as in Figure 1), there are areas<br>
+in the window that are not covered by the movie or the movie controls. Any update<br>
+events in these areas are the responsibility of the application.&nbsp;&nbsp;&nbsp;&nbsp;
+</p>
+<p>
+<img src="img/173.gif" width="171 px"></img>
+</p>
+<p>
+<b>Figure 1.</b> A nonrectangular movie
+</p>
+<p>
+For applications using MCIsPlayerEvent, handling update events is easy:
+</p>
+<pre>BeginUpdate(theWindow);
+EraseRect(&amp;theWindow-&gt;portRect);
+EndUpdate(theWindow);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+This sample code erases all areas of the window besides the movie and its controls.<br>
+Normally, erasing the portRect of the window would erase the entire window, but<br>
+MCIsPlayerEvent sets the update region to just the areas it didn't already handle.
+</p>
+<p>
+If you don't handle update events, things are even worse than you might think. The<br>
+window won't be updated correctly, but more important, the operating system will<br>
+keep generating new update events. Update events have a higher priority than idle<br>
+events, so the system will never generate idle events -- the movie will receive no<br>
+time to play.
+</p>
+<p>
+A sample round movie is provided on this issue's CD so that you can test your handling<br>
+of update events.
+</p>
+<p>
+<b>KEYSTROKES</b><br>
+The standard movie controller provides for extensive keyboard control from the user<br>
+but ignores keystrokes by default. They can be enabled with a single line of code:
+</p>
+<pre>MCDoAction(mc, mcActionSetKeysEnabled, (void *)true);</pre>
+<p>
+You might want to enable keystrokes only under certain circumstances. For example, a<br>
+word processor might allow the movie controller to receive keystrokes only when a<br>
+movie is selected. You can use the mcActionSetKeysEnabled action to enable and disable<br>
+keystrokes as necessary. 
+</p>
+<p>
+<b>MOUSE CLICKS</b><br>
+All applications that use the standard movie controller pass mouse clicks on to the<br>
+controller. But not all applications pass mouse clicks made on the movie itself. Failure<br>
+to pass such clicks will cause problems with any future movie controllers that allow<br>
+the user to interact directly with the contents of the movie. For example, a movie<br>
+controller might allow the user to pan around the image by dragging on the movie; if<br>
+mouse clicks aren't passed through, using either MCClick or MCIsPlayerEvent, this<br>
+feature won't work.
+</p>
+<p>
+<b>MOVIE CONTROLLER HELP</b><br>
+The standard Apple movie controller is simple enough for most people to understand<br>
+immediately, but it supports help balloons anyway (future movie controllers might be<br>
+less obvious). If Balloon Help is turned on, the standard movie controller<br>
+automatically displays help for its various controls, as well as for the QuickTime<br>
+movie itself. You don't have to do anything at all for this to work.
+</p>
+<p>
+A problem can arise if your application puts up its own help balloons. Since QuickTime<br>
+movies are often embedded in a larger document, the help balloons may conflict. The<br>
+result is that the movie controller's help balloon alternates with the application's help<br>
+balloon. (Use Balloon Help with the Scrapbook desk accessory included with QuickTime<br>
+to see what this looks like.)
+</p>
+<p>
+The preferred solution is to stop the application from displaying a help balloon when<br>
+the cursor is over a QuickTime movie or movie control. It's easy to tell whether a<br>
+given point in a window intersects the movie:
+</p><p class="spacer">&nbsp;</p>
+<pre>Boolean PointInMovieController(MovieController
+        mc, WindowPtr w, Point where)
+{
+    RgnHandle   rgn;
+    Boolean     result = false;
+
+    rgn = MCGetWindowRgn(mc, w);
+    if (rgn != nil) {
+        result = PtInRgn(where, rgn);
+        DisposeRgn(rgn);
+    }
+    return result;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+A second solution is to stop the movie controller from displaying its help balloons --<br>
+necessary if you want to display your own help for QuickTime movies. To do this,<br>
+install an action filter on the movie controller. Every action that occurs in the movie<br>
+controller (play, step, update, key down, and so on) is passed through a single filter<br>
+function. Through this filter, an application can gain access to all activity that occurs<br>
+in the movie controller.
+</p>
+<p>
+The MegaMovies application on this issue's CD provides a window that displays events<br>
+that pass through the action filter. The action of interest is mcActionShowBalloon.<br>
+When this action is sent, QuickTime is about to put up a new help balloon. One of the<br>
+parameters passed to the action filter is a pointer to a Boolean. The filter can set this<br>
+Boolean to false to tell the movie controller not to show a balloon. The following code<br>
+fragments show how to install a simple action filter to prevent the movie controller<br>
+from displaying help balloons.
+</p><p class="spacer">&nbsp;</p>
+<pre>pascal Boolean noBalloonsActionFilter
+                (MovieController mc, short action,
+                 void *params, long refCon)
+{
+    if (action == mcActionShowBalloon)
+        *(Boolean *)params = false;
+    return false;
+}
+
+. . .
+MCSetActionFilterWithRefCon(mc,
+        &amp;noBalloonsActionFilter, 0);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>CURSOR SHAPE</b><br>
+Many applications change the shape of the cursor depending on what it's currently<br>
+over. The standard movie controller never changes the cursor, but other movie<br>
+controllers might want to. Unfortunately, many applications need to control the cursor<br>
+themselves -- when a movie controller changes the cursor, these applications change<br>
+it back immediately.
+</p>
+<p>
+A simple solution is for applications to change the cursor only when it's first placed<br>
+over a movie. (To determine whether a point is over the movie, use<br>
+PointInMovieController.) After that, let the movie controller control the cursor until<br>
+it exits the area&nbsp;&nbsp;over the movie. To give the movie controller the opportunity to<br>
+change the cursor's shape, you must call either MCIsPlayerEvent or MCIdle frequently<br>
+while the cursor is over the movie, even if the movie is stopped. The sample movie<br>
+controller on this issue's CD changes the cursor when it's over the movie, providing an<br>
+easy way to debug such a scheme.
+</p>
+<p>
+<b>WINDOW ALIGNMENT</b><br>
+A simple way to improve a QuickTime movie's playback performance is to ensure that<br>
+the movie is at a good location on the screen. The exact definition of a "good location"<br>
+varies, based on the screen depth and the processor. A typical good location is one<br>
+where the first pixel of each scan line begins on a long-word boundary. This allows the<br>
+decompressors to write data in the most efficientway. On slower machines, proper<br>
+placement can provide the necessary performance improvement to deliver smooth<br>
+playback.
+</p>
+<p>
+Fortunately, applications don't have to understand the details of how to find a good<br>
+location. QuickTime's Image Compression Manager provides routines to position a<br>
+window at these locations. When you create a window, you can use AlignWindow to<br>
+move it to a good location before making it visible. If a window is to be moved,<br>
+AlignScreenRect will modify the chosen location to make it a good location. When the<br>
+user drags a window, call DragAlignedWindow instead of DragWindow to place the<br>
+window in a good location. Examples of these calls are shown below.
+</p><p class="spacer">&nbsp;</p>
+<pre>WindowPtr   w;
+Movie       m;
+Rect            r;
+
+// Code to create a properly aligned window.
+w = GetNewCWindow(128, nil, (WindowPtr)-1);
+m = getMovie();
+GetMovieBox(m, &amp;r);
+AlignWindow(w, false, &amp;r, nil);
+
+// Code to drag a window with a movie in it and
+// keep the window aligned properly.
+GetMovieBox(m, &amp;r);
+DragAlignedWindow(w, theEvent.where, nil, &amp;r, nil);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+These alignment routines were added in QuickTime 1.5, so make sure that QuickTime<br>
+1.5 or later is installed before you call them.
+</p>
+<p>
+<b>MOVIE CONTROLLER EDITING</b><br>
+The standard movie controller supports the editing commands Undo, Cut, Copy, Paste,<br>
+and Clear, but this functionality is turned off by default. To turn it on, call<br>
+MCEnableEditing as follows:
+</p>
+<pre>MCEnableEditing(mc, true);</pre>
+<p>
+You can then use movie controller routines to implement editing:
+</p><p class="spacer">&nbsp;</p>
+<pre>Movie       m = nil;
+
+switch (editMenuSelection) {
+    case menuUndo:      MCUndo(mc);
+                            break;
+    case menuCut:       m = MCCut(mc);
+                            break;
+    case menuCopy:      m = MCCopy(mc);
+                            break;
+    case menuPaste: MCPaste(mc, nil);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Now you have to enable and disable the various menu items. You could call<br>
+MCGetControllerInfo, which returns a long word of flags indicating, among other<br>
+things, which Edit menu items should be enabled.With QuickTime 1.5, there's an<br>
+easier way: call MCSetUpEditMenu, and the movie controller will enable and disable<br>
+the items in the Edit menu for you.
+</p>
+<pre>MCSetUpEditMenu(mc, theEvent.modifiers, editMenuHandle);</pre>
+<p>
+<img src="img/174.gif" width="125 px"></img>
+</p>
+<p>
+Standard 
+</p>
+<p>
+<img src="img/175.gif" width="140 px"></img>
+</p>
+<p>
+Modified
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+This routine will even change the menu contents if appropriate. For example, Undo<br>
+becomes Undo Paste if the last movie controller action was Paste; after Undo Paste is<br>
+chosen, it becomes Redo Paste. What's more, if the user holds down modifier keys when<br>
+pulling down a menu, other commands change as well. For example, holding down the<br>
+Option key changes Paste to Add and Clear to Trim. (See Figure 2.)
+</p>
+<p>
+<b>Figure 2.</b> Standard and modified Edit menus
+</p>
+<p>
+MCSetUpEditMenu assumes the Edit menu is arranged in the standard way. If yours is<br>
+nonstandard, you'll need to use MCGetMenuString to obtain the appropriate text for<br>
+each standard Edit command, and then enable and disable the menu items according to<br>
+the information from MCGetControllerInfo.
+</p>
+<p>
+<b>JUST DO IT</b><br>
+It's so easy to add movie playback support that it's often well worth the effort. As long<br>
+as you keep these few simple things in mind, you shouldn't have any problems, even<br>
+with future versions of QuickTime.
+</p>
+<p>
+<b>PETER HODDIE </b>writes code to introduce hard-to-find bugs into QuickTime. In his<br>
+spare time he writes code to introduce even harder-to-find bugs into QuickTime. *
+</p>
+<p>
+<b>Thanks </b>to Jim Batson, Ken Doyle, and John Wang for reviewing this column. *
+</p>
+</body>
+</html>

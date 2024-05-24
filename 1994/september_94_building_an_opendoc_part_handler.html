@@ -1,0 +1,652 @@
+<html>
+<head>
+<!-- Article ID: 34 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 94 - BUILDING AN OPENDOC PART HANDLER</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>BUILDING AN OPENDOC PART HANDLER</h2>
+<h1>KURT PIERSOL</h1>
+<p>
+<img src="img/214.gif" width="182 px"></img>
+</p>
+<p>
+<i>OpenDoc, Apple's compound-document architecture, brings users a new, more</i><br>
+<i>powerful metaphor for working with documents. Writing code to support OpenDoc is a</i><br>
+<i>lot like writing a normal application. This article gives an overview of what's involved</i><br>
+<i>in writing OpenDoc code and presents a simple working example.</i>
+</p>
+<p>
+OpenDoc provides a new way to write application code for the Macintosh and a number<br>
+of other desktop platforms. By following the OpenDoc guidelines, you can produce<br>
+applications that share files, windows, and interface elements seamlessly. The process<br>
+of writing an OpenDoc application, which we call a<i>part handler</i> , is much like writing<br>
+any Macintosh application. There are differences as well, of course, and this article<br>
+will help you understand them. 
+</p>
+<p>
+OpenDoc applications are designed to allow code from several sources to cooperate in<br>
+producing<i>compound documents</i> , documents that can embed almost any kind of content<br>
+inside them. Each piece of content in the document (each<i>part</i> ) includes its own part<br>
+handler, the code that's used to edit and view it. To achieve this, OpenDoc part handlers<br>
+must cooperate in a number of ways. They must sort out how events are passed, where<br>
+data is stored on the disk, and where drawing is allowed to occur on windows or printed<br>
+pages. 
+</p>
+<p>
+This article starts with a brief overview of OpenDoc and then talks about implementing<br>
+a simple part handler. It will show you the absolute basics, much as TESample does for<br>
+TextEdit in the Macintosh Toolbox. You'll learn about a simple example of building a<br>
+part handler, included on this issue's CD: a clock that can handle two different display<br>
+modes, digital and analog. The clock updates itself every second and allows the user to<br>
+select the display mode from a menu. 
+</p>
+<p>
+A quick caveat: The sample code provided on the CD is from the alpha version of<br>
+OpenDoc, but by the time you read this, a beta version should be available. When you<br>
+begin implementing your own part handler, you may find that some details of the API<br>
+have changed; however, the overall structure will be the same. The sample clock, for<br>
+instance, is specific to C++ and the alpha version of OpenDoc. The final version of<br>
+OpenDoc will be based on IBM's System Object Model (SOM), which will allow part<br>
+handlers to be written in a variety of languages, both object-oriented and procedural.<br>
+Similarly, the<i>XMP</i>&nbsp;&nbsp;prefix on OpenDoc class names (you'll see a lot of them in this<br>
+article) will be changed to<i>OD</i>&nbsp;&nbsp;beginning with the beta release. 
+</p>
+<p>
+This is perhaps a good time to mention a bit more about SOM. This technology is the<br>
+basic mechanism that OpenDoc part handlers use to communicate with one another.<br>
+SOM solves many hard problems associated with using object-oriented languages,<br>
+including those of subclassing across language boundaries, altering base classes under<br>
+dynamic linking, and long-term maintenance of object-oriented APIs. 
+</p>
+<h2>OVERVIEW OF OPENDOC</h2>
+<p>
+Before getting into the specifics of OpenDoc and how to write part handlers, we'll talk<br>
+about some of the basic services you'll see in OpenDoc and where your own code fits<br>
+into the OpenDoc architecture. 
+</p>
+<p>
+<b>PART HANDLERS</b><br>
+Part handlers are what provide OpenDoc with its ability to handle different kinds of<br>
+content in a single document. You, the developer community, will write the various<br>
+part handlers that plug into OpenDoc. 
+</p>
+<p>
+Part handlers are a lot like existing applications. They handle events, draw and print,<br>
+and read and store data onto disk. Every part handler provides a series of entry points<br>
+that allow OpenDoc to request any of these actions from the part handler. In addition,<br>
+the API has a number of "bookkeeping calls," which allow OpenDoc to provide undo<br>
+services and notify part handlers when their environment has changed. 
+</p>
+<p>
+Overall, there are about 50 calls in the OpenDoc part API that a part needs to<br>
+implement. This is a lot, but it actually maps fairly closely with the number of things<br>
+you'd have to do to write any Macintosh application. In addition, you can ignore many of<br>
+these calls in many cases. For instance, if you don't allow embedding of other parts<br>
+within your part, there are about ten calls that you can safely ignore. If you don't<br>
+update your display asynchronously, but simply wait for update calls, there are<br>
+additional calls that you can ignore. In many typical cases, this means that you can<br>
+build a part handler very quickly from existing code. 
+</p>
+<p>
+Part handlers are packaged as shared libraries in the Macintosh version of OpenDoc.<br>
+This won't always be the case on other OpenDoc platforms, but you can count on the API<br>
+being the same on all platforms. The alpha version of OpenDoc uses the Apple Shared<br>
+Library Manager to dynamically link your part handler into OpenDoc, while the beta<br>
+version will use SOM. These versions will have different linker behavior but will<br>
+essentially require the same basic packaging of your code: a shared library. 
+</p>
+<p>
+In either case, you'll find that OpenDoc is an object-oriented API. That means you'll be<br>
+talking to OpenDoc objects, and your part handler will itself be an OpenDoc object (or<br>
+set of objects). This doesn't mean that your code has to be built from the ground up in<br>
+C++, though. SOM will provide interfaces to many languages, including C. 
+</p>
+<p>
+Because part handlers are themselves objects, we often refer to them as "part objects"<br>
+or "parts" in conversation. In fact, what the user would call a "part" in a document is<br>
+really the combination of some persistent data stored in the document file and a set of<br>
+objects that OpenDoc uses to display and manipulate the stored data. OpenDoc chooses<br>
+appropriate part handlers based on the type of data stored in the document. 
+</p>
+<p>
+<b>RUNTIME OBJECTS</b><br>
+As we describe how to write a part handler, we'll mention some runtime objects that<br>
+interact with your code. In OpenDoc, these objects can be located at run time using the<br>
+session object (XMPSession), to which your part object will be given a pointer when<br>
+it's initialized. The session object is very important because it's your link to the rest<br>
+of the OpenDoc objects that are running in the document. 
+</p>
+<p>
+There's a whole list of objects that the session object makes available. Of these, only<br>
+three will be important for the purposes of this article: the arbitrator, the<br>
+dispatcher, and the undo stack.
+</p>
+<ul>
+<li>The<i> arbitrator</i>  is an object of class XMPArbitrator. The arbitrator for a<br>
+session is the place where part handlers register their ownership of certain<br>
+resources. The menu bar, the keystroke stream, and the current selection are<br>
+all examples of resources that the arbitrator tracks.</li>
+<li> The<i> dispatcher</i> is the object that dispatches events to the various part<br>
+handlers. It's an object of class XMPDispatcher. It's used in our example as a<br>
+way to register for background time. </li>
+<li> The<i> undo stack</i> is an object of class XMPUndo that allows OpenDoc to<br>
+support multilevel undo across part handler boundaries. </li>
+</ul>
+<p>
+Each of these objects will be discussed as it's encountered. 
+</p>
+<h2>A RUNNING START</h2>
+<p>
+To give you a running start, we've built a small object-oriented framework for parts<br>
+that implements the direct interface to OpenDoc. This framework is a precursor to the<br>
+new part handler framework that Apple is building, and is included here simply as<br>
+sample code. Our sample clock uses this framework. The good thing about the<br>
+framework is that it clearly separates the work that any part handler must do to be<br>
+OpenDoc compliant from the specific work performed in putting up a clock. 
+</p>
+<p>
+The framework divides the work of a part into three objects: a frame object, a facet<br>
+object, and a part object. OpenDoc itself doesn't require that you create anything but a<br>
+part object, but for the sake of clarity the framework divides the labor among several<br>
+smaller objects. For easy reference, here's a list of the classes we'll be discussing<br>
+throughout the article and their corresponding source files, included on the CD:
+</p>
+<pre>    CPart       FWPart.h, FWPart.cpp
+    CFrame      FWFrame.h, FWFrame.cpp
+    CFacet      FWFacet.h, FWFacet.cpp
+    CClockPart  ClockPar.h, ClockPar.cpp
+    CClockFrame ClockFra.h, ClockFra.cpp
+    CClockFacet ClockFac.h, ClockFac.cpp</pre>
+<p>
+The classes defined by the framework generally start with the letter<i>C</i> , hence the<br>
+classes CPart, CFrame, and CFacet. These three parts are helper objects for three<br>
+OpenDoc classes, XMPPart, XMPFrame, and XMPFacet. XMPPart objects are OpenDoc<br>
+part handlers: you'll subclass XMPPart when writing your own. OpenDoc uses the<br>
+frame and facet objects to help part handlers lay themselves out in a window. How<br>
+these classes work together is probably the single most complex thing to understand in<br>
+OpenDoc. 
+</p>
+<p>
+XMPPart, the class from which part handlers are derived, is simply the base class of<br>
+every OpenDoc part handler. It's the class that actually handles the drawing, editing,<br>
+and storage. Every part handler is an implementation of some subclass of XMPPart. 
+</p>
+<p>
+CPart, in the framework, is a class derived from XMPPart. It's just a default<br>
+implementation of the basic XMPPart behavior. As such, CPart is a treasure trove of<br>
+information about the correct way to "ignore" calls that aren't interesting because<br>
+your part handler doesn't support embedding, update asynchronously, or use offscreen<br>
+bitmaps. 
+</p>
+<p>
+Every part is embedded in another part, with the exception of the<i>root part,</i>&nbsp;&nbsp;the<br>
+top-level part in each compound document. When a part is embedded in another part,<br>
+there's an object that's used to store information about the shape of the embedded part.<br>
+This boundary between a container and an embedded part is a<i>frame</i>&nbsp;&nbsp;-- an instance of<br>
+the class XMPFrame. Every frame has a single part displayed inside it. The container<br>
+actually embeds the frame; it knows nothing about the part inside. 
+</p>
+<p>
+Any part can be displayed in several frames at the same time. This makes it easy for a<br>
+part to be visible in several windows or to have several different presentations. For<br>
+example, a charting part might want to have one frame displaying the chart and<br>
+another allowing the data to be edited in a table. 
+</p>
+<p>
+A<i> facet</i> (an instance of an XMPFacet object) is a visible part of a frame. There can be<br>
+many facets displaying within any given frame. This is a useful property, for instance,<br>
+when a container wants to "split" windows.&nbsp;&nbsp;Both XMPFrames and XMPFacets have a<br>
+field, partInfo, for storing information specific to the part being displayed. This is<br>
+rather like a window refCon, a handy place to store information independent of the<br>
+object itself. The CFrame and CFacet objects are designed to be plugged into the<br>
+partInfo fields of their XMPFrame and XMPFacet counterparts. The containing part<br>
+creates the XMPFrame and XMPFacet objects and then allows your part handler to<br>
+initialize their partInfo fields. In the framework, the actual work of drawing the part<br>
+on the screen is done in the CFacet object. The work of deciding what shape the<br>
+embedded part will take is done in the CFrame object. As we describe the specific<br>
+operations, we'll point out the class in which the code resides. 
+</p>
+<h2>INITIALIZATION CODE</h2>
+<p>
+The first bit of code we'll consider is the initialization code for each part object. Each<br>
+distinct part in a document gets an instance of the part object, so if there are seven<br>
+little clocks running in different windows (or the same window, for that matter) there<br>
+are seven instances of the clock part object.&nbsp;&nbsp;&nbsp;This means that you probably want to<br>
+come up with a scheme to share any global data so that you aren't wasting space with<br>
+many copies of it. Both the Apple Shared Library Manager and SOM support<br>
+systemwide global storage, so this should be straightforward. 
+</p>
+<p>
+Resources are a special case. You'll want to be very polite about not permanently<br>
+fiddling with the resource chain or making assumptions about where your resource<br>
+file is in the chain. We suggest saving the previous head of the resource chain, setting<br>
+your file to be the end of the chain, and using the single-level resource calls (such as<br>
+Get1IndResource) to find the resources you're after. Since you'll probably want to<br>
+share the resources among separate instances of your part object, it may be better to<br>
+detach the resources you get and manage them yourself instead of counting on any<br>
+particular application heap to have the correct resource map. 
+</p>
+<p>
+<b>THE CONSTRUCTOR</b><br>
+The first step in initialization is the<i>constructor</i> . You should never do anything that<br>
+could possibly fail in a constructor. This pretty much limits you to operations like<br>
+setting pointer variables to NULL, setting numeric variables to appropriate values,<br>
+and making similar assignments from constants. 
+</p>
+<p>
+You can see a good example in ClockPar.cpp. The clock part simply sets up its fields<br>
+with appropriate constant values. 
+</p>
+<p>
+<b>XMPPART::INITPART</b><br>
+The next phase of initialization takes place in the InitPart method that every part<br>
+object implements.&nbsp;&nbsp;&nbsp;The InitPart method is called by OpenDoc after the part object has<br>
+been created, and here you<i>can</i>&nbsp;&nbsp;attempt things that can fail. This is where you should<br>
+attempt to allocate any extra memory you need for your part instance, get resources if<br>
+you need them, and set up your persistent storage. 
+</p>
+<p>
+Let's examine how OpenDoc's storage system looks to a part handler. When your part<br>
+object is created, the InitPart method is passed a<i>storage unit</i> object in which you can<br>
+persistently store information. A storage unit is really just a list of named<i>properties</i> ,<br>
+each of which has one or more<i>values</i> . Each value is an entire stream, like an existing<br>
+Macintosh file. You can do read, write, seek, insert, and delete operations on individual<br>
+values.
+</p>
+<p>
+Each value has a type, much like the type code associated with a Macintosh file. Every<br>
+property in a storage unit can have one or more values, each with their own type code.<br>
+Thus, you can store multiple representations of any property. You can make up any<br>
+property names you like. One special property name, kXMPPropContents, is used by<br>
+OpenDoc to determine which handler goes with which part at run time. Every part<br>
+object should have a property named kXMPPropContents so that OpenDoc can determine<br>
+what part handler to run. 
+</p>
+<p>
+In our sample, CClockPart has an Initialize method, which is called by CPart::InitPart.<br>
+It sets up the menu bar for the clock and sets up a focus set for obtaining system<br>
+resources from the arbitrator (more about this later). A good example of code to set up<br>
+persistent storage can be found in the implementation of CPart. The framework calls<br>
+its own method, called CheckAndAddProperties, to make sure that the storage unit is<br>
+set up correctly. 
+</p>
+<h2>DRAWING CODE</h2>
+<p>
+Now that your initialization code is in place, you'll want to make sure you can get your<br>
+part to draw onscreen. OpenDoc will call your part with the Draw method and tell you<br>
+which facet should be drawn. 
+</p>
+<p>
+Our sample, CClockPart, inherits some code from CPart that asks the CFacet object to<br>
+do the drawing. Notice, though, that before it does this, CPart::Draw sets up the<br>
+graphics port for drawing using the clipping information from the facet. This is very<br>
+similar to the basic drawing model for the Macintosh, where you draw using the<br>
+appropriate graphics port and clipping region. You can find the rest of the drawingcode<br>
+in CClockFacet::Draw. This code consists of just the straightforward QuickDraw calls<br>
+and attendant calculations needed to display either the digital or the analog clock face. 
+</p>
+<p>
+We use a utility class called CDrawInitiator to set up the drawing environment<br>
+reliably. The constructor of this class does all the work of setting the graphics port's<br>
+clipping region and origin.&nbsp;&nbsp;&nbsp;Later, the destructor restores the port to its previous<br>
+state. This is a tricky bit of C++ coding that takes advantage of the object allocation<br>
+behavior of stack-based objects in C++. 
+</p>
+<p>
+<b>HANDLING LAYOUT</b><br>
+One of the features of CClockPart is that it presents a round shape when it's embedded.<br>
+To do this, it uses the XMPFrame object's layout negotiation features.&nbsp;&nbsp;To understand<br>
+this, you need to understand the notions of canvas, shape, and transform in OpenDoc.
+</p>
+<ul>
+<li>A<i> canvas</i> is simply a drawing context. On the Macintosh it can be either a<br>
+QuickDraw graphics port or a QuickDraw GX view port.</li>
+<li>A<i> shape</i>  is a way of describing an area of a canvas. OpenDoc supports<br>
+describing shapes in terms of polygons, regions, or rectangles on the<br>
+Macintosh.</li>
+<li>A<i> transform</i>  is a geometric transformation appropriate to the type of<br>
+canvas in use.&nbsp;&nbsp;&nbsp;In QuickDraw, the only transformation available is an offset.<br>
+In QuickDraw GX, the transformations are much more powerful, capable of<br>
+scaling, rotating, and offsets, as well as some more interesting<br>
+transformations such as skewing. </li>
+</ul>
+<p>
+An OpenDoc frame has a set of shapes associated with it. One, called the<i>frame shape</i> , is<br>
+how the container tells an embedded object how to lay itself out. Your part handler<br>
+should use the frame shape to decide what to display and how to lay it out. When your<br>
+part is finished laying itself out, it can optionally specify to the container exactly what<br>
+part of the frame shape it plans to use. This shape is called the<i>used shape</i>&nbsp;&nbsp;of the frame.<br>
+Finally, the embedded part can specify an<i>active shape</i> , which is the subset of the<br>
+frame shape that you want to use for determining whether you receive a mouse event.<br>
+Often the used shape and the active shape are set to be the same shape. The container<br>
+can take care of filling in any areas left untouched by the part handler. 
+</p>
+<p>
+For example, assume we have a clock part embedded in a word processor that does text<br>
+wrapping.&nbsp;&nbsp;&nbsp;The word processor allows its embedded frames to be laid out as rectangles.<br>
+When the clock is embedded, it uses the frame shape (the rectangle given by the word<br>
+processor) to determine the size of the clock face. After determining the size, it sets<br>
+its used and active shapes to match the shape of the round clock face. The word<br>
+processor is now free to wrap text around the round clock face, and any clicks in the<br>
+rectangular frame shape that aren't actually on the clock face are passed through to the<br>
+word processor. Those clicks can be used to manipulate the text that's wrapped close to<br>
+the clock face. 
+</p>
+<p>
+CClockPart negotiates to get the frame shape to match the clock's round face. This<br>
+works but is not strictly necessary. Instead, it could simply set its used shape to match<br>
+the round area of the clock.&nbsp;&nbsp;&nbsp;Either method will ensure that the container knows how<br>
+to clip any underlying parts so that they don't draw in the clock's area. 
+</p>
+<p>
+A quick aside about shape negotiation: Negotiation is rather straightforward in<br>
+OpenDoc, but knowledgeable programmers will notice that there is little support for<br>
+constrained negotiation. This is not an oversight, but instead a fundamental design<br>
+choice. It's up to the embedding part toconstrain layout according to its model of<br>
+content. This means that constraint strategies like "Boxes &amp; Glue" or "Springs &amp;<br>
+Wires" are the province of your part handler, not OpenDoc. You can implement any of a<br>
+number of layout constraint schemes on top of OpenDoc, but every part handler may<br>
+constrain layout within its own frame. 
+</p>
+<p>
+You can see what happens when the container reshapes the clock in the method<br>
+CClockFrame::FrameShapeChanged. CClockFrame requests a round shape from the<br>
+container and then invalidates the correct areas so that redrawing occurs. For most<br>
+parts, the standard behavior is to redo the layout based on the new shape, update the<br>
+active and used shapes of the frame, and then invalidate the proper areas. 
+</p>
+<h2>EVENT HANDLING</h2>
+<p>
+Our next area of implementation is the event handling for the clock part. This is much<br>
+like writing the event handling for any Macintosh application, with one difference: you<br>
+don't poll the system for events by calling WaitNextEvent. Instead, when there's an<br>
+event for your part handler OpenDoc calls your part's HandleEvent method. 
+</p>
+<p>
+<b>XMPPART::HANDLEEVENT</b><br>
+The code inside HandleEvent is usually a switch statement, just as in applications<br>
+today. There are some minor differences, which are nicely illustrated by the code that<br>
+CClockPart inherits from CPart. This code effectively delegates the various events to<br>
+code that can handle each event, using a switch statement. Notice the behavior for<br>
+mouse-down events, which calls CFacet::HandleMouseDown, which in turn causes the<br>
+frame to become active if it isn't already. 
+</p>
+<p>
+The notion of activation in OpenDoc is closely tied to the object discussed briefly<br>
+earlier, the arbitrator. An object is "active" if it owns some of the foci in the<br>
+arbitrator. A<i>focus</i> is just a shared data structure or system service of some kind, such<br>
+as the menu bar or keystroke stream. 
+</p>
+<p>
+When CClockFrame is told to activate, it requests a set of foci from the arbitrator.&nbsp;&nbsp;In<br>
+this case, it wants the menus and selection focus. These two, with the addition of the<br>
+keystroke stream, constitute the basic focus set that almost every part asks for when<br>
+it wants to allow editing.&nbsp;&nbsp;&nbsp;You can find the code that sets up the focus set in<br>
+CClockFrame::InitClockFrame. In CFrame::ActivateFrame, the focus set is requested. 
+</p>
+<p>
+Notice that the part is requesting the menu focus before it attempts to put up its menu<br>
+bar. This is the basic rule to follow in all cases. If there's an arbitrator focus for the<br>
+resource, you must request it and succeed in getting it before it's OK to use the<br>
+resource. OpenDoc uses the arbitrator to carefully manage the sharing of data and<br>
+system services, so it's very important to do the right thing and ask for foci whenever<br>
+you need shared resources. 
+</p>
+<p>
+<b>PUTTING UP A MENU BAR</b><br>
+One of the things that CClockPart does is to set up a menu bar. You can see the code for<br>
+this in CClockPart::Initialize. The initialization code gets a reference to its menu bar<br>
+object and then calls the AddMenu method of the menu bar object to add its menus.<br>
+Finally, it registers command IDs to pass back when menu items are selected. 
+</p>
+<p>
+OpenDoc provides a menu bar object to help you set up menus and display them when<br>
+your part has obtained the menu focus. The major reason for this object to exist at all<br>
+is to support compatibility with Microsoft's proprietary OLE 2.0 document<br>
+architecture. This object hides the complex menu- mixing behavior of OLE 2.0 behind<br>
+a simple interface that works correctly in either an OpenDoc or an OLE 2.0 container. 
+</p>
+<p>
+Later, during execution of CFrame::FocusStateChanged, the menu bar object is asked to<br>
+display itself. The actual code invoked is in CPart::InstallMenus, and basically just<br>
+calls the Display method of the menu bar object. 
+</p>
+<p>
+<b>GETTING IDLE TIME</b><br>
+You can get background time, delivered as idle events, on any of your frames. This is<br>
+done by getting the dispatcher from the session object and registering particular<br>
+frames for idle time. 
+</p>
+<p>
+You can see an example of this sort of registration in CClockPart::Initialize. In this<br>
+case, the part itself is registering to receive idle events, but individual frames can<br>
+also be registered. Once a frame or part has been registered for idle time, it will<br>
+receive idle events in its HandleEvent method. 
+</p>
+<p>
+<b>UNDO AND REDO</b><br>
+Although CClockPart is too simple to support undo, it's worthwhile to look at how you<br>
+would go about adding undo support to your OpenDoc part handler. We've tried to make<br>
+it as simple and unobtrusive as possible to do multilevel undo in OpenDoc. 
+</p>
+<p>
+The first step is to create code that tells OpenDoc you've done something that can be<br>
+undone. You do this by getting the undo object, an instance of XMPUndo, from the<br>
+session object. You then call the XMPUndo::AddActionToHistory method, which takes a<br>
+hunk of data that you create to hold instructions about how to undo the latest action.<br>
+OpenDoc never looks inside this hunk of bits; it merely stores it for later. 
+</p>
+<p>
+The code might look like this:
+</p>
+<pre>fSession-&gt;GetUndo()-&gt;AddActionToHistory(thisPart, myUndoData,
+    kXMPSingleAction, myUndoString, myRedoString)</pre>
+<p>
+myUndoData is a pointer to the undo data, and myUndoString and myRedoString are<br>
+strings to show in the Edit menu, to tell the user what action will be undone or redone.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Once the information is on the undo stack, simply calling the XMPUndo::Undo and<br>
+XMPUndo::Redo methods will cause the system to send the correct messages to the parts<br>
+to get the last action undone. This allows the user to undo actions that were made in<br>
+other parts, without your part knowing precisely what needs to be done. 
+</p>
+<p>
+When the undo object is told to undo or redo, it calls your part handler back using the<br>
+Undo or Redo method. If you never post undo actions, you never need worry about<br>
+having these methods called, and you can ignore them. The XMPUndo object will always<br>
+return exactly what you store in it, and it makes sure that undo and redo operations<br>
+are invoked in the correct order. When the Undo object is finished withthe undo data, it<br>
+asks your part to dispose of it by calling your part's DisposeActionStatemethod. This<br>
+means that you can safely put pointers to other data into the undo data, since you'll get<br>
+a chance to dispose of the data, and anything it points to, at a later time. 
+</p>
+<p>
+On some systems, such as one that supports persistent undo stacks, you may be asked<br>
+to read and write your undo data against a persistent storage medium. This is not the<br>
+case on the Macintosh, but OpenDoc does allow for it. You can safely ignore this until it<br>
+becomes an issue on some platform you choose to support. 
+</p>
+<h2>STORAGE</h2>
+<p>
+Eventually it becomes time to save a document. We've already discussed the<br>
+OpenDocstorage environment to some degree. The storage unit object in OpenDoc is set<br>
+up for the part by the OpenDoc libraries themselves, so generally a part never needs<br>
+to talk directly to the file system just to read and write its own data. This system<br>
+supports not only compound document storage, but also a versioning system that allows<br>
+for multiple drafts. 
+</p>
+<p>
+<b>DEALING WITH STORAGE UNITS</b><br>
+Once you've been given a storage unit, you typically get it ready by using the Focus<br>
+call. To minimize the API, a set of common functions that can apply to the entire<br>
+storage unit, a particular property, or a particular value has been abstracted out.<br>
+Properties and values within a storage unit are not represented by distinct objects,<br>
+but are instead captured in the focus state of the storage unit: the Focus method sets up<br>
+the context for later calls. For example, the Remove method can apply to an entire<br>
+property or to a single value of it, depending on whether the storage unit was focused<br>
+on the property or on a value. Focusing can be absolute (when you pass a particular<br>
+property ID or value index) or relative (when you pass a position code). 
+</p>
+<p>
+The read operation is performed with the XMPStorageUnit::GetValue method, and the<br>
+write operation with XMPStorageUnit::SetValue. The position can be set or read with<br>
+XMPStorageUnit::SetOffset and XMPStorageUnit::GetOffset. Efficient inserts and deletes<br>
+can be performed with XMPStorageUnit::InsertValue andXMPStorageUnit::DeleteValue.<br>
+You can also use the latter call to truncate a given value. 
+</p>
+<p>
+Typically, your part will focus on the kXMPPropContents property and do various<br>
+reads or writes, depending on whether your part is being internalized (read in from<br>
+storage) or externalized (written out). If your part is sufficiently large and complex,<br>
+you'll probably want to use inserts and deletes to store changes to your persistent data.<br>
+This has two useful effects: it makes your data more randomly accessible, and it makes<br>
+the OpenDoc draft system store changes more efficiently.
+</p>
+<p>
+This draft system allows a user to save a draft of a document and return to view the<br>
+draft at any future time. Where possible, it stores only the changes between succeeding<br>
+drafts, instead of storing entire copies of the document for each draft. By using<br>
+OpenDoc's storage APIs, you automatically get this efficient storage of separate<br>
+versions with no additional work on your part. OpenDoc only watches the storage<br>
+operations, though; it doesn't attempt to detect differences on its own. If you use insert<br>
+and delete operations, OpenDoc's storage system can efficiently store the changes<br>
+between drafts. 
+</p>
+<p>
+<b>BASIC I/O FOR YOUR PART</b><br>
+When your part is brought into memory, your InitPartFromStorage method is called,<br>
+and it's passed a storage unit. You are then responsible for reading the storage unit and<br>
+getting ready to receive other messages. This will happen once, and never again until<br>
+the object is deleted from memory.&nbsp;&nbsp;&nbsp;Later, when the document is being saved, your<br>
+part's Externalize method is called. You must immediately write anything you need to<br>
+store persistently out into your storage unit, before returning from this method. 
+</p>
+<p>
+Your part is also free to write to its storage unit, as well as read from it, whenever it<br>
+wants to. For part handlers that "virtualize" themselves from disk, this means that<br>
+OpenDoc won't get in your way. 
+</p>
+<p>
+The CClockPart::InternalizeContent and CClockPart::ExternalizeContent methodsare<br>
+called by the framework in response to the standard methods InitPartFromStorageand<br>
+Externalize. They demonstrate focusing a storage unit and doing read and write<br>
+operations. CClockPart's storage needs are very simple; it just reads and writes a few<br>
+flags into its storage unit. 
+</p>
+<p>
+<b>PART INFORMATION ATTACHED TO FRAMES</b><br>
+As mentioned earlier, the XMPFrame objects associated with embedding have a partInfo<br>
+field, which is used like a window refCon by your code. When the document is saved,<br>
+you may be asked to save the contents of this partInfo field to a particular storage unit.<br>
+Your part will be called using the XMPPart::WritePartInfo method. Your<br>
+responsibility is to write enough information to be able to reconstruct the partInfo<br>
+field. Later, when the document is reopened, your part object will be called with the<br>
+XMPPart::ReadPartInfo method. This is your cue to read the data back into memory and<br>
+set up the part info for that frame object once again. 
+</p>
+<p>
+These partInfo fields are useful when you want to write a part that can have several<br>
+visible frames, each with a different presentation. The chart example we used earlier<br>
+is a case in point. We would want to allow a chart to be viewed as a table of data or a<br>
+chart, possibly one of various chart kinds. By storing information about what to<br>
+display in the frame's part info, you're freed from writing your own data structure to<br>
+remember what kind of display to do in what frame. Instead, you store that information<br>
+as a part of the frame's part info and implement WritePartInfo and ReadPartInfo<br>
+methods to save and restore the data.&nbsp;&nbsp;CClockPart doesn't actually use the partInfo field<br>
+of its frames in a persistent fashion. It simply inherits code from CPart, which<br>
+reconstructs the appropriate CFrame and CFacet objects at run time. This is<br>
+completely adequate for simple parts. 
+</p>
+<h2>BEING A GOOD OPENDOC CITIZEN</h2>
+<p>
+Now that we've covered the basics, there are a few last details to implement before<br>
+we've got a good basic part. Since a part can have multiple frames, and a frame can be<br>
+visible in multiple facets, we need to make sure our part handler does the right thing<br>
+and avoids stepping on the toes of other parts. 
+</p>
+<p>
+<b>ADDING AND REMOVING FACETS</b><br>
+When a part becomes visible (that is, when a facet appears), OpenDoc notifies the part<br>
+with a call to the FacetAdded method. This is when your part should do any special setup<br>
+it needs to (for instance, you may want to register for idle time on the frame<br>
+associated with that facet). Similarly, OpenDoc calls your part handler's FacetRemoved<br>
+method when the facet goes away; here you should clean up any actions you took in<br>
+response to FacetAdded. 
+</p>
+<p>
+<b>ADJUSTING MENUS</b><br>
+When your part handler acquires the menu focus, OpenDoc calls its AdjustMenus<br>
+method. Your job is to correctly update the menus so that the right elements<br>
+arechecked, enabled, and so on. You can see an example in<br>
+CClockPart::DoAdjustMenus,which is called by the inherited code from<br>
+CPart::AdjustMenus. 
+</p>
+<p>
+<b>RELINQUISHING ARBITRATOR FOCI</b><br>
+Once you've acquired any focus from the arbitrator, you'll eventually be called on to<br>
+release it. This will happen via three methods: XMPPart::BeginRelinquishFocus,<br>
+XMPPart::CommitRelinquishFocus, and XMPPart::AbortRelinquishFocus. The first<br>
+method is called to ask your part if it's willing to relinquish a focus it owns. It should,<br>
+if at all possible, say yes.&nbsp;&nbsp;&nbsp;It's possible, though, that you won't give up a focus,<br>
+because your part object is in a mode. For instance, you wouldn't give up the serial<br>
+port focus if you were in the middle of an XMODEM transfer. 
+</p>
+<p>
+Once your part has responded to the XMPPart::BeginRelinquishFocus call, you can<br>
+expect another call shortly after that which informs your part that the focus has<br>
+really been given to another frame, or that it hasn't. The first case is signaled by<br>
+XMPPart::CommitRelinquishFocus, and the second case is signaled by<br>
+XMPPart::AbortRelinquishFocus. 
+</p>
+<p>
+Occasionally, under difficult conditions, your part will simply be informed that it has<br>
+either acquired a focus (through the XMPPart::FocusAcquired method) or lost a focus<br>
+(through the XMPPart::FocusLost method). If your part has lost a focus, you're<br>
+expected to avoid inappropriate behavior, such as attempting to adjust menus or<br>
+display a menu bar when you don't have the menu bar focus. 
+</p>
+<p>
+<b>FREEING MEMORY</b><br>
+Your part is expected, if possible, to free some memory on request. When it's needed,<br>
+you'll be called with the XMPPart::Purge method. You're given a size that's the amount<br>
+of memory requested. If you can manage it, you should free any unneeded memory from<br>
+your part's data structures. Don't free anything you need to keep running, of course.<br>
+You might free any resources you were holding, or free some cached data. CClockPart,<br>
+our example, is so simple that it has almost nothing to purge. 
+</p>
+<h2>IN CLOSING</h2>
+<p>
+By now you should have a good idea of what's involved in writing an OpenDoc part<br>
+handler. As you've seen, it's much like writing an application today: you still write<br>
+code to handle events, deal with storage issues, draw to the screen, and so on. The main<br>
+differences are really in the "packaging" of the code and in the environment it runs in.<br>
+(Some previously messy areas have even been cleanly abstracted for you. The storage<br>
+system is a good example: no more ugly file handling code; you just deal with storage<br>
+units and let OpenDoc handle the details.)
+</p>
+<p>
+But the differences for users are amazing. No more worrying about which application<br>
+can open which document. Instead, when they select a particular type of content to<br>
+work with, the tools they need to work with that content simply appear. In user tests,<br>
+many people thought that this radically wonderful technology was just a bug fix, and<br>
+that it was finally working the way it was always supposed to. There can be no better<br>
+indication that OpenDoc is a step in the right direction. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>KURT PIERSOL</b>, the chief architect of OpenDoc, previously led the Apple Event<br>
+project and was an early technical lead for AppleScript. He's responsible for making<br>
+technologies fit together at Apple. Kurt also likes to wear suspenders, though that has<br>
+very little to do with his software architectural responsibilities. *
+</p>
+<p>
+<b>Thanks </b>to our technical reviewers David Austin, Ray Chiang, Mark Minshull, Alan<br>
+Spragens, and Borek Vokach-Brodsky. *
+</p>
+</body>
+</html>

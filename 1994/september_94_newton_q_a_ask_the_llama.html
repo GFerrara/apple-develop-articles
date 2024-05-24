@@ -1,0 +1,280 @@
+<html>
+<head>
+<!-- Article ID: 44 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 94 - Newton Q & A: Ask the Llama</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Newton Q &amp; A: Ask the Llama</h2>
+<h2>Newton Developer Technical Support</h2>
+<p>
+<b>Q</b><i> I'm having trouble with the protoRoll. I have a protoApp with a protoRoll at the</i><br>
+<i>bottom with a couple of items in it. (Note that I'm not using the protoRollBrowser</i><br>
+<i>proto.) It compiles OK, but when I download to the Newton, nothing shows up. In fact,</i><br>
+<i>when I use the inspector to look at the view hierarchy, the protoRoll doesn't show up at</i><br>
+<i>all. The other views are fine. What am I doing wrong?</i>
+</p>
+<p>
+<b>A</b> The protoRoll doesn't show up because of the setting of the viewFlags of the ROM<br>
+prototype: the vApplication and vClipping flags are set, but not the vVisible flag. If the<br>
+protoRoll were the base template of your application, the vApplication flag would be<br>
+sufficient to make it visible.
+</p>
+<p>
+&nbsp;In your case, the protoRoll is a child of your base application template. Since it isn't<br>
+visible (vVisible isn't set), the system doesn't create a runtime view frame for the<br>
+child. You could get the system to create the runtime view by declaring the protoRoll to<br>
+be the base template, but this still wouldn't show the protoRoll.
+</p>
+<p>
+&nbsp;To make the protoRoll visible, add a viewFlags slot to the protoRoll and check the<br>
+vVisible flag. You may or may not want to uncheck the vApplication flag. If you uncheck<br>
+it, the system will no longer send scroll and overview messages (viewScrollUpScript,<br>
+viewScrollDownScript, viewOverviewScript) to the protoRoll, so it will appear to be<br>
+broken. But you can support these messages in your base application view and just<br>
+pass them on to the protoRoll as needed. If you leave the vApplication flag checked,<br>
+protoRoll will get the scroll events.
+</p>
+<p>
+<b>Q</b><i> My print format never seems to get called, ever. I don't get a printNextPageScript or</i><br>
+<i>even a viewSetupFormScript. I'm not using ROM_coverPageFormat because I don't</i><br>
+<i>ever want to print a cover page. How can I get this to work?</i>
+</p>
+<p>
+<b>A</b> The answer to your problem is in your question. A print (or fax) format must&nbsp;&nbsp;proto<br>
+to ROM_coverPageFormat; it's not optional (as the manual implies). It may&nbsp;&nbsp;help to<br>
+know that ROM_coverPageFormat is really misnamed. The generation of a cover page is<br>
+controlled by a slot in your format. The proto should be called something like<br>
+ROM_allThePrintingAndFaxingBehaviorProto, but that would be verbose :-)
+</p>
+<p>
+<b>Q</b><i> I would like to add a </i>&nbsp;&nbsp;[<i>button|view|Llama</i> ] <i>to the </i> [<i>Notepad|Calendar|Cardfile|etc.</i> ]<i>.</i><br>
+<i>How can I do that safely?</i>
+</p>
+<p>
+<b>A</b> This is a simple one: you can't. If you add any element to a built-in application, you<br>
+take the chance that your application will break in future releases of MessagePad. Also<br>
+note that adding llamas to MessagePad will theoretically cause a multidimensional<br>
+implosion. ("Don't cross the llamas, er . . . beams." -- LlamaBusters)
+</p>
+<p>
+<b>Q</b><i> I've noticed some peculiar behavior in the Compile function and am wondering if it</i><br>
+<i>might be a bug. The problem is with special characters and string objects. When</i><br>
+<i>Compile is passed a string object containing special characters rather than a literal</i><br>
+<i>string with Unicode codes, the result is incorrect. This example works as expected:</i>
+</p>
+<p>
+<i>x:= Compile("{msg: \"A string with special character \u00A5\u\"}";</i><br>
+<i>y:= :x();</i>
+</p>
+<p>
+<i>--&gt; y is {msg: "A string with special character &amp;yen;"} This example doesn't work as</i><br>
+<i>expected:</i>
+</p>
+<p>
+<i>a:= "A string with special character \u00A5\u";</i><br>
+<i>x:= Compile(a);</i><br>
+<i>y:= :x();</i>
+</p>
+<p>
+<i>&nbsp;--&gt; y is {msg: "A string with special character *"} where * is some character other</i><br>
+<i>than the expected "&amp;yen;".</i>
+</p>
+<p>
+<i>Can you explain what's going on here?</i>
+</p>
+<p>
+<b>A</b> The problem is that you're using illegal NewtonScript syntax in the second example.<br>
+If you used the inspector instead of Compile for this example, it would be like typing
+</p>
+<pre>A string with special character \u00A5\u</pre>
+<p>
+&nbsp;and then hitting Enter. This would result in a syntax error from NewtonScript. What<br>
+you probably want is the equivalent of typing
+</p>
+<pre>"A string with special character \u00A5\u"</pre>
+<p>
+&nbsp;into the inspector. This is done with the following call to Compile:
+</p>
+<pre>x := Compile("\"A string with special character \\u00A5\\u\"");
+call x with ();</pre>
+<p>
+--&gt; #4415F49 "A string with special character &amp;yen;"
+</p>
+<p>
+&nbsp;Note that the escape characters (\) for the Unicode string are themselves escaped. If<br>
+you don't do this, you'll be putting the actual Unicode characters into the string being<br>
+compiled, which is probably not what you want. Although your first example worked,<br>
+you could easily get a case where not escaping the escape characters could bite you.
+</p>
+<p>
+<b>Q</b><i> In the communications input spec below, why does the call to UpdateStatus fail?</i><br>
+<i>UpdateStatus is a method in my base view, and the whole endpoint is in my base view,</i><br>
+<i>so why can't the input spec find the method?</i>
+</p>
+<pre>GetMessage: {
+    inputForm: 'string,
+    endCharacter: unicodeCR,
+    InputScript: func(endpoint, data)
+    begin
+        :UpdateStatus(data);
+        endpoint:SetInputSpec(GetMessage);
+    end;
+}</pre>
+<p>
+<b>A</b> The call to UpdateStatus fails because it's a message send that uses full inheritance to<br>
+find the method. That means the system will look in the current context (that is, self),<br>
+then check the proto chain, and then check the parent chain. However, the current<br>
+context is not what you think it is. In an input spec, the current context is the frame<br>
+that defines the input spec. In this case, it's the GetMessage frame you define.
+</p>
+<p>
+&nbsp;Since the GetMessage frame has no proto or parent pointer, the message send fails.<br>
+There's a second problem waiting to happen: the call to SetInputSpec will also fail,<br>
+because the symbol GetMessage isn't valid in this context.
+</p>
+<p>
+&nbsp;The solution is to get a reference to your base view (or another view that contains or<br>
+inherits the UpdateStatus message). The usual way to do this is to add an _parent slot<br>
+to your endpoint at run time during initialization. Now your InputScript can use<br>
+endpoint._parent to find the base view, as follows:
+</p>
+<pre>InputScript: func(endpoint, data)
+begin
+    endpoint:UpdateStatus(data);
+    endpoint:SetInputSpec(endpoint.GetMessage);
+end;</pre>
+<p>
+&nbsp;If you really want to use a simple message send (for example, :UpdateStatus), you<br>
+could add an _parent slot to the input spec. This may be useful in situations where you<br>
+have several input scripts that rely on a dynamic inheritance mechanism. That is, you<br>
+change what the _parent slot of the input spec points to on the fly.
+</p>
+<p>
+<b>Q</b><i> Did you know that "gullible" is not in the Newton dictionary?</i>
+</p>
+<p>
+<b>A</b> It is now.
+</p>
+<p>
+<b>Q</b><i> I have a large amount of static data in my application. I'd like to use Project Data to</i><br>
+<i>edit this data, but it won't fit. What can I do?</i>
+</p>
+<p>
+<b>A</b> You must have an old version of the Newton Toolkit. As of version 1.0.1, the 32K<br>
+limit is gone. You could use another text editor to edit the Project Data file. You could<br>
+also use the Load command to load another NewtonScript source file.
+</p>
+<p>
+&nbsp;As an example, assume you had a file called MyData.f in the same directory as your<br>
+project and that this file contained the script that defined your constant data<br>
+structures. You could use the Load command like this:
+</p>
+<pre>// This line appears in your Project Data file.
+// Load in the data file and use the HOME compile-time variable
+// to get the path to the project folder.
+Load(HOME &amp; "MyData.f");</pre>
+<p>
+<b>Q</b><i> How can I figure out how much space my package and data will take on a card? I</i><br>
+<i>really want my application to fit on a 1-meg card.</i>
+</p>
+<p>
+<b>A</b> The short answer is, you can't. The long answer is, load your packages and soups<br>
+after completely erasing the card. To completely erase the card, open up preferences<br>
+and then insert the card. Before the card is loaded, you'll get a chance to erase it.
+</p>
+<p>
+&nbsp;Look at the difference in the free space on the card. Use the value in the card dialog.<br>
+The value in the remove-package picker is the uncompressed size. You must erase the<br>
+card before you check the free space difference.
+</p>
+<p>
+<b>Q</b><i> I have an input spec that receives data and places it into a queue. When I get data, I</i><br>
+<i>set a flag in my base view (DataInQ) that indicates data is available. I know the data is</i><br>
+<i>getting sent, but my input specs never seem to get called. What's going on?</i>
+</p>
+<p>
+<b>A</b> The chances are that your base view has some code like this:
+</p>
+<pre>myBase.WaitForData := func()
+    while Not DataInQ do nil;</pre>
+<p>
+&nbsp;You may have more statements in the loop, and you may be using <b> repeat</b> instead of<br>
+<b>while</b>, but you probably have a loop that waits for the DataInQ&nbsp;&nbsp;flag to be set. The<br>
+problem is that you're not giving control back to the NewtonScript thread so that it can<br>
+process the pending InputScript call (from your input spec).
+</p>
+<p>
+&nbsp;If you really need to wait for data, you can use either an idle script or a repeating<br>
+delayed action. The idle script will be significantly easier to implement. You should<br>
+make the delay on your idle script long enough to give time to the Newton. Also note<br>
+that the Newton is a battery-powered device, and excessive use of this kind of<br>
+programming tends to drain the users -- I mean, batteries.
+</p>
+<p>
+<b>Q</b><i> I have an array of text elements called MyFirstArray in my Project Data file. I want</i><br>
+<i>to set the text of a clParagraphView that I open to an item in this array. The</i><br>
+<i>clParagraphView has a slot (strRef) that references MyFirstArray[0]. The first</i><br>
+<i>element appears as the clParagraph's view. There are four buttons on the base view,</i><br>
+<i>and depending on which button is tapped I want a different element of this array to be</i><br>
+<i>the clParagraph's text. When I try replacing MyFirstArray[0] in strRef during the</i><br>
+<i>viewSetupFormScript, I get as text "MyFirstArray[1]", not the text this represents.</i><br>
+<i>Here's the code in SetupFormScript in the clParagraph:</i>
+</p>
+<pre>SetValue(self, 'strRef, "MyFirstArray["&amp;tempslot&amp;"]");</pre>
+<p>
+<i>&nbsp;tempslot is a slot in the base view where I store a value depending on which button is</i><br>
+<i>tapped. What's the problem?</i>
+</p>
+<p>
+<b>A</b> The basic answer is that your SetValue statement is incorrect. This statement sets<br>
+strRef to the string "MyFirstArray[" concatenated with the string representation of<br>
+tempslot concatenated with "]". What you really want is the string that's in<br>
+MyFirstArray at the position defined by tempslot; that statement would be
+</p>
+<pre>SetValue(self, 'strRef, MyFirstArray[tempslot]);</pre>
+<p>
+&nbsp;But there are better ways to do this. Which method you use depends on when you set<br>
+the text of the clParagraphView. If you set up things at open time, use the<br>
+viewSetupFormScript, but just assign directly to the text slot:
+</p>
+<pre> clParagraphView.viewSetupFormScript := func()
+    text := MyFirstArray[tempslot];</pre>
+<p>
+&nbsp;Remember that SetValue will also dirty the view and call RefreshViews. This isn't<br>
+something you want to happen when you Open a view.
+</p>
+<p>
+&nbsp;The other case is that the clParagraphView is already open. In this case, you can use a<br>
+SetValue statement to set the text slot directly, instead of setting a strRef slot.
+</p>
+<p>
+&nbsp;One other note: If the user can edit the strings you place in a clParagraphView, you<br>
+must Clone the string. Otherwise you can get a "tried to modify read only object"<br>
+error.
+</p>
+<p>
+<b>Q</b><i> How long does it take to train a llama to be a competent NewtonScript programmer?</i>
+</p>
+<p>
+<b>A</b> About four weeks, but the hooves get in the way of really fast coding.
+</p>
+<p>
+<b>The llama is </b>the unofficial mascot of the Developer Technical Support group in<br>
+Apple's Personal Interactive Electronics (PIE) division. Send your Newton-related<br>
+questions to NewtonMail DRLLAMA or AppleLink DR.LLAMA. The first time we use a<br>
+question from you, we'll send you a T-shirt. *
+</p>
+<p>
+<b>Thanks </b>to our PIE Partners for the questions used in this column, and to jXopher,<br>
+Todd Courtois, Bob Ebert, Mike Engber, Kent Sandvik, Jim Schram, Maurice Sharp,<br>
+and Scott ("Zz") Zimmerman for the answers. *
+</p>
+<p>
+<b>Have more questions? </b>Need more answers? Take a look at PIE Developer Info on<br>
+AppleLink. *
+</p>
+</body>
+</html>

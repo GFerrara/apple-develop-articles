@@ -1,0 +1,426 @@
+<html>
+<head>
+<!-- Article ID: 51 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 94 - PRINT HINTS</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>PRINT HINTS</h2>
+<h2>Improving QuickDraw GX Printer Driver Performance</h2>
+<h1>DAVE HERSEY</h1>
+<p>
+<img src="img/252.gif" width="180 px"></img>
+</p>
+<p>
+In this column, we go spelunking in the frost-covered caverns of QuickDraw GX. We'll<br>
+discover how QuickDraw GX I/O buffering works and how to use that knowledge to<br>
+squeeze optimal performance from a printer driver, whether PostScriptTM, raster,<br>
+or vector. We'll also learn how to find (and avoid) the common bottlenecks. 
+</p>
+<p>
+Suppose you've been working on your first QuickDraw GX printer driver, and the big<br>
+moment has arrived. Your printer's innards begin to whir and spin, and your heart<br>
+beats a little faster. Your driver is actually printing! As you see that image being<br>
+drawn on the page, your breathing quickens, and then . . . the printer stops. You run to<br>
+your Macintosh to see if your driver has crashed (again), but no, not this time. A few<br>
+seconds later the printer starts up again. And stops. And starts. This repeats until,<br>
+several minutes later, the page is finished. 
+</p>
+<p>
+What's going on? Is your printer defective? Maybe. But then again, the problem may<br>
+lie elsewhere.&nbsp;&nbsp;&nbsp;You probably have a data delivery problem on your hands. For one<br>
+reason or another, the data isn't getting to the printer fast enough to keep it busy. To<br>
+understand why, we need to look at what goes on behind the scenes when a driver tells<br>
+QuickDraw GX to send data to your printer. 
+</p>
+<p>
+Your first reaction might be, "Ah, I need to implement some sort of asynchronous I/O<br>
+to keep a steady stream of data going to my printer." That's a good thought, but<br>
+QuickDraw GX already provides asynchronous I/O. Let's look a little deeper. 
+</p>
+<p>
+There are four QuickDraw GX printing messages that are used to implement buffering:
+</p>
+<ul>
+<li>GXBufferData -- sent to move data into an available buffer</li>
+<li>GXWriteData -- sent to write data to the printer immediately without<br>
+buffering it first</li>
+<li>GXDumpBuffer -- sent to move a buffer full of data to the printer</li>
+<li>GXFreeBuffer -- sent to ensure that a buffer has been processed and is<br>
+available for new data</li>
+</ul>
+<p>
+How do you get GXBufferData and GXFreeBuffer to work asynchronously, so that the<br>
+driver's data is sent to the printer as fast as possible? GXBufferData, in its default<br>
+implementation, already works asynchronously. However, GXFreeBuffer has to work<br>
+synchronously. Let's look at why. 
+</p>
+<p>
+In the following figures, assume that we have a driver with four buffers, and that at<br>
+every time interval (a, b, c, and so on) half of a buffer can be filled by the driver. (In<br>
+reality, the timeit takes to fill a buffer will vary as rendering time varies.)
+</p>
+<p>
+First, let's say that the device can't process the data fast enough to empty out the first<br>
+buffer before that buffer is needed again. Figure 1 shows what will happen. At the<br>
+following time intervals shown in Figure 1, here's what takes place:
+</p>
+<ol type="a">
+<li>None of the buffers have been used. </li>
+<li>The first buffer is being written to with GXBufferData. </li>
+<li>The first buffer has been filled, so QuickDraw GX sends GXDumpBuffer,<br>
+which starts an asynchronous write of the data in buffer 1. </li>
+<li>The first buffer is pending I/O completion, and the driver begins filling<br>
+the second buffer. </li>
+<li>The second buffer has been filled, so QuickDraw GX sends GXDumpBuffer<br>
+for it. It can't be written, however, until the first buffer is finished writing. </li>
+<li> The first and second buffers are pending I/O completion, and the driver<br>
+begins filling the third buffer. </li>
+<li>The third buffer has been filled, so QuickDraw GX sends GXDumpBuffer<br>
+for it. We're still waiting for the first and second buffers to finish writing.</li>
+<li>The first through third buffers are pending I/O completion, and the<br>
+driver begins filling the fourth buffer. </li>
+<li> The fourth buffer has been filled, so QuickDraw GX sends GXDumpBuffer<br>
+for it, but it can't write until the first through third buffers finish.</li>
+<li> All buffers have writes pending. For the first buffer, QuickDraw GX<br>
+sends GXFreeBuffer, which will wait for I/O to complete on that buffer before<br>
+returning. GXFreeBuffer must behave synchronously, because its return<br>
+signifies "This buffer can now be reused."</li>
+</ol>
+<p>
+<img src="img/253.gif" width="309 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1. </b>Device processes data very slowly
+</p>
+<p>
+This is a worst-case scenario from the CPU's point of view. The device's<br>
+communications pipe can't take the data fast enough to keep up with the buffering. Data<br>
+buffering is delayed until pending writes are completed. There isn't any alternative --<br>
+you must free up a buffer in order to have a place to put the new data. Note that it may<br>
+take several seconds before a buffer is freed. During this delay, the CPU sits idle,<br>
+although it could be preparing more data. 
+</p>
+<p>
+<img src="img/254.gif" width="389 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>Device processes data very quickly<br>
+<b>Figure 3. </b>Device and buffers are working optimally
+</p>
+<p>
+Figure 2 shows another nonoptimal situation. The buffers are being filled and<br>
+processed so quickly that at any given time, two -- or even three -- of the buffers<br>
+aren't even being used. This is a waste of memory, and also increases the latency<br>
+between buffers. 
+</p>
+<p>
+Figure 3 shows the ideal situation. This is what you should strive for, although it may<br>
+not be attainable, depending on your device. In this case, there's always a buffer free.<br>
+Data is buffered as fast as it's available and (with luck) is sent to the device as fast as<br>
+the device can service it. In practice, this may be a difficult (if not impossible)<br>
+scenario to achieve. In a moment, we'll see why. First, let's take a look at the resource<br>
+that specifies the buffering parameters for a QuickDraw GX printer driver. 
+</p>
+<p>
+<b>THE GXUNIVERSALIOPREFSTYPE RESOURCE</b><br>
+The gxUniversalIOPrefsType ('iobm') resource controls the behavior of the standard<br>
+buffering and device communication for QuickDraw GX printing. Here's what this<br>
+resource looks like:
+</p>
+<pre>type gxUniversalIOPrefsType
+{
+    longint standardIO = 0x00000000,
+            customIO = 0x00000001;
+    longint;    // number of buffers to allocate
+    longint;    // size of each buffer
+    longint;    // number of I/O requests that
+                // can be pending at once
+    longint;    // open/close timeout in ticks
+    longint;    // read/write timeout in ticks
+};</pre>
+<p>
+The first field in the resource specifies whether you're using QuickDraw GX's standard<br>
+communications methods (like PAP or serial) or if you're going to provide custom<br>
+device communications routines (to support SCSI or Centronics printers, for<br>
+example). If you set this field to customIO, QuickDraw GX won't perform needless<br>
+memory allocation or initialization to support the standard I/O routines. 
+</p>
+<p>
+The next field indicates the number of buffers you'd like QuickDraw GX to allocate for<br>
+you (0 indicates none). In low-memory situations, fewer buffers than this number<br>
+may be created. 
+</p>
+<p>
+Following the number of buffers is the size of each buffer, and then the intimidating<br>
+"number of I/O requests that can be pending at once" field. A good value for this field is<br>
+the number of buffers + 3.&nbsp;&nbsp;&nbsp;This represents the possibility of a pending write (or<br>
+read) on each buffer, as well as a pending status, read, and close connection request. 
+</p>
+<p>
+The rest of the fields in this resource are used to set timeout thresholds. 
+</p>
+<p>
+If a driver doesn't include an 'iobm' resource, the system defaults to two 1K buffers<br>
+and 10-second timeout values. Because every device is different, it's unlikely that the<br>
+default options will be ideal for your printer. 
+</p>
+<p>
+<b>DIFFERENCES BETWEEN IMAGING SYSTEMS</b><br>
+PostScript, raster, and vector drivers send differently formatted data to their devices,<br>
+and this has an effect on how you should set up your buffers. 
+</p>
+<p>
+<b>PostScript drivers.</b> PostScript drivers send text or binary data to their printers,<br>
+and are generally connected via PAP (Printer Access Protocol). As it turns out, the<br>
+low-level PAP driver in QuickDraw GX makes sure that no more than (512 * flow<br>
+quantum) bytes are sent to your device at a time. The flow quantum (normally 8 for<br>
+LaserWriters) is specified in your gxDeviceCommunicationsType ('comm') resource.<br>
+So, if your PAP printer uses a flow quantum of 8, a maximum of only 4K will be sent<br>
+to the printer at a time, even if your buffer size is 8K. This means that a buffer size of<br>
+(256 * flow quantum) or (512 * flow quantum) usually works well for PAP devices.
+</p>
+<p>
+<b>Vector drivers. </b>There are some distinct differences between vector drivers and<br>
+other types of drivers:
+</p>
+<ul>
+<li>Vector drivers send text commands, but not in the quantity that their<br>
+PostScript counterparts do.&nbsp;&nbsp;&nbsp;Vector devices tend to understand graphics<br>
+commands that are only a few characters long but describe graphics that may<br>
+take several seconds to plot. This is especially true for pen plotters and<br>
+cutters.</li>
+<li>Because vector devices usually have very basic graphics primitives,<br>
+operations such as clipping and converting text into polygons are often<br>
+performed on the Macintosh before the data is sent to the plotter.</li>
+<li>Unlike most PostScript and some raster devices, vector devices rarely<br>
+wait to start imaging until the entire page is received. It's therefore more<br>
+efficient to begin the plot as soon as possible, and then send small chunks of<br>
+data as quickly as possible.</li>
+</ul>
+<p>
+As a result, vector drivers work best when they use several small buffers -- for<br>
+example, buffers of 256 bytes each. This helps keep both the Macintosh and the<br>
+printer busy. 
+</p>
+<p>
+<b>Raster drivers. </b>Raster drivers send bitmaps to their printers, often with control<br>
+codes to skip over white areas in the image. The way you set up your buffers for raster<br>
+drivers can have a dramatic effect on performance -- more so than for other types of<br>
+drivers. The bitmap for a US Letter-sized page on a 24-bit, 300-dpi color device can<br>
+require 24 megabytes of data. With that much data to process, your code has to be as<br>
+efficient as possible. For raster drivers, your buffers should be at least the size of one<br>
+(preferably two) maximum-sized scan lines for your device. 
+</p>
+<p>
+<b>BUFFERING BOTTLENECKS</b><br>
+There are several things that can have an impact on the flow of data to your device.<br>
+We'll discuss the most common ones here. 
+</p>
+<p>
+<b>The number of buffers specified in your 'iobm' resource. </b> If you used only<br>
+one buffer in your printer driver, you'd constantly hit the "pending write" lock-out<br>
+situation described earlier. As soon as you finished filling the buffer, you'd have to<br>
+wait for it to empty before buffering more data. You should therefore always have at<br>
+least two buffers. 
+</p>
+<p>
+In an ideal situation, two buffers are all you'd need -- one would be always available<br>
+for buffering while the other is sent to the device. However, you'd need a very fast<br>
+device to manage this, as we'll soon see. In practice, three or four buffers is a good<br>
+start for PostScript and raster drivers. For vector drivers, start with eight buffers. 
+</p>
+<p>
+<b>The size of the buffers specified in your 'iobm' resource. </b> As mentioned<br>
+earlier, this is critical for vector and raster drivers. For vector devices, even<br>
+moderate-sized buffers (2K) can cause your plotter to stall while data is being<br>
+buffered, and your Macintosh to stall while that data is being plotted. Remember, a<br>
+little vector data goes a long way. Start with 256-byte buffers. 
+</p>
+<p>
+If you're writing a raster driver using the default implementation of GXRasterDataIn,<br>
+make sure that at least one worst-case scan line of data will fit in your buffers. (Keep<br>
+in mind that your compression scheme might expand the data.) Your buffers must be<br>
+this large because the gxDontSplitBuffer buffering option is used by the default<br>
+implementation of GXRasterDataIn. If your buffer isn't big enough to hold an entire<br>
+scan line, you'll get into an infinite loop as QuickDraw GX keeps rejecting buffers and<br>
+asking for one that can hold all the data.&nbsp;&nbsp;There are two reasons for using the<br>
+gxDontSplitBuffer option:
+</p>
+<ul>
+<li>It allows for some degree of error recovery. If data is sent to the printer,<br>
+and the printer is off-line and discards the data, you can just repackage the<br>
+same scan lines and resend the buffer. If scan lines are split across buffers,<br>
+it's a little more work to keep track of what to send again. </li>
+<li>Some devices are modal in that they must be set to "graphics mode" before<br>
+receiving graphics data, and set to other modes before receiving other types of<br>
+data. Imagine that you split a buffer containing a "start graphics mode"<br>
+command, followed by some graphics data, followed by an "end graphics mode"<br>
+command. In between the two GXBufferData calls, the driver might want to<br>
+query the device with GXWriteData. This could result in chaos or ignored<br>
+requests because the printer is set to graphics mode and might not accept such<br>
+queries. </li>
+</ul>
+<p>
+Using the gxDontSplitBuffer option does mean that some portion of each buffer will<br>
+probably be unfilled. If splitting the data between buffers isn't a problem for your<br>
+device, override GXRasterDataIn and don't specify gxDontSplitBuffer when you buffer<br>
+the data. 
+</p>
+<p>
+How big should your buffers be? As mentioned before, probably at least the size of two<br>
+maximum- sized scan lines. In a minute, we'll see how you can tune your buffer size. 
+</p>
+<p>
+<b>How fast QuickDraw GX can prepare data. </b> It's going to take QuickDraw GX time<br>
+to prepare the data that it hands your driver. For raster drivers, make sure that your<br>
+gxRasterPrefsType ('rdip') resource is set up to ask only for the data that you need.<br>
+Don't make QuickDraw GX spend any more time or pass more data than it needs to. 
+</p>
+<p>
+<b>Time hits from postprocessing. </b>This applies to drivers that do their own<br>
+halftoning and the like. Can you gain significantly by doing your own halftoning? It's<br>
+possible, but keep in mind that QuickDraw GX offers a wide range of halftoning and<br>
+dithering options, and using these methods is likely to take a similar amount of time as<br>
+just passing your driver the raw data and having it halftone that. 
+</p>
+<p>
+<b>The throughput of the communications pipe. </b>Your device might want to<br>
+process data faster than the computer sends it due to hardware constraints of, for<br>
+example, the serial port. 
+</p>
+<p>
+<b>How fast the device can receive data. </b> Similarly, the device itself might be the<br>
+bottleneck. Keep in mind that the speed the manufacturer claims may not refer to using<br>
+the printer for printing graphics.&nbsp;&nbsp;&nbsp;Graphic images usually take longer to process than<br>
+text. The Macintosh (with some minor irrelevant exceptions) prints in graphics mode<br>
+only, so the claimed rate may not be realistic. 
+</p>
+<p>
+<b>WHICH BOTTLENECKS AFFECT YOU?</b><br>
+Before you can improve the performance of your printer driver, you have to find your<br>
+bottlenecks.&nbsp;&nbsp;&nbsp;Here are some tests that help determine where your bottlenecks are. 
+</p>
+<p>
+<b>How long does it take QuickDraw GX to prepare data? </b> If you're writing a<br>
+raster driver, implement a GXRasterDataIn override that does nothing but return<br>
+noErr. For PostScript or vector drivers, do the same thing in a message override for<br>
+GXBufferData orGXVectorPackageShape, respectively. If your PostScriptor vector<br>
+driver renders some shapes on its own, you should also override<br>
+GXPostScriptProcessShape or GXVectorVectorizeShape. In this override, simply<br>
+forward the message unless you're passed a shape that your driver will render itself.<br>
+In that case, don't forward the message; just return noErr. This way, your calculations<br>
+won't include time spent rendering shapes that your driver will be handling<br>
+completely on its own. 
+</p>
+<p>
+Next, print a typical several-page document and see how many pages per minute you<br>
+get. If this is slower than the device can print, you might want QuickDraw GX to create<br>
+an image file of the data before sending it.
+</p>
+<p>
+<b>&nbsp;Calculating pages per minute is easy. </b>Suppose your "typical" 4-page document<br>
+takes 72 seconds to render. Then&nbsp;&nbsp;(72 seconds &amp;div; 4 pages) = 18 seconds per page<br>
+and (60 seconds &amp;div; 18 seconds per page) = 3.3 pages per minute. *
+</p>
+<p>
+To create an image file, override GXCreateImageFile and forward the message along<br>
+with a combination of the image file options (such as "gxMakeImageFile |<br>
+gxEntireFile"). There are optionsfor creating image files for each plane, each page, or<br>
+both. For details, see the QuickDraw GX interface file PrintingMessages.h. 
+</p>
+<p>
+<b>&nbsp;If you use the debugging version</b> of QuickDraw GX, rendering is slower. For<br>
+accurate benchmarks, use the nondebugging QuickDraw GX extension for timing tests.<br>
+*
+</p>
+<p>
+<b>How long is your code taking to postprocess data? </b> Do the same thing as you<br>
+just did, but include any of your own code (for halftoning, compressing, or whatever)<br>
+that you normally execute. Compare this to the rate you got from the last test to see<br>
+how your code is affecting rendering time. Again, an image file might be an option if<br>
+this is a problem. Also, consider using QuickDraw GX's built-in halftoning and<br>
+dithering instead of your own. 
+</p>
+<p>
+<b>How fast does the device want data? </b> Suppose your device is a<br>
+two-page-per-minute, 300-dpi, 4-bit device with a maximum page size of 8 by 10<br>
+inches. Some quick arithmetic (see "Calculating Device Data Requirements") tells you<br>
+that you need over 7 megabytes of data per minute, though you can reduce this<br>
+requirement substantially with compression.
+</p>
+<p>
+There's another way to determine whether the communications speed is too low: Make<br>
+your driver roll everything into an image file before sending anything to the printer.<br>
+Then, print a typical document and see if the printer stays busy once it starts<br>
+receiving data. If not, the data isn't being sent to your device fast enough. There's not<br>
+much you can do about this except reduce the amount of data you send or redesign the<br>
+hardware. 
+</p>
+<p>
+Finally, don't package white space and send it to your device if the device supports<br>
+skipping it. The GXRasterDataIn message passes a rectangle that indicates where the<br>
+nonwhite scan lines are in a given band. If you don't skip over the white space on a<br>
+page, you're wasting time packaging and sending useless data. 
+</p>
+<p>
+<b>Is the buffer usage optimal? </b>Whenever you send GXBufferData, first send<br>
+GXFreeBuffer. Check to see if GXFreeBuffer returns immediately. If it doesn't, the<br>
+buffering is being blocked by a pending write.&nbsp;&nbsp;&nbsp;An alternate approach is to implement<br>
+an override for GXFreeBuffer that subtracts the tick count determined before calling<br>
+Forward_GXFreeBuffer from the tick count when the call returns. You could record<br>
+this in a file and look at the information after a print job finishes. Large values<br>
+indicate that your driver is blocked while waiting for a free buffer. 
+</p>
+<p>
+Try increasing your buffer size or adding more buffers until the lock-out goes away.<br>
+Note that if your device isn't fast enough, you may never (with reasonable buffer<br>
+allocation) reach a state in which you never have to wait. Your device (or the<br>
+communications pipe) might be so slow that the only way to keep a buffer free is to<br>
+allocate enough buffers to hold the entire page. That's what I would consider<br>
+unreasonable buffer allocation. However, if you can reach this state of always having a<br>
+buffer free, back off on the number of buffers or buffer size slightly so that you begin<br>
+to get occasional lock- outs again. This is your optimal buffer configuration. 
+</p>
+<p>
+<b>EYES TO THE FRONT, DRIVER</b><br>
+Now that you can optimize your QuickDraw GX buffering and printing, you can avoid<br>
+the sporadic printing that so many driver writers fall prey to. Your drivers will have<br>
+the printers humming steadily along, your users will be pleased, and other driver<br>
+developers will stand in awe of you. 
+</p>
+<h2>CALCULATING DEVICE DATA REQUIREMENTS</h2>
+<p>
+A two-page-per-minute, 300-dpi, 4-bit device with a maximum page size of 8 by 10<br>
+inches requires&nbsp;&nbsp;(300 x 300 x 4) &amp;div; 8 bits per byte = 360,000 bits per square<br>
+inch, or a little under 44K bytes per square inch. The entire page requires (45,000 x<br>
+8 x 10) = 3,600,000 bytes per page or about 3.5 megabytes per page. To achieve the<br>
+device's maximum two-page-per-minute throughput rate, you need to pass twice this<br>
+amount, or over 7 megabytes of data per minute.
+</p>
+<p>
+Now, suppose you use compression and also remove beginning-of-line and interline<br>
+white space to reduce a typical page to, say, 25% of its raw size. Then you're looking<br>
+at 7 x .25 or about 1.8 megabytes per minute. That's still about 29K bytes per second<br>
+or about 300 Kbaud to satisfy this device. This can still be a problem if your interface<br>
+is running at only 9600 baud.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>DAVE HERSEY </b>(AppleLink HERSEY) is known to small relatives as "Uncle Mommy."<br>
+He spent the last three years working with QuickDraw GX and helping developers learn<br>
+its wily ways. In his spare time, Dave helps his nephews and niece hunt for buried<br>
+pirate treasure on Joe's Island in Wayne, Maine. *
+</p>
+<p>
+<b>The best reference </b>for writing QuickDraw GX printer drivers is<i> Inside Macintosh:</i><br>
+<i>QuickDraw GX Printing Extensions and Drivers</i> .*
+</p>
+<p>
+<b>Thanks </b>to our technical reviewers Hugo Ayala, Tom Dowdy, Daniel Lipton, and Harita<br>
+Patel. *
+</p>
+</body>
+</html>

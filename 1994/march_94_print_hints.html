@@ -1,0 +1,315 @@
+<html>
+<head>
+<!-- Article ID: 4 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 94 - Print Hints</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Print Hints</h2>
+<h2>TRACKING QUICKDRAW GX MESSAGES</h2>
+<h1>PETE ("LUKE") ALEXANDER</h1>
+<p>
+<img src="img/129.gif" width="180 px"></img>
+</p>
+<p>
+In this column, I'd like to bring a tool called MessageWatcher to your attention. This<br>
+tool, which is provided on this issue's CD, will help you understand the messages sent<br>
+to your QuickDraw GX printer driver or printing extension when an application prints<br>
+a document through the QuickDraw GX system. 
+</p>
+<p>
+<b>A LITTLE BACKGROUND</b><br>
+<i>develop</i> Issue 15 gave an overview of QuickDraw GX in the article "Getting Started<br>
+With QuickDraw GX" and discussed the QuickDraw GX messaging system in "Developing<br>
+QuickDraw GX Printing Extensions." You can also learn about QuickDraw GX printing<br>
+and messaging in<i>Inside Macintosh: QuickDraw GX Printing Extensions and Drivers</i> . If<br>
+you've read these and don't need a refresher, you can just skip to the next section. 
+</p>
+<p>
+QuickDraw GX's extensible printing architecture makes writing printer drivers<br>
+easier than ever.&nbsp;&nbsp;&nbsp;Easier yet is writing printing extensions, which allow you to<br>
+modify the behavior of the QuickDraw GX printing system (similar to the way system<br>
+extensions let you change the system by patching traps). 
+</p>
+<p>
+When an application prints through the QuickDraw GX system, QuickDraw GX either<br>
+performs the requested task or sends a message (via the Message Manager) to the<br>
+printer driver to perform the task. The QuickDraw GX printing system defines over<br>
+150 messages. For many tasks, QuickDraw GX provides a default implementation for<br>
+the associated message, but sends a message to the driver anyway. The driver can then<br>
+perform the task in its own way or massage the message parameters before forwarding<br>
+the message on to the default implementation. In a printing extension, you can<br>
+intercept and override any message before it gets to the printer driver.
+</p>
+<p>
+<b>ABOUT MESSAGEWATCHER AND OUR EXAMPLE</b><br>
+With over 150 messages in the QuickDraw GX printing system, it's a little difficult to<br>
+follow the flow of the messages through the system or figure out their default<br>
+implementation. MessageWatcher helps you with this by showing the messages being<br>
+sent while an application is printing a document.&nbsp;&nbsp;&nbsp;This "live" view is very helpful<br>
+toward understanding the calling chain and hierarchy of messages.
+</p>
+<p>
+The MessageWatcher application and system extension are on this issue's CD. To use<br>
+MessageWatcher, first drop the system extension into the System Folder and reboot;<br>
+then launch the MessageWatcher application. Whenever any application initiates a<br>
+print job, a window corresponding to that job will be opened in MessageWatcher and<br>
+the messages sent as part of the job will scroll past. The title of each MessageWatcher<br>
+window contains the internal ID of the job. (You should view the internal ID of a job<br>
+similar to the way you view a file reference number today.)
+</p>
+<p>
+The QuickDraw GX Finder printing extension (which is part of the QuickDraw GX<br>
+system extension) and PrinterShare GX are treated like any other applications<br>
+printing through the QuickDraw GX printing system. So they each have a print job<br>
+associated with them, andMessageWatcher displays windows for them as well. If you<br>
+were to create a desktop printer with the Chooser, there would also be a window for<br>
+the Chooser. 
+</p>
+<p>
+As an example, we're going to print a document created and displayed by the "All<br>
+Shapes with Printing" sample application, which is part of the sample code included<br>
+with QuickDraw GX. This sample creates all of the shapes possible within the graphics<br>
+system. Below is the code that prints the page of shapes; keep it in mind while going<br>
+through the example of using MessageWatcher in the next section. 
+</p>
+<pre>OSErr DoPrintOneCopy (WindowPtr myWindow)
+{
+    Str255windowTitle;
+    OSErr printError = noErr;
+
+    if (myWindow)
+    {
+          GetWTitle(myWindow, windowTitle);
+          // Start sending the job. The job has the
+          // same name as our window and contains
+          // one page. This name appears in the
+          // status messages sent to the desktop
+          // printer.
+          GXStartJob(gDocumentJob, windowTitle, 1);
+
+          // Send the entire page of shapes to the
+          // printer. (All the shapes being printed
+          // have been collected into the GX picture
+          // shape: gthePage.)
+          GXPrintPage(gDocumentJob, 1,
+                       GXGetJobFormat(gDocumentJob, 1),
+                       gthePage);
+
+          // Tell QuickDraw GX printing we're done
+          // sending the job, so terminate the
+          // spooling process.
+          GXFinishJob(gDocumentJob);
+
+          if (GXGetJobError(gDocumentJob) != noErr)
+                 // Your error-handling code here!
+    }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+We're going to look at our sample application printing to a LaserWriter II SC, so the<br>
+message sequence displayed by MessageWatcher contains messages that are sent to a<br>
+raster printer. Note that most of the messages would be different if we were printing<br>
+to a PostScript&#174; printer or to a plotter.
+</p>
+<p>
+Each line in a MessageWatcher window consists of a message preceded by one of the<br>
+following labels: send message, send object, and send object to. These labels represent<br>
+the similarly named API calls in the Message Manager -- for example, "send message"<br>
+corresponds to the SendMessage call.&nbsp;&nbsp;&nbsp;All the "send" labels are roughly equivalent, so<br>
+you'll be able to follow along well enough without distinguishing between them; if you<br>
+do want more information about the Message Manager calls, see Chapter 6, "Message<br>
+Manager," in<i>Inside Macintosh: QuickDraw GX Environment and Utilities</i> . 
+</p>
+<p>
+While going through the various MessageWatcher windows in the next section, I won't<br>
+bore you with a line-by-line discussion of everything displayed in each window. I'll<br>
+give you the general idea behind the information presented; by checking out the<br>
+documentation and trying out MessageWatcher yourself on different applications,<br>
+you'll be able to figure out these details easily enough. 
+</p>
+<p>
+<b>WHAT MESSAGEWATCHER DISPLAYS</b><br>
+The first time our sample application calls the QuickDraw GX printing API, the<br>
+QuickDraw GX Finder printing extension initializes the default printer and then shuts<br>
+down. The MessageWatcher window for this extension contains the following (the<br>
+window title is shown in boldface; the ID displayed in each title will be different when<br>
+you run MessageWatcher yourself):
+</p>
+<p>
+<b><code>Finder: 0x0000fac4</code></b>
+</p>
+<pre>send object to: initialize
+send object: defaultPrinter
+send object to: shutDown</pre>
+<p>
+You'll also see PrinterShare GX start up a couple of times: The first time, it performs<br>
+some general spool file and desktop printer queue management; it examines all the<br>
+spool files and makes sure that the print jobs that are waiting are handled in the<br>
+appropriate order. The second time it runs, it starts up the print job. The<br>
+MessageWatcher window for PrinterShare GX displays this:
+</p>
+<p>
+<b><code>PrinterShare GX: 0x0000fa3c</code></b>
+</p>
+<pre>send object to: initialize
+send object: defaultPrinter
+send object to: initialize
+send object: defaultPrinter
+send object: defaultPaperType
+send object: defaultFormat
+send object: defaultJob
+send object: defaultPaperType
+send object to: shutDown</pre>
+<p>
+Notice that MessageWatcher indents some of information in the window, allowing you<br>
+to see the message hierarchy. For example, the above window shows that the recipient<br>
+of the defaultJob message sent the message in the indented line below it,<br>
+defaultPaperType. 
+</p>
+<p>
+The next application to send messages through the system is our sample application,<br>
+All Shapes with Printing. In this case, we chose Print One Copy from the File menu of<br>
+the application to start the printing process. The application starts by setting up<br>
+various default printing structures associated with the print job.
+</p>
+<p>
+<b><code>All Shapes with Printing: 0x00990c</code></b>
+</p>
+<pre>send object to: initialize
+send object: defaultPrinter
+send object to: initialize
+send object: defaultPrinter
+send object: defaultPaperType
+send object: defaultFormat
+send object: defaultJob
+    send object: defaultPaperType</pre>
+<p>
+Now we'll see the actual messages sent to print a document. Our sample application is<br>
+ready to start up the print job and create the spool file. It uses GXPrintPage to print<br>
+the document; you'll see the startJob and finishJob messages in the MessageWatcher<br>
+window because GXPrintPage sends these messages in its default implementation. Next,<br>
+the data contained on the page is spooled to disk.&nbsp;&nbsp;&nbsp;Finally, the print job is finished, and<br>
+the spool file is closed and waiting for PrinterShare GX to find it and send it to the<br>
+printer. 
+</p>
+<pre>send object: startJob
+    send message: createSpoolFile
+    send object: jobStatus
+send object: printPage
+    send message: StartPage
+          send object: jobStatus
+    send message: finishPage
+          send message: spoolPage
+                 send message: spoolData
+                 send message: spoolData
+                 send message: spoolData
+                 send message: spoolData
+                 send message: spoolData
+send object: finishJob
+    send message: completeSpoolFile
+          send object: spoolResource
+    send object: jobStatus
+send object to: shutDown</pre>
+<p>
+The QuickDraw GX printing system is now ready to send the data contained in the spool<br>
+file to the printer. PrinterShare GX starts by checking the status of the printer and<br>
+then writing (that is, sending) the data. It continues to write the data and check the<br>
+device status until all the data is sent.&nbsp;&nbsp;&nbsp;If a status check were to reveal that an error<br>
+had occurred, the error would be available via GXGetJobError to the driver or<br>
+extension (not to the application, which is usually out of the printing process at this<br>
+point). Once all the data has been sent to the printer, PrinterShare GX checks the<br>
+status of the printer one last time, makes sure the print job was successful, closes the<br>
+spool file, and shuts down. We now have a piece of paper coming out of the printer. 
+</p>
+<p>
+<b><code>PrinterShare GX: 0x00092520</code></b>
+</p>
+<pre>send message: getDeviceStatus
+send message: writeData
+    send message: getDeviceStatus
+          lots of writeData and getDeviceStatus
+          messages to send the data to the printer
+    send message: writeData
+    send message: checkStatus
+send object: jobStatus
+send object: closeSpoolFile
+send object to: shutDown</pre>
+<p>
+The MessageWatcher window for the QuickDraw GX Finder printing extension shows<br>
+the messages it receives to update the status information being displayed in the desktop<br>
+printer's window. In this case, the status is updated six times during the process of<br>
+printing the document.&nbsp;&nbsp;To see exactly what status information is being sent to the<br>
+desktop printer's window, you could open the window yourself and take a look.<br>
+Remember, the messages will be slightly different for different types of printers --<br>
+PostScript, raster (QuickDraw based), and plotter. 
+</p>
+<p>
+<b><code>Finder: 0x000912dc</code></b>
+</p>
+<pre>send object: writeStatusToDTPWindow
+send object: writeStatusToDTPWindow
+send object: writeStatusToDTPWindow
+send object: writeStatusToDTPWindow
+send object: writeStatusToDTPWindow
+send object: writeStatusToDTPWindow</pre>
+<p>
+<b>WATCH OUT NOW . . .</b><br>
+Following the flow of messages through the QuickDraw GX printing system will give<br>
+you a better understanding of the calling chain and hierarchy of messages that are sent<br>
+while a document is being printed. With MessageWatcher, you have the power to peek<br>
+into the world of QuickDraw GX messaging. Happy exploring! 
+</p>
+<h2>THE RETURN OF 'STR ' (-8192)</h2>
+<p>
+In the Print Hints column in Issue 13 of <i> develop</i> , I talked about the disappearance of<br>
+'STR ' (-8192) and'PAPA' (-8192) resources from a system running QuickDraw GX<br>
+and how your application should be prepared to handle this situation. The 'PAPA'<br>
+(-8192) resource is still gone, but the 'STR ' (-8192) resource, containing the<br>
+name of the default printer driver, has returned. Unfortunately, there are a few<br>
+applications that require this resource to be present to run correctly -- in some<br>
+cases, to run at all. Since we wanted old applications to have the highest possible<br>
+compatibility while printing through a QuickDraw GX system, we put the resource<br>
+back. However, as mentioned in Issue 13, it's still not a good idea to depend on the<br>
+information in 'STR ' (-8192).
+</p>
+<p>
+<b>REFERENCES</b>
+</p><ul>
+<li><i>Inside Macintosh: QuickDraw GX Printer Drivers and Extensions</i>&nbsp;&nbsp;and<br>
+<i>Inside Macintosh: QuickDraw GX Environment and Utilities. </i> On-line<br>
+versions accompany QuickDraw GX releases; printed manuals will soon<br>
+be available (Addison-Wesley, 1994).<br>
+<li>"Getting Started With QuickDraw GX" by Pete ("Luke") Alexander and<br>
+"Developing QuickDraw GX Printing Extensions" by Sam Weiss, <i>develop</i><br>
+Issue 15.<br>
+
+<li>"Print Hints: Looking Ahead to QuickDraw GX" by Pete ("Luke")<br>
+Alexander, <i> develop</i> Issue 13.</li>
+</ul>
+<p>
+<b>PETE ("LUKE") ALEXANDER </b>will tell you that life at Apple is hard. He spends long<br>
+days (and frequent nights) with smart people trying to figure out what the right thing<br>
+is and how to make it happen. Then he gets sent all over the world to tell people about<br>
+what's new and happening. Last year Luke went to London and walked around the streets<br>
+for ten hours trying to fend off jet lag and punk rockers, to Madrid where he had an<br>
+unforgettable chocolate shake, to Milan where he saw the basement of the Apple<br>
+building and tried not to take it personally that they wouldn't let him near a window, to<br>
+Munich and Frankfurt where he finally understood why Germans gush about their<br>
+beer, and to Sweden where he gave his QuickDraw GX talk in a discotheque filled with<br>
+engineers who couldn't get the beat. After these whirlwind tours, Luke soars above the<br>
+stress in his glider, but only occasionally takes an Apple Evangelist along, since they<br>
+seem to think they've got connections up there and are forever telling him how to fly.<br>
+Yes, life at Apple is hard, but after five years, Luke's beginning to get the hang of it. *
+</p>
+<p>
+<b>Buried deep within QuickDraw GX </b>is an About box. The exercise of how to get to<br>
+this box is left for the reader. *
+</p>
+<p>
+<b>Thanks </b>to Hugo Ayala, Tom Dowdy, and Dave Hersey for reviewing this column. *
+</p>
+</body>
+</html>

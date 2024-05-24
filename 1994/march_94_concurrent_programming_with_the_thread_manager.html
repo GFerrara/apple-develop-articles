@@ -1,0 +1,1158 @@
+<html>
+<head>
+<!-- Article ID: 11 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 94 - CONCURRENT PROGRAMMING WITH THE THREAD MANAGER</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>CONCURRENT PROGRAMMING WITH THE THREAD MANAGER</h2>
+<h1>ERIC ANDERSON AND BRAD POST</h1>
+<p>
+<img src="img/137.gif" width="180 px"></img>
+</p>
+<p>
+<i>Let us introduce you to the latest addition to the Macintosh Toolbox -- the Thread</i><br>
+<i>Manager. The Thread Manager enables concurrent programming so that you can</i><br>
+<i>provide true multitasking within your application. We give a quick overview of the</i><br>
+<i>Thread Manager and then move on to discuss advanced programming techniques not</i><br>
+<i>found in the Thread Manager documentation.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The Thread Manager is a new part of the Macintosh Toolbox that provides both<br>
+cooperative and preemptive threads of execution within an application. Although it's<br>
+available only within your application and is not used for systemwide preemption, you<br>
+can take advantage of it in many valuable ways:
+</p>
+<ul>
+<li>Use a threaded About box so that your application can continue running in<br>
+the background while displaying a modal dialog.</li>
+<li>Do anything you do today at idle time with null events within a thread.<br>
+This avoids the complexity of writing idleProcs. </li>
+<li>Decouple time-consuming processes from the user interface of your<br>
+application.&nbsp;&nbsp;&nbsp;For example, create an image-rendering thread for each image to<br>
+render, and use the main thread for the user interface of the application.<br>
+Similarly, with graphics screen redraws and print spooling, have a thread do<br>
+the redraw or spool a print job while the main thread handles the user<br>
+interface.</li>
+<li>Construct complex simulations without complex logic. For example, in a<br>
+program that simulates city streets, use a thread for each car, one for each<br>
+traffic signal, and one for the time of day.</li>
+<li>Use threaded I/O and communication to easily allow an application to act<br>
+as both a client and a server. With this approach, applications can handle<br>
+incoming questions and wait for incoming answers simultaneously. Examples<br>
+of this are discussed in more detail in "Threads on the Macintosh" in<i>develop</i><br>
+Issue 6.</li>
+</ul>
+<p>
+The Thread Manager has all the rights and privileges of other services in the<br>
+Macintosh Toolbox, such as a trap interface to avoid linking a library into your code<br>
+and header files for C, Pascal, and assembly-language programmers. It's a fully<br>
+supported product and will be around for years to come.&nbsp;&nbsp;&nbsp;You can license the Thread<br>
+Manager through Apple's Software Licensing group (AppleLink SW.LICENSE). The<br>
+Thread Manager works on all Macintosh platforms running System 7 or later.
+</p>
+<h2>THREAD MANAGER OVERVIEW</h2>
+<p>
+This section describes the two types of threads -- cooperative and preemptive -- and<br>
+the basic services for creating, scheduling, and deleting threads and gathering thread<br>
+status. It also discusses the main thread, code organization, and thread disposal. 
+</p>
+<p>
+<b>COOPERATIVE THREADS</b><br>
+<i>Cooperative</i> threads allow cooperative multitasking. They're the easiest to use in terms<br>
+of scheduling and accessibility to Toolbox traps. Everything you can do today in a<br>
+standard application you can do with a cooperative thread -- memory allocation, file<br>
+I/O, QuickDraw, and so on. Cooperative threads yield to other cooperative threads only<br>
+when the developer explicitly makes one of the Thread Manager yield calls or changes<br>
+the state of the current cooperative thread.
+</p>
+<p>
+Cooperative threading in the Thread Manager is similar to the cooperative threading in<br>
+the Threads Package made available through APDA a few years ago (see "Threads on the<br>
+Macintosh" in<i>develop</i> Issue 6). In fact, this library should no longer be used since the<br>
+Thread Manager is replacing it as the preferred method. Converting your applications<br>
+from the Threads Package to the Thread Manager is easy as long as you don't rely<br>
+heavily on the internal data structures provided by the Threads Package. The big<br>
+advantage to using the Thread Manager is that thread stacks are register swapped, not<br>
+block moved, during a context switch. 
+</p>
+<p>
+<b>PREEMPTIVE THREADS</b><br>
+<i>Preemptive</i>&nbsp;&nbsp;threads allow true multitasking at the application level. Whenever the<br>
+application gets time from the Process Manager, preemptive threads for that<br>
+application are allowed to run. Unlike cooperative threads, which execute only when a<br>
+previously running cooperative thread explicitly allows it, preemptive threads may<br>
+interrupt the currently executing thread at any time to resume execution. You can<br>
+make the preemptive thread yield back to the just-preempted cooperative thread with<br>
+any of the Thread Manager yield calls. Alternatively, a preemptive thread can simply<br>
+wait for its time quantum to expire and automatically yield back to the cooperative<br>
+thread it interrupted. If the interrupted cooperative thread is in the stopped state, the<br>
+next available preemptive thread is made to run. Preemptive threads then preempt<br>
+each other, in a round-robin fashion, until the interrupted cooperative thread is made<br>
+ready. Figure 1 illustrates the default round-robin scheduling mechanism for threads.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+For situations where you don't want a thread to be preempted, the Thread Manager<br>
+provides two calls for turning off preemption (see the next section). These calls don't<br>
+disable interrupts, just thread preemption. 
+</p>
+<p>
+<img src="img/138.gif" width="546 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1</b> Round-Robin Scheduling Mechanism&nbsp;&nbsp;&nbsp;Because a preemptive thread can<br>
+usually "interrupt" cooperative threads and doesn't need to explicitly use the API to<br>
+yield to other threads, preemptive threads have to conform to the guidelines set up for<br>
+code executed at interrupt time. Don't make any calls that are listed in<i>Inside Macintosh</i><br>
+<i>X- Ref</i> , Revised Edition, Appendix A, "Routines That Should Not Be Called From Within<br>
+an Interrupt." No moving of memory is allowed and definitely no QuickDraw calls<br>
+should be made. QuickDraw calls may seem tempting and may even appear to work, but<br>
+they fail on many occasions and can corrupt other parts of memory in subtle ways that<br>
+are very difficult to debug. (QuickDraw GX was designed to be reentrant, so<br>
+preemptive threads may make use of the QuickDraw GX feature set if they follow the<br>
+rules set up by QuickDraw GX.) If there's only one thing you learn in this article,<br>
+make sure it's this:<i>preemptive threads must follow interrupt-time rules! </i>
+</p>
+<p>
+<b>THE THREAD MANAGER API</b><br>
+There are several data types declared in the Thread Manager API that determine the<br>
+characteristics of a thread. These include the type of thread you're dealing with<br>
+(cooperative or preemptive), the state of a thread (running, ready, or stopped), and a<br>
+set of options for creating new threads. With the thread creation options, you can<br>
+create a thread in the stopped state (to prevent threads from beginning execution<br>
+before you want them to), create a thread from a preallocated pool of threads (which is<br>
+how you would create a new thread from a preemptive thread), or tell the scheduler<br>
+not to save FPU state for the new thread (to reduce scheduling times for threads that<br>
+don't use the FPU).&nbsp;&nbsp;&nbsp;These creation options are combined into one parameter and<br>
+passed to the routines that create new threads. 
+</p>
+<p>
+General-purpose services make it possible to create a pool of preallocated threads and<br>
+determine the number of free threads in the pool, get information on default thread<br>
+stack sizes and the stack currently used by a thread, and create and delete threads. 
+</p>
+<p>
+There are basic scheduling routines for determining the currently running thread and<br>
+for yielding to other threads. You can also use the preemptive scheduling routines --<br>
+ThreadBeginCritical and ThreadEndCritical -- to define critical sections of code. A<br>
+critical section of code is a piece of code that should not be interrupted by preemptive<br>
+threads -- because it's changing shared data, for example. The use of critical sections<br>
+of code is needed to prevent interference from other threads and to ensure data<br>
+coherency within your code. Note that preemptive threads run at the same hardware<br>
+interrupt level as a normal application, and<i>calls to ThreadBeginCritical don't disable</i><br>
+<i>hardware interrupts; they simply disable thread preemption</i> . 
+</p>
+<p>
+Advanced scheduling routines enable you to yield to specific threads and to get or set<br>
+the state of nearly any thread. (You can't set a thread to the running state or change the<br>
+state of the currently running thread if it's in a critical section of code.) Custom<br>
+context-switching routines allow you to add to the default thread context and may be<br>
+associated with any thread on a switch-in and/or switch- out basis. Any thread may<br>
+have a custom context switcher for when it gets switched in and a different switcher<br>
+for when it gets switched out. In addition, a custom scheduling procedure may be<br>
+defined that gets called every time thread rescheduling occurs. All of these features<br>
+may be used by both types of threads. 
+</p>
+<p>
+The Thread Manager also provides debugging support: a program or debugger can<br>
+register callback routines with the Thread Manager so that it gets notified when a<br>
+thread is created, deleted, or rescheduled. 
+</p>
+<p>
+<b>THE MAIN THREAD</b><br>
+When an application launches with the Thread Manager installed, the Thread Manager<br>
+automatically defines the application entry point as the main cooperative thread. The<br>
+main cooperative thread is commonly referred to as the<i>application thread</i> or<i> main</i><br>
+<i>thread</i> . There are several guidelines you should follow regarding the main thread.<br>
+These aren't hard and fast rules, but just guidelines to keep you from having debugging<br>
+nightmares. Remember that cooperative threads must make explicit use of the Thread<br>
+Manager API to give time (yield) to other cooperative threads.
+</p>
+<p>
+First, the Thread Manager assumes the main thread is the thread that handles the event<br>
+mechanism (WaitNextEvent, GetNextEvent, ModalDialog, and so on). Events that can<br>
+cause your application to quit should be handled by the main thread: the application<br>
+was entered through the main thread andshould exit through it as well. The Thread<br>
+Manager schedules the main thread whenever a generic yield call is made and an OS<br>
+event (such as a key press or mouse click) is pending. This is done to speed up<br>
+user-event handling; otherwise, it could take a long time before the main thread got<br>
+time to run, because of the round-robin scheduling mechanism used for cooperative<br>
+threads. In general,&nbsp;&nbsp;<i>all</i> event handling should be done from the main thread to prevent<br>
+event-handling confusion. For example, if the main thread calls WaitNextEvent while<br>
+another thread is calling GetNextEvent while yet another thread is calling ModalDialog,<br>
+and they're all yielding to each other, sorting out which event belongs to which thread<br>
+becomes a nightmare. Just let the main thread handle all events. Your application will<br>
+run faster and work better in the long run.
+</p>
+<p>
+The second guideline is to avoid putting the main thread in a stopped state. Doing so is<br>
+perfectly legal but can lead to some exciting debugging if your application makes<br>
+incorrect assumptions about the state of the main thread.
+</p>
+<p>
+Last but not least, be sure you call MaxApplZone from the main thread to fully extend<br>
+your application heap before any other cooperative threads get a chance to allocate, or<br>
+move, memory.&nbsp;&nbsp;&nbsp;This requirement is due to the limitation on cooperative threads<br>
+extending the application heap -- they can't. 
+</p>
+<p>
+<b>DISPOSING OF THREADS</b><br>
+When threads finish executing their code, the Thread Manager calls DisposeThread.<br>
+Preemptive threads are recycled to avoid moving memory. Recycling a thread causes<br>
+the Thread Manager to clear out the internal data structure, reset it, and place the<br>
+thread in the proper thread pool. (There are two pools, one for cooperative and one for<br>
+preemptive threads.) Since recycling a thread doesn't move memory, preemptive<br>
+threads can dispose of themselves and other threads safely.
+</p>
+<p>
+The Thread Manager handles disposing of threads automatically, so it's not necessary<br>
+for the last line of your code to call DisposeThread unless you want to -- for example,<br>
+to recycle all terminating cooperative threads. DisposeThread takes three parameters:<br>
+the thread ID of the thread to be disposed of, a return value to return to the creator of<br>
+the thread, and a Boolean flag that tells the Thread Manager whether or not to recycle<br>
+the thread. A preemptive thread should only call DisposeThread with the recycle flag<br>
+set to true. 
+</p>
+<p>
+The Thread Manager API also defines a routine, SetThreadTerminator, that allows your<br>
+application to install a callback routine to be called when a thread terminates --<br>
+which is when it's disposed of.&nbsp;&nbsp;&nbsp;You could use SetThreadTerminator to do any cleanup<br>
+needed by the application, but remember, you can't move memory during termination<br>
+of a preemptive thread because you're still in the preemptive state. 
+</p>
+<p>
+When your application terminates, threads are terminated as follows:
+</p>
+<ul>
+<li>Stopped and ready threads are terminated first but in no special order. </li>
+<li>The running thread, which should be the main thread, is always<br>
+terminated last. </li>
+</ul>
+<p>
+<b>CODE ORGANIZATION</b><br>
+To use the Thread Manager most effectively, break your applications into discrete<br>
+functional pieces, similar to the code organization used for object-oriented<br>
+applications. Keep the code for event handling, window management, calculation, and<br>
+drawing separate. In general, design your code such that the discrete parts may run<br>
+independently of each other, but in an organized and coherent way.&nbsp;&nbsp;&nbsp;Object-oriented<br>
+code, in general, is designed this way and is much easier to think about in a concurrent<br>
+manner. The following sections discuss techniques that you can use to write more<br>
+effective thread code. The examples illustrate what we learned from lots of trial and<br>
+error during the development of the Thread Manager, which should reduce the<br>
+development time for your threaded applications. 
+</p>
+<p>
+<b>The return value </b>has been set by the time a thread termination routine is executed.<br>
+In this way, a piece of code may be notified when the return result of a terminated<br>
+thread becomes valid. There's more information on thread termination routines in the<br>
+Thread Manager documentation.*
+</p>
+<h2>THREAD INPUT AND OUTPUT PARAMETERS</h2>
+<p>
+When creating a thread, you can pass in both a thread input parameter and a return<br>
+value storage location. The Thread Manager defines the input parameter as a void* and<br>
+the return parameter as avoid**. Don't let the messy C-language semantics get you<br>
+down; it's actually quite easy to understand. 
+</p>
+<p>
+The Thread Manager assumes the input parameter is the size of a void* (a 32-bit long<br>
+word for today's 680x0 applications) and is passed to your thread as such. Any value<br>
+may be passed as the input parameter, as long as it's the size of a void*. Passing nil as<br>
+this parameter will simply pass nil -- not nothing -- as your thread's input<br>
+parameter. 
+</p>
+<p>
+The return parameter is a little messier. In asking for a void**, the Thread Manager<br>
+is asking for the memory location to store the void* returned by the thread. If nil is<br>
+passed as the return value storage location, the Thread Manager assumes there's no<br>
+return value and won't bother to set it on thread completion. Your thread may return<br>
+any value as long as it's the<i>size</i>&nbsp;&nbsp;of a void*. The address passed in as the return value<br>
+storage location can be simply the address of a long-word local variable (a long word<br>
+is the size of a void*) or can be as complicated as the address of a global variable<br>
+record pointer.&nbsp;&nbsp;&nbsp;The idea is that the Thread Manager wants, as the return value<br>
+storage location, the address in which to store a value the size of a void*. The Thread<br>
+Manager stores the returned value at thread termination time by using either a return<br>
+(x) statement or a DisposeThread call.
+</p>
+<p>
+Don't pass the address of a short-word local variable as the return value storage<br>
+location, because a short word is shorter than a void*. When the thread terminates,<br>
+the Thread Manager will slam all 32 bits of the return value (the size of a void*) into<br>
+the short word, destroying the high word of your next defined variable. You must also<br>
+make sure the storage location used for the return parameter is valid at the time the<br>
+thread terminates. For example, if you use a local variable as the storage location, you<br>
+need to be sure the new thread will terminate before you return from the routine that<br>
+created it (that is, before the local variable goes out of scope). 
+</p>
+<p>
+The following code samples show two methods of sending in thread parameters and<br>
+returning thread results. First let's define some constants and the record structure<br>
+used in the example:
+</p>
+<pre>#define kNoCreationOptions      0 /* Just use the standard default */
+                                  /* creation options.  */
+#define kDefaultThreadStackSize 0 /* Zero tells the Thread Manager */
+                                  /* to use the default value.  */
+
+struct ExampleRecord {
+    long someLongValue;
+    short someShortValue;
+};
+typedef struct ExampleRecord ExampleRecord;
+typedef ExampleRecord *ExampleRecordPtr;</pre>
+<p>
+The kNoCreationOptions #define specifies the default creation options. These options<br>
+create a thread using newly allocated memory from the Memory Manager with the<br>
+thread in the "ready" state; the thread will have its FPU context switched during a<br>
+reschedule. The kDefaultThreadStackSize #define tells the Thread Manager to use the<br>
+default stack size for the thread.
+</p>
+<p>
+Now let's look at the routine prototypes and thread parameters:
+</p>
+<pre>pascal long ExampleOne (long);
+pascal ExampleRecordPtr ExampleTwo
+                 (ExampleRecordPtr inputRecordParam);
+
+void ParametersExample (void)
+{
+    ThreadID tempThreadID;
+    OSErr err;
+    long myLong;
+    short myShort; Boolean notDone = true;
+    long longResult = -1;
+    ExampleRecordPtr recordOutResult = nil;
+    ExampleRecord recordInParam;</pre>
+<p>
+In the call to create the first thread, the numeric value 42 is passed in as the input<br>
+parameter. The return value storage location is the address of a long-word local<br>
+variable. Remember, you can't return from this function until the new thread<br>
+terminates -- the local variable return value storage must stay valid.
+</p>
+<pre>    err = NewThread(kCooperativeThread,
+(ThreadEntryProcPtr)(ExampleOne),
+        (void*)42, kDefaultThreadStackSize, kNoCreationOptions,
+        (void**)&amp;longResult, &amp;tempThreadID);
+    if (err)
+        DebugStr("\p Could not make coop thread 1");</pre>
+<p>
+To create the second thread, the address of a locally allocated data structure is passed<br>
+as the input parameter. The return value storage location is the address of a local<br>
+variable used to hold a pointer to the type of data structure to be used for storing the<br>
+return value. Again, you can't return from this function until the new thread<br>
+terminates. 
+</p>
+<pre>    recordInParam.someLongValue = 0xDEADBEEF;
+    recordInParam.someShortValue = 0xBADD;
+    err = NewThread(kCooperativeThread,
+(ThreadEntryProcPtr)(ExampleTwo),
+        (void*)&amp;recordInParam, kDefaultThreadStackSize,
+kNoCreationOptions,
+        (void**)&amp;recordOutResult, &amp;tempThreadID);
+    if (err)
+        DebugStr("\p Could not make coop thread 2");</pre>
+<p>
+Now that the two threads are created and ready to run, the code sits in a loop handling<br>
+user events, yielding, and waiting for the threads to complete their work.
+</p>
+<pre>    while (notDone)
+        {
+        YieldToAnyThread();     /* Other threads run. */</pre>
+<p>
+This code looks to see whether the first thread has completed and, if it has, goes off and<br>
+does what computers do best -- compute on the data. 
+</p>
+<pre>        if (longResult != -1)
+            {
+            GoHandleThreadReturnResult(longResult);
+            longResult = -1; /* Reset the value. */
+            }</pre>
+<p>
+Now the code checks to see whether the second thread has completed. If there's a<br>
+non-nil value in recordOutResult, the data is available. It's then sucked out of the<br>
+record into the local variables and sent on its way to be used by the application. Notice<br>
+that the record structure that was allocated by the second thread is disposed of. 
+</p>
+<pre>        if (recordOutResult != nil)
+            {
+            myLong = recordOutResult-&gt;someLongValue;
+            myShort = recordOutResult-&gt;someShortValue;
+            DoStuffWithParams(myLong, myShort);
+            DisposePtr((Ptr)recordOutResult);    /* Toss it. */
+            recordOutResult = nil;               /* Neutralize it. */
+            }
+        /* Handle user events until we quit. */
+        GoHandleEvents(&amp;notDone);
+                                  /* WaitNextEvent event handling. */
+        }
+    return;                             /* Out of here. */
+}</pre>
+<p>
+In the code for the first thread, both the input and output parameters are longs, and the<br>
+thread simply returns the value sent to it. The important point here is that both the<br>
+input and output parameters are the size of a void*. 
+</p>
+<pre>pascal long ExampleOne (long inputParam)
+{
+    return (inputParam); /* Must be the size of a void*. */
+}</pre>
+<p>
+The code for the second thread is a little more complex. Here, we allocate the storage<br>
+needed for the record that will be passed back to the creator. It's the creator's duty to<br>
+dispose of the data after using it. The record elements from the input parameter are<br>
+used as the source material for the elements within the record being returned to the<br>
+creator. Again, both the input and output parameters are the size of a void*.
+</p>
+<pre>pascal ExampleRecordPtr ExampleTwo
+                     (ExampleRecordPtr inputRecordParam)
+{
+    ExampleRecordPtr myRecordPtr;
+
+    myRecordPtr = NewPtr(sizeof(ExampleRecord));
+    myRecordPtr-&gt;someLongValue = inputRecordParam-&gt;someLongValue;
+    myRecordPtr-&gt;someShortValue = inputRecordParam-&gt;someShortValue;
+
+    return (myRecordPtr);   /* Must be the size of a void*. */
+}</pre>
+<h2>PARANOID PREEMPTIVE PROGRAMMING</h2>
+<p>
+If a preemptive thread can preempt, it will preempt. This can cause problems,<br>
+especially when you create new preemptive threads. When you create a preemptive<br>
+thread in the ready state, it's free to run whenever preemption occurs. This could<br>
+mean that your preemptive thread fires off before data it might need is available or set<br>
+up. There are two simple solutions, illustrated in the examples that follow: create the<br>
+preemptive thread in the stopped state and wake it up when you're ready to let it run,<br>
+as shown in the first example, or wrap all creation of "ready" preemptive threads<br>
+within critical sections, as shown in the second example. Remember that preemptive<br>
+threads can't preempt code that's wrapped within critical sections.
+</p>
+<p>
+Here's the example of creating a preemptive thread in the stopped state:
+</p>
+<pre>pascal void* aThread (void* parameter)
+{
+    /* Preemptive threads don't need to call Yield. */
+    while (true); /* Infinite loop. */
+}
+
+void somefunction (void)
+{
+    ThreadID theThreadID;
+    OSErr theError;
+
+    theError = NewThread(kPreemptiveThread,  /* Type of thread */
+                    aThread,                 /* Thread entry point */
+                    nil,                     /* Input parameter */
+                    kDefaultThreadStackSize, /* Stack size */
+                    kNewSuspend,             /* Creation options */
+                    nil,                     /* Return result */
+                    &amp;theThreadID);       /* New thread ID */
+    if (theError != noErr)
+        DebugStr("\pFailed to create thread");
+    . . .
+    /* Now wake the thread up. */
+    theError = SetThreadState(theThreadID,   /* Thread to set */
+                    kReadyThreadState,       /* New state */
+                    kNoThreadID);            /* Suggested thread */
+    if (theError) != noErr
+        DebugStr("\pFailed to set the preemptive thread to the ready
+                    state.");
+}</pre>
+<p>
+The parameter kNewSuspend in the NewThread call tells the Thread Manager to create<br>
+the thread in the stopped state. The SetThreadState call is used to wake up the thread.<br>
+The last parameter to SetThreadState suggests to the Thread Manager which thread to<br>
+execute after this call; this parameter is used only if the state of the currently<br>
+executing thread is being changed. At this point, the preemptive thread is allowed to<br>
+begin execution whenever it can. 
+</p>
+<p>
+Here's how to create a preemptive thread within a critical section:
+</p>
+<pre>pascal void* aThread (void *parameter)
+{
+    /* Preemptive threads don't need to call Yield. */
+    while (true); /* Infinite loop. */
+}
+
+void somefunction (void)
+{
+    ThreadID theThreadID;
+
+    ThreadBeginCritical();      /* Disable preemption. */
+
+    theError = NewThread(kPreemptiveThread, aThread, nil,
+        kDefaultThreadStackSize, kNoCreationOptions, nil,
+        &amp;theThreadID);
+    if (theError != noErr)
+        DebugStr("\pFailed to create a preemptive thread");
+
+    ThreadEndCritical();        /* Enable preemption. */
+}</pre>
+<p>
+<b>AVOIDING QUICKDRAW FROM PREEMPTIVE THREADS</b><br>
+As mentioned earlier, you can't call QuickDraw from preemptive threads because<br>
+QuickDraw isn't interrupt safe and you have to obey the rules of executing during<br>
+interrupt time when you use preemptive threads. There's no way around this, but<br>
+you<i>can</i> draw from preemptive threads with some extra work.
+</p>
+<p>
+First you need to write your own primitives for drawing. This can be as simple as<br>
+blasting pixels with *(pixelPtr) = 0xFFFF or as complex as writing your own<br>
+primitives for all drawing. Next you create a GWorld for your preemptive thread to<br>
+draw into. The idea is to modify this GWorld and then later use CopyBits from a<br>
+cooperative thread to blast it to the screen. There are just a couple of things to<br>
+remember before you start using the preemptive thread's GWorld: make sure you lock<br>
+down the PixMap handle within the GWorld using HLock and make sure you call<br>
+LockPixels for that GWorld. This guarantees there won't be any memory moving while<br>
+you're drawing into the GWorld with preemptive threads.
+</p>
+<h2>APPLICATION/THREAD MANAGER SCHEDULING</h2>
+<p>
+This section provides code examples for creating your own scheduler and<br>
+context-switching routines.&nbsp;&nbsp;&nbsp;Figure 2 shows how your custom scheduler and custom<br>
+context-switching routines are executed in conjunction with the Thread Manager's own<br>
+scheduling routines.
+</p>
+<p>
+<img src="img/139.gif" width="459 px"></img>
+</p>
+<p>
+<b>Figure 2</b> Thread Scheduling With Custom Scheduler and Context Switcher
+</p>
+<p>
+<b>CUSTOM SCHEDULERS</b><br>
+Occasionally, the YieldToThread(ThreadID) call is insufficient as a thread-scheduling<br>
+mechanism.&nbsp;&nbsp;&nbsp;Assigning a custom scheduler function gives localized control over thread<br>
+scheduling within your application. From this function you can inform the Thread<br>
+Manager which thread you would like to schedule. Here's the header information that<br>
+deals with custom schedulers (it's extracted from Threads.h):
+</p>
+<pre>/* Information supplied to the custom scheduler */
+struct SchedulerInfoRec {
+    unsigned long   InfoRecSize;
+    ThreadID        CurrentThreadID;
+    ThreadID        SuggestedThreadID;
+    ThreadID        InterruptedCoopThreadID;
+};
+typedef struct SchedulerInfoRec SchedulerInfoRec;
+typedef SchedulerInfoRec *SchedulerInfoRecPtr;
+
+typedef pascal ThreadID (*ThreadSchedulerProcPtr)(SchedulerInfoRecPtr
+schedulerInfo);</pre>
+<p>
+Note that the Thread Manager passes the custom scheduler the ID of the current thread<br>
+(CurrentThreadID) and the ID of the thread that the Thread Manager is going to<br>
+schedule (SuggestedThreadID). If a cooperative thread was preempted and has not yet<br>
+resumed execution, the ID of that thread (InterruptedCoopThreadID) is passed to the<br>
+custom scheduler; kNoThreadID is passed if there's no cooperative thread waiting to<br>
+resume from being preempted. With this information, all you have to do is tell the<br>
+Thread Manager which thread to execute next by returning the thread ID of the thread<br>
+you want to run.
+</p>
+<p>
+There's one rule you must follow when returning a thread ID: if the value of<br>
+InterruptedCoopThreadID is not equal to 0, return the InterruptedCoopThreadID value<br>
+or the ID of any ready preemptive thread. This is because scheduling a different<br>
+cooperative thread while another cooperative thread has been preempted would cause<br>
+cooperative thread preemption and could result in a system misunderstanding (crash).<br>
+If you don't care which thread the Thread Manager schedules next, you can just return<br>
+the constant kNoThreadID. If the value of CurrentThreadID is kNoThreadID, the Thread<br>
+Manager schedules the first available ready thread by default; your custom scheduler<br>
+may override this. 
+</p>
+<p>
+During the execution of a custom scheduler, certain conditions exist: preemption is<br>
+disabled to take care of any reentrancy problems and your A5 world is not guaranteed<br>
+to be valid. You're probably thinking, "Geez, I have to worry about A5!" We show you a<br>
+quick way to get around that in the example below, by using Gestalt to store A5. A few<br>
+more things about custom schedulers: You can't yield from within a custom scheduler,<br>
+nor can you cause scheduling to recur from this function. Also, only ready and running<br>
+threads are valid for rescheduling -- and you can't call SetThreadState from the<br>
+custom scheduler.
+</p>
+<p>
+OK, enough background -- here's the custom scheduler example:
+</p>
+<pre>#include "GestaltValue.h"     /* Gestalt utility. */
+
+pascal ThreadID myThreadScheduler
+                            (SchedulerInfoRecPtr mySchedulerInfo)
+{
+    long currentA5,  myA5;
+    ThreadTaskRef    currentTaskRef;
+
+    /* The task ref is our Gestalt selector. */
+    GetThreadCurrentTaskRef(&amp;currentTaskRef);
+   
+    /* Get application's A5. If we can't, let Thread Manager do it */
+    /* all. */
+    if (Gestalt(currentTaskRef, &amp;myA5) != noErr)
+        return kNoThreadID;
+   
+    /* Was a cooperative thread preempted? If so, let Thread */
+    /* Manager continue. */
+    if (mySchedulerInfo-&gt;InterruptedCoopThreadID != kNoThreadID)
+    return mySchedulerInfo-&gt;InterruptedCoopThreadID;
+   
+    /* Restore application's A5. */
+    currentA5 = SetA5(myA5);
+   
+    /* Now you can determine what you want to do. You have access */
+    /* to all your globals, so select a thread to run. */
+    . . .
+    /* Restore the A5 we entered with. */
+    myA5 = SetA5(currentA5);
+}
+
+void InitAll (void)
+{
+    long myA5;
+    ThreadTaskRef currentTaskRef;
+    OSErr myError;
+   
+    /* Do standard initialization stuff here. */
+    . . .
+    myA5 = SetCurrentA5();
+    /* Get a unique value to use as a gestalt selector. */
+    GetThreadCurrentTaskRef(&amp;currentTaskRef);
+    /* Set up a Gestalt value to use. */
+    if ((myError = NewGestaltValue(currentTaskRef, myA5)) != noErr)
+    {
+        /* Does it already exist? It better not! */
+        if (myError == gestaltDupSelectorErr)
+            DebugStr("\pWon't replace Gestalt selector.");
+    }
+}</pre>
+<p>
+<b>CUSTOM CONTEXT SWITCHERS</b><br>
+Now we come to the next feature the Thread Manager supplies for dealing with<br>
+scheduling: custom context switchers. You might ask, what is a thread context? The<br>
+default context of a thread consists of the CPU registers, the FPU registers if an FPU is<br>
+present, and a few internal globals. The saved data is as follows:
+</p>
+<ul>
+<li>CPU registers: D0-D7; A0-A7; SR (including CCR)</li>
+<li>FPU registers: FPCR, FPSR, FPIAR; FP0-FP7</li>
+</ul>
+<p>
+The thread context lives on the thread's A7 stack, and the location of the thread context<br>
+is saved at context switch time. Initially, the A5 register (which contains a pointer to<br>
+the application's A5 world) and the thread MMU mode (24-bit or 32-bit) is set to be<br>
+the same as the main thread. This allows all threads to share in the use of the<br>
+application's A5 world, which gives threads access to open files and resource chains,<br>
+for example. To allow preemption of threads that change the MMU operating mode, the<br>
+MMU mode is saved as part of the context of a thread. The FPU context is fully saved<br>
+along with the current FPU frame.
+</p>
+<p>
+Custom context switchers don't need to worry about saving the standard CPU context,<br>
+as this is done by the Thread Manager. When writing a custom context switcher, keep<br>
+in mind that preemption is disabled while it executes. Just as in custom schedulers,<br>
+don't make any calls that can cause scheduling. In addition, when the custom context<br>
+switcher is being called, the thread context is in a transition state, so any calls to<br>
+GetCurrentThread won't work, nor will any calls to which you pass kCurrentThreadID<br>
+as a parameter. As with the custom scheduler, you're not guaranteed to have A5 set up<br>
+for you; the example below shows how to get around that.
+</p>
+<p>
+You may have context switchers for when a thread is entered (<i>switcher-inner</i> ) and<br>
+when a thread is exited (<i>switcher-outer</i> ). Which context switcher to use is<br>
+determined by a parameter passed to the SetThreadSwitcher routine. Here's the header<br>
+information on custom context switchers (extracted from Threads.h):
+</p>
+<pre>typedef pascal void (*ThreadSwitchProcPtr)(ThreadID
+threadBeingSwitched,
+    void *switchProcParam);
+
+pascal OSErr SetThreadSwitcher (ThreadID thread, ThreadSwitchProcPtr
+    threadSwitcher, void *switchProcParam, Boolean inOrOut);</pre>
+<p>
+Besides the selector for whether the switcher is an inner or an outer, the application<br>
+can supply a parameter to the switch function. This parameter may vary for every<br>
+thread, allowing you to write only one custom context switcher. It isn't necessary to<br>
+have a switcher for both entry and exit, and all threads can share the same switcher.<br>
+One last thing to remember about switchers is that a switcher- inner is called<br>
+immediately before the thread begins execution at the entry point.
+</p>
+<p>
+Here's an example of a custom context switcher:
+</p>
+<pre>#define switcherInner true
+#define switcherOuter false
+
+struct myContextSwitchParamStruct
+{
+    long appsA5; /* Save application's A5. */
+    /* Anything else you may need for your custom context switch. */
+    . . .
+};
+typedef struct myContextSwitchParamStruct myContextSwitchParamStruct;
+struct myContextSwitchParamStruct gMyContextSwitchParam;
+
+pascal void* aThread (void *parameter)
+{
+    /* Does something. */
+    YieldToAnyThread();
+    . . .
+}
+
+pascal void myThreadSwitchProc (ThreadID theThreadBeingSwitched,
+void *theSwitchProcParam)
+{
+    long currentA5, myA5;
+                       /* A5 when our custom switcher was called. */
+   
+    myA5 =
+        ((myContextSwitchParamStruct *)theSwitchProcParam)-&gt;appsA5;
+    /* Restore application's A5. */
+    currentA5 = SetA5(myA5);
+    /* Now you can determine what you want to do. You have access */
+    /* to all your globals, so do any context stuff. */
+    . . .
+    /* Restore the A5 we entered with. */
+    myA5 = SetA5(currentA5);
+}
+
+void InitAll (void)
+{
+    ThreadID theThreadID;
+    OSErr theError;
+   
+    /* Do standard initialization stuff here. */
+    . . .
+    /* Set up A5 in switch parameter. */
+    gMyContextSwitchParam.appsA5 = SetCurrentA5();
+    /* Create a thread. */
+    theError = NewThread(kCooperativeThread, aThread, nil,
+        kDefaultThreadStackSize, kNoCreationOptions, nil,
+        &amp;theThreadID);
+    if (theError != noErr)
+        DebugStr("\pFailed to create a cooperative thread");
+    theError = SetThreadSwitcher(theThreadID, myThreadSwitchProc,
+        (void*)&amp;gMyContextSwitchParam, switchInner);
+    if (theError != noErr)
+        DebugStr("\pFailed to set custom context switcher-inner");
+    . . .
+}</pre>
+<h2>DIALOGS THAT YIELD</h2>
+<p>
+Aren't you tired of having your dialogs hang up your application while you wait for the<br>
+user to do something? With the Thread Manager you can alleviate this problem by<br>
+making only one call, YieldToAnyThread. Basically, if your program is broken into<br>
+multiple threads, you can put the dialog handler in one of those threads (usually the<br>
+main thread is best) and have the dialog's filter procedure call YieldToAnyThread. This<br>
+gives any other threads that are waiting time to run. When the user makes a choice in<br>
+the dialog, the main thread is scheduled automatically by the Thread Manager so that<br>
+your application can handle that event immediately. While the user is getting a cup of<br>
+coffee, your application can finish whatever other tasks are appropriate, without<br>
+slowing the machine down.
+</p>
+<p>
+In the following example, YieldFilter is a filter procedure for a dialog that just calls<br>
+YieldToAnyThread, to give other threads time while the dialog is in the front. This<br>
+allows threads "behind" the dialog to continue to process information.
+</p>
+<pre>pascal boolean YieldFilter (DialogPtr theDialogPtr,
+    EventRecord *theEvent, short *theItemHit)
+{
+    /* Yield to whoever wants to run. */
+    YieldToAnyThread();
+    /* Call the 7.0 standard filter procedure defined in */
+    /* Dialogs.h. */
+    return (StdFilterProc(theDialogPtr, theEvent, theItemHit));
+}
+
+
+/* The DoOKDialog function just handles a simple OK dialog. */
+
+void DoOKDialog (short dialogID)
+{
+    DialogPtr   theDialog;
+    short       itemHit;
+    GrafPtr     savePort;
+    OSErr       theError;  
+   
+    GetPort(&amp;savePort);
+   
+    if ((theDialog = GetNewDialog(dialogID, NULL, (Ptr)-1)) != NULL)
+    {
+        SetPort(theDialog);
+        ShowWindow(theDialog);
+        do
+            {
+            ModalDialog(YieldFilter, &amp;itemHit);
+            } while (itemHit != okButton);
+        DisposDialog(theDialog);
+    } else
+        DebugStr("\pCould not find dialog");
+   
+    SetPort(savePort);
+}</pre>
+<h2>THREAD-BLOCKING I/O</h2>
+<p>
+In general, thread-blocking I/O occurs when code making an I/O call sleeps until the<br>
+I/O call completes. The basic problem with doing thread-blocking I/O with the Thread<br>
+Manager is that threads are application based, not systemwide Device Manager I/O<br>
+based. This means that threads are really good at doing work at the application level<br>
+but aren't designed to auto-block on I/O -- that's your job. Fortunately, the Thread<br>
+Manager provides all the tools needed to create your own thread-blocking I/O. 
+</p>
+<p>
+<b>I/O WITH COOPERATIVE THREADS</b><br>
+Let's suppose you use a thread to make an asynchronous I/O call. Then the thread goes<br>
+to sleep, waiting for the completion routine to wake it up. The problem is the<br>
+completion routine can (and will) fire off before the thread is able to be put to sleep<br>
+-- there's a window of misfortune after the thread makes the asynchronous call and<br>
+before it completes the sleep call. Having nothing to do, the completion call just<br>
+returns. The thread then makes the sleep call and will sleep forever, waiting for a<br>
+completion routine that already occurred. 
+</p>
+<p>
+A completion routine, or any other code running on the Macintosh, may ask for the<br>
+state of a thread in an application by using GetThreadStateGivenTaskRef. Given a task<br>
+reference to a particular application and a thread ID, you can get the state of any<br>
+thread. If that thread is sleeping, you can call SetThreadReadyGivenTaskRef, which<br>
+will tell the Thread Manager to mark the thread as ready.&nbsp;&nbsp;&nbsp;The thread is not<br>
+actually<i>made</i> ready, just<i>marked</i> ready. The next time a reschedule occurs in the<br>
+application, the marked thread is<i>made</i>&nbsp;&nbsp;ready and is eligible to run.
+</p>
+<p>
+Note that you can't just check to see if the thread isn't in the running state because it<br>
+could have been preempted (and probably was if possible) before it made the sleep<br>
+call, when the completion routine fired. You must wait for the thread to be in the<br>
+stopped state before making a call to SetThreadReadyGivenTaskRef. 
+</p>
+<p>
+One solution is to have the completion routine use one of the interrupt-safe routines<br>
+and ask the Thread Manager if the thread in question is sleeping yet and, if it is, ask<br>
+the Thread Manager to wake it up. If it's not sleeping yet, set up a timer task (or VBL<br>
+or Deferred Task Manager task) to ask again later, and keep asking until the thread is<br>
+sleeping; then wake it up. 
+</p>
+<p>
+As you can imagine, the "poll until thread stopped" solution is messy and time<br>
+consuming. A cleaner solution is to have a second thread whose only job in life is to<br>
+wake up the first thread after it goes to sleep (after making the asynchronous I/O<br>
+call). The following steps show how to do this for the two threads ThreadA and ThreadB.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+From a cooperative thread -- ThreadA:
+</p>
+<ol>
+<li>Create a cooperative thread, ThreadB, in the stopped state. </li>
+<li>Set the completion routine to wake up ThreadB when it fires off. </li>
+<li>Make the asynchronous I/O call from ThreadA. </li>
+<li>Put ThreadA to sleep, forcing a reschedule with the SetThreadState call. </li>
+<li>After ThreadB wakes up ThreadA, ThreadA magically continues running<br>
+right where it left off! This is what's fun with concurrent programming. </li>
+</ol>
+<p>
+From the completion routine:
+</p>
+<ol>
+<li>Be safe and make the GetThreadStateGivenTaskRef call on ThreadB. </li>
+<li>If ThreadB is<i>not</i>  in a stopped state, give up. Things are in a bad way.<br>
+ThreadB should be in the stopped state, since it was created that way. </li>
+<li>Make a call to SetThreadReadyGivenTaskRef on ThreadB to<i>mark</i>  it ready.<br>
+The Thread Manager will actually<i>make</i>&nbsp;&nbsp;it ready at the next reschedule time. </li>
+<li>That's it; just return.  While executing code from the cooperative thread,<br>
+ThreadB, you know the following to be true:</li><ul>
+<li>ThreadB is cooperative. </li>
+<li>You're executing code in ThreadB. </li>
+<li>ThreadA is cooperative. </li>
+<li>Only one cooperative thread may run at a time. </li>
+<li>ThreadA didn't yield to anybody and is therefore not in the ready<br>
+state while ThreadB is running. </li>
+<li>ThreadA put itself in the stopped state, which caused a reschedule.</li>
+<li>Since cooperative ThreadB is running, ThreadA can't be running. </li>
+<li>Therefore, ThreadA is in the stopped state. </li></ul>
+</ol>
+<p>
+From the above truths, all ThreadB needs to do is set the thread state of ThreadA to<br>
+ready. The following steps wake up ThreadA from ThreadB:
+</p>
+<ol>
+<li>Set the state of ThreadA to ready with the SetThreadState call. </li>
+<li>Return. </li>
+</ol>
+<p>
+The big concept is that only one cooperative thread can run at a time. Cooperative<br>
+threads can't preempt each other. The only way to get from one cooperative thread to<br>
+another is by yielding -- making a yield call or setting the state of the running<br>
+cooperative thread to ready or stopped. If a cooperative thread, ThreadA, sets itself to<br>
+stopped, another cooperative thread, ThreadB, knows that because it (ThreadB) is<br>
+running, ThreadA must be stopped. However, this scheme works only if there are other<br>
+(at least one) cooperative or preemptive threads that can run while the wake-up<br>
+thread and the thread making the I/O call are stopped. It's highly recommended that you<br>
+never stop the main thread; this will keep you safe for doing thread-blocking I/O with<br>
+a thread making an I/O call and a wake-up thread. Keeping the main thread ready also<br>
+keeps the Macintosh user interface active. To summarize the preceding steps: The<br>
+cooperative thread doing the I/O creates a cooperative wake- up thread (in the stopped<br>
+state), makes an asynchronous I/O call, and tells the Thread Manager to put itself in<br>
+the stopped state. The completion routine fires off any time after the I/O call and<br>
+makes a call to mark the wake-up thread as ready. Once the thread that made the I/O<br>
+call goes to sleep, rescheduling occurs and, if the wake-up thread is ready, it's made<br>
+eligible for running. Normal thread scheduling occurs until the wake-up thread is<br>
+run. The only thing the wake-up thread needs to do is tell the Thread Manager to set the<br>
+state of the thread making the I/O call to ready and return.&nbsp;&nbsp;&nbsp;Rescheduling will occur<br>
+and the thread that made the I/O call will continue on its merry way as if nothing had<br>
+happened. This process is illustrated in Figure 3. 
+</p>
+<p>
+<img src="img/140.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 3</b> Timeline State Flow Diagram for Threaded I/O
+</p>
+<p>
+<b>I/O THREAD BLOCKING EXAMPLE</b><br>
+Now let's see how the preceding solution looks in code. We begin by setting up<br>
+housekeeping and doing some administrative stuff. The extended parameter block<br>
+structure is used to store the parameter block used by the file system as well as data<br>
+used by the completion routine. The first element of the structure must be the file<br>
+system parameter block, as this is the address passed into the file system call. The<br>
+next two parameters are used by the completion routine to get the application task<br>
+reference and thread ID of the thread to wake up. These values are stored here because<br>
+completion routines can't access the application globals when they're called.
+</p>
+<p>
+To finish up the housekeeping, we define the routine prototypes and the inline routine<br>
+GetPBPtr.&nbsp;&nbsp;&nbsp;Completion routines are passed the address of the parameter block in<br>
+register A0, so the GetPBPtr routine is needed to retrieve the parameter block.
+</p>
+<pre>struct ExtendedParamBlk {
+    /* PB must be first so that the file system can get the data. */
+    ParamBlockRec pb;
+    ThreadTaskRef theAppTask;
+    ThreadID theThread;
+};
+typedef struct ExtendedParamBlk ExtendedParamBlk;
+typedef ExtendedParamBlk *ExtendedParamBlkPtr;
+
+/* Routine prototypes. */
+pascal void IOExampleThread (void);
+pascal void WakeUpThread (ThreadID threadToWake);
+void MyCompletionRoutine (void);
+
+/* Completion routines are called with register A0 pointing to */
+/* the parameter block. */
+pascal ExtendedParamBlkPtr GetPBPtr(void) = {0x2E88};
+                            /* move.l a0, (sp) */</pre>
+<p>
+This is a routine in the main thread that creates a thread that makes an I/O call:
+</p>
+<pre>void KickOffAnIOThread (void)
+{
+    ThreadID    newCoopID;
+    OSErr       theError;
+
+    theError = NewThread(kCooperativeThread,
+        (ThreadEntryProcPtr)IOExampleThread, nil,
+        kDefaultThreadStackSize, kNoCreationOptions, nil,
+        &amp;newCoopID);
+    if (theError)
+        DebugStr("\p Could not make cooperative I/O thread");
+    /* Return and let the I/O thread do its thing! */
+}</pre>
+<p>
+Below is the code for the thread that makes the I/O call -- IOExampleThread. It makes<br>
+an asynchronous I/O call with a completion routine that will wake up the wake-up<br>
+thread, which then wakes up IOExampleThread. 
+</p>
+<pre>pascal void IOExampleThread (void)
+{
+    ThreadID            wakeupThreadID, meThreadID;
+    ThreadTaskRef       theAppRef;
+    ExtendedParamBlk    myAsyncPB;
+    OSErr               theError, theIOResult;
+
+    /* Get the ID of IOExampleThread. */
+    theError = GetCurrentThreadID(&amp;meThreadID);
+    if (theError != noErr)
+        DebugStr("\pFailed to get the current thread ID");
+
+    /* Get the application's task reference. */
+    theError = GetThreadCurrentTaskRef(&amp;theAppRef);
+    if (theError != noErr)
+        DebugStr("\Could not get our task ref");
+   
+    /* Create a wake-up thread. */
+    theError = NewThread(kCooperativeThread,
+        (ThreadEntryProcPtr)WakeUpThread, (void*)meThreadID,
+        kDefaultThreadStackSize, kNewSuspend, nil, &amp;wakeupThreadID);
+    if (theError != noErr)
+        DebugStr("\pFailed to create a cooperative thread");</pre>
+<p>
+Here's where you prepare for the I/O call -- a simple asynchronous flush volume<br>
+command. Notice how we set the address of the completion routine. We also set up the<br>
+extended data needed by the completion routine -- the thread ID of the wake-up thread<br>
+and the application's task reference. 
+</p>
+<pre>    myAsyncPB.pb.ioParam.ioCompletion = (ProcPtr)MyCompletionRoutine;
+    myAsyncPB.pb.ioParam.ioResult = 0;   /* Initialize the result. */
+    myAsyncPB.pb.ioParam.ioNamePtr = nil;    /* No name used here. */
+    myAsyncPB.pb.ioParam.ioVRefNum = -1;     /* The boot drive. */
+    myAsyncPB.theThread = wakeupThreadID;
+    myAsyncPB.theAppTask = theAppRef;</pre>
+<p>
+IOExampleThread makes the I/O call and then calls SetThreadState to put itself to sleep.<br>
+The first two parameters to SetThreadState indicate the thread to set, which is<br>
+IOExampleThread, and the state to set it to -- stopped. The kNoThreadID parameter<br>
+indicates that any ready thread can run next.
+</p>
+<pre>    PBFlushVol((ParmBlkPtr)&amp;myAsyncPB, async);
+    theError = SetThreadState(kCurrentThreadID, kStoppedThreadState,
+        kNoThreadID);
+    if (theError != noErr)
+        DebugStr ("\pFailed to put ourselves to sleep");</pre>
+<p>
+At this point, IOExampleThread is sleeping, but other threads are running (including<br>
+the main thread, because it's not nice to put it in the stopped state). Meanwhile, thread<br>
+scheduling is taking place, so when the completion routine executes and tells the<br>
+scheduler to place the wake-up thread in the ready queue, the wake-up thread can get<br>
+scheduled to execute. (Make sure the main thread doesn't quit the application with the<br>
+asynchronous I/O pending. You could run into problems when the completion routine<br>
+tries to run but no longer exists because the application is gone.)
+</p>
+<p>
+Next the completion routine fires off and tells the Thread Manager to ready the<br>
+wake-up thread.&nbsp;&nbsp;&nbsp;The wake-up thread eventually runs and tells the Thread Manager to<br>
+ready the I/O thread.&nbsp;&nbsp;Then theI/O thread awakes and continues running as if nothing<br>
+happened, continuing with the rest of the code. 
+</p>
+<pre>    theIOResult = myAsyncPB.pb.ioParam.ioResult;
+    . . .
+}
+
+void MyCompletionRoutine (void)
+{
+    ExtendedParamBlkPtr myAsyncPBPtr;
+    ThreadTaskRef       theAppTaskRef;
+    ThreadID            theThreadID;
+    ThreadState         theThreadState;
+    OSErr               theError;
+   
+    /* Get the parameter block. */
+    myAsyncPBPtr = GetPBPtr();
+   
+    /* Get the data. */
+    theAppTaskRef = myAsyncPBPtr-&gt;theAppTask;
+    theThreadID = myAsyncPBPtr-&gt;theThread;
+   
+    /* See if the thread is stopped yet - just to be sure. */
+    theError = GetThreadStateGivenTaskRef(theAppTaskRef, theThreadID,
+        &amp;theThreadState);
+    /* If we can get the thread state, go for it! */
+    if (theError == noErr)
+    {
+        /* If it's awake, we have problems. */
+        if (theThreadState != kStoppedThreadState)
+            DebugStr("\pWake-up thread is in the wrong state!");
+        /* Should be sleeping, mark it for wake up! */
+        else
+            SetThreadReadyGivenTaskRef(theAppTaskRef, theThreadID);
+    }
+}</pre>
+<p>
+The wake-up thread eventually begins execution and has only one job -- to wake up<br>
+the thread that made the I/O call.
+</p>
+<pre>pascal void WakeUpThread (ThreadID threadToWake)
+{
+    OSErr   theError;
+
+    /* Wake up the specified thread. */
+    theError = SetThreadState(threadToWake, kReadyThreadState,
+        kNoThreadID);
+    if (theError != noErr)
+        DebugStr("\pFailed to wake our thread");
+   
+    /* We've done our deed, so just return quietly and let it run. */
+}</pre>
+<p>
+<b>I/O WITH PREEMPTIVE THREADS</b><br>
+Things get a little tricky when the thread making the I/O call is preemptive -- not to<br>
+mention that you may not be allowed to make certain asynchronous I/O calls from<br>
+preemptive threads (you know, the interrupt routine rules and all that). To solve the<br>
+problem, all you do is force your preemptive thread to look like a cooperative thread.<br>
+Before you make the asynchronous I/O call, you need to begin a critical sectionwith the<br>
+ThreadBeginCritical routine. Also, since you can't create threads from preemptive<br>
+threads (again, the interrupt routine rules), you need to get the wake-up thread from<br>
+the thread pool you created earlier (you did create one, didn't you?). After the I/O<br>
+call, call SetThreadStateEndCritical rather than SetThreadState; this puts the thread in<br>
+the stopped state, ends the critical section to allow preemptive scheduling, and forces a<br>
+reschedule all at the same time. Then, when the wake-up thread gets run, it knows that<br>
+the thread that made the I/O call must be sleeping. 
+</p>
+<h2>FINAL THOUGHTS</h2>
+<p>
+Here are some final thoughts before you dive in and start programming with the<br>
+Thread Manager:
+</p>
+<ul>
+<li>Remember to always preload the code segments that will be used by<br>
+preemptive threads. Since you're not allowed to move memory during<br>
+preemptive thread time, loading a code segment would definitely cause a<br>
+problem.</li>
+<li>Make sure you call MaxApplZone during the application's initialization,<br>
+especially before you start creating threads. The application's heap won't grow<br>
+correctly from other cooperative threads, so you must fully grow your heap<br>
+before any other thread allocates memory. </li>
+<li>When dealing with cooperative and preemptive threads in the same<br>
+application, make sure you maintain data coherency between your threads. It's<br>
+very possible that a preemptive thread could change shared data out from<br>
+underneath a cooperative thread that's using it. A simple way to maintain data<br>
+coherency is to use critical sections.</li>
+<li>Be careful calling WaitNextEvent with a large sleep value when there are<br>
+threads that need time. Threads get time to run only when your application<br>
+gets time.&nbsp;&nbsp;&nbsp;Putting the application to sleep with WaitNextEvent means that<br>
+your threads sleep, too. </li>
+<li>Be very careful when quitting an application with suspended threads that<br>
+will be awakened by an interrupt service routine. This can be a problem in<br>
+some cases.&nbsp;&nbsp;&nbsp;The Thread Manager provides a thread termination procedure<br>
+that's called when a thread is about to be disposed of -- such as when the<br>
+application quits -- to handle any cleanup needed before final application<br>
+termination. </li>
+</ul>
+<p>
+We urge you to use the Thread Manager because it will be integrated directly into the<br>
+system software, and it will be upwardly compatible with the new RISC and OS<br>
+directions Apple is taking. If you start taking advantage of the Thread Manager now,<br>
+you'll only be more ahead in the future.
+</p>
+<p>
+<b>ERIC ANDERSON </b>has been developing various parts of the Macintosh Toolbox and OS<br>
+for over five years. Having worked on System 7 virtual memory for the past four<br>
+years and the Thread Manager for the past two, he thinks that moving to Hawaii and<br>
+building boats is an excellent idea. Before Apple, he designed tower and street<br>
+crane-positioning simulation software and developed various software/hardware<br>
+systems for controlling live-action effects (read: pyrotechnics) for film<br>
+productions.*
+</p>
+<p>
+<b>BRAD POST </b>(AppleLink BPOST) is a member of SMMFD (a geek club for<br>
+mathematical modeling and fractal design). His other hobbies include computer<br>
+graphics, skiing, surfing, playing Ultimate Frisbee, drinking Tied House Ale, working<br>
+out, and just living life to its fullest. Remember, no one gets outta here alive! *
+</p>
+<p>
+<b>The GestaltValue library, </b>available on this issue's CD, provides the<br>
+NewGestaltValue, ReplaceGestaltValue, and DeleteGestaltValue functions.*
+</p>
+<p>
+<b>For more information </b>on completion routines, parameter blocks, and calling<br>
+routines asynchronously in general, see "Asynchronous Routines on the Macintosh" in <br>
+<i>develop</i>&nbsp;&nbsp;Issue 13.*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS</b>Dave Falkenburg, Michael Gough, C. K.<br>
+Haun, John Yen *
+</p>
+</body>
+</html>

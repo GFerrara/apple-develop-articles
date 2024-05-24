@@ -1,0 +1,191 @@
+<html>
+<head>
+<!-- Article ID: 50 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 94 - GRAPHICAL TRUFFLES</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>GRAPHICAL TRUFFLES</h2>
+<h2>A Space-Saving PICT Trick</h2>
+<h1>GUILLERMO A. ORTIZ AND DAVE JOHNSON</h1>
+<p>
+<img src="img/251.gif" width="216 px"></img>
+</p>
+<p>
+&nbsp;On the Macintosh, the standard file format for storing images is the PICT format.<br>
+When pixel maps are stored in PICTs, the color table is always included. If you have a<br>
+large number of PICTs that all use the same color table, however, it's redundant to<br>
+have a separate copy of the color table in each PICT. It would be better to strip the<br>
+color tables out of the PICTs themselves, store only one copy of the color table on disk,<br>
+and use that color table for all the PICTs. This column describes a simple way to do<br>
+that. 
+</p>
+<p>
+<b>OF COLOR TABLES AND PICTS</b><br>
+One of the really neat features of the Macintosh and QuickDraw is that the process to<br>
+store a pixel image in a picture is really simple. The code can be as simple as opening a<br>
+picture to start PICT recording, doing a CopyBits of a PixMap onto itself, and closing<br>
+the picture; QuickDraw does the rest. 
+</p>
+<pre>newPict = OpenPicture(&amp;offRect);
+CopyBits(srcPix, srcPix, &amp;offRect, &amp;offRect,
+    srcCopy, nil);
+ClosePicture();</pre>
+<p>
+<b>&nbsp;Here I use OpenPicture </b>for simplicity, but as pointed out in <i> Inside Macintosh:</i><br>
+<i>Imaging With QuickDraw</i>&nbsp;&nbsp;, you should really use OpenCPicture, especially if you want<br>
+to specify a resolution other than 72 dpi. *
+</p>
+<p>
+&nbsp;This code works great, but there's a catch: every time you do this, the whole PixMap<br>
+-- including its color table -- is recorded into the picture. For a PixMap that's 8 bits<br>
+deep (256 colors), the color table takes a little over 2K. This may not be that big a<br>
+deal for one or two pictures, but what if you're pressing a CD with<i>thousands</i> of<br>
+pictures that use the same color table? Suddenly all those embedded color tables add up<br>
+to a significant chunk of space. For pictures delivered on floppy disks, space may be at<br>
+even more of a premium, and those extra few kilobytes might matter. Also note that if<br>
+you create PICTs with multiple calls to CopyBits, a color table is stored with<i>each</i> <br>
+PixMap in the picture, making the problem even worse. 
+</p>
+<p>
+<b>LEARNING TO SHARE</b><br>
+More often than not, a series of PICT files will all use the same color table (usually<br>
+the default color table). In these cases it would be much more economical if we could<br>
+somehow store only one copy of the color table, and then share it among<i>all</i> the<br>
+pictures. As it turns out, doing that is pretty easy. The solution has two parts: first,<br>
+we need to be able to create PICTs that don't include a color table, and later we need to<br>
+be able to draw those same PICTs using the appropriate color table, stored separately<br>
+from the picture. 
+</p>
+<p>
+<b>JUST SAY NIL</b><br>
+The first part of the solution is easy. In a PixMap, the pmTable field contains a handle<br>
+to a color table. When recording a picture, QuickDraw simply stores the color table<br>
+specified by the pmTable field into the PICT. But if pmTable is nil, there's no color<br>
+table to put in the picture, so its size ends up smaller. Only one extra line of code is<br>
+needed to do this:
+</p>
+<pre>// Set PixMap color table handle to nil.
+(*srcPix)-&gt;pmTable = nil;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Naturally, you'll need to save the color table handle beforehand, and afterward restore<br>
+it before disposing of the PixMap, so that QuickDraw can dispose of all the pieces<br>
+correctly. But even more important, you'll use the color table handle to create a 'clut'<br>
+resource that you can save and that can later be used to draw the PICT with its correct<br>
+colors. The sample program named CLUTLess, included on this issue's CD, contains the<br>
+complete code to do this. 
+</p>
+<p>
+In reality, QuickDraw adds more than just a nil color table handle to the picture when<br>
+the code described above is executed. The reason for this is that some applications<br>
+assume that PixMaps in a picture always have a color table, and they would die<br>
+horrible deaths if QuickDraw didn't somehow protect them from themselves. To avoid<br>
+this problem, QuickDraw stores a color table "stub" into the PICT that it recognizes as<br>
+such when playing back the picture.
+</p>
+<p>
+If you simply call DrawPicture to display the "clutless" picture you've made,<br>
+QuickDraw will see the color table stub and create a color table for the picture on the<br>
+fly. This color table is a color ramp between the current port's foreground color and<br>
+its background color -- in most cases this means that you get a grayscale image. (If<br>
+the foreground color and background color are not black and white, respectively, you'll<br>
+get a "colorized" image.) Figure 1, which appears along with Figure 2 on the inside<br>
+back cover of this issue of<i>develop</i> , shows an example of a once-colorful picture drawn<br>
+this way.
+</p>
+<p>
+<b>GET IT TOGETHER</b><br>
+To display the image in its original colors, you need to somehow get the saved color<br>
+table back into the PICT before drawing. You can do this by replacing the QuickDraw<br>
+low-level routine that's called when a PixMap opcode is found in a picture. This<br>
+replacement low-level routine will simply add the color table to the PixMap and then<br>
+let QuickDraw continue on its merry way, doing all the real work of drawing, but with<br>
+the correct color table in place. Replacing a low-level routine is a standard technique:
+</p>
+<pre>void SetNewBitsProc (WindowPtr aWindow, CQDProcs *theProcs)
+{
+    // Load structure with the standard routines.
+    SetStdCProcs(theProcs);
+    // Change the one we want to override.
+    theProcs-&gt;bitsProc = NewQDBitsProc(AddClutProc);
+    // Set our window's port to use them.
+    aWindow-&gt;grafProcs = theProcs;
+}</pre>
+<p>
+Our replacement routine first saves the contents of the PixMap's pmTable field so that<br>
+it can later restore this value before returning. It then puts a handle to the<br>
+appropriate color table in the pmTable field and calls StdBits to let QuickDraw do the<br>
+hard work of drawing. Finally, it restores the saved pmTable value in the PixMap.<br>
+(Note that to be completely bulletproof you might want this routine to check to see if<br>
+the imageactually needs a color table -- that is, check to make sureit's an indexed<br>
+image, not direct. In our sample code weknow this routine won't get called with a direct<br>
+PixMap.)
+</p>
+<pre>pascal void AddClutProc (BitMap *src, Rect *srcR,
+                            Rect *dstR, short mode, RgnHandle msk)
+{
+    CTabHandle  saveCTH;
+
+    // Save color table handle.
+    saveCTH = ((PixMapPtr) src)-&gt;pmTable;
+    // Put 'clut' resource.
+    ((PixMapPtr) src)-&gt;pmTable = gSharedClut;
+    // Let QuickDraw do the work.
+    StdBits(src, srcR, dstR, mode, msk);
+    // Restore saved handle and return.
+    ((PixMapPtr) src)-&gt;pmTable = saveCTH;
+}</pre>
+<p>
+Once the new QDProcs are in place, you can simply call DrawPicture and the correct<br>
+color table will be inserted on the fly. Figure 2 shows the same PICT as in Figure 1,<br>
+drawn with the correct color table this time. 
+</p>
+<p>
+<b>BUT WHAT IF . . .</b><br>
+The sample code illustrates the case in which the pictures are being created from<br>
+PixMaps directly and the color tables are being removed as it happens. But what if the<br>
+images already exist, and they need to be "postprocessed" in order to strip out the<br>
+color tables? Using techniques similar to those described above, it's not hard; see this<br>
+issue's CD for an example.
+</p>
+<p>
+Another common case might be this: you have a large number of pictures that among<br>
+them share just a few color tables. To deal with this, you could use a PicComment to<br>
+store a number in the PICT that will indicate which of the color tables to use for that<br>
+PICT. 
+</p>
+<p>
+<b>IS IT FOR YOU?</b><br>
+These techniques are probably useful only if you plan to deliver a lot of images that all<br>
+use the same color table (most likely on a CD). Stripping out the color tables may help<br>
+you cram more images onto your distribution media or fit a few more images in<br>
+memory, perhaps allowing for faster redraw (for example, when a sequence of<br>
+pictures is being used for animation). 
+</p>
+<p>
+Remember that the images thus created will be seen as grayscale (or colorized) images<br>
+in any application that's not aware it needs to load a separate color table from a<br>
+resource. But if you find yourself jumping through flaming hoops to try to cram just a<br>
+few more PICTs on your disk, this may be just the trick you need. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>GUILLERMO A. ORTIZ </b>of Apple's Developer Technical Support group left on<br>
+sabbatical just after completing the first draft of this column, but before he had a<br>
+chance to write a bio. He left his office chanting his favorite mind-soothing mantra,<br>
+"Nothing compensates like cash."*
+</p>
+<p>
+<b>DAVE JOHNSON </b>watched in astonishment recently as a large hawk or falcon of some<br>
+kind (he's not much of an ornithologist) devoured a freshly killed dove just outside his<br>
+living room window in San Francisco. Whoa. *
+</p>
+<p>
+<b>Thanks </b>to Cameron Esfahani, Josh Horwich, and Don Moccia for reviewing this<br>
+column. *
+</p>
+</body>
+</html>

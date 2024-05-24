@@ -1,0 +1,627 @@
+<html>
+<head>
+<!-- Article ID: 27 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 94 - Macintosh Q & A</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Macintosh Q &amp; A</h2>
+<h1>Macintosh Developer Technical Support</h1>
+<p>
+<b>Q</b><i> I'm having trouble figuring out how to convert some assembly trap patches for</i><br>
+<i>selector-based traps into PowerPC native code. Do you have any suggestions for a clean</i><br>
+<i>way of doing this, ideally so that it works on both 680x0-based machines and the</i><br>
+<i>Power Macintosh?</i>
+</p>
+<p>
+<b>A</b> Currently there's no way to patch a selector-based trap with a native or fat patch.<br>
+(A list of selector-based traps can be found in the back of <i> Inside Macintosh X-Ref</i> .)<br>
+The problem arises from the fact that each routine associated with a single<br>
+dispatch-based trap can have a different parameter list (that is, a different number of<br>
+parameters and different sizes for each parameter). Basically there's no way for<br>
+mixed mode to handle the variable stack frame sizes associated with selector-based<br>
+traps. This is the same thing that makes head/tail patching them so much of a pain in C.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;We're in the process of trying to determine whether developers have a pressing need<br>
+to patch selector-based traps with native code. For now, keep all such patches in<br>
+680x0 code. If a patch to a particular routine is itself very time-intensive (which is<br>
+rarely the case), the 680x0 patch can call through to a native implementation.
+</p>
+<p>
+<b>Q</b><i> I'm writing a QuickDraw GX print driver for a plotter and need to send initialization</i><br>
+<i>and termination strings to the plotter. How can I determine from my driver if I'm</i><br>
+<i>printing the very first or last page, regardless of the number of copies? I'd like to</i><br>
+<i>have this information in GXStartSendPage and GXFinishSendPage, respectively, so that</i><br>
+<i>I can send my strings then.</i>
+</p>
+<p>
+<b>A</b> We recommend that you do any pre-first-page setup in GXOpenConnection (after<br>
+forwarding) and any post-last-page teardown in GXCloseConnection (before<br>
+forwarding). (Although the documentation is a bit ambiguous on this point, you <i> can</i> <br>
+send information with GXBufferData and GXWriteData from GXCloseConnection, before<br>
+forwarding.) If there's some reason that this won't work for you, and you really need<br>
+the information in GXStartSendPage and GXFinishSendPage, you'll have to use global<br>
+data.
+</p>
+<p>
+&nbsp;In some override before GXStartSendPage (perhaps GXImageDocument), initialize a<br>
+global page counter to 0. In your GXStartSendPage override, check this flag, and then<br>
+bump it after forwarding. If your check finds that the flag is 0, no pages of the<br>
+document have been sent yet.
+</p>
+<p>
+&nbsp;To determine when the last page has printed, you'll also need to use global&nbsp;&nbsp;data.<br>
+Somewhere (again, GXImageDocument is fine) call GXCountPages, get the number of<br>
+copies from the job's 'copy' collection item, and multiply. In&nbsp;&nbsp;your GXFinishSendPage<br>
+override, compare the value you bumped in GXStartSendPage to this multiplied value.<br>
+When they're equal, you're just finishing the last page.
+</p>
+<p>
+<b>Q</b><i> How do client and server desktop printers (shared printers) synchronize in</i><br>
+<i>QuickDraw GX? Specifically, what we're trying to find out is (for a server desktop</i><br>
+<i>printer on one machine, and a matching client on another):</i>
+
+<ul><li><i>If a user on the client machine sets a papertype in an input tray, is it</i><br>
+<i>reflected on the server in the Input Trays dialog? If not, what's the correct</i><br>
+<i>behavior for the client and the server machines (for example, should the</i><br>
+<i>client Input Trays dialog be read-only)?</i></li>
+<li><i>Generally, what resources and data are transmitted between the host and</i><br>
+<i>the client, and when? Is there a mechanism for controlling which resources</i><br>
+<i>will be sent or kept local (preferably on a resource-by-resource basis)?</i></li></ul>
+<p>
+<b>A</b> Resources are transmitted to desktop printers in only one direction -- server to<br>
+clients. Also, only resources with IDs greater than 0 are moved to the clients.<br>
+Therefore, it's appropriate to make the Input Trays dialog on clients read-only. Even<br>
+though Apple's drivers don't do this, it's the more correct approach. You can find out<br>
+whether you're on a server or a client by checking the desktop printer's 'comm'<br>
+resource; if its type identifier is 'ptsr', you're on the client; otherwise, you're on the<br>
+server.
+</p>
+<p>
+&nbsp;If you need to have data sent from the client to the server, you should fetch the<br>
+resources at GXImageJob time (before forwarding) and then roll them into a job<br>
+collection item. In the appropriate communication message, look for the collection<br>
+item and use that data. Since GXImageJob is always called (shared printers or not), and<br>
+it's called on the client if you're working with shared printers, this method should<br>
+always work.
+</p>
+<p>
+<b>Q</b><i> If I want to add additional properties to the paper stock (such as paper color), and I</i><br>
+<i>call AddCollectionItem(GXGetPaperTypeCollection(paper), . . . ), will that new</i><br>
+<i>collection be stored in the desktop printer's configuration file, or is that something I</i><br>
+<i>must manage? I seem to be losing my collection between invocations of the Trays</i><br>
+<i>dialog.</i>
+</p>
+<p>
+<b>A</b> The papertype collection items you add won't be flattened to disk and stored in the<br>
+desktop printer via your Trays dialog. There's no way to make collection item changes<br>
+and have them saved with the disk-based papertype, wherever it may be stored. You<br>
+need to manually save the information in your desktop printer (or some other place)<br>
+as resources, and then match that up with the papertypes when you want to use them.<br>
+You should match up the papertypes and the resources based on the names of the<br>
+papertypes.
+</p>
+<p>
+&nbsp;You can still take advantage of the papertype collection to hold your paper color<br>
+information, as long as you also have the information stored on disk. The papertype<br>
+collection will be around as long as the papertype's job is around. For example, if you<br>
+load the color info from the desktop printer and put it in a papertype collection item at<br>
+despoolpage time, it stays there throughout the entire print cycle, and wherever the<br>
+job goes, it goes.
+</p>
+<p>
+<b>Q</b><i> I'm having a problem resizing text elements in our QuickTime application. I'm</i><br>
+<i>trying to modify the element's size by calling SetTrackDimensions, and it seems to do</i><br>
+<i>what I want for all element types except text. For text tracks, the element's bounding</i><br>
+<i>box is resized correctly, but the text characters are scrunched into the upper left</i><br>
+<i>corner of that rectangle, still at their original size. In other words,</i><br>
+<i>SetTrackDimensions seems to scale the track bounds, but not the text characters</i><br>
+<i>themselves. Any idea what's going on?</i>
+</p>
+<p>
+<b>A</b> This is a bug. As you determined, SetTrackDimensions is only changing the size of the<br>
+track box, not setting the correct scaling factor or internal flags. To work around this<br>
+problem, use GetTrackMatrix to retrieve the current matrix, then ScaleMatrix to<br>
+change it, and finally SetTrackMatrix to make it take effect.
+</p>
+<p>
+<b>Q</b><i> Do you know why "OCE Mail Enclosures" appears as a volume when I index through</i><br>
+<i>all volumes using PBHGetVInfo? Is there any way to filter out this "volume"?</i>
+</p>
+<p>
+<b>A</b> The reason "OCE Mail Enclosures" shows up is that it's the volume for an external<br>
+file system (XFS) that AOCE installs in order to support access of letter enclosures via<br>
+FSSpecs from the mailer and other parts of the AOCE system. This enables the direct<br>
+access that the mailer provides in the enclosure fields of letters, allowing users to<br>
+manipulate enclosures like any other file in the Finder, copying and even launching<br>
+them directly from the enclosure pane.
+</p>
+<p>
+&nbsp;To filter out the "OCE Mail Enclosures" volume, you should check the Finder flags of<br>
+the root directory in each volume to determine whether that volume should be visible<br>
+to the user. The Finder flags for directories are located in the ioDrUsrWds field in the<br>
+dirInfo variant of the CInfoPBRec structure. If the fInvisible bit is set, you should not<br>
+display that volume to the user. Here's a snippet:
+</p>
+<pre>void main(void)
+{
+    HVolumeParampBlock; CInfoPBRec cBlock;
+    Str255 volName, fName;
+    OSErr err;
+
+    pBlock.ioNamePtr = volName;
+    err = noErr;
+    for (pBlock.ioVolIndex=1; err==noErr; pBlock.ioVolIndex++) {
+        err = PBHGetVInfo((HParmBlkPtr)&amp;pBlock, false);
+        if (err==noErr) {
+            cBlock.dirInfo.ioNamePtr = fName;
+            cBlock.dirInfo.ioVRefNum = pBlock.ioVRefNum;
+            // Query the directory info ioDrDirID.
+            cBlock.dirInfo.ioFDirIndex = -1;
+            // This is the root directory.
+            cBlock.dirInfo.ioDrDirID = 2;
+            err = PBGetCatInfo(&amp;cBlock, false);
+            if (err==noErr) {
+                if ((cBlock.dirInfo.ioDrUsrWds.frFlags &amp;
+                fInvisible)!=0)
+                // It's invisible.
+                . . .
+            }
+        }
+    }
+}</pre>
+<p>
+<b>Q</b><i> I have a dialog with two editText fields. When I populate the two fields with text,</i><br>
+<i>whichever field I populate first is displayed two pixels too high within its item. The</i><br>
+<i>second field is fine, and it has the "focus" of the dialog. When I click in the first field,</i><br>
+<i>any new text is added at the correct height, but unfortunately that's two pixels below</i><br>
+<i>where the previous text was drawn. The fields are both 10-point plain Geneva, and the</i><br>
+<i>editText boxes are 16 pixels high. Any ideas?</i>
+</p>
+<p>
+<b>A</b> The Dialog Manager has a bug that causes problems when you use an alternate font or<br>
+size for the editText items. The problem is how it draws the text initially in the dialog:<br>
+the text for the currently active item is drawn by manipulating the dialog's TextEdit<br>
+record, and the text for all other items is drawn by calling TextBox. The solution is to<br>
+call SelIText just before you call SetIText each time you populate a field with text.
+</p>
+<p>
+<b>Q</b><i> How can I convert an RGB color into an index to a palette created by my application?</i><br>
+<i>Color2Index converts the RGB color to an index to the current device's color table, but</i><br>
+<i>that's not what I want.</i>
+</p>
+<p>
+<b>A</b> There's no single call that will give you a palette match to an RGB color. You'll have<br>
+to do this: call Color2Index to get the closest match to your RGB request; call<br>
+Index2Color to get the device's indexed color from your match; search the palette<br>
+yourself to find the color match (according to RGB value); and call Color2Index to<br>
+verify that you have the color you're looking for.
+</p>
+<p>
+&nbsp;Alternatively, you can create an off-screen GWorld, call Palette2CTab to convert your<br>
+palette to a color table, and call UpdateGWorld to insert your new color table in your<br>
+off-screen GWorld. Then, to find the index of an RGB color, make your GWorld the<br>
+active device and call Color2Index.
+</p>
+<p>
+<b>Q</b><i> I've tried in vain to find a way to print white text on a black background. Is there a</i><br>
+<i>way to do this, and if so, how?</i>
+</p>
+<p>
+<b>A</b> The trick is to use the srcBic pen mode:
+</p><p class="spacer">&nbsp;</p>
+<pre>FillRect(theRect, black);
+PenMode(srcBic);
+DrawString(myString);</pre>
+<p>
+<b>Q</b><i> In our application, the user can select an area of an image and drag it around. I want</i><br>
+<i>to show this visually by inverting the region under the current mouse coordinate as</i><br>
+<i>the user moves the mouse around. Inverting the region is nice because I can invert it</i><br>
+<i>again to get the unselected pixels back. It's not nice, however, in that a 50% gray color</i><br>
+<i>looks the same when it's inverted. To fix this problem, I tried using PaintRgn with an</i><br>
+<i>RGBForeColor of r,g,b = 0x8000 and a transfer mode of addOver. This works great on</i><br>
+<i>24-bit screens, but it seems that on 256-color screens, applying this operation twice</i><br>
+<i>doesn't quite return to the original color. Am I going to have to use a custom color</i><br>
+<i>search procedure?</i>
+</p>
+<p>
+<b>A</b> You get the results you want on direct devices but not on indexed ones, and unless<br>
+you're extremely lucky with your color table, this is how it will always work. The<br>
+problem is that the mode calculations are done with the actual RGB values used (the<br>
+ones available in the color table), not the ones you request. On indexed devices there's<br>
+almost always a difference between the two, so unless your color table happens to have<br>
+the exact color you request, there will be "errors." This never happens on direct<br>
+devices because all colors are available -- the operations work on direct RGB values<br>
+and are never mapped through color tables.
+</p>
+<p>
+&nbsp;The solution is either to set up your color tables or palettes to make sure you get the<br>
+results you want each time, or to install a custom color search procedure if that's what<br>
+you'd prefer.
+</p>
+<p>
+<b>Q</b><i> After we call CMOpen and a connection is established, a dialog is displayed and</i><br>
+<i>eventually goes away. Unfortunately, the C++ object framework we use is bombing</i><br>
+<i>because it's getting a deactivate event for that window, which belongs to the</i><br>
+<i>Communications Toolbox. We wrote a kludge that sets a flag after the call to CMOpen is</i><br>
+<i>finished and eats the deactivate event if the flag is set. Is there a better way for us to</i><br>
+<i>tell whether to let the class library handle the event or to handle it ourselves?</i>
+</p>
+<p>
+<b>A</b> A window or dialog created by a connection tool has the connection record handle<br>
+stored in the refCon field. The sequence, then, is to check the event record to find out if<br>
+the event is tied to operations in a window and, if so, check the window's refCon against<br>
+your connection handles. If there's a match, call CMEvent for that event; otherwise<br>
+pass it on to the framework. You'll probably need to write a handler for your class<br>
+library to do this properly, overriding the default window-handling routines for this<br>
+special case.
+</p>
+<p>
+<b>Q</b><i> When our application opens a Communications Toolbox tool, we issue a CMOpen with</i><br>
+<i>the asynchronous flag true and go into a loop, calling CMIdle and then CMStatus until</i><br>
+<i>we see the cmStatusOpening flag go down or the cmStatusOpen flag come up. When we</i><br>
+<i>use the Express Modem Tool (on a Macintosh Duo 230), those flags never change.</i><br>
+<i>Should we be doing something different or is there a problem with that tool?</i>
+</p>
+<p>
+<b>A</b> The Express Modem Tool uses a background process (coupled tightly with the<br>
+hardware implementation) to actually move data. Unless your application yields<br>
+processor time through the WaitNextEvent cycle, the background process is stuck<br>
+when you call the tool asynchronously. (The synchronous call has been massaged to<br>
+give the process time, of course.)
+</p>
+<p>
+&nbsp;What you're doing, essentially, is making the asynchronous call synchronous by<br>
+trapping your application in this kind of loop. The proper thing to do would be either to<br>
+use the call synchronously or to continue to use it asynchronously but exit back to the<br>
+main event loop and look for the flags from there. When the appropriate flag is set, you<br>
+can then dispatch off to a handler routine. Even better, use a completion routine to<br>
+notify the application that the CMOpen has completed and obtain the function result<br>
+from the ConnHandle errors field.
+</p>
+<p>
+<b>Q</b><i> I've implemented a variant of the CMChoose dialog based on the Choose.p sample code</i><br>
+<i>in Inside the Macintosh Communications Toolbox, page 323. The problem I have is that</i><br>
+<i>all the fields of the dialog appear in 12-point Chicago rather than the 9-point Geneva</i><br>
+<i>that tool dialogs usually use, so the dialog looks really tacky. How can I fix this?</i>
+</p>
+<p>
+<b>A</b> The critical thing is knowing when and where to set the window's text<br>
+characteristics. Tools provide a resource ('finf' or 'flst', defined in SysTypes.r and<br>
+CTBTypes.r) that gives you the font information for the tool's DITL. Between the<br>
+CMSetupPreflight and CMSetupSetup calls, you should fetch the font, size, face, and<br>
+mode from the resource and set your custom dialog's port to match it. You also need to<br>
+stuff the same information into the dialog's TextEdit record so that the editable fields<br>
+show up correctly. Controls provided in a DITL by Communications Toolbox tools have<br>
+the useWFont bit set so that they always follow the settings in the dialog's port.
+</p>
+<p>
+<b>Q</b><i> We're calling CMListen synchronously in our application, and if it times out an</i><br>
+<i>error alert is displayed that doesn't go away until the user clicks OK (or after a very</i><br>
+<i>long time). Is it possible not to have this dialog displayed, or to have it go away quickly</i><br>
+<i>as the "connected" dialog does?</i>
+</p>
+<p>
+<b>A</b> With regard to all Communications Toolbox interface components, you can only leave<br>
+them all on or turn them all off with the flag parameter to CMNew (cmQuiet and<br>
+cmNoMenus). We don't know of any way to affect the behavior of specific elements like<br>
+the error dialog raised by CMListen. (CMListen is best implemented in an application<br>
+as an asynchronous call, particularly in the cmQuiet mode.)
+</p>
+<p>
+<b>Q</b><i> The Connection Manager sample code in Inside the Macintosh Communications</i><br>
+<i>Toolbox sets the buffer sizes for cmDataIn and cmDataOut to 1K and the rest to 0, and</i><br>
+<i>there's a comment that the other channels are to be ignored. Then, in the description of</i><br>
+<i>CMNew, it says, "To have the tool set the size of these buffers, your application should</i><br>
+<i>put zeros in the array." What's the recommended way to go?</i>
+</p>
+<p>
+<b>A</b> You should consider the buffer sizes you set in the CMBufferSizes array as a request<br>
+for buffers. The tool's implementation will always override your choices based on what<br>
+the developer felt was the proper thing to do. Many programmers initialize the array<br>
+to all zeros and let the tool defaults be set; there's some argument for increasing the<br>
+sizes on network protocols for efficiency, but it's up to the tool designer to determine<br>
+what makes the best sense. Rather than depend on any particular buffer sizes in your<br>
+application, you should deal with what the tool allocates dynamically.
+</p>
+<p>
+<b>Q</b><i> What is that green slime that you can buy in toy stores made of?</i>
+</p>
+<p>
+<b>A</b> We're not exactly sure what the composition of that stuff is, and the toy companies<br>
+aren't about to tell us, but we're pretty sure that it's some sort of polymer that's<br>
+cross-linked via hydrogen bonding. Hydrogen bonds are relatively weak, and can be<br>
+easily pulled apart. That's why these materials behave like "slow liquids" and<br>
+eventually seek their own level.
+</p>
+<p>
+&nbsp;A very satisfying white version of slime can be concocted at home from common<br>
+ingredients as follows: Mix 1/2 cup water and 1/2 cup white glue in a bowl. In<br>
+another bowl (or a cup) dissolve 1 teaspoon borax in 1/2 cup water (make sure the<br>
+borax is completely dissolved; it may take a minute of stirring). Pour the borax<br>
+solution into the glue solution, stirring rapidly and constantly. Keep stirring for a<br>
+minute; then reach in with your fingers and keep mixing, trying to break up the<br>
+lumps. At first the material will be lumpy and wet, but soon it will become smooth and<br>
+rubbery. This recipe makes a blob the size of a grapefruit. Use less water with the<br>
+glue for stiffer slime. Store in an airtight container, and keep it away from carpets!
+</p>
+<p>
+<b>Q</b><i> Nothing in the documentation for MacTCP deals with the state of register A5 if an</i><br>
+<i>ioCompletion routine is specified within struct CntrlParam (MacTCP version 1.1</i><br>
+<i>documentation, page 7). I've been manually preserving and setting A5 with some inline</i><br>
+<i>assembly code but wonder if this is really necessary. If I must set A5, and want to use</i><br>
+<i>the same source code in the 680x0 and PowerPC environments, how do I go about it?</i>
+</p>
+<p>
+<b>A</b> When MacTCP calls the application's ioCompletion routine, it restores the<br>
+application's A5 register, so the application shouldn't worry about this (the MacTCP<br>
+driver takes care of it). On a Power Macintosh, you can still set register A5 in the<br>
+emulator as you did before (with SetA5 and SetCurrentA5). However, be aware that<br>
+with native code, register A5 is no longer used to store references to global variables.<br>
+Any piece of PowerPC native code, even standalone code, can have its own global<br>
+variables without making its own A5 world.
+</p>
+<p>
+<b>Q</b><i> When a driver is operating synchronously, what kinds of system calls are</i><br>
+<i>prohibited? Specifically, can I make memory allocation calls and file system calls</i><br>
+<i>from the driver?</i>
+</p>
+<p>
+<b>A</b> If your driver is called synchronously, you should be able to allocate memory and<br>
+make file system calls and other system calls that move memory. If it's called<br>
+asynchronously, you should<i> not</i>&nbsp;&nbsp;make these calls. There's one important exception to<br>
+this guideline: the Macintosh file system isn't reentrant, so in a disk driver or a<br>
+network driver that serves the file system, you must not make any calls to the file<br>
+system, as you will tie it into metaphorical knots.
+</p>
+<p>
+<b>Q</b><i> I'm creating an application from an existing file by adding CODE resources to it,</i><br>
+<i>setting the bundle bit, clearing the inited bit, closing the file, and flushing the volume.</i><br>
+<i>My problem is that the Finder doesn't recognize the change immediately. I have to move</i><br>
+<i>the file to another folder before the icon changes and it's recognized as an application.</i><br>
+<i>What do I need to do to have the Finder recognize the change immediately?</i>
+</p>
+<p>
+<b>A</b> The problem you're having stems from the fact that the Finder only scans for<br>
+changes about every 10 seconds. To make the Finder aware of changes before that, you<br>
+need to change the modification date of the parent directory. Use a routine like this:
+</p>
+<pre>OSErr TouchDir(short vRefNum, long dirID)
+{
+    CInfoPBRec info;
+    Str255 name;
+    OSErr theErr;
+   
+    info.dirInfo.ioDrDirID = dirID;
+    info.dirInfo.ioVRefNum = vRefNum;
+    info.dirInfo.ioNamePtr = name;
+    info.dirInfo.ioFDirIndex = -1;
+    theErr = PBGetCatInfo(&amp;info, false);
+    if (!theErr) {
+        info.dirInfo.ioCompletion = 0;
+        info.dirInfo.ioDrDirID = info.dirInfo.ioDrParID;
+        info.dirInfo.ioFDirIndex = 0;
+        GetDateTime(&amp;info.dirInfo.ioDrMdDat);
+        theErr = PBSetCatInfo(&amp;info, false);
+    }
+    return theErr;
+}</pre>
+<p>
+&nbsp;The Finder will rescan the specified directory immediately after this routine updates<br>
+the modification date, usually well within one second.
+</p>
+<p>
+<b>Q</b><i> Does the idleProc of AESend get called before every event is sent, even those to the</i><br>
+<i>current process (which are directly dispatched)? What I really care about is whether</i><br>
+<i>WaitNextEvent is called each time.</i>
+</p>
+<p>
+<b>A</b> AESend's idleProc will be called if kAEWaitReply is the sendMode. In this mode the<br>
+Apple Event Manager uses the Event Manager to send the event. The Event Manager then<br>
+calls WaitNextEvent on behalf of your application. This causes your application to<br>
+yield the processor, giving the server application a chance to receive and handle the<br>
+Apple event. You must supply an idleProc in order to process any update events, null<br>
+events, operating system events, or activate events that occur while your application<br>
+is waiting for a reply.
+</p>
+<p>
+&nbsp;If you use kAENoReply or kAEQueueReply as the sendMode, AESend will immediately<br>
+return after using the Event Manager to send the event. Your idleProc will never be<br>
+called (in the case of kAEQueueReply, it's assumed that you want to receive your reply<br>
+via your application's event queue, and you must install a handler for the reply Apple<br>
+event).
+</p>
+<p>
+&nbsp;Likewise, your idleProc will never be called in the case of a direct dispatch. In doing a<br>
+direct dispatch you're sending an Apple event to yourself using the<br>
+typeProcessSerialNumber and kCurrentProcess. These events are delivered directly,<br>
+bypassing the event queue and executing your handler routine directly. For more<br>
+information, see the Macintosh Technical Note "SendToSelf: Getting in Touch With<br>
+Yourself Via the Apple Event Manager" (Interapplication Communication 1).
+</p>
+<p>
+<b>Q</b><i> I'm having a problem sending custom Apple events over the network. We have a</i><br>
+<i>background-only application on one machine sending custom Apple events to another</i><br>
+<i>machine via LocalTalk. If we manually pull the LocalTalk cable out from the back of the</i><br>
+<i>sending Macintosh, the event is never received on the remote machine, but an error is</i><br>
+<i>never returned by AESend. AETracker logs show that the event is being sent with no</i><br>
+<i>error, but AETracker on the remote machine shows no sign of the event. We've also</i><br>
+<i>seen a similar thing happen when phone lines are bad. Note that in both cases, other</i><br>
+<i>events are sent between the machines just fine. What gives?</i>
+</p>
+<p>
+<b>A</b> The reason AESend doesn't report an error in cases like the one you mention is<br>
+because it can't. As soon as the event is sent, AESend returns noErr indicating that the<br>
+event has been handed off to the PPC Toolbox for sending. You're then back in your<br>
+main event loop and doing other things. If for some reason the connection goes down (or<br>
+there's any other transmission problem), there may be a resulting error from the<br>
+network layer that's actually transporting the event, but the resulting error may not<br>
+occur for seconds or even minutes. At that point there's no way for the AESend that sent<br>
+the event to detect the error.
+</p>
+<p>
+&nbsp;We saw a good example of this recently using a standard Ethernet connection between<br>
+two machines. The network connection was broken between the machines and an event<br>
+was sent from one to the other. AESend returned noErr on the sending Macintosh, and<br>
+as long as we reconnected the two machines before the end of the associated timeout<br>
+period -- two minutes -- the event was received. If we waited longer the event never<br>
+made it. But in either case AESend returned noErr.
+</p>
+<p>
+&nbsp;There are a couple of ways to address the problem. The first way is to use<br>
+kAEWaitReply when sending your event; however, you give up the processor in favor<br>
+of ensuring a reply. The other solution is to pass kAEWantReceipt in the sendMode<br>
+parameter of AESend and have a timeout for the amount of time you're willing to wait<br>
+for a reply.
+</p>
+<p>
+<b>Q</b><i> We have two questions regarding AppleScript. First, what's the significance of Begin</i><br>
+<i>Transaction and End Transaction for a single-threaded application? Do we need to</i><br>
+<i>support these two events if we don't send events or scripts to another application? The</i><br>
+<i>Apple Event Registry says to return a transaction ID for the Begin Transaction call </i><br>
+<i>and to check for the transaction ID of all the incoming Apple events. Is this really</i><br>
+<i>necessary? Second, what's the user interface guideline for the Print Document</i><br>
+<i>('pdoc') event in the required suite? Currently, I bring the application to the front by</i><br>
+<i>calling AEInteractWithUser (only if both the server and the client are in the same</i><br>
+<i>machine) and open the print job dialog box.</i>
+</p>
+<p>
+<b>A</b> A single-threaded application doesn't need to support Begin or End Transaction. If<br>
+you need transactions, you may implement them as you see fit. Regarding the 'pdoc'<br>
+event, what you're doing is correct. When you receive a 'pdoc' event, you should call<br>
+AEInteractWithUser and check the result: if you get noErr (meaning you can interact),<br>
+open the standard print job dialog; if you get errAENoUserInteraction (you can't<br>
+interact), just do whatever the default is for that document, printing without<br>
+interaction.
+</p>
+<p>
+<b>Q</b><i> I'm doing a project where I need about 1500K for my own off-screen GWorlds and</i><br>
+<i>sundry data structures, and we're targeting the 4 MB Macintosh LC. Here's the kicker:</i><br>
+<i>we need Text to Speech. I'd like to know more precisely how the memory allocation</i><br>
+<i>works in the Speech Manager so that I know what our options are -- for example, how</i><br>
+<i>much memory gets allocated from the system versus how much from my application</i><br>
+<i>heap.</i>
+</p>
+<p>
+<b>A</b> When trying to preflight the memory needs for an application that uses Text to<br>
+Speech, keep in mind that there are at least three different managers involved in the<br>
+production of speech on the Macintosh: the Component Manager, the Speech Manager,<br>
+and the Sound Manager. All these have their own memory allocation schemes and take<br>
+memory from different places.
+</p>
+<p>
+&nbsp;As a rough rule of thumb, to use Text to Speech in a robust manner, plan on adding<br>
+250K for each SpeechChannel you expect to keep open at any given time; this should<br>
+accommodate both MacinTalk 2 and MacinTalk Pro voices. If this causes a minimum<br>
+application size that's not acceptable, you can add only 50K for each MacinTalk 2<br>
+channel you allow to be open at a time and include in your documentation instructions<br>
+on how to increase the size if the user decides to use MacinTalk Pro voices instead.
+</p>
+<p>
+&nbsp;The more complete scenario goes like this: The Component Manager takes up about<br>
+20K of the system heap (possibly slightly less when no components are open). The<br>
+Speech Manager code and data use around 20K of system heap, and should be a one-time<br>
+investment (note that little variance should be expected from version to version). The<br>
+Sound Manager memory usage depends on the version and other factors, but a good<br>
+estimate is 30K per SndChannel. Note that the Sound Manager code goes into the system<br>
+heap, with sound buffers and sound data being allocated in the application heap.
+</p>
+<p>
+&nbsp;The amount of space needed for the Text to Speech engine code and data (such as<br>
+pronunciation dictionaries and rules data) varies quite a bit between MacinTalk 2<br>
+(about 100K) and MacinTalk Pro (about 300K); this memory is allocated in the<br>
+system heap whenever possible to make it available to different applications using the<br>
+same engine. If the Speech Manager can't allocate the necessary space in the system<br>
+heap, it tries to get it from the application heap. Naturally when this happens the code<br>
+and data cannot be shared across applications. There's also some Text to Speech<br>
+engine-specific SpeechChannel data whose size varies from engine to engine:<br>
+MacinTalk 2 uses roughly 10K and MacinTalk Pro uses about 175K. Finally, there's<br>
+the voice data and code: MacinTalk 2 takes between 20K to 40K depending on the chosen<br>
+voice, while MacinTalk Pro voices can use between 300K and 2.25 MB of RAM. Again,<br>
+the memory needed for voice data and code is allocated from the system heap if possible<br>
+to allow sharing between applications using the same voices; if there's no room in the<br>
+system heap, the Speech Manager tries to load this in the application heap, and no<br>
+sharing is possible.
+</p>
+<p>
+&nbsp;Finally (you knew this was coming, didn't you?), be aware that these numbers may<br>
+change in the future. Use them as a guide, but as always, don't depend on them.
+</p>
+<p>
+<b>Q</b><i> What should we do when renaming a document that contains a publisher section? I</i><br>
+<i>try to call AssociateSection with the already registered section and the new FSSpecPtr.</i><br>
+<i>AssociateSection returns no error and I unregister the publisher section. But the next</i><br>
+<i>time I open up and register the publisher section of that document, I get a -463 error</i><br>
+<i>code on RegisterSection. What am I doing wrong?</i>
+</p>
+<p>
+<b>A</b> AssociateSection doesn't change any information in the edition container file, which<br>
+is where this needs to be changed; it only acts on the "hot" links the Edition Manager is<br>
+currently maintaining with any open documents that are using a section. What you<br>
+have to do if you rename a publishing document is&nbsp;&nbsp;to open the publisher and update it.<br>
+When you call OpenNewEdition with the new file name, that will update things. This<br>
+means that a "save as" must dirty&nbsp;&nbsp;all your publisher sections, which slows you down a<br>
+bit and may be counterintuitive. But the only other option would be to update the alias <br>
+directly, and that would be bad.
+</p>
+<p>
+<b>Q</b><i> I'm working on a video-conferencing solution that uses the video digitizer (vdig)</i><br>
+<i>incorporated in the Macintosh Quadra 840AV. I want to capture data from the system's</i><br>
+<i>built-in video hardware using the VDCompressOneFrame and VDCompressDone calls. I</i><br>
+<i>have the following questions about the vdig that supports the 840AV built-in video</i><br>
+<i>hardware:</i>
+
+<ul><li><i>What's the header and data format for the captured video?</i></li>
+<li><i>What's the compressor type (cType) for this compression format?</i></li>
+<li><i>Does this compressor support more than one spatial compression setting</i><br>
+<i>and, if so, what are the data formats for the compression settings?</i></li></ul>
+<p>
+<b>A</b> We can't provide information regarding the data format of the captured video. It's<br>
+considered proprietary and confidential, except in cases where the codec in use is an<br>
+industry standard like JPEG. Fortunately, you don't need to know the data format if<br>
+you're using the correct QuickTime vdig and Image Compression Manager calls to<br>
+manipulate the data.
+</p>
+<p>
+&nbsp;We don't think you should use the vdig directly, but if you do, you can call<br>
+VDGetCompressionType to determine the compression types it supports. You can select<br>
+the compression type you want to use by calling VDSetCompression. Since the vdig uses<br>
+standard codecs for compression, you don't need to know the data format; all you have<br>
+to do is use the codec to decompress the image data when you want to draw it. Call<br>
+VDGetImageDescription to get an image description handle, which you can pass to<br>
+DecompressImage along with a pointer to the data, and the Image Compression Manager<br>
+will take care of decompressing the data as long as the correct codec is available.
+</p>
+<p>
+&nbsp;We don't recommend using vdigs directly because every one is different and supports<br>
+different features. They can be pretty hard to work with because your code will<br>
+require a lot of error handling and workarounds. The sequence grabber was written to<br>
+provide a seamless interface between any vdig and applications, so you can use the<br>
+sequence grabber as the engine for your video-conferencing system. It was designed<br>
+with this kind of flexibility in mind. For more information about the sequence<br>
+grabber, see Chapter 6, "Sequence Grabber Channel Components," in <i>Inside Macintosh:</i><br>
+<i>QuickTime Components</i> .
+</p>
+<p>
+&nbsp;Using the sequence grabber with the right flags, you can get high-performance grabs,<br>
+even over the network. You do this by supplying application-defined functions to the<br>
+sequence grabber component. If you replace the grab function on the receiver side, you<br>
+can use the sequence grabber to grab right off the network on that end. On the sender<br>
+side, you can replace the data function so that you'll be able to write the frames out<br>
+over the network, using whatever network protocol you like.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>These answers are supplied </b>by Apple's Developer Support Center. Special thanks<br>
+to Brian Bechtel, Matt Deatherage, Godfrey DiGiorgi, Steve Falkenburg, Dave Hersey,<br>
+Dave Johnson, Scott Kuechle, Joseph Maurer, Kevin Mellander, Jim Mensch, Martin<br>
+Minow, Guillermo Ortiz, and Brigham Stevens for the material in this Q &amp; A column. If<br>
+you need more answers, take a look at the Macintosh Q &amp; A Technical Notes on this<br>
+issue's CD. *
+</p>
+</body>
+</html>

@@ -1,0 +1,608 @@
+<html>
+<head>
+<!-- Article ID: 59 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 94 - Macintosh Q & A</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Macintosh Q &amp; A</h1>
+<b>Q</b><i> I'm having problems getting PICTs to display with the colors I want. I'm converting</i><br>
+<i>GIF files to PICTs by drawing the GIF into an offscreen GWorld. I'm using the Palette</i><br>
+<i>Manager to set up the colors, but there's no way to associate a palette with an offscreen</i><br>
+<i>PixMap. After I'm done drawing the GIF to a PixMap, I open the picture with the</i><br>
+<i>offscreen PixMap as the current port and use CopyBits to copy the PixMap onto itself,</i><br>
+<i>creating the picture. The problem is that if I use srcCopy, the colors are incorrect in</i><br>
+<i>the PICT when opened with TeachText (and other applications). But if I use ditherCopy</i><br>
+<i>the colors are saved correctly. I can use srcCopy if I do a CopyBits to/from a "color"</i><br>
+<i>window with the window's palette changed to my color palette. Is there a way to assign</i><br>
+<i>a palette to use for OpenPicture and still use CopyBits from an offscreen bitmap with</i><br>
+<i>srcCopy?</i><br>
+<p>
+<b>A </b>You can associate a palette with a GWorld, but it won't solve your problem: since a<br>
+GWorld never becomes "active," the associated device's colors are never changed to<br>
+match the palette. The solution is to use a custom color table with the GWorld. And you<br>
+can easily use Palette Manager routines to convert your palette to a color table.
+</p>
+<p>
+Use the Palette2CTab routine to perform the conversion. Palette2CTab takes a<br>
+PaletteHandle and a CTabHandle and copies all the colors from the palette into the color<br>
+table, resizing the color table as necessary. If the palette handle is nil, no change takes<br>
+place.
+</p>
+<p>
+Now you have a color table that you can associate with your GWorld. You can pass it to<br>
+NewGWorld when you create your GWorld initially; the fourth parameter is a handle to<br>
+a color table. You need to explicitly set the depth in this call for best results. (If you<br>
+pass nil for the depth, the color table parameter will be ignored and the depth of the<br>
+GWorld will be set to match the deepest device that intersects the GWorld's boundary<br>
+rectangle.) The other possibility is to associate the color table with an existing GWorld<br>
+using UpdateGWorld.
+</p>
+<p>
+<b>Q</b><i> I'm having a bit of a problem with DiffRgn. I start out with a "wide open"</i><br>
+<i>rectangular region (-32767, -32767, 32767, 32767) and then use DiffRgn to</i><br>
+<i>subtract a group of smaller rectangles from it. When I'm done, the bounding box of the</i><br>
+<i>region isn't what it should be. Any idea what's happening?</i>
+</p>
+<p>
+<b>A </b>What you need to do is create your clipping region so that it's not quite wide open<br>
+(bottom and right coordinates of 32766 will work). If you do this, all your DiffRgn<br>
+calculations will work fine.
+</p>
+<p>
+While this isn't explicitly documented anywhere, it does seem to be a quirk in the way<br>
+regions work. Due to the internal storage format of regions, the number 0x7FFF<br>
+(32767) causes problems if it appears as a point inside a region. 0x7FFF is used as a<br>
+flag in the internal region data structure to signify a "barrier." When this flag is used<br>
+as a data point in a nonrectangular region, region parsing becomes completely screwed<br>
+up.
+</p>
+<p>
+QuickDraw tries to catch the creation of regions that will be poorly formed and turn<br>
+them into properly formed (but slightly incorrect) regions, but it isn't 100%<br>
+successful.
+</p>
+<p>
+<b>Q</b><i> I'm erasing my windows with a color other than white, by setting the window's</i><br>
+<i>background color and calling EraseRect. But in cases where the Window Manager gets</i><br>
+<i>there first (window ordering changes or a window's size gets larger) I still get</i><br>
+<i>flicker, because the Window Manager erases with the wContent color from the</i><br>
+<i>window's color table (white by default) and not the port's background color. Is there a</i><br>
+<i>friendly, clean way to avoid that flicker? (I notice that in System 7.5, background</i><br>
+<i>colors are implemented with EraseRect, just as I'm doing it. Are you simply assuming</i><br>
+<i>the flash will be minimal?)</i>
+</p>
+<p>
+<b>A </b>One of the Window Manager's functions is to ensure that the content region of a<br>
+window is opaque when it needs to be: that's why the Window Manager "pre-erases" the<br>
+window when the content region grows, before your application gets a chance to. As you<br>
+point out, if your application is then erasing large areas of the window to a different<br>
+color, you'll get a noticeable flicker in those parts of the content region that needed to<br>
+be opaque. This is an unfortunate side effect of a necessary maneuver by the Window<br>
+Manager. Any system dialogs that set a background color and use EraseRect will suffer<br>
+from the same flicker (although you won't spot it so often, since for the most part<br>
+they're modal, nonresizable, and relatively small).
+</p>
+<p>
+There are two solutions: If you create your windows from 'WIND' resources, you can<br>
+create 'wctb' resources with the same ID and an appropriate wContent color and they'll<br>
+automatically be used when the window is created. Alternatively, you can use the<br>
+SetWinColor routine to apply a color table to a window after it has been created.
+</p>
+<p>
+<b>Q</b><i> How can we write native PowerPC versions of our QuickDraw GX printer drivers?</i><br>
+<i>Native QuickDraw GX applications are easy, but I can't find any documentation for</i><br>
+<i>writing native drivers. One problem I can see is the jump table at the top of the 'pdvr'</i><br>
+<i>code resource, where each of the jump table entries is supposed to contain a 680x0</i><br>
+<i>instruction to jump to the appropriate override procedure within the resource. How</i><br>
+<i>should we proceed?</i>
+</p>
+<p>
+<b>A </b>First of all, in our experiments with native QuickDraw GX drivers we've found little<br>
+or no performance increase, so we don't really recommend writing native printer<br>
+drivers. The bottlenecks in typical QuickDraw GX printer drivers are in the file and<br>
+network I/O, which aren't affected much by the driver's code (see the Print Hints<br>
+column in this issue of <i>develop</i>for more information). Unless you have some repetitive<br>
+and time-consuming operation in which you can expect a huge win, your code will most<br>
+likely just get bigger, and possibly even slower in some cases because of the context<br>
+switches.
+</p>
+<p>
+That said, I'll tell you how to make any or all of your overrides into "fat" overrides.<br>
+Each of the fat overrides needs to consist of three parts:
+</p>
+<ul>
+<li>    a "safe routine descriptor" (see below)</li>
+<li>    the 680x0 code</li>
+<li>    the PowerPC code</li>
+</ul>
+<p>
+The safe routine descriptor allows a simple JMP instruction (such as those found in<br>
+the 'pdvr' jump table) to run either 680x0 code or PowerPC code, depending on what<br>
+type of Macintosh it's running on. The beginning of the safe routine descriptor contains<br>
+680x0 code that's executed the first time through and that determines whether the<br>
+Mixed Mode Manager is present. If so, the routine descriptor from the PowerPC chunk<br>
+of code is copied to the top of the resource. If not, a 680x0 branch instruction that<br>
+jumps to the 680x0 code is inserted at the top of the routine descriptor. This code<br>
+munging happens only the first time through -- after that, the code resource is set up<br>
+to run the 680x0 code or the PowerPC code immediately upon jumping to it. This is<br>
+described in more detail in<i> Inside Macintosh: PowerPC System Software</i> and in<br>
+MixedMode.r.
+</p>
+<p>
+Here's how a fat override would be called from QuickDraw GX: First, execution jumps<br>
+to the desired entry in the printer driver's jump table. The 680x0 JMP instruction in<br>
+the table is executed and jumps to the safe routine descriptor in the override. The safe<br>
+routine descriptor then executes either the 680x0 code or the PowerPC code,<br>
+depending on the machine.
+</p>
+<p>
+The real trick is building the makefile. First the makefile has to compile each of the<br>
+override functions into a 680x0 code resource using C and Link, and into a PowerPC<br>
+code resource using PPCC, PPCLink, makePEF, makesys, and Rez. Next, it needs to use<br>
+Rez to combine the results of the compiles into fat resources with safe descriptors.<br>
+Finally, it needs to use Rez to combine the jump table with all of the fat resources.<br>
+This last step is a doozy. You'll need to write an MPW tool that concatenates all the fat<br>
+resources while keeping track of the offsets of each one. These offsets will need to be<br>
+stuffed into the jump table at the top of the final 'pdvr' resource.
+</p>
+<p>
+<b>Q</b><i> I'm trying to display from my QuickDraw GX printer driver a movable modal dialog</i><br>
+<i>box that contains a list. What would be the best way to do it?</i>
+</p>
+<p>
+<b>A </b>Since you're displaying the dialog from a printer driver, you can let QuickDraw GX<br>
+do most of the work. Use GXAlertTheUser to put up a 'plrt' resource that specifies the<br>
+printingStatus type. That makes a movable modal dialog. Then override<br>
+GXInitializeStatusAlert to build your list information for the dialog, and<br>
+GXHandleAlertEvent so that you can update your dialog, handle clicks, dispose of the<br>
+dialog, and so forth. You'll probably also want to override GXHandleAlertFilter to help<br>
+out with that.
+</p>
+<p>
+<b>Q</b><i> I noticed that the "Larger Print Area" checkbox has been taken out of QuickDraw GX's</i><br>
+<i>LaserWriter Page Setup Options. I assume this means one of three things: (a) it's now</i><br>
+<i>on all the time, (b) it's now off all the time, or (c) it's lurking someplace else. Which</i><br>
+<i>is it?</i>
+</p>
+<p>
+<b>A </b>The option has been removed, as you noted, but the functionality is still available, in<br>
+the guise of papertypes. To decide where on the page to print, QuickDraw GX printing<br>
+uses the papertype that a page is formatted for. Some of these papertypes come<br>
+standard (built into QuickDraw GX or into specific drivers), but users can also create<br>
+their own papertypes using the papertype editor that accompanies QuickDraw GX.
+</p>
+<p>
+For example, a user could create a papertype called "Company Letterhead" that's based<br>
+on US Letter but has an imageable area that excludes the part of the page at the top<br>
+where the address and logo might be, as well as the line or two of text at the bottom of<br>
+the page. When dropped into the Extensions folder, these custom papertypes become<br>
+available from QuickDraw GX applications, and users can format their documents with<br>
+them. In the case of this letterhead example, the result would be that you wouldn't have<br>
+to fiddle around with your text to avoid printing over the type and graphics on the<br>
+paper.
+</p>
+<p>
+The "Larger Print Area" feature isn't compatible with the concept of papertypes<br>
+because in order for QuickDraw GX to honor the imageable area of a papertype, it can't<br>
+change the dimensions that the papertype is set up for. Again, using the letterhead<br>
+example, if we were to expand the imageable area it would probably result in text<br>
+printing over the company logo or address information.
+</p>
+<p>
+We realized that some customers would still expect this functionality to be around, so<br>
+we've included some papertypes in the LaserWriter GX driver that mimic the old<br>
+behavior. When you format for the LaserWriter GX driver (or for a desktop printer<br>
+for that driver), you'll notice that two new papertypes become available in the<br>
+QuickDraw GX page setup dialogs: "A4 Letter (7.8 x 11.4)" and "US Letter (8.5 x<br>
+11)." These are "larger print area" versions of their counterparts. In applications<br>
+that aren't QuickDraw GX aware, these papertypes can be found in the Page Setup<br>
+dialog's Paper Type menu.
+</p>
+<p>
+<b>Q</b><i> I was wondering whether QuickDraw GX, like LaserWriter 8, uses PostScript</i><br>
+<i>printer description (PPD) files. How do PPD files and the new printing architecture</i><br>
+<i>integrate? What happens in QuickDraw printing compatibility mode?</i>
+</p>
+<p>
+<b>A </b>The short answer to this question is no, QuickDraw GX does not use PPD files. The<br>
+longer answer is, well, longer.
+</p>
+<p>
+The main use for PPD files was to extend the functionality of the LaserWriter 8<br>
+driver. As you know, the contents of many of LaserWriter 8's dialogs depend on the<br>
+contents of the PPD file. The user can associate a PPD file with a printer via the<br>
+Chooser from LaserWriter 8 onwards, by using the Setup button in the Chooser dialog.
+</p>
+<p>
+As you're also aware, the mechanism for choosing printers has changed with<br>
+QuickDraw GX. This means that PPD files aren't needed, except for one case: using<br>
+QuickDraw GX Helper to print with LaserWriter 8 with QuickDraw GX installed. In<br>
+this situation, printing will occur in the same way as before -- in other words, the<br>
+print process will be the same as for plain old LaserWriter 8, including the use of<br>
+PPD files. In QuickDraw printing compatibility mode (that is, printing with a<br>
+pre-QuickDraw GX application on a system running QuickDraw GX), the emulation<br>
+will use the QuickDraw GX driver, so PPD files won't be used unless the driver<br>
+specifically supports them.
+</p>
+<p>
+By the way, there's no reason a printer driver manufacturer can't incorporate PPD<br>
+files into a QuickDraw GX printer driver, if it's deemed appropriate.
+</p>
+<p>
+<b>Q</b><i> When my application creates a new media (of text type in this case) for a new track</i><br>
+<i>in a movie created with NewMovieFromScrap, the dataRef and dataRefType should be</i><br>
+<i>set to nil, according to the QuickTime documentation. The problem is that later I want</i><br>
+<i>to edit that media (adding a text sample to it, for example), but BeginMediaEdits</i><br>
+<i>returns -2007 (no data handler found). I assume I can get around that by first saving</i><br>
+<i>the movie to a file, but this seems slimy since the movie won't end up on disk in the</i><br>
+<i>end. Any suggestions for a better approach?</i>
+</p>
+<p>
+<b>A </b>You're correct -- BeginMediaEdits complains if the movie has been created with<br>
+NewMovieFromScrap. Unfortunately, BeginMediaEdits doesn't think memory-based<br>
+movies are on a media that will support editing. The workaround is, as you thought, to<br>
+store the movie in a temporary file until you're finished editing it.
+</p>
+<p>
+Fortunately, this is easy to do. When you call NewTrackMedia, pass an alias to a new<br>
+file in the dataRef parameter instead of nil. Passing nil (the usual approach)&nbsp;&nbsp;indicates<br>
+that the movie's default data reference should be used, but because your movie came<br>
+from the scrap and not a file, it has no data reference -- hence the error you're<br>
+getting. By the way, using the data handler in QuickTime 2.0, you can create a movie<br>
+entirely in memory.
+</p>
+<p>
+<b>Q</b><i> I need to alter the pixel information of a QuickTime movie frame after it has been</i><br>
+<i>decompressed but before it's displayed on the screen. Is there any way that a</i><br>
+<i>user-defined procedure can be called by QuickTime at this point? If not, how can I</i><br>
+<i>accomplish this?</i>
+</p>
+<p>
+<b>A </b>As long as you use QuickTime 1.6 or later, you can do this easily. The mechanism is<br>
+described in the Macintosh Technical Note "QuickTime 1.6.1 Features" (QT 4) under<br>
+the heading "SetTrackGWorld."
+</p>
+<p>
+SetTrackGWorld lets you force a track to draw into a particular GWorld. This GWorld<br>
+may be different from that of the entire movie. After the track has drawn, it calls a<br>
+"transfer procedure" that you've written to copy the track to the actual movie GWorld.<br>
+You can also install a transfer procedure and set the GWorld to nil. This results in<br>
+your transfer procedure being called only as a notification that the track has drawn --<br>
+no transfer takes place.
+</p>
+<p>
+You should do your image manipulation in your transfer procedure. Bear in mind, of<br>
+course, that calling resource-intensive or time-consuming routines in your transfer<br>
+procedure will have an adverse effect on the playback performance of your movie.
+</p>
+<p>
+<b>Q</b><i> I'm looking for the documentation for five routines in the Communications Toolbox</i><br>
+<i>that aren't in my 1.0 documentation. The routines are "PBxxx-style" asynchronous</i><br>
+<i>routines: CMNewIOPB, CMDisposeIOPB, CMPBRead, CMPBWrite, and CMPBIOKill.</i><br>
+<i>Where are these calls documented?</i>
+</p>
+<p>
+<b>A </b>These calls are documented in the Communications Toolbox 1.1 Engineering Notes.<br>
+The calls were added to allow "overlapping I/O," that is, issuing a _CMWrite call and<br>
+then issuing another before the first completes. The Communications Toolbox version<br>
+1.0 specifically prohibits this behavior.
+</p>
+<p>
+<b>Q</b><i> I have an application that needs to be able to detect invisible folders. The "invisible"</i><br>
+<i>bit for files is in the fdFlags in the FInfo structure, but that obviously won't work for</i><br>
+<i>directories. What's the recommended way to do this?</i>
+</p>
+<p>
+<b>A </b>PBGetCatInfo will get you the information you need. The ioDrUsrWds field of the<br>
+DirInfo structure that you get by calling PBGetCatInfo is a DInfo structure:
+</p>
+<pre>struct DInfo {
+   Rect                frRect;       /* folder rect */
+   unsigned short      frFlags;      /* flags */
+   Point               frLocation;   /* folder location */
+   short               frView;       /* folder view */
+};</pre>
+<p>
+The frFlags field has the same layout as the fdFlags field in an FInfo structure. Many of<br>
+the bits don't apply to directories, but fOnDesk and fInvisible do. The fInvisible bit is<br>
+set for almost all invisible folders. The only exceptions to this are certain special<br>
+folders that the Finder can create, such as the "Temporary Items" folder, which you<br>
+shouldn't have to worry about.
+</p>
+<p>
+<b>Q</b><i> When a user of my application saves a file, I want to automatically save a few files,</i><br>
+<i>each of which has a different extension to the name the user chose. For instance, if the</i><br>
+<i>user saves the file as "MyFile" I want to create "MyFile.a," "MyFile.b," and</i><br>
+<i>"MyFile.c." If the user gives a filename that already exists, but the filename with the</i><br>
+<i>extension doesn't exist, is there a way to avoid the appearance of the Replace/Cancel</i><br>
+<i>dialog? Conversely, can I make the Replace/Cancel dialog appear for the filenames</i><br>
+<i>with the extensions? I assume CustomPutFile is the way to go here, but I'm not sure</i><br>
+<i>how to proceed.</i>
+</p>
+<p>
+<b>A </b>CustomPutFile is the answer, all right. One way to get rid of the Replace/Cancel<br>
+dialog is to write a simple dialog hook function that includes the following code:
+</p>
+<pre>/* If it's the "Replace Existing?" dialog... */
+if (refCon == sfReplaceDialogRefCon)
+   /* ...and the dialog is just about to appear... */
+   if (item == sfHookFirstCall)
+      /* ...then "hit" the Replace button automatically. */
+      return 1;</pre>
+<p>
+The problem you pose is a little different, however, so we recommend a different<br>
+approach. In addition to avoiding the standard Replace/Cancel warning, your dialog<br>
+hook function will also need to make sure each filename-plus-suffix combination is a<br>
+valid filename (that is, not too long), put up Replace/Cancel dialogs in case any<br>
+filename-plus-suffix combination already exists, and override other warnings, such<br>
+as the "That name is already used by a folder" dialog.
+</p>
+<p>
+First, define a data structure that can be passed to CustomPutFile so that your dialog<br>
+hook function can access the list of suffixes you're working with and return the results<br>
+(that is, the FSSpec and FInfo) of each filename-plus-suffix combination. Then, your<br>
+dialog hook function should do the following when the user clicks the Save button:
+</p>
+<ul>
+<li>    Make sure that each filename-plus-suffix combination is a valid<br>
+filename.</li>
+<li>    Put FSSpecs for each filename-plus-suffix combination into the data<br>
+structure so that you can get at them later.</li>
+<li>    Put up Replace/Cancel dialogs for any filename-plus-suffix<br>
+combination that already exists.</li>
+<li>    If the user cancels any of these, remap the Save item to nothing by<br>
+returning sfHookNullEvent.</li>
+<li>    If the user accepts all of these, remap the Save item to Cancel by<br>
+returning sfItemCancelButton and, before returning, mark the sfReply as<br>
+good, so that your application can tell that the user really clicked the Save<br>
+button. By changing the Save item to the Cancel item, you bypass all the<br>
+standard warnings, which means that your dialog hook function is responsible<br>
+for warning the user if there's anything wrong with the filename. These<br>
+warnings should maintain the spirit of the normal Standard File warnings as<br>
+much as possible.</li>
+</ul>
+<p>
+<i>Inside Macintosh: Files</i>, pages 3-26 through 3-40, provides additional information on<br>
+this subject.
+</p>
+<p>
+<b>Q</b><i> I need to obtain the location of my application from within my application. How can I</i><br>
+<i>do this?</i>
+</p>
+<p>
+<b>A </b>The Process Manager routine GetProcessInformation returns an FSSpec to the<br>
+current process if you use the process serial number kCurrentProcess, as shown in<br>
+the following code:
+</p>
+<pre>OSErr GetCurrentProcessSpec(FSSpec *spec)
+{
+   ProcessSerialNumber   currentPSN;
+   ProcessInfoRec       info;
+
+   /* Get current process FSSpec with GetProcessInformation. */
+   currentPSN.highLongOfPSN = 0;
+   currentPSN.lowLongOfPSN = kCurrentProcess;
+   info.processInfoLength = sizeof(ProcessInfoRec);
+   info.processName = NULL;  /* we don't need process name here */
+   info.processAppSpec = spec;
+   return (GetProcessInformation(&amp;currentPSN, &amp;info));
+}</pre>
+<p>
+If GetCurrentProcessSpec returns with a noErr result, spec.vRefNum is the volume<br>
+reference number of the volume your application file is on, spec.parID is the<br>
+directory ID of your application file's parent directory, and spec.name is the name of<br>
+your application file.
+</p>
+<p>
+If your application is a 680x0 application and might run under System 6 (where the<br>
+Process Manager and the Apple Event Manager aren't available), you can use<br>
+GetAppParms to get the reference number of your application and then pass that<br>
+number to PBGetFCBInfo to get the location of your application. PowerPC applications<br>
+must use GetProcessInformation because GetAppParms isn't available to them.
+</p>
+<p>
+The following code shows how to use GetAppParms and PBGetFCBInfo to get the location<br>
+of your application. You must define OBSOLETE in your source code before you include<br>
+SegLoad.h; otherwise GetAppParms (and the other obsolete Segment Loader routines<br>
+CountAppFiles, GetAppFiles, and ClrAppFiles) will not be defined.
+</p>
+<pre>/* Obsolete System 6 way of getting the application location. */
+
+#define OBSOLETE
+#include &lt;SegLoad.h&gt;
+#include &lt;Files.h&gt;
+
+OSErr GetCurrentAppLocation(short *vRefNum, long *parID,
+    Str63 apName)
+{
+   OSErr      result;
+   FCBPBRec   fcbPB;
+   Handle      apParam;
+  
+   /* Get application reference number from Segment Loader. */
+   GetAppParms(apName, &amp;fcbPB.ioRefNum, &amp;apParam);
+  
+   /* Get application location from File Manager. */
+   fcbPB.ioNamePtr = apName;  /* return application name here */
+   fcbPB.ioVRefNum = 0;
+   fcbPB.ioFCBIndx = 0;
+   result = PBGetFCBInfoSync(&amp;fcbPB);
+   if (result == noErr) {
+      *vRefNum = fcbPB.ioFCBVRefNum;
+      *parID = fcbPB.ioFCBParID;
+   }
+   return (result);
+}</pre>
+<p>
+<b>Q</b><i>I have a handle to a resource and I want to find the location of the file it came from.</i><br>
+<i>Can I do this?</i>
+</p>
+<p>
+<b>A</b> Yes, you can use HomeResFile to get the file reference number associated with the<br>
+resource and then pass that number to PBGetFCBInfo to get the location of the resource<br>
+file, as follows:
+</p>
+<pre>OSErr GetFileLocationFromResource (Handle theResource,
+         short *vRefNum, long *parID, Str63 name)
+{
+   OSErr         result;
+   FCBPBRec      fcbPB;
+  
+   /* Get resource file reference number from Resource Manager. */
+   fcbPB.ioRefNum = HomeResFile(theResource);
+   result = ResError();
+   if (result == noErr) {
+      if (fcbPB.ioRefNum != 1) {         /* Is resource in ROM? */
+         if (fcbPB.ioRefNum == 0) {   /* Is it in the System file? */
+            /* Get System file's real refNum. */
+            fcbPB.ioRefNum = LMGetSysMap();
+         }
+         /* Get resource file location from File Manager. */
+         fcbPB.ioNamePtr = name;      /* return filename here */
+         fcbPB.ioVRefNum = 0;
+         fcbPB.ioFCBIndx = 0;
+         result = PBGetFCBInfoSync(&amp;fcbPB);
+         if (result == noErr) {
+            *vRefNum = fcbPB.ioFCBVRefNum;
+            *parID = fcbPB.ioFCBParID;
+         }
+      }
+      else {
+         /* Resource was in ROM, not a file. Return paramErr. */
+         result = paramErr;
+      }
+   }
+   return (result);
+}</pre>
+<p>
+<b>Q</b><i>I need to write an extension that will launch an application at a specified time. I've</i><br>
+<i>looked at various ways to do this, but they all seem dangerous or difficult, mostly</i><br>
+<i>because I can't call either LaunchApplication or AESend (to send an 'oapp' event) at</i><br>
+<i>interrupt time. What's the best/safest/simplest way to do this?</i>
+</p>
+<p>
+<b>A </b>Write a BOA (background-only application, also called a faceless background<br>
+application) that just sits in the background and periodically checks the time. When<br>
+the correct time arrives, the BOA can launch the application and quit (or&nbsp;&nbsp;remain<br>
+running if this is a periodic task). Make your BOA have a file type of 'appe'<br>
+(application extension) and it will be installed in the Extensions folder and launched at<br>
+startup.
+</p>
+<p>
+<b>Q</b><i> I need to insert a two-dimensional array, such as "long double myArray[512][3],"</i><br>
+<i>into an Apple event. Is there any way to use AEPutArray? I know that I can probably</i><br>
+<i>loop over each item and add it to a list of typeFloat, but that's extremely cumbersome</i><br>
+<i>and slow. Also, I could send it as typeData, but that wouldn't let users view the data in a</i><br>
+<i>script editor. Any ideas? I'm looking for the most elegant and speedy solution. I'll also</i><br>
+<i>need the inverse: a way to extract that data from an incoming Apple event.</i>
+</p>
+<p>
+<b>A </b>There's no standard way of implementing two-dimensional arrays in Apple events.<br>
+Apple event arrays are limited to one-dimensional arrays of integer, char, handle, or<br>
+descriptor types. While it may be possible to represent your data in one of these<br>
+formats, this is not going to be a very efficient solution.
+</p>
+<p>
+There are several other possible solutions to the problem, but only you can decide<br>
+which one will work best. Perhaps the most straightforward is to create an AEList,<br>
+which in itself contains a set of AELists, to represent your data. While this will allow<br>
+your data to be displayed by the Script Editor, it could be very inefficient for large<br>
+arrays. It's also consistent with the way that the Table Suite specifies a table (which is<br>
+basically what your two-dimensional array is): type cTable consists of a list of<br>
+typeRow descriptors, which in turn consist of a list of typeCell descriptor records.
+</p>
+<p>
+Another more efficient approach (which is also more trouble) is to use your own<br>
+private data format and install a system coercion handler to coerce this data into a<br>
+form that can be displayed in the Script Editor (typeChar, for example). When the data<br>
+is returned from your GetData handler, the coercion handler will be called to translate<br>
+the data, so it would be displayed as text in the results window.
+</p>
+<p>
+Do you really need to provide a two-dimensional array in a form that can be read in<br>
+the Script Editor? Often the user will just want to request certain elements of the<br>
+array, rather than requesting the entire array. The best solution of all might be to<br>
+avoid sending large arrays completely, at least in a format that can be displayed in the<br>
+Script Editor. There's very little the user can do to view and manipulate large amounts<br>
+of data from the Script Editor anyway. You could allow users to request pieces of data<br>
+from the array, using a row and column approach to allow them to specify the data, but<br>
+when they need to manipulate large amounts of data you might consider writing the<br>
+requested data to a file and then returning an alias to the file.
+</p>
+<p>
+<b>Q</b><i> I'm implementing a dialog in which seven items need to be present all the time while</i><br>
+<i>the presence of the other items depends on various situations. I use Hide/ShowDItem to</i><br>
+<i>do the trick. Is there any other way to do it? The dialog's DITL is really a mess!</i>
+</p>
+<p>
+<b>A </b>The approach of showing and hiding individual items is fine if you have only a couple<br>
+of items in the dialog item list, but as you've found, it becomes a real mess when the<br>
+dialog starts to become more complex. You can dynamically add items to and remove<br>
+items from a dialog box by using the AppendDITL and ShortenDITL routines. When you<br>
+call AppendDITL, you specify a dialog box and a new item list resource to append to the<br>
+dialog's existing item list resource. You also specify where the Dialog Manager should<br>
+display the new items, using one of these constants to designate where AppendDITL<br>
+should display the appended items:
+</p>
+<pre>CONST   overlayDITL         = 0;      {overlay existing items}
+        appendDITLRight     = 1;      {append at right}
+        appendDITLBottom    = 2;      {append at bottom}</pre>
+<p>
+You should create one dialog with the seven items that remain constant, and a series of<br>
+associated DITL resources that contain the items you need to add to each variant of the<br>
+dialog. Then use AppendDITL to add these as required.
+</p>
+<p>
+<b>Q</b><i> If I call the following stripped-down routine twice, my application crashes the</i><br>
+<i>second time. Why?</i>
+</p>
+<pre>static void CrashMeBaby (void)
+{
+   Rect         aRect;
+   DialogPtr    aDialog;
+
+   SetRect(&amp;aRect, 50, 50, 200, 200);
+   aDialog = NewDialog(NIL, &amp;aRect, "\p", true, altDBoxProc,
+            (WindowPtr) -1L, false, 0, GetResource('DITL', 400));
+   DisposeDialog(aDialog);
+}</pre>
+<p>
+<b>A</b>The problem is that DisposeDialog disposes of the item list (which you're obtaining<br>
+with GetResource) by calling DisposeHandle, not ReleaseResource. This leaves an<br>
+invalid reference lingering in the resource map, which is bad news. The next time the<br>
+resource is needed, it would normally be read in again from disk. However, in this case<br>
+the handle is no longer valid, and you crash. The workaround for this is simply to call<br>
+DetachResource on your item list handle after you retrieve it.
+</p>
+<p>
+One way of finding this kind of bug is to use the DisposeResource extension, which can<br>
+be found on this issue's CD. This traps instances of DisposeHandle being called to<br>
+dispose of a resource. If you install DisposeResource and try it with your code, you'll<br>
+see that this is what's happening in your case.
+</p>
+<p>
+<b>Q</b><i> How do fleas jump so high? Surely the power required for these prodigious leaps</i><br>
+<i>(easily 100 times their length!) can't be supplied by muscle. How do they do it?</i>
+</p>
+<p>
+<b>A </b>Fleas have an organ (not a muscle) that's elastically deformable and can store<br>
+energy like a rubber band. It's "charged up" over time, with a sort of ratcheting<br>
+muscular action. So the flea "winds up" and then lets go all at once. An interesting side<br>
+effect is that just after a flea jumps, it's unable to jump again; it needs time to<br>
+recharge. (The time needed, however, is a mere tenth of a second.)
+</p>
+<p>
+<b>These answers are supplied </b>by the technical gurus in Apple's Developer Support<br>
+Center. Special thanks to Brian Bechtel, Joel Cannon, David Hayward, Dave Hersey,<br>
+Peter Hoddie, Dave Johnson, Jon Lansdell, Jim Luther, Kevin Mellander, Jim Mensch,<br>
+and Nick Thompson for the material in this Q &amp; A column.
+</p>
+<p>
+<b>Have more questions? </b>Need more answers? Take a look at the Macintosh Q &amp; A<br>
+Technical Notes on this issue's CD.
+</p>
+</body>
+</html>

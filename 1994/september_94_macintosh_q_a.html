@@ -1,0 +1,604 @@
+<html>
+<head>
+<!-- Article ID: 42 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 94 - Macintosh Q&A</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Macintosh Q &amp; A</h2>
+<h1>Macintosh Developer Technical Support</h1>
+<p>
+<b>Q</b><i> What operations cause QuickDraw GX to invalidate its shape caches? We want to</i><br>
+<i>maximize drawing performance in our application, and it would be nice to know ahead</i><br>
+<i>of time when caches will need to be rebuilt.</i>
+</p>
+<p>
+<b>A</b> As you might imagine, this topic is complex, but we'll try to explain the basics and<br>
+give you some ideas about improving performance.
+</p>
+<p>
+&nbsp;There are several caches associated with a shape, since each object associated with the<br>
+shape has a separate cache. (By the way, the caches are in the QuickDraw GX heap and<br>
+can be seen using GraphicsBug.) Every time you call GXDrawShape, QuickDraw GX<br>
+determines which caches need to be updated, updates them, and then draws the shape.<br>
+So the first thing to know is that if you want GXDrawShape to execute as fast as<br>
+possible (for instance, if you're drawing several shapes and want the time between<br>
+successive GXDrawShape calls to be minimal), you should call GXCacheShape ahead of<br>
+time to update the shape's caches, minimizing the work GXDrawShape needs to do.
+</p>
+<p>
+&nbsp;In general, any time you change information within a shape, you cause QuickDraw GX<br>
+to invalidate at least one of the shape's caches. Layout shapes are exceptions to this<br>
+rule, however. The cache associated with a layout shape will not be invalidated if all of<br>
+the following conditions are met:
+</p>
+<ul>
+<li>You're adding characters to the end of the layout shape.</li>
+<li>There's a single run of text within the layout shape.</li>
+<li>The shape remains on the same device.</li>
+</ul>
+<p>
+&nbsp;If you're drawing non-hairline geometric shapes and want to get them on the screen as<br>
+fast as possible, you can set the gxCacheShape attribute of the shape. With this<br>
+attribute set, QuickDraw GX will preprocess all the required parts of a shape into<br>
+compressed bitmaps. This means the shape is completely ready to be drawn when you<br>
+call GXDrawShape: the bits are just blasted to the screen.
+</p>
+<p>
+&nbsp;Any time you change a view port's clip or mapping, QuickDraw GX will update all of<br>
+the caches for the shapes and child view ports associated with that view port. There<br>
+isn't any speed advantage to setting the clip or mapping of a shape rather than the clip<br>
+or mapping of the shape's view port; the same work has to happen in either case. Note,<br>
+though, that if the view port contains other shapes or has child view ports, their<br>
+caches will be invalidated, too. You should change the view port's mapping to move a<br>
+shape only when you want all shapes within the view port to move the same amount.
+</p>
+<p>
+<b>Q</b><i> I'm looking into the possibility of writing a QuickDraw GX printer driver that will</i><br>
+<i>only print to a file, and I've run into a couple of stumbling blocks I hope you can help</i><br>
+<i>with. First, is there a way to create a desktop printer from the Chooser without having</i><br>
+<i>an actual printer attached or selecting a port? Can I get to the Chooser list so that I can</i><br>
+<i>display some kind of dummy or ghost printer? The second issue has to do with the user</i><br>
+<i>interface of the Print dialogs/panels. I would like to set the "Destination: File" radio</i><br>
+<i>button and disable the "Destination: Printer" one for QuickDraw GX application</i><br>
+<i>interfaces.</i>
+</p>
+<p>
+<b>A</b> There should be no problem creating a printer driver that only prints to a file. And<br>
+yes, users will be able to create a desktop printer from such a driver. You can access<br>
+the Chooser list:&nbsp;&nbsp;for an example of this, look at the source code file Chooser.c from any<br>
+of the QuickDraw GX printer driver samples. You can do whatever you want within the<br>
+Chooser to handle and display lists of available printers for the currently selected<br>
+printer driver. You'll also need to modify the 'comm' resource to make sure that the<br>
+Chooser does the right thing. You&nbsp;&nbsp;should be able to put a "nops" 'comm' resource<br>
+reference into the 'look' resource.
+</p>
+<p>
+&nbsp;You can disable any item in the Print dialog by overriding the GXJobPrintDialog<br>
+message and, in your override, getting the destination tag for the appropriate item and<br>
+locking it. This will make the item appear disabled in the dialog. PrintingMgr.h<br>
+contains all the tags you can lock. You should be sure to set up the item to be<br>
+gxVolatileOutputDriverCategory so that your settings go away if the user switches<br>
+drivers in the pop-up menu; you can simply OR this with collectionLockMask when<br>
+you set the item's attributes.
+</p>
+<p>
+<b>Q</b><i> The documentation seems a bit thin on what resource type/ID is needed for ColorSync</i><br>
+<i>profiles in QuickDraw GX printer drivers. Is the appropriate type 'prof' or 'cmat'?</i><br>
+<i>Will QuickDraw GX automatically use one if I stick it in my driver, or do I also have to</i><br>
+<i>override the various profile messages?</i>
+</p>
+<p>
+<b>A</b> All you need to do is include a 'cmat' resource with ID gxColorMatchingDataID and<br>
+specify it in your 'rdip' resource. However, you should also override<br>
+GXFindFormatProfile so that inquiring applications can ask you what the format's<br>
+profile will be. Additionally, you should override the GXImagePage message if you want<br>
+to provide different profiles on a page-by-page basis.
+</p>
+<p>
+<b>Q</b><i> I'm working on QuickDraw GX printer drivers. Can you give me some information on</i><br>
+<i>what must be done to support PrGeneral?</i>
+</p>
+<p>
+<b>A</b> PrGeneral support within your QuickDraw GX printer driver is automatic. The<br>
+printing system will automatically maintain the appropriate information within the<br>
+QuickDraw GX print record. The only exception to this automatic support is the SetRsl<br>
+opcode: if you don't want QuickDraw GX to use the default gxReslType resource when<br>
+the SetRsl opcode is used, you need to define a gxReslType resource of your own that<br>
+reflects the capabilities of your printer.
+</p>
+<p>
+<b>Q</b><i> Our application generates its own custom PostScript TM code when printing to</i><br>
+<i>PostScript printers. We'd like to support QuickDraw GX-style printing and still be</i><br>
+<i>able to continue generating our own custom PostScript code to send directly to the</i><br>
+<i>printer. What's the best way to handle this? I've tried generating empty shapes with</i><br>
+<i>custom PostScript code attached as a tag (using synonyms), but the LaserWriter</i><br>
+<i>QuickDraw GX driver emits its own "wrapper" code around our custom PostScript</i><br>
+<i>code, which could alter the printer's graphics state. Are there any other methods to</i><br>
+<i>achieve this without the possible side effects?</i>
+</p>
+<p>
+<b>A</b> You're actually very close to sending PostScript code correctly through the<br>
+QuickDraw GX printing system without the side effects. As you already know, after a<br>
+shape with 'post' tags has been sent to a PostScript printer, QuickDraw GX performs a<br>
+PostScript restore. There's no way to prevent this from happening. However, only<br>
+shape objects cause this behavior; QuickDraw GX will not perform a PostScript<br>
+restore for any other object besides a shape.
+</p>
+<p>
+&nbsp;The fastest and best method for sending PostScript code is to attach the code with tags<br>
+(using synonyms) to only one empty shape. You can attach as many tags as are<br>
+required. We recommend that the tags contain 12K of PostScript data each, for optimal<br>
+performance. If you're sending PostScript code down to replace the clip or ink or some<br>
+other object besides a shape, just attach a 'post' tag to the object your PostScript code<br>
+describes; in this case a restore will not occur.
+</p>
+<p>
+<b>Q</b><i> How should I download fonts to a PostScript printer under QuickDraw GX? I'm</i><br>
+<i>sending a direct stream of custom PostScript code, but I don't expect the driver to be</i><br>
+<i>able to deduce which fonts need to be included. I've read about the PostScript control</i><br>
+<i>tag that can be attached to a shape, and I know the structure&nbsp;&nbsp;for the tag contains font</i><br>
+<i>information, but the documentation about this tag is sketchy. Can you provide more</i><br>
+<i>details?</i>
+</p>
+<p>
+<i>&nbsp;Related to this question, what's the best way to cause fonts to be downloaded under the</i><br>
+<i>current Printing Manager? We're using the "draw a single character off the page in</i><br>
+<i>the proper font" trick. I understand this practice is frowned on. Is there an approved</i><br>
+<i>way to do this short of intermixing QuickDraw and PostScript code in PicComments?</i>
+</p>
+<p>
+<b>A</b> Our thinking has changed regarding the use of the PostScript control tag for<br>
+downloading a font. If you want to download a font within your PostScript stream, you<br>
+should call GXFlattenFont and pass the font within your 'post' tag. The GX PostScript<br>
+engine will unflatten the font and download it when it finds it attached to your 'post'<br>
+tag.
+</p>
+<p>
+&nbsp;The method you're using (drawing a character off the page) is completely supported<br>
+under QuickDraw GX. It was the recommended method for a long time. However, the<br>
+current recommendation is to use DrawText and pass in text that contains all the<br>
+glyphs you want to use. The reason this approach is better for QuickDraw GX is that<br>
+only the required information is downloaded, thereby saving memory on the printer.
+</p>
+<p>
+<b>Q</b><i> Do I need to override the GXFreeBuffer message in my QuickDraw GX printer driver</i><br>
+<i>if I perform a total override of the GXDumpBuffer message? If I do need to override</i><br>
+<i>GXFreeBuffer, what do I do with the buffer? Should I dispose of it with DisposePtr?</i>
+</p>
+<p>
+<b>A</b> The documentation is a little confusing about the purpose of the GXFreeBuffer<br>
+message. GXFreeBuffer is sent to ensure that the indicated buffer has been processed<br>
+and is now available for more data; it doesn't actually dispose of a buffer. The only time<br>
+you need to override GXFreeBuffer is if you're doing custom I/O (the customIO flag is<br>
+set in your 'iobm' resource). The default implementation of GXFreeBuffer will work<br>
+correctly for QuickDraw GX's default buffering mechanism.
+</p>
+<p>
+&nbsp;GXFreeBuffer allows you to start asynchronous I/O in GXDumpBuffer;&nbsp;&nbsp;then other<br>
+buffering routines can be sure that operations on a buffer are completed before they<br>
+reuse the buffer (or dispose of it). If you're overriding GXFreeBuffer, you should just<br>
+hang out in your override until I/O has completed for the buffer passed, and then<br>
+return. If you're doing synchronous I/O, just return immediately, since all I/O must<br>
+have completed.
+</p>
+<p>
+<b>Q</b><i> When I control the start of a QuickTime movie from within my application, the</i><br>
+<i>movie controller doesn't get updated properly. I'm calling StartMovie to begin the</i><br>
+<i>movie as soon as it becomes visible, and I'm updating the movie controller like this:</i>
+</p>
+<pre> theResult := MCDoAction(tmpMovie.fController, mcActionPlay,
+     @curRate);</pre>
+<p>
+<i>&nbsp;However, this doesn't seem to work. What am I doing wrong?</i>
+</p>
+<p>
+<b>A</b> The MCDoAction call with mcActionPlay doesn't take a pointer to the data in the last<br>
+parameter; it takes the data itself. But since the prototype specifies type (void *), to<br>
+make the compiler happy it must be cast to a pointer. Many people have fallen into this<br>
+trap.
+</p>
+<p>
+&nbsp;The recommended method to start a movie when you're using the standard movie<br>
+controller component is as follows:
+</p>
+<pre>// Play normal speed forward, taking into account the possibility
+// of a movie with a nonstandard PreferredRate.
+Fixed rate = GetMoviePreferredRate(MyMovie);
+MCDoAction(MyMovieController, mcActionPlay, (void *)rate);</pre>
+<p>
+&nbsp;&nbsp;&nbsp;If you do need to use StartMovie, the correct way to cause the movie controller to<br>
+update is to call MCMovieChanged.
+</p>
+<p>
+<b>Q</b><i> We're using the Communications Toolbox in our application and have noticed some</i><br>
+<i>strange behavior. Specifically, when a tool is being used, the tool's resource fork is </i><br>
+<i>placed not at the top of the resource chain, but behind the System and application</i><br>
+<i>resource forks. As a result, we're having trouble with tools that use STR# resources</i><br>
+<i>that conflict with those in our application. This results in bad configuration strings or</i><br>
+<i>configuration dialogs with the wrong text. I can easily work around this by changing</i><br>
+<i>the resource IDs in my application, but this doesn't solve the problem in the long run.</i><br>
+<i>Any advice?</i>
+</p>
+<p>
+<b>A</b> What you're seeing is a part of the "pathology" of the Communications Toolbox and its<br>
+tools. Both do a less than perfect job of looking in the correct resource map for string<br>
+resources. The result is what you're currently seeing: application strings end up being<br>
+placed where tool strings are expected.
+</p>
+<p>
+&nbsp;There are a couple of workarounds. The first you've cited, which is to make sure that<br>
+none of your application's resource ID numbers conflict with the CTB tool's ID<br>
+numbers. However, as you also noted, this can be a problem when you're using several<br>
+CTB tools, and may not work if the user happens to select a tool that has a conflicting<br>
+ID.
+</p>
+<p>
+&nbsp;The better way to work around the problem is to save a reference to the current<br>
+resource file and then set the resource file to the System file. After completing a call<br>
+to CMChoose or CMGetConfig, you can reset the resource file to the one you started<br>
+with. Here's how to do this:
+</p>
+<pre>short   oldResFile;
+Point   dlogBoxPt;
+Ptr     myConfigString;
+
+/* First save the current resource file. */
+oldResFile = CurResFile();
+/* Now set the resource file to the System file. */
+UseResFile(0);
+/* Next call CMChoose to configure your connection tool. */
+myErr = CMChoose(&amp;myConnectionHdl, dlogBoxPt, nil);
+/* Now call CMGetConfig to get the configuration string from the
+    connection tool. */
+myConfigString = CMGetConfig(myConnectionHdl);
+/* And finally, restore the old resource file. */
+UseResFile(oldResFile);</pre>
+<p>
+<b>Q</b><i> What is the Human Interface suggestion for removing a digital signature from a</i><br>
+<i>signed document? I see how to add and how to verify, but I can't find any suggestions</i><br>
+<i>for removing signatures.</i>
+</p>
+<p>
+<b>A</b> Here's the relevant paragraph from the <i> AOCE Human Interface Guidelines </i> <br>
+document, which can be found on AppleLink (search the AOCE Talk folder):
+</p>
+<p>
+&nbsp;Signatures may also be deleted by users. To accomplish this, the user should select the<br>
+signature by clicking on its icon and choosing Clear from the application's Edit menu.<br>
+Selecting the signature icon and pressing the delete key is a desirable alternative. Note<br>
+that signatures must not be cut, copied, or pasted.
+</p>
+<p>
+&nbsp;To actually remove a signature, just remove the 'dsig' resource from the file. Note<br>
+that signed files may have the Finder "locked" bit set. If you remove the signature, you<br>
+should also clear this bit.
+</p>
+<p>
+<b>Q</b><i> I launch my application by dragging files onto its icon. It then opens the files,</i><br>
+<i>performs some quick operation, and quits. I can put '****' and 'fold' resources in</i><br>
+<i>FREFs to let users drag any file or folder onto the application icon. But when a user</i><br>
+<i>drags an AOCE catalog (or anything inside the catalog) onto the icon, the Finder won't</i><br>
+<i>let the user drop it onto my application. What do I need to do to my application to let</i><br>
+<i>users drop-launch it with AOCE catalogs (or their contents)? I know it's possible: the</i><br>
+<i>"Find in Catalog" application will drop-launch if a user dragged to it from a catalog.</i>
+</p>
+<p>
+<b>A</b> If you look, you'll see that "Find in Catalog" is a Catalogs Extension template. It's not<br>
+an application program; it actually executes as part of the Finder. Unfortunately, you<br>
+can't do what you want to with an application. You&nbsp;&nbsp;might want to look at the Catalog<br>
+Service Access Modules chapter in <i> Inside Macintosh: AOCE Service Access Modules</i>&nbsp;&nbsp;for<br>
+more information on the Catalogs Extension.
+</p>
+<p>
+<b>Q</b><i> When users launch my utility application by double-clicking, I present a Standard</i><br>
+<i>File dialog that lets them choose a file to operate on. I'd like them to be able to browse</i><br>
+<i>AOCE catalogs as well as HFS files, but catalogs don't show up in the Standard File</i><br>
+<i>dialog. I could use another dialog for browsing AOCE catalogs, but why use two different</i><br>
+<i>interfaces for the same action (from the user's point of view, that is; the user just</i><br>
+<i>wants to specify an object, wherever it may be)? Is there a way to get catalogs to show</i><br>
+<i>up in the Standard File dialog? Is there any way to browse the file system and the AOCE</i><br>
+<i>catalog system in the same dialog? If the answer is no, is there an analog to Standard</i><br>
+<i>File for AOCE catalogs?</i>
+</p>
+<p>
+<b>A</b> You can't browse HFS files and AOCE catalogs in the same dialog, since they're two<br>
+different file systems. To let the user browse the AOCE catalog system, you need to use<br>
+the AOCE Standard Catalog Package Reference routines, which are documented in <i> Inside</i><br>
+<i>Macintosh: AOCE Application Interfaces</i> . There is a routine that's analogous to<br>
+StandardGetFile. The AOCE Software Developer's Kit (available through APDA) includes<br>
+sample code that shows how to browse AOCE catalogs.
+</p>
+<p>
+<b>Q</b><i> I'm writing an application that will watch a user-specified folder and operate on</i><br>
+<i>files or folders that are dropped into it. I need to perform operations on every item in</i><br>
+<i>the folder and its subfolders. What will happen if I begin to walk through a new folder</i><br>
+<i>with PBGetCatInfo while the Finder is still copying files into the subfolder structure?</i><br>
+<i>Can I guarantee that I'll detect all the files?</i>
+</p>
+<p>
+<b>A</b> There's no way to find out directly when the Finder is done copying items into the<br>
+folder, but there is a strategy we can recommend. First, though, you should know that<br>
+the recommended way to determine whether items have been added to a folder is to<br>
+watch its modification date. So how can you know when all the files have arrived? The<br>
+recommended strategy is to poll the parent folder's modification date every few seconds<br>
+after you first detect a change, and keep polling until you have a reasonably long<br>
+interval during which there's no change in the date (30 seconds is probably about<br>
+right). This means, of course, that there's a delay before you act on files dropped into<br>
+the folder, but as the Print Monitor shows us, this delay is probably reasonable to the<br>
+user.
+</p>
+<p>
+&nbsp;One more possible gotcha you should know about: to tell whether it's safe to work with<br>
+a particular file, it's not enough just to make sure the file isn't open; you need to check<br>
+its length. If a file is closed (that is, not busy) but has no length in either its resource<br>
+or data fork, you caught the Finder at an uncomfortable time, after it created the file<br>
+but before it opened it. So to know if you can operate on a file the Finder might be<br>
+copying, you must determine two things: it's not already open, and it has length in its<br>
+resource or data fork.
+</p>
+<p>
+<b>Q</b><i> Our application uses the Icon Utilities interface, and we want to verify that these</i><br>
+<i>features are present before we use them. We've been unable to do this successfully.</i><br>
+<i>The Macintosh Technical Note "Drawing Icons the System 7 Way" (QuickDraw 18)</i><br>
+<i>doesn't say how to do this, but Inside Macintosh: More Macintosh Toolbox recommends</i><br>
+<i>using Gestalt with the gestaltIconUtilities selector. When we try this, Gestalt returns</i><br>
+<i>an error of -5551 (undefined selector). What are we doing wrong?</i>
+</p>
+<p>
+<b>A</b> There isn't a Gestalt selector for the Icon Utilities; <i> Inside Macintosh</i>&nbsp;&nbsp;and the header<br>
+files are wrong. Even if we were to correct that situation tomorrow (or in the next<br>
+system software release), it wouldn't help, since the Icon Utilities are available on<br>
+systems where the Gestalt selector isn't. The solution is to use the TrapAvailable<br>
+function to see if the _IconDispatch A- trap is available. You can find the source code<br>
+for TrapAvailable in <i> Inside Macintosh </i> Volume VI on page&nbsp;&nbsp;3-8, or in <i>Inside</i><br>
+<i>Macintosh: Overview</i>&nbsp;&nbsp;on page 180.
+</p>
+<p>
+<b>Q</b><i> I have a System 7 application that the user can drag files, disks, or folders to. How</i><br>
+<i>can I determine from the Apple event information which type of item (file, disk, or</i><br>
+<i>folder) has been dragged to the application icon?</i>
+</p>
+<p>
+<b>A</b> When the user drags a file, disk, or folder to an application icon, the Finder&nbsp;&nbsp;uses the<br>
+Process Manager to open the application and then sends it an Open Document ('odoc')<br>
+event containing a list of alias records for each object dropped. When your application<br>
+receives the event, it needs to open each of&nbsp;&nbsp;the objects specified in the event by getting<br>
+each alias record from the list and coercing the data for that record to an FSSpec. Once<br>
+you have the FSSpec, you can check its parID to determine whether the directory ID is<br>
+fsRtParID, indicating that you're looking at a volume. If the parID is anything other<br>
+than fsRtParID, use PBGetCatInfo to determine if you have a file or a folder. Here's the<br>
+code:
+</p>
+<pre>enum {kItsAVolume = 1, kItsAFolder, kItsAFile};
+pascal OSErr GetSpecType(FSSpec *myFSS)
+{
+    CInfoPBRec  pb;
+    OSErr           myErr;
+    short           objType = 0;
+   
+    if ((myFSS-&gt;parID) == fsRtParID)
+        objType = kItsAVolume;
+    else {
+        pb.hFileInfo.ioNamePtr = (StringPtr) *(myFSS).name;
+        pb.hFileInfo.ioVRefNum = *(myFSS).vRefNum;
+        pb.hFileInfo.ioDirID = *(myFSS).parID;
+        pb.hFileInfo.ioFDirIndex = 0;
+        myErr = PBGetCatInfoSync(&amp;pb);
+        if (myErr == noErr) {
+            /* Check to see if bit 0x10 of ioFlAttrib is set; if it
+                is, we've got a directory */
+            if ((pb.hFileInfo.ioFlAttrib &amp; 0x10) != 0)
+                objType = kItsAFolder;
+            else
+                objType = kItsAFile;
+        }
+    }
+    return (objType);
+}</pre>
+<p>
+<b>Q</b><i> I'm trying to implement "the perfect component." The goals for this component are</i><br>
+<i>fast dispatching, delegatable, able to rely on delegates, ready for everything, and</i><br>
+<i>surprised&nbsp;&nbsp;by nothing. I've been using </i>&nbsp;&nbsp;develop<i> Issues 12 and 14 and Inside Macintosh:</i><br>
+<i>More Macintosh Toolbox to guide me, but I still have a question that wasn't addressed in</i><br>
+<i>those references.</i>
+</p>
+<p>
+<i>&nbsp;I'm using the Fast Dispatch method to dispatch my component's calls. I've figured out</i><br>
+<i>how to repair the stack after getting an unsupported routine selector code, but I can't</i><br>
+<i>figure out how to delegate a call. I think I'm recovering the stack correctly, but all the</i><br>
+<i>documentation I've read doesn't even hint at this sort of functionality. I was thinking</i><br>
+<i>that I could use DelegateComponentCall after creating a ComponentParameters record,</i><br>
+<i>or I could calculate the size of the parameters and attempt to set up the stack for a</i><br>
+<i>ComponentCallNow call. However, neither of these is a good solution -- they both take</i><br>
+<i>too many instructions to implement and obviate the advantages of fast dispatching. Is</i><br>
+<i>there such a thing as a DelegateFastComponentCall that I haven't heard of?</i>
+</p>
+<p>
+<b>A</b> Try the following to delegate a component call:
+</p>
+<pre>move.l  d0, -(sp)       ; push d0 onto stack
+PUSHDELEGATEGUY         ; macro to push component instance
+move.q  #-2,d0
+dc.w        $a82a</pre>
+<p>
+&nbsp;What apparently happened is that the engineers realized how difficult it was to call<br>
+DelegateComponentCall when the stack was screwed up. So they created a "special"<br>
+delegate call. As you can see, the selector is -2. This is supposed to be documented<br>
+somewhere in the Component Manager documentation, but was inadvertently left out.
+</p>
+<p>
+<b>Q</b><i> Why aren't my components getting register calls? I've set the appropriate flag. I'm</i><br>
+<i>registering the component from my application.</i>
+</p>
+<p>
+<b>A</b> Your component won't get called to register at all since it's being registered by an<br>
+application. If you removed your component and placed it in the Extensions folder so<br>
+that it was registered at system startup, it would receive a register call. The reason<br>
+for this is that registration of components happens only when the Component Manager<br>
+is first loaded at system startup. After system startup, components can be registered<br>
+by applications, but the register routine will not be called.
+</p>
+<p>
+<b>Q</b><i> I heard that the new Apple digital camera will introduce a graphics format called</i><br>
+<i>QuickTake. Is this truly a new format or are these just QuickTime compressed PICTs?</i><br>
+<i>If it's a new format, where can I find documentation on it?</i>
+</p>
+<p>
+<b>A</b> QuickTake stores its pictures as compressed PICT files. There's a new CODEC that's<br>
+necessary to decompress the images, but no new file type. The QuickTake 100 Digital<br>
+Camera Developer Note contains extensive information about talking to the camera<br>
+from both Macintosh and Windows machines. It also documents the picture formats.<br>
+The QuickTake Camera Software Development Kit is available from APDA.
+</p>
+<p>
+&nbsp;The QuickTake application that comes with the camera can save the pictures in a<br>
+variety of formats, including PICT (with or without various compressions) and TIFF.<br>
+There's also a control panel that allows the user to mount the camera as a read-only<br>
+serial RAM disk (similar to MountImage), so your application can directly download<br>
+the information from the camera's memory.
+</p>
+<p>
+<b>Q</b><i> I'm writing my first action atom for the Installer. I tried writing a skeletal</i><br>
+<i>example, as follows:</i>
+</p>
+<pre>resource 'inaa' (30000) {
+    format2 {
+        continueBusyCursors, actAfter, dontActOnRemove,
+            actOnInstall,
+        'infn', 149,
+        0,
+        1000,
+        "Delete Folder"
+}};
+
+#include "ActionAtomHeader.h"
+
+ActionAtomResult ActionAtomFormat2(ActionAtom2PBPtr aa)
+{
+    Debugger();
+    return (kActionAtomResultContinue);
+}</pre>
+<p>
+<i>&nbsp;But the action never gets called! I don't have to explicitly refer to the 'inaa' anywhere,</i><br>
+<i>do I? I checked that the resources were copied into the file correctly and had the right</i><br>
+<i>IDs. What am I doing wrong?</i>
+</p>
+<p>
+<b>A</b> Your action atom is fine. The only mistake you've made is not tying your 'inaa' to a<br>
+package ('inpk'). You have to add to your 'inaa' a reference to an active 'inpk'. Once you<br>
+do that, it works great. (We had trouble with this one until we found a cool diagram on<br>
+page 8 of the Installer documentation that shows how the script resources interrelate;<br>
+that diagram is your friend, and seems to encapsulate quite a bit of critical<br>
+information.)
+</p>
+<p>
+<b>Q</b><i> We're planning a zone name change for the zone that contains some of our</i><br>
+<i>PowerShare servers. Will this require any action on the part of the administrators of</i><br>
+<i>the various servers beyond informing users of the change?</i>
+</p>
+<p>
+<b>A</b> It depends on whether you're changing the zone names of some or all of the servers.<br>
+If you're changing the names of only some servers, it's entirely possible that you don't<br>
+have to notify anybody, depending on how you've replicated your folders. For a while<br>
+the new servers won't be contacted by any clients since all clients will try to address<br>
+them at their old location, but eventually all servers will again start receiving<br>
+requests from clients.
+</p>
+<p>
+&nbsp;If you're changing the zone names of all the servers, the client software won't<br>
+recognize that the zone names have changed, so you'll have to throw away your key<br>
+chain and add it again after the zone names have changed. The PowerShare servers will<br>
+eventually recover and rediscover all the other servers. We recommend that you bring<br>
+up the Master Pathfinder first after changing its zone name and then bring up all the<br>
+other servers. Once all the servers are up, it should take a few hours at most for<br>
+everything to settle down again and for the system to be purring.
+</p>
+<p>
+<b>Q</b><i> The function SMPEnumerateBlocks takes a buffer that returns information about the</i><br>
+<i>blocks in a letter. The documentation (Inside Macintosh: AOCE Application Interfaces,</i><br>
+<i>page 3-87) says that the buffer contains "a count byte indicating the number of blocks</i><br>
+<i>in the letter, followed by a block information structure for each block." I can't find</i><br>
+<i>anything that tells me what a "block information structure" is.</i>
+</p>
+<p>
+<i>&nbsp;It looks to me as if it actually returns the count of blocks in a short, not a byte. Is this</i><br>
+<i>the total number of blocks, or the number of blocks returned by the call? If I have to</i><br>
+<i>call the function again to get information that didn't fit in the buffer, do I get another</i><br>
+<i>count followed by more block information structures, or do I just get an array with</i><br>
+<i>more block information structures without the count (short)?</i>
+</p>
+<p>
+<i>&nbsp;The block information structure seems to be 16 bytes long, starting with an</i><br>
+<i>OCECreatorType structure. Is this always correct, and what is the other information?</i>
+</p>
+<p>
+<b>A</b> This is somewhat confusing. The "block information structure" referred to here is<br>
+the MailBlockInfo structure defined in the OCEMail.h header file:
+</p>
+<pre> struct MailBlockInfo {
+    OCECreatorType  blockType;
+    unsigned long   offset;
+    unsigned long   blockLength;
+};</pre>
+<p>
+And yes, the count byte returned in the buffer you provide is actually a short (the<br>
+documentation is wrong). This value is placed right in front of the first MailBlockInfo<br>
+structure each time you make the call. The count indicates the number of blocks that<br>
+were put in your buffer for this particular call (not the total), which of course<br>
+depends on the size of the buffer you pass; it fits in as many as it can. Check the "more"<br>
+parameter to see if your buffer was too small to hold all the blocks, and check the<br>
+nextIndex parameter for the sequence number of the next item to be returned.
+</p>
+<p>
+<b>Q</b><i> I found what I think is a problem with the TEGetOffset routine: when it returns, a</i><br>
+<i>28-byte handle has been locked for single-styled text. I believe it's a style handle that</i><br>
+<i>gets locked. This seems to be an intermittent bug, occurring only about half the time.</i><br>
+<i>Is there a workaround? Is it safe to just unlock the style handle after calling</i><br>
+<i>TEGetOffset?</i>
+</p>
+<p>
+<b>A</b> It's a bug all right, and it is the style handle that's getting locked. Here's a<br>
+workaround:
+</p>
+<pre>static short MyTEGetOffset(Point pt, TEHandle th)
+{
+    TEStyleHandle   sh;
+    short               theResult;
+    char                saveState;
+
+    if (th == 0L)
+        return;
+    sh = GetStyleHandle(th);
+    saveState = HGetState(sh);
+    theResult = TEGetOffset(pt,th);
+    HSetState(sh, saveState);
+    return theResult;
+}</pre>
+<p>
+<b>Q</b><i> I have a question about the Japanese art of bonsai (colloquially known as stunting</i><br>
+<i>trees): What happens if you bonsai a fruit tree? Does the fruit come out dwarfed as</i><br>
+<i>well? Or does the tiny tree produce full-size fruit?</i>
+</p>
+<p>
+<b>A</b> This was a difficult one to find an answer to. It seems to depend on many factors, not<br>
+the least of which is the kind of fruit tree you're talking about. One person we talked to<br>
+said he once saw a bonsai lemon tree nine inches tall, with a single, full-size lemon<br>
+hanging from a branch. (Actually, the lemon didn't hang; it would have broken the poor<br>
+tree. Instead it rested on a small platform built especially for that purpose.) But there<br>
+were also reports of a stunted crabapple tree that produced apples the size of peas. Go<br>
+figure.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>These answers are supplied </b>by the technical gurus in Apple's Developer Support<br>
+Center. Special thanks to Pete ("Luke") Alexander, Joel Cannon, Mark ("The Red")<br>
+Harlan, Dave Hersey, Dave Johnson, Don Johnson, Scott Kuechle, Jim Luther, Kevin<br>
+Mellander, Jim Mensch, Martin Minow, and John Wang for the material in this Q &amp; A<br>
+column. If you need more answers, take a look at the Macintosh Q &amp; A Technical Notes<br>
+on this issue's CD. *
+</p>
+</body>
+</html>

@@ -1,0 +1,852 @@
+<html>
+<head>
+<!-- Article ID: 56 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 94 - Scripting the Finder From Your Application</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Scripting the Finder From Your Application</h1>
+<h2>Greg Anderson</h2>
+<p>
+<img src="img/260.gif" width="182 px"></img>
+</p>
+<p>
+<i>The Finder has long been a black box to users and developers -- extending the Finder</i><br>
+<i>or even examining its state has been nearly impossible. With System 7.5, Apple has</i><br>
+<i>shipped a Finder that supports the Object Support Library; this Scriptable Finder</i><br>
+<i>opens a new world to developers by allowing applications to interact with the Finder</i><br>
+<i>through Apple events.</i>
+</p>
+<p>
+The System 7 Finder has always accepted a number of simple events that provide<br>
+services such as duplicating files, making aliases, and emptying the Trash. But the<br>
+System 7.0 and 7.1 Finder events are very limited and have strict requirements for<br>
+the order of parameters and for parameter data types. The Finder that shipped with<br>
+System 7.5 greatly expands the set of available events: it uses the Object Support<br>
+Library (OSL) to provide full compatibility with AppleScript, and it provides a new<br>
+set of events to do things such as examine the Finder's selection, change Finder<br>
+preferences, and modify file sharing settings.
+</p>
+<p>
+The term <i>Scriptable Finder</i> refers to any Finder that's OSL compliant. In System 7.5,<br>
+this support is implemented by the Finder Scripting Extension in the Extensions<br>
+folder; however, future Finders will have scriptability built into their core code base.<br>
+Developers can count on the presence of the Scriptable Finder in all future versions of<br>
+system software.
+</p>
+<p>
+The OSL and the Open Scripting Architecture are critical additions to the Macintosh<br>
+Toolbox. They mark the end of black-box applications and system software and pave the<br>
+way for configurable, component-based systems. A Scriptable Finder is only the first<br>
+step in providing a more unified, open system, but it's an important one.
+</p>
+<p>
+This article shows you how to generate Finder events from your application. First<br>
+we'll look at event addressing and the Apple Event Manager, and then we'll see how to<br>
+specify Finder objects. Finally, the section "Making the Finder Do Tricks" provides a<br>
+taste of the power and flexibility of the Scriptable Finder, showing some practical uses<br>
+of this great new capability. On this issue's CD, you'll find the complete code for the<br>
+article's examples along with sample applications that show how to control the Finder<br>
+with Apple events. The header file FinderRegistry.h on the CD declares all of the event<br>
+message IDs, class IDs, and property IDs that the Finder defines.
+</p>
+<h2>CREATING AND ADDRESSING FINDER EVENTS</h2>
+<p>
+Every feature of the Scriptable Finder is accessible via AppleScript. For example, the<br>
+following script, if typed into the Script Editor and executed, would create a new folder<br>
+on the desktop:
+</p>
+<pre>tell application "Finder"
+   make folder at desktop
+end tell</pre>
+<p>
+An application doesn't need to compile and execute scripts, however, to use the features<br>
+of the Scriptable Finder; every command that a script can instruct the Finder to do has<br>
+a corresponding representation as an Apple event. An application that controls the<br>
+Finder may bypass AppleScript entirely and send Apple events to the Finder directly.<br>
+That's the technique we'll use in this article.
+</p>
+<p>
+There are a number of ways to address an Apple event, but for sending an event to the<br>
+Finder on the local machine, the simplest and most straightforward technique is to<br>
+address the event by process serial number (PSN). To determine the Finder's PSN,<br>
+you walk the list of running processes and search for the Finder's file type and<br>
+creator, 'FNDR' and 'MACS'.
+</p>
+<p>
+Listing 1 shows one way to generate an address targeted at the Finder on the local<br>
+machine. Notice that we've used TDescriptor, which is a C++ wrapper class that<br>
+corresponds to the Apple Event Manager type AEDesc. (See "C++ Wrappers" for an<br>
+explanation of wrappers used in this article.)
+</p>
+<p>
+<b>Listing 1. </b>Getting the address of the Finder
+</p>
+<pre>TDescriptor GetAddressOfFinder()
+{
+   ProcessSerialNumber   psn;
+   ProcessInfoRec         theProc;
+   TDescriptor            finderAddressDescriptor;
+
+// Initialize the process serial number to specify no process.
+   psn.highLongOfPSN = 0;
+   psn.lowLongOfPSN = kNoProcess;
+  
+// Initialize the fields in the ProcessInfoRec, or we'll have memory
+// hits in random locations.
+   theProc.processInfoLength = sizeof(ProcessInfoRec);
+   theProc.processName = nil;
+   theProc.processAppSpec = nil;
+   theProc.processLocation = nil;
+  
+// Loop through all processes, looking for the Finder.
+   while (true)
+   {
+      FailErr(GetNextProcess(&amp;psn));
+      FailErr(GetProcessInformation(&amp;psn, &amp;theProc));
+      if ((theProc.processType == 'FNDR') &amp;&amp;
+          (theProc.processSignature == 'MACS'))
+         break;
+   }
+
+   finderAddressDescriptor.MakeProcessSerialNumber(psn);
+   return finderAddressDescriptor;
+}</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;C++ WRAPPERS</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The sample code in this article makes extensive use of C++ wrappers. The file<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AppleEventUtilities.h, included on this issue's CD, defines the wrapper classes<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TDescriptor and TAEvent, which correspond to the Apple Event Manager types<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AEDesc and AppleEvent, respectively. The class TDescriptor contains methods<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for examining and extracting the contents of AEDesc, AEDescList, or AERecord<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;structures. TAEvent inherits from this class (since an Apple event really is an<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AERecord) and adds methods for getting and setting attributes and addressing<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;and sending events.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The use of the C++ wrappers makes the code easier to read, but it would be a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;simple matter to translate the code back into straight C or Pascal functions<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;that call the Apple Event Manager directly. If you do this, don't forget that the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;C++ constructor of TDescriptor automatically initializes the fields of the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AEDesc to a null descriptor (descriptor type = typeNull, data handle = nil).<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;You must do this explicitly in your C or Pascal program, or you could cause<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;problems for the OSL. For example, CreateObjSpecifier will crash if its<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;second parameter is a pointer to an uninitialized AEDesc rather than a valid<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;object specifier or a null descriptor.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+Should the Finder not be running, looking for processes with the signature 'MACS' will<br>
+find other user interface shells, such as At Ease, and in some cases you might prefer<br>
+your application to do that. However, no shells other than the Finder currently<br>
+support the full Finder Event Suite, so the sample code provided here always requires<br>
+the process type to be 'FNDR'.
+</p>
+<p>
+Earlier Finders were not only unaware of the OSL, but they also didn't use the Apple<br>
+Event Manager. That's right, the System 7.0 and 7.1 Finders never call<br>
+AEProcessAppleEvent -- they interpret and process high-level events in their own<br>
+special way, without ever informing the Apple Event Manager of what's going on. This<br>
+means that an application that sends any unrecognized high-level event to the System<br>
+7.0 or 7.1 Finder will never get a reply; the application will sit idle in AESend until<br>
+the event times out (assuming that the send mode was kAEWaitReply).
+</p>
+<p>
+To determine whether the Finder on the local machine supports the Finder Event Suite,<br>
+an application can call Gestalt with the selector gestaltFinderAttr and check the<br>
+gestaltOSLCompliantFinder bit of the result. Before System 7 Pro, gestaltFinderAttr<br>
+didn't exist, so Gestalt will return the error gestaltUndefSelectorErr on some<br>
+machines.
+</p>
+<p>
+Unfortunately, the only way to determine whether the Scriptable Finder is running on<br>
+a remote machine is to send it an event and wait for it to time out. The best event to<br>
+send is the Gestalt event from the Finder Event Suite (an event whose class is<br>
+kAEFinderSuite and whose ID is kAEGestalt) with a direct parameter whose type is<br>
+typeEnumeration and whose value is gestaltFinderAttr. If the Scriptable Finder is<br>
+running, the result will have the gestaltOSLCompliantFinder bit set. Under System 7<br>
+Pro, the Finder will return an error (event not handled) if the Scriptable Finder isn't<br>
+running, but the System 7.0 and 7.1 Finders will never return a result.
+</p>
+<p>
+The Gestalt event can be used to ask for the value of any Gestalt selector. It's easier to<br>
+call Gestalt directly on the local machine (and more reliable, since the Scriptable<br>
+Finder might not be running), but some distributed computing applications may want<br>
+to examine the result of Gestalt selectors on remote machines to determine which are<br>
+suitable for use as remote hosts.
+</p>
+<h2>SPECIFYING FINDER OBJECTS</h2>
+<p>
+Most events operate on some Finder object, such as a file, a folder, or a window. These<br>
+objects are always specified with an Apple event descriptor (AEDesc) placed in the<br>
+direct object of the event. Some events require specification of more than one object;<br>
+for example, the Copy event requires parameters for both the objects to be copied and<br>
+the location to copy them to. In these cases, the direct object of the event is the object<br>
+being operated on, and other parameters are defined for any other object it requires.<br>
+The destination of the Copy event goes in the parameter keyAEDestination; other events<br>
+may define other keywords for parameters they use.
+</p>
+<p>
+Most scriptable applications require object specification parameters to be in a very<br>
+specific format called an <i>object specifier.</i> The Finder is a little more flexible than that<br>
+-- it will accept a descriptor of type typeAlias (alias record) or typeFSS (FSSpec) in<br>
+any parameter that requires an object specifier. All the same, understanding object<br>
+specifiers is critical to sending events to the Finder, because many objects cannot be<br>
+represented by an alias record or an FSSpec, and therefore must be referenced by<br>
+object specifier.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Object specifiers are described</b> in "Apple Event Objects and You"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;in<i>develop</i> Issue 10 and in "Better Apple Event Coding Through Objects"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;in<i>develop</i> Issue 12. See also Chapter 6, "Resolving and Creating Object<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Specifier Records," in <i>Inside Macintosh: Interapplication Communication.*</i>
+</p>
+<p>
+An object specifier is a descriptor whose type is typeObjectSpecifier, but it's actually<br>
+an Apple event record (AERecord), and can be accessed as such if coerced to type<br>
+typeAERecord. To build an object specifier, it's most convenient to use the routine<br>
+CreateObjSpecifier (MakeObjectSpecifier in AppleEventUtilities.cp), which takes four<br>
+parameters: the desired class of the specified object, the key form, the key data, and<br>
+the object container.
+</p>
+<ul>
+<li style="margin-left: 20px;">    The <i>desired class</i> indicates the kind of object. Some classes that the<br>
+Finder recognizes are disks, windows, and folders. The desired class may also<br>
+be set to typeWildCard to indicate any class of object.</li>
+<li style="margin-left: 20px;">    The <i>key form</i> specifies how the object is being addressed; the most<br>
+common choices are by name and by index.</li>
+<li style="margin-left: 20px;">    The <i>key data</i> contains the specification for the object in a format<br>
+compatible with the key form. For example, if the key form is formName, the<br>
+key data will contain the name of the object being specified.</li>
+<li style="margin-left: 20px;">    The <i>object container</i> is either another object specifier or a null<br>
+descriptor. Thus, object specifiers have a recursive definition that's always<br>
+terminated with a null descriptor.</li>
+</ul>
+<p>
+The null descriptor in the object specifier's container is a reference to a special<br>
+container called the <i>null container, </i>which serves as the root container of every<br>
+scriptable application. In most applications, the items accessible from the null<br>
+container (called the <i>elements</i> of the container) include all the open documents and<br>
+open windows. The Finder doesn't have any documents that it can open on its own; its<br>
+null container contains all the open windows, plus all the objects on the desktop,<br>
+including the mounted disks and the Trash.
+</p>
+<p>
+You specify <i>properties,</i> such as the name of an object or the original item of an alias<br>
+file, with an object specifier whose desired class is cProperty and whose key form is<br>
+formProperty. The key data is always of type typeType, and it contains the<br>
+four-character code identifying the property. The container of the property's object<br>
+specifier is, as required, an object specifier or a null descriptor.
+</p>
+<p>
+Usually, the property's container specifies an object -- for example, "name of disk 1"<br>
+would be represented as a property specifier for pName with a container specifier to<br>
+disk 1. It's also possible to create property specifiers of property specifiers, such as<br>
+"name of startup disk" (since the term "startup disk" is represented as a property<br>
+specifier for pStartupDisk). Additionally, there are properties that refer to the<br>
+Finder itself, or to the Macintosh that the Finder is running on -- such as "file<br>
+sharing," the property that indicates whether file sharing is on or off. These are called<br>
+properties of the null container, and the container of these property specifiers is<br>
+always a null descriptor.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Any four-character code </b>that's recognized by FindFolder may be provided<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;as a Finder property that refers to the folder returned by FindFolder. You'll<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;find this useful when moving, copying, or setting properties of special<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;folders.*
+</p>
+<p>
+The Finder defines a special key form named formAlias. The key data of an object<br>
+specifier whose key form is formAlias should be an alias record; the desired class<br>
+should be typeWildCard; and the object container must always be a null descriptor. At<br>
+first, the existence of formAlias may seem superfluous. The Finder will accept alias<br>
+records in any object-specifier parameter, and there's no functional difference<br>
+between a descriptor of type typeAlias and an object specifier of form formAlias.<br>
+However, formAlias object specifiers are very useful in one regard, and that's to<br>
+specify properties of files referenced by alias records. As mentioned earlier, the<br>
+container parameter of an object specifier <i>must</i> be another object specifier. If an<br>
+application already has an alias record, it may use it to build an object specifier of<br>
+form formAlias for use in other object specifiers. Putting a descriptor of type<br>
+typeAlias into the container parameter of an object specifier doesn't work, and can<br>
+even cause the OSL to crash.
+</p>
+<h2>MAKING THE FINDER DO TRICKS</h2>
+<p>
+A Macintosh running the Scriptable Finder is capable of a variety of tricks that other<br>
+Finders only dream about. This section demonstrates a number of these features,<br>
+including events that examine and change the state of the Finder, that notify the Finder<br>
+of changes, and that manipulate files on disk. For a summary of events the Finder<br>
+recognizes, see "Overview of Finder Events." This issue's CD includes the complete<br>
+code for listings in this section.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OVERVIEW OF FINDER EVENTS</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The Scriptable Finder recognizes most of the events in the Required and Core<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;suites, and defines a few events of its own in the Finder suite.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The Finder recognizes events that:
+</p>
+<ul>
+                    <li style="margin-left: 70px;"> count, get, and set data</li><br>
+                    <li style="margin-left: 70px;"> test whether an object exists</li><br>
+                    <li style="margin-left: 70px;"> open, reveal, select, and close objects</li><br>
+                    <li style="margin-left: 70px;"> tell applications to print documents</li><br>
+                    <li style="margin-left: 70px;"> move and copy files and folders</li><br>
+                    <li style="margin-left: 70px;"> make folders, aliases, and suitcases</li><br>
+                    <li style="margin-left: 70px;"> eject and unmount disks</li><br>
+                    <li style="margin-left: 70px;"> put away objects in the Trash or on the desktop</li><br>
+                    <li style="margin-left: 70px;"> empty the Trash</li><br>
+                    <li style="margin-left: 70px;"> query Gestalt</li><br>
+                    <li style="margin-left: 70px;"> quit and restart</li><br>
+                    <li style="margin-left: 70px;"> shut down and sleep</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Of these events, Get Data and Set Data are the most versatile, as they can be<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;used to determine and change a wide variety of properties of the Finder. Some<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;of these properties are:
+</p>
+<ul>
+                    <li style="margin-left: 70px;"> the name, label, creation date, modification date, position, custom<br>
+icon, and comment of an item, as well as its logical and physical size</li><br>
+                    <li style="margin-left: 70px;"> the creator, type, and version of a file</li><br>
+                    <li style="margin-left: 70px;"> the original item of an alias file</li><br>
+                    <li style="margin-left: 70px;"> the partition size of application files</li><br>
+                    <li style="margin-left: 70px;"> file sharing and view settings of folders</li><br>
+                    <li style="margin-left: 70px;"> the capacity and free space of a disk</li><br>
+                    <li style="margin-left: 70px;"> the memory used by a running process</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>A complete list of properties</b> the Finder recognizes can be found in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the<i>AppleScript Finder Guide,</i> the Finder's dictionary resource (viewable from<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the Script Editor), or the <i>Finder Event Suite</i> document on this issue's CD. *
+</p>
+<p>
+<b>GETTING AND SETTING THE FINDER SELECTION</b>
+</p>
+<p>
+Determining which files have been selected by the Finder is something developers have<br>
+been trying to do for a long time. Many ingenious and completely unsanctioned hacks<br>
+and patches have been devised just to get this simple piece of information. Often, these<br>
+patches fail to work beyond the Finder that they were designed for, and those that<br>
+happen to work with multiple Finders may not be compatible with future versions.<br>
+With the Scriptable Finder, there's no need to patch, hack, or guess which items are<br>
+selected in the Finder; one simple event will return the answer.
+</p>
+<p>
+You can obtain the Finder's selection by sending a Get Data event (event class<br>
+kAECoreSuite, event ID kAEGetDataEvent) to the Finder, and specifying an object<br>
+specifier for the property pSelection of the null container in the direct object. By<br>
+default, the result returned by the Finder will be an object specifier (if one item is<br>
+selected) or a list of object specifiers (if multiple items are selected). It's also<br>
+possible to have the results returned as an FSSpec, an alias record, or a pathname by<br>
+filling in the optional parameter keyAERequestedType of the Apple event. The<br>
+recognized types are typeFSS, typeAlias, and typeChar (which will return a pathname<br>
+to the object in the result string). Listing 2 shows how to get the Finder's selection.
+</p>
+<p>
+<b>Listing 2. </b>Getting the Finder's selection
+</p>
+<pre>// tell application "Finder"
+//      get selection
+// end tell
+//
+// Get the address of the Finder and make a Get Data event.
+TAEvent      ae;
+
+TDescriptor target = GetAddressOfFinder();
+ae.MakeAppleEvent(kAECoreSuite, kAEGetData, target);
+target.Dispose();
+
+// Make an object specifier for "selection" and put it into the
+// direct object of the event.
+TDescriptor directObjectSpecifier;
+TDescriptor keyData;
+TDescriptor nullDescriptor;
+
+keyData.MakeDescType(pSelection);
+directObjectSpecifier.MakeObjectSpecifier(cProperty, nullDescriptor,
+   formPropertyID, keyData, true);
+ae.PutDescriptor(keyDirectObject, directObjectSpecifier);
+directObjectSpecifier.Dispose();
+
+// Put in the optional "requested type" parameter.
+TDescriptor dataDescriptor;
+
+dataDescriptor.MakeDescType(typeAlias);
+dataDescriptor.CoerceInPlace(typeAEList);
+ae.PutDescriptor(keyAERequestedType, dataDescriptor);
+dataDescriptor.Dispose();
+
+// Send the event, extract the reply, and dispose of event and reply.
+TAEvent   reply;
+
+ae.Send(&amp;reply, kAEWaitReply);
+TDescriptor selectedItems = reply.GetDescriptor(keyAEResult);
+reply.Dispose();
+ae.Dispose();</pre>
+<p>
+Notice that before sending the event, we put in the optional "requested type"<br>
+parameter. Coercing the data descriptor to a list isn't necessary when sending an event<br>
+to the Finder, but it <i>is</i> required by the OSL specification, so it's a good habit to get into.
+</p>
+<p>
+You can also change the Finder's selection with a Set Data event (event class<br>
+kAECoreSuite, event ID kAESetDataEvent): The direct object should again be an object<br>
+specifier for the property pSelection, and the parameter keyAEData should contain the<br>
+items to be selected. The key data parameter may contain an object specifier, an<br>
+FSSpec, an alias record, an empty list (to clear the selection), or a list that contains<br>
+multiple objects.
+</p>
+<p>
+As you'll see in the rest of this article, the Get Data and Set Data events are very<br>
+powerful and can be used for a wide variety of purposes.
+</p>
+<p>
+<b>GETTING THE FRONTMOST FINDER WINDOW</b>
+</p>
+<p>
+Although it's not a terribly difficult thing for an ingenious bit of code to obtain a<br>
+pointer to the Finder's frontmost window, a well-behaved application never peeks at<br>
+another process's window list. The Scriptable Finder will tell you which windows are<br>
+open if you ask nicely; once again, the event to use is the Get Data event. The direct<br>
+object should be an object specifier to the window whose index is 1, as the frontmost<br>
+window is always the first window in the window list.
+</p>
+<p>
+&nbsp;&nbsp;Note that the event to get the frontmost window always returns an object specifier. It<br>
+isn't possible to get the Finder to return an FSSpec, alias record, or pathname to a<br>
+window, because FSSpecs, alias records, and pathnames cannot represent a window --<br>
+they always point to file system objects. For the event to return an alias to the file<br>
+system item whose contents are displayed in the frontmost window, its direct object<br>
+must specify "item of window 1," that is, the item that owns window 1. In most<br>
+applications, the window's owner would be accessed via the specifier "document of<br>
+window 1," but because the Finder doesn't have documents, its windows are owned by<br>
+"items" instead. Listing 3 shows how to get the owner of the frontmost window.
+</p>
+<p>
+<b>Listing 3. </b>Getting the owner of the frontmost Finder window
+</p>
+<pre>// tell application "Finder"
+//      get item of window 1
+// end tell
+//
+// Get the address of the Finder and make a Get Data event.
+TAEvent ae;
+
+TDescriptor target = GetAddressOfFinder();
+ae.MakeAppleEvent(kAECoreSuite, kAEGetData, target);
+target.Dispose();
+
+// Make an object specifier for "item of window 1" and put it into
+// the direct object of the event. Note that the Apple Event Registry
+// class for "item" is cObject.
+TDescriptor directObjectSpecifier;
+TDescriptor frontWindowSpecifier;
+TDescriptor keyData;
+TDescriptor nullDescriptor;
+
+keyData.MakeLong(1);
+frontWindowSpecifier.MakeObjectSpecifier(cWindow, nullDescriptor,
+   formAbsolutePosition, keyData, true);
+keyData.MakeDescType(cObject);
+directObjectSpecifier.MakeObjectSpecifier(cProperty,
+   frontWindowSpecifier, formPropertyID, keyData, true);
+ae.PutDescriptor(keyDirectObject, directObjectSpecifier);
+directObjectSpecifier.Dispose();
+
+// Specify that we would like the result returned as an alias record
+// rather than an object specifier.
+TDescriptor dataDescriptor;
+dataDescriptor.MakeDescType(typeAlias);
+dataDescriptor.CoerceInPlace(typeAEList);
+ae.PutDescriptor(keyAERequestedType, dataDescriptor);
+dataDescriptor.Dispose();
+
+// Send the event, extract the reply, and dispose of the event and
+// reply. frontWindowOwner will contain an object specifier to the
+// frontmost window.
+TAEvent   reply;
+
+ae.Send(&amp;reply, kAEWaitReply);
+TDescriptor frontWindowOwner = reply.GetDescriptor(keyAEResult);
+reply.Dispose();
+ae.Dispose();</pre>
+<p>
+The frontmost Finder window will usually be a folder window, but it could also be an<br>
+information window, a sharing setup window, or even the About This Macintosh<br>
+window or Finder Shortcuts window. To limit the window returned to only folder<br>
+windows, change the desired class from cWindow to cContainerWindow. Similarly, the<br>
+open information windows can be identified by the class cInfoWindow.
+</p>
+<p>
+The sample application Finder Snapshot on this issue's CD illustrates a very useful<br>
+reason for requesting the list of open Finder windows. When launched, it records the<br>
+set of open Finder windows in a document; opening the document results in the same set<br>
+of windows being opened again and positioned in the same locations that they were in at<br>
+the time that the document was created. This application provides a simple way to make<br>
+multiple "working sets" of Finder windows, easily accessible through items in the<br>
+Apple Menu Items folder, or perhaps via documents sitting on the desktop.
+</p>
+<p>
+<b>GETTING AND SETTING CUSTOM ICONS</b>
+</p>
+<p>
+The icon bitmap of a file is available through ordinary file system calls, but there are<br>
+a couple of different cases to contend with: the icon might be stored in the desktop<br>
+database, or it could be a custom icon stored in the resource fork of the file. Some files<br>
+are "special," and only the Finder really knows what their icon bitmap should be. The<br>
+simplest way to get the exact icon bitmap for a file is to ask the Finder what it is. Once<br>
+again, Get Data and Set Data are the events to use.
+</p>
+<p>
+&nbsp;&nbsp;The result of a Get Data event that specifies the icon property of some object is an<br>
+AERecord that contains the entire icon family for the item's icon. The record contains<br>
+parameters whose key is the same as the individual resources of an icon family (for<br>
+example, 'ICN#' and 'icl8'); the data stored in these parameters is identical to the data<br>
+found in a resource of the same type. A Set Data event takes a record in the same<br>
+format, or an empty list if the intention is to remove the custom icon.
+</p>
+<p>
+Listing 4 shows how to remove the custom icon from every item in the selection. Note<br>
+that the specifier "icon of selection" is equivalent to the more complex specifier "icon<br>
+of every item of selection."
+</p>
+<p>
+<b>Listing 4. </b>Removing custom icons from the selection
+</p>
+<pre>// tell application "Finder"
+//      set icon of selection to empty
+// end tell
+TAEvent   ae;
+
+TDescriptor target = GetAddressOfFinder();
+ae.MakeAppleEvent(kAECoreSuite, kAESetData, target);
+target.Dispose();
+
+// Make an object specifier for "icon of selection" and put it into
+// the direct object of the event.
+TDescriptor directObjectSpecifier;
+TDescriptor selectionSpecifier;
+TDescriptor keyData;
+TDescriptor nullDescriptor;
+
+keyData.MakeDescType(pSelection);
+selectionSpecifier.MakeObjectSpecifier(cProperty, nullDescriptor,
+   formPropertyID, keyData, true);
+keyData.MakeDescType(pIconBitmap);
+directObjectSpecifier.MakeObjectSpecifier(cProperty,
+   selectionSpecifier, formPropertyID, keyData, true);
+ae.PutDescriptor(keyDirectObject, directObjectSpecifier);
+directObjectSpecifier.Dispose();
+
+// Obviously, a Set Data event needs data. In the case of this
+// sample, the data we want is "empty," which is represented by an
+// empty list.
+TDescriptor emptyList;
+
+emptyList.MakeEmptyList();
+ae.PutDescriptor(keyAEData, emptyList);
+emptyList.Dispose();
+
+// Send the event and dispose of it once it has been sent.
+TAEvent   reply;
+
+ae.Send(&amp;reply, kAENoReply);
+ae.Dispose();</pre>
+<p>
+The sample application Finder Tricks on the CD has a feature that changes the icons of<br>
+all the items in the frontmost Finder window -- each item is given some other item's<br>
+icon. Other than serving as a useful example of how to send events to the Finder, this<br>
+sample doesn't have much utility, although it does do an admirable job at messing up<br>
+the appearance of Finder windows.
+</p>
+<p>
+An application can change an item's icon by writing the custom icon directly into the<br>
+appropriate resources in the file and then setting the "custom icon bit" using the file<br>
+system, instead of sending an event to the Finder -- but the change won't take effect<br>
+right away. The reason for the delay is that the Finder isn't notified when the contents<br>
+of the disk change, so it must periodically poll the file system to find out whether it<br>
+needs to redraw any items in its open windows. Polling happens only every now and<br>
+again, so that the Finder doesn't eat up every spare CPU cycle on the machine when it's<br>
+just sitting idle in the background.
+</p>
+<p>
+<b>UPDATING FINDER CONTAINERS</b>
+</p>
+<p>
+As just mentioned, the Finder sometimes takes a while to notice when the contents of<br>
+the disk change. If an application writes new information into a folder, it may inform<br>
+the Finder via an Apple event that the item changed (Listing 5). This event is most<br>
+useful after an application has created a new file or has changed some visible attribute<br>
+of an existing file -- its type or creator, for example. If an update event isn't sent, the<br>
+Finder will eventually notice the change and redraw the item; however, there's a<br>
+several-second delay that's somewhat disconcerting, particularly if the user has just<br>
+saved a new document to the desktop with the Standard File dialog and expects to see it<br>
+show up right away.
+</p>
+<p>
+<b>Listing 5. </b>Updating a Finder container
+</p>
+<pre>// tell application "Finder"
+//      update alias "HD:Documents:"
+// end tell
+void UpdateFinderContainer(FSSpec&amp; changedContainer)
+{
+   TAEvent   ae;
+
+   TDescriptor target = GetAddressOfFinder();
+   ae.MakeAppleEvent(kAEFinderSuite, kAEUpdate, target);
+   target.Dispose();
+
+   // Make an object specifier for the FSSpec and put it into the
+   // direct object of the event.
+   TDescriptor directObjectSpecifier;
+
+   directObjectSpecifier.MakeFSS(changedContainer);
+   ae.PutDescriptor(keyDirectObject, directObjectSpecifier);
+   directObjectSpecifier.Dispose();
+
+   // Send the event and dispose of it once it has been sent.
+   TAEvent   reply;
+
+   ae.Send(&amp;reply, kAENoReply);
+   ae.Dispose();
+}</pre>
+<p>
+<b>SETTING UP SHARING</b>
+</p>
+<p>
+Setting the sharing properties of a folder is a task that many users find confusing.<br>
+Although scripting this task isn't necessarily any easier, the availability of file<br>
+sharing scriptability makes possible applications that could walk through the process<br>
+or could provide a more intuitive user interface than the Sharing dialog (commonly<br>
+referred to in technical circles as "the evil grid of checkboxes"). Listing 6 shows how<br>
+to enable file sharing on every folder in the current selection.
+</p>
+<p>
+<b>Listing 6. </b>Sharing every folder in the selection
+</p>
+<pre>// tell application "Finder"
+//      set shared of every folder of selection to true
+// end tell
+TAEvent   ae;
+
+TDescriptor target = GetAddressOfFinder();
+ae.MakeAppleEvent(kAECoreSuite, kAESetData, target);
+target.Dispose();
+
+// Make a specifier for "selection."
+TDescriptor selectionSpecifier;
+TDescriptor keyData;
+TDescriptor nullDescriptor;
+
+keyData.MakeDescType(pSelection);
+selectionSpecifier.MakeObjectSpecifier(cProperty, nullDescriptor,
+   formPropertyID, keyData, true);
+
+// Make a specifier for "every folder of..."
+TDescriptor everySpecifier;
+keyData.MakeOrdinal(kAEAll);
+everySpecifier.MakeObjectSpecifier(cFolder, selectionSpecifier,
+   formAbsolutePosition, keyData, true);
+
+// Make a specifier for "shared of..."
+TDescriptor directObjectSpecifier;
+
+keyData.MakeDescType(pSharing);
+directObjectSpecifier.MakeObjectSpecifier(cProperty, everySpecifier,
+   formPropertyID, keyData, true);
+ae.PutDescriptor(keyDirectObject, directObjectSpecifier);
+directObjectSpecifier.Dispose();
+
+// Set the property to true.
+TDescriptor sharedSetting;
+
+sharedSetting.MakeBoolean(true);
+ae.PutDescriptor(keyAEData, sharedSetting);
+sharedSetting.Dispose();
+
+// Send the event and dispose of it once it has been sent.
+TAEvent   reply;
+
+ae.Send(&amp;reply, kAENoReply);
+ae.Dispose();</pre>
+<p>
+Unfortunately, not every file sharing feature is scriptable. It's possible to set the<br>
+sharing properties of a folder (everything that can be set from the Finder's Sharing<br>
+menu item), create a new user or a new group, and rename a user or a group;<br>
+however, currently it's not possible to set a user's password, allow a user to connect<br>
+to file sharing or program linking, add a user to a group, or remove a user from a<br>
+group. This capability will be available in some future version of Macintosh system<br>
+software.
+</p>
+<p>
+<b>MOVING FILES -- AND AN UNDOCUMENTED PARAMETER</b>
+</p>
+<p>
+The Finder also has events that move and copy files from one container to another.<br>
+Strictly speaking, there's little reason for an application to use these events, since file<br>
+copying can be done quite acceptably using the file system directly. However, it may<br>
+take less code to tell the Finder to create a copy than to make the appropriate file<br>
+system calls and put up a copy progress dialog. The events to use are kAEClone and<br>
+kAEMove, both of which have the event class of kAECoreSuite. A new parameter was<br>
+added to the Move and Copy events of the Scriptable Finder after the <i>AppleScript Finder</i><br>
+<i>Guide </i>went to press, but before the Finder Scripting Extension shipped with System<br>
+7.5. The new parameter allows a Move event to specify the position of every item being<br>
+moved inside the destination container. This parameter was not originally a part of the<br>
+Finder Event Suite because a script that needed to position items being moved to<br>
+another container could always go back and set the position property of the destination<br>
+items after the move was completed. The new Find File desk accessory included with<br>
+System 7.5, however, needed to be able to move and position items all in one atomic<br>
+operation; otherwise, the user would see the items move from an intermediate position<br>
+to a final position, which would look jerky. The new parameter was added to fill this<br>
+need; its use is shown in Listing 7.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>The code in Listing 7</b> specifies the position of the item in local coordinates<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;of the destination window. To specify the position in global screen coordinates,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;use the parameter keyGlobalPositionList instead of keyLocalPositionList.
+</p>
+<p>
+<b>Listing 7. </b>Moving a file with the optional position parameter
+</p>
+<pre>// tell application "Finder"
+//      move item "x" to preferences folder positioned at ~
+//         location {10, 10}
+// end tell
+TAEvent   ae;
+
+TDescriptor target = GetAddressOfFinder();
+ae.MakeAppleEvent(kAECoreSuite, kAEMove, &amp;target);
+target.Dispose();
+
+// Make a specifier for item "x" and place it in the direct object.
+TDescriptor directObjectSpecifier;
+TDescriptor keyData;
+TDescriptor nullDescriptor;
+
+keyData.MakeString("\px");
+directObjectSpecifier.MakeObjectSpecifier(cObject, nullDescriptor,
+   formName, keyData, true);
+ae.PutDescriptor(keyDirectObject, directObjectSpecifier);
+directObjectSpecifier.Dispose();
+
+// Make a specifier for the preferences folder and place it in the
+// destination parameter.
+TDescriptor preferencesSpecifier;
+
+keyData.MakeDescType(pPreferencesFolder);
+preferencesSpecifier.MakeObjectSpecifier(cProperty, nullDescriptor,
+   formPropertyID, keyData, true);
+ae.PutDescriptor(keyAEInsertHere, preferencesSpecifier);
+
+// Put the point {10, 10} into the local position list.
+Point   destinationPosition;
+
+destinationPosition.h = 10;
+destinationPosition.v = 10;
+keyData.MakePoint(destinationPosition);
+keyData.CoerceInPlace(typeAEList);
+ae.PutDescriptor(keyLocalPositionList, keyData);
+keyData.Dispose();
+
+// Send the event and dispose of it once it has been sent.
+TAEvent reply;
+
+ae.Send(&amp;reply, kAENoReply);
+ae.Dispose();</pre>
+<h2>TEACHING THE FINDER NEW TRICKS</h2>
+<p>
+From the previous sections it should be clear that the events the Finder recognizes are<br>
+all very similar, and the code to generate them looks pretty much the same. The event<br>
+class and message ID may vary, and the contents of the direct object might specify<br>
+different objects, but there's nothing substantially different between the code that<br>
+sends an event to open the System Folder and the code that sends an event to get the<br>
+view setting of the frontmost window.
+</p>
+<p>
+&nbsp;&nbsp;Be careful, though, when using the constants defined in AERegistry.h; they're<br>
+intended for use with the old System 7.0 Finder Event Suite. Using the old events<br>
+(events whose class is kAEFinderEvents, or 'FNDR') has the advantage that they're<br>
+recognized by earlier System 7 Finders, but in general they should be avoided. The old<br>
+events are buggy, they don't work with the OSL, and they won't ever be upgraded or<br>
+changed to support new Finder features. Events in the new event suite (events whose<br>
+class is kAEFinderSuite, or 'fndr') work better, return meaningful results, and are<br>
+compatible with the OSL.
+</p>
+<p>
+Programmer's documentation of Finder events can be found in the <i>Apple Event</i><br>
+<i>Registry: Standard Suites</i> and the <i>Finder Event Suite</i> document on this issue's CD. The<br>
+old Finder events are described in the Finder Events chapter of the <i>Apple Event</i><br>
+<i>Registry</i>. The Scriptable Finder supports the Required and Core suites, as described in<br>
+the <i>Apple Event Registry</i>, and also provides new events that are described in the Finder<br>
+Event Suite. These documents list the events defined in each suite, the parameters that<br>
+they take, the classes of objects defined in the suite, and the properties of those<br>
+objects.
+</p>
+<p>
+So, the next time you're tempted to disassemble the Finder, poke around in private<br>
+Finder data structures, or hack your way to Finder properties, remember the new<br>
+event suite for the Scriptable Finder. Really cool integration with the Finder doesn't<br>
+have to be painful any more.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;RELATED READING</b>
+</p>
+<p>
+<i>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Inside Macintosh: Interapplication Communication</i>(Addison-Wesley, 1993)<i>,</i><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Chapter 6, "Resolving and Creating Object Specifier Records."
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>AppleScript Finder Guide</i> (Addison-Wesley, 1994).
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>Apple Event Registry: Standard Suites</i>, on this issue's CD and available in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print from Apple Developer Catalog.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"Apple Event Objects and You" by Richard Clark, <i>develop</i> Issue 10.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"Better Apple Event Coding Through Objects" by Eric M. Berdahl,<i>develop</i>Issue<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;12.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>Greg Anderson</b>(AppleLink G.ANDERSON) is currently the Technical Lead of the<br>
+Finder Team at Apple and was the lead engineer on the Finder Scripting Extension. He's<br>
+known to engage in a number of activities of questionable sanity, including running<br>
+straight up hills that are much too steep and much too long, working at Apple for four<br>
+solid years, making chain mail by hand (with pliers, actually), and putting on armor<br>
+and hitting people with sticks. Don't worry, he never hits anyone in staff meetings or<br>
+developer conferences.
+</p>
+<p>
+<b>Thanks </b>to our technical reviewers Sue Dumont, Max McFarland, Donald Olson, and<br>
+Greg Robbins.
+</p>
+</body>
+</html>

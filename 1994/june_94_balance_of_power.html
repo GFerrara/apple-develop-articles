@@ -1,0 +1,248 @@
+<html>
+<head>
+<!-- Article ID: 23 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 94 - BALANCE OF POWER</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>BALANCE OF POWER</h2>
+<h2>Enhancing PowerPC Native Speed</h2>
+<h1>DAVE EVANS</h1>
+<p>
+<img src="img/187.gif" width="179 px"></img>
+</p>
+<p>
+When you convert your applications to native PowerPC code, they run lightning fast.<br>
+To get the most out of RISC processors, however, you need to pay close attention to<br>
+your code structure and execution. Fast code is no longer measured solely by an<br>
+instruction timing table. The Power PC 601 processor includes pipelining,<br>
+multi-issue and speculative execution, branch prediction, and a set associative cache.<br>
+All these things make it hard to know what code will run fastest on a Power Macintosh.
+</p>
+<p>
+Writing tight code for the PowerPC processor isn't hard, especially with a good<br>
+optimizing compiler to help you. In this column I'll pass on some of what I've learned<br>
+about tuning Power PC code. There are gotchas and coding habits to avoid, and there are<br>
+techniques for squeezing the most from your speed-critical native code. For a good<br>
+introduction to RISC pipelining and related concepts that appear in this&nbsp;&nbsp;column, see<br>
+"Making the Leap to PowerPC" in Issue 16.
+</p>
+<p>
+<b>MEASURING YOUR SPEED</b><br>
+The power of RISC lies in the ability to execute one or more instructions every<br>
+machine clock cycle, but RISC processors can do this only in the best of circumstances.<br>
+At their worst they're as slow as CISC processors. The following loop, for example,<br>
+averages only one calculation every 2.8 cycles:
+</p>
+<pre>float a[], b[], c[], d, e;
+for (i=0; i &lt; gArraySize; i++) {
+  e = b[i] + c[i] / d;
+  a[i] = MySubroutine(b[i], e);
+}</pre>
+<p>
+By restructuring the code and using other techniques from this column, you can make<br>
+significant improvements. This next loop generates the same result, yet averages one<br>
+calculation every 1.9 cycles -- about 50% faster.
+</p>
+<pre>reciprocalD = 1 / d;
+for (i=0; i &lt; gArraySize; i+=2) {
+  float result, localB, localC, localE;
+  float result2, localB2, localC2, localE2;
+
+  localB = b[i];
+  localC = c[i];
+  localB2 = b[i+1];
+  localC2 = c[i+1];
+
+  localE = localB + (localC * reciprocalD);
+  localE2 = localB2 + (localC2 * reciprocalD);
+  InlineSubroutine(&amp;result, localB, localE);
+  InlineSubroutine(&amp;result2, localB2, localE2);
+
+  a[i] = result;
+  a[i+1] = result2;
+}</pre>
+<p>
+The rest of this column explains the techniques I just used for that speed gain. They<br>
+include expanding loops, scoping local variables, using inline routines, and using<br>
+faster math operations.
+</p>
+<p>
+<b>UNDERSTANDING YOUR COMPILER</b><br>
+Your compiler is your best friend, and you should try your hardest to understand its<br>
+point of view. You should understand how it looks at your code and what assumptions<br>
+and optimizations it's allowed to make. The more you empathize with your compiler,<br>
+the more you'll recognize opportunities for optimization.
+</p>
+<p>
+An optimizing compiler reorders instructions to improve speed. Executing your code<br>
+line by line usually isn't optimal, because the processor stalls to wait for dependent<br>
+instructions. The compiler tries to move instr uctions that are independent into the<br>
+stall points. For example, consider this code:
+</p>
+<pre>first = input * numerator;
+second = first / denominator;
+output = second + adjustment;</pre>
+<p>
+Each line depends on the previous line's result, and the compiler will be hard pressed<br>
+to keep the pipeline full of useful work. This simple example could cause 46 stalled<br>
+cycles on the PowerPC 601, so the compiler will look at other nearby code for<br>
+independent instructions to move into the stall points.
+</p>
+<p>
+<b>EXPANDING YOUR LOOPS</b><br>
+Loops are often your most speed-critical code, and you can improve their performance<br>
+in several ways. Loop expanding is one of the simplest methods. The idea is to perform<br>
+more than one independent operation in a loop, so that the compiler can reorder more<br>
+work in the pipeline and thus prevent the processor from stalling.
+</p>
+<p>
+For example, in this loop there's too little work to keep the processor busy:
+</p>
+<pre>float a[], b[], c[], d;
+for (i=0; i &lt; multipleOfThree; i++) {
+  a[i] = b[i] + c[i] * d;
+}</pre>
+<p>
+If we know the data always occurs in certain sized increments, we can do more steps in<br>
+each iteration, as in the following:
+</p>
+<pre>for (i=0; i &lt; multipleOfThree; i+=3) {
+  a[i] = b[i] + c[i] * d;
+  a[i+1] = b[i+1] + c[i+1] * d;
+  a[i+2] = b[i+2] + c[i+2] * d;
+}</pre>
+<p>
+On a CISC processor the second loop wouldn't be much faster, but on the Power PC<br>
+processor the second loop is twice as fast as the first. This is because the compiler can<br>
+schedule independent instructions to keep the pipeline constantly moving. (If the data<br>
+doesn't occur in nice increments, you can still expand the loop; just add a small loop at<br>
+the end to handle the extra iterations.)Be careful not to&nbsp;&nbsp;expand a loop too much,<br>
+though. Very large loops won't fit in the cache, causing cache misses for each iteration.<br>
+In addition, the larger a loop gets, the less work can be done entirely in registers.<br>
+Expand too much and the compiler will have to use <i> memory</i>&nbsp;&nbsp;to store intermediate<br>
+results, outweighing your marginal gains. Besides, you get the biggest gains from the<br>
+first few expansions.
+</p>
+<p>
+<b>SCOPING YOUR VARIABLES</b><br>
+If you're new to RISC, you'll be impressed by the number of registers available on the<br>
+PowerPC chip -- 32 general registers and 32 floating-point registers. By having so<br>
+many, the processor can often avoid slow memory operations. Your compiler will take<br>
+advantage of this when it can, but you can help it by carefully scoping your variables<br>
+and using lots of local variables.
+</p>
+<p>
+The "scope" of a variable is the area of code in which it is valid. Your compiler<br>
+examines the scope of each variable when it schedules registers, and your code can<br>
+provide valuable information about the usage of each variable. Here's an example:
+</p>
+<pre>for (i=0; i &lt; gArraySize; i++) {
+  a[i] = MyFirstRoutine(b[i], c[i]);
+  b[i] = MySecondRoutine(a[i], c[i]);
+}</pre>
+<p>
+In this loop, the global variable gArraySize is scoped for the whole program. Because<br>
+we call a subroutine in the loop, the compiler can't tell if gArraySize will change<br>
+during each iteration. Since the subroutine might modify gArraySize, the compiler has<br>
+to be conservative. It will reload gArraySize from memory on every iteration, and it<br>
+won't optimize the loop any further. This is wastefully slow.
+</p>
+<p>
+On the other hand, if we use a <i> local</i>&nbsp;&nbsp;variable, we tell the compiler that gArraySize and<br>
+c[i] won't be modified and that it's all right to just keep them handy in registers. In<br>
+addition, we can store data as temporary variables scoped only within the loop. This<br>
+tells the compiler how we intend to use the data, so that the compiler can use free<br>
+registers and discard them after the loop. Here's what this would look like:
+</p>
+<pre>arraySize = gArraySize;
+for (i=0; i &lt; arraySize; i++) {
+  float localC;
+  localC = c[i];
+  a[i] = MyFirstRoutine(b[i], localC);
+  b[i] = MySecondRoutine(a[i], localC);
+}</pre>
+<p>
+These minor changes give the compiler more information about the data, in this<br>
+instance accelerating the resulting code by 25%.
+</p>
+<p>
+<b>STYLING YOUR CODE</b><br>
+Be wary of code that looks complicated. If each line of source code contains complicated<br>
+dereferences and typecasting, chances are the object code has wasteful memory<br>
+instructions and inefficient register usage. A great compiler might optimize well<br>
+anyway, but don't count on it. Judicious use of temporary variables (as mentioned<br>
+above) will help the compiler understand exactly what you're doing -- plus your code<br>
+will be easier to read.
+</p>
+<p>
+Excessive memory dereferencing is a problem exacerbated by the heavy use of handles<br>
+on the Macintosh. Code often contains double memory dereferences, which is important<br>
+when memory can move. But when you can guarantee that memory <i>won't</i>&nbsp;&nbsp;move, use a<br>
+local pointer, so that you only dereference a handle once. This saves load instructions<br>
+and allows fur ther optimizations. Casting data types is usually a free operation --<br>
+you're just telling the compiler that you know you're copying seemingly incompatible<br>
+data. But it's <i>not</i>&nbsp;&nbsp;free if the data types have different bit sizes, which adds conversion<br>
+instructions. Again, avoid this by using local variables for the commonly casted data.
+</p>
+<p>
+I've heard many times that branches are "free" on the PowerPC processor. It's true<br>
+that often the pipeline can keep moving even though a branch is encountered, because<br>
+the branch execution unit will try to resolve branches very early in the pipeline or<br>
+will predict the direction of the branch. Still, the more subroutines you have, the less<br>
+your compiler will be able to reorder and intelligently schedule instructions. Keep<br>
+speed-critical code together, so that more of it can be pipelined and the compiler can<br>
+schedule your registers better. Use inline routines for short operations, as I did in the<br>
+improved version of the first example loop in this column.
+</p>
+<p>
+<b>KNOWING YOUR PROCESSOR</b><br>
+As with all processors, the PowerPC chip has performance tradeoffs you should know<br>
+about. Some are processor model specific. For example, the PowerPC 601 has 32K of<br>
+cache, while the 603 has 16K split evenly into an instruction cache and a data cache.<br>
+But in general you should know about floating-point performance and the virtues of<br>
+memory alignment.
+</p>
+<p>
+Floating-point multiplication is wicked fast -- up to <i> nine times</i>&nbsp;&nbsp;the speed of integer<br>
+multiplication. Use floating-point multiplication if you can. Floating-point division<br>
+takes 17 times as long, so when possible multiply by a reciprocal instead of dividing.
+</p>
+<p>
+Memory accesses go fastest if addressed on 64-bit memory boundaries. Accesses to<br>
+unaligned data stall while the processor loads different words and then shifts and<br>
+splices them. For example, be sure to align floating-point data to 64-bit boundaries,<br>
+or you'll stall for four cycles while the processor loads 32-bit halves with two<br>
+64-bit accesses.
+</p>
+<p>
+<b>MAKING THE DIFFERENCE</b><br>
+Native PowerPC code runs really fast, so in many cases you don't need to worry about<br>
+tweaking its performance at all. For your speed-critical code, though, these tips I've<br>
+given you can make the difference between "too slow" and "fast enough."
+</p>
+<p>
+<b>RECOMMENDED READING</b>
+</p>
+<ul>
+<li><i>High-Performance Computing</i>  by Kevin Dowd (O'Reilly &amp; Associates,<br>
+Inc., 1993).</li>
+<li><i>High-Performance Computer Architecture</i>  by Harold S. Stone<br>
+(Addison-Wesley, 1993).</li>
+<li><i>PowerPC 601 RISC Microprocessor User's Manual</i> (Motorola, 1993).</li>
+</ul>
+<p>
+<b>DAVE EVANS </b>may be able to tune PowerPC code for Apple, but for the last year he's<br>
+been repeatedly thwarted when tuning his 1978 Harley-Davidson XLCH motorcycle.<br>
+Fixing engine stalls, poor timing, and rough starts proved difficult, but he was<br>
+recently rewarded with the guttural purr of a well-tuned Harley. *
+</p>
+<p>
+Code examples were compiled with the PPCC compiler using the speed optimization<br>
+option, and then run on a Power Macintosh 6100/66 for profiling. A PowerPC 601<br>
+microsecond timing library is provided on this issue's CD. *
+</p>
+</body>
+</html>

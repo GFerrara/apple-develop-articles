@@ -1,0 +1,481 @@
+<html>
+<head>
+<!-- Article ID: 61 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 94 - Somewhere in QuickTime: Supporting Text Tracks in Your Application</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Somewhere in QuickTime: Supporting Text Tracks<br>
+in Your Application</h1>
+<h2>Nick Thompson</h2>
+<p>
+<img src="img/279.gif" width="182 px"></img>
+</p>
+<p>
+<i>Text media tracks were introduced with QuickTime version 1.5 and have been further</i><br>
+<i>improved in QuickTime 2.0 with the addition of calls for more powerful searching and</i><br>
+<i>a new facility called burnt text. The big news is that text tracks are now supported in</i><br>
+<i>QuickTime for Windows version 2.0, which makes text tracks a cross-platform</i><br>
+<i>solution. If you're developing content-based products that need to be cross-platform,</i><br>
+<i>you'll want to take a look at text tracks.</i>
+</p>
+<p>
+Text tracks give you the ability to embed text in a QuickTime movie, which is<br>
+particularly useful if you're aiming your product at international markets or at<br>
+people with hearing impairments (you can subtitle your movie) or if you want to<br>
+enable your users to perform searches (by including the script of a play or movie in a<br>
+text track, for instance, you can make it easy for users to find a particular scene by<br>
+searching for a key piece of dialog). The possibilities for adding value to your<br>
+QuickTime application and content with text tracks are limited only by your<br>
+imagination.
+</p>
+<p>
+This column shows you how to add text track support to your QuickTime application,<br>
+including support for searching and editing. The sample program QTTextSample on this<br>
+issue's CD demonstrates what's involved. This small application plays a movie<br>
+controller-based movie in a window and offers users the ability to search for a<br>
+particular sequence of characters, or edit the text, in the text track.
+</p>
+<p>
+Text tracks are handled by the text media handler, which is documented in the "Movie<br>
+Toolbox" chapter of <i>Inside Macintosh: QuickTime. </i>The text media handler's<br>
+functionality includes the following:
+</p>
+<ul>
+<li>    Searching for text, using FindNextText. With QuickTime 2.0, a new<br>
+routine for text searching, MovieSearchText, can be used. This call is also<br>
+available with QuickTime 2.0 for Windows.</li>
+<li>    Adding plain or styled text, using AddTextSample or AddTESample. Both<br>
+of these calls allow you to define additional text properties, such as scrolling<br>
+and highlighting.</li>
+</ul>
+<p>
+Searching is something that all applications that support text tracks will want to offer<br>
+the user, while editing text is likely to be something that only a few specialized<br>
+applications will want to provide. Editing of text can be accomplished with Movie<br>
+Toolbox routines, as discussed later in this column.
+</p>
+<h2>FIRST THINGS FIRST</h2>
+<p>
+Your QuickTime application needs to do a few basic things at the outset, as<br>
+QTTextSample demonstrates. These include checking for the QuickTime version<br>
+number, growing your heap as large as possible, and checking return codes.
+</p>
+<p>
+<b>QuickTime version number. </b>A Macintosh application that supports text tracks<br>
+requires QuickTime version 1.5 or later; a Windows application that supports text<br>
+tracks requires QuickTime 2.0 for Windows. On Macintosh platforms you can use the<br>
+Gestalt selector gestaltQuickTime to check that the version number returned in the<br>
+high-order word is greater than or equal to the required version (0x0150 for<br>
+QuickTime 1.5; 0x0200 for QuickTime 2.0).
+</p>
+<p>
+Our sample program bails out if the system isn't running QuickTime version 1.5 or<br>
+later. If your application uses calls provided by later releases of QuickTime but you<br>
+also want it to run on earlier versions, you should check for the version number and<br>
+selectively enable your application's functionality accordingly.
+</p>
+<p>
+<b>Heap size. </b>As discussed in the Somewhere in QuickTime column in<i>develop</i> Issue 13<br>
+("Top 10 QuickTime Tips" by John Wang), you need to ensure that you grow your heap<br>
+as large as possible in your initialization code by calling the MaxApplZone routine.<br>
+QuickTime needs to use a lot of handle-based data structures, so you also need to ensure<br>
+that there are enough master pointers allocated in the base of your&nbsp;&nbsp;heap. To do that,<br>
+you should call MoreMasters a number of times (you can tell how many times by<br>
+examining your heap while the application is running). If you don't do this, your heap<br>
+may become fragmented, which in turn may cause certain QuickTime routines to fail<br>
+due to lack of memory. This is a general Macintosh programming issue that you should<br>
+be aware of for all applications.
+</p>
+<p>
+<b>Return codes. </b>Finally, always check those return codes, and handle errors as<br>
+required. Most QuickTime routines return a status code of type OSErr; if this isn't<br>
+equal to noErr, you have problems. QuickTime is always trying to tell you something<br>
+-- listen and your life will be more complete!
+</p>
+<h2>THE USER INTERFACE</h2>
+<p>
+The user interface for the sample application is pretty basic. Figure 1 shows the<br>
+application window. As you can see, the text for the movie is repeated below the movie<br>
+so that it can be edited. Buttons offer the user the options of finding specific text or<br>
+updating the text with editing changes. (The Update Text button is dimmed unless the<br>
+text in the text box has been modified.)
+</p>
+<p>
+<img src="img/280.gif" width="240 px"></img>
+</p>
+<p>
+<b>With text track selected</b>
+</p>
+<p>
+<img src="img/281.gif" width="240 px"></img>
+</p>
+<p>
+<b>With movie selected</b>
+</p>
+<p>
+<b>Figure 1. </b>The application window for QTTextSample
+</p>
+<p>
+Because the user can potentially edit two items -- the movie's text track or the movie<br>
+itself -- the application needs to keep track of what the user selected last (either text<br>
+or the movie) and highlight it in some way. As shown in Figure 1, when the text track<br>
+is selected in our sample application, the text below the movie has a black box around<br>
+it; when the movie is selected, the movie frame has a black box around it. When the<br>
+window is inactive (for example, when you switch applications), the box surrounding<br>
+the active item is rendered in gray.
+</p>
+<h2>TRICKS FOR EASY ACCESS</h2>
+<p>
+In the sample code, the movie controller is stored in a record referenced by a handle<br>
+stored in the window's refCon, along with a few other bits and pieces related to the<br>
+movie and the text for a window. This gives us easy access to both the movie controller<br>
+and its associated movie:
+</p>
+<pre>aDocHdl = (DocHandle)GetWRefCon(theMovieWindow);
+aController = (**aDocHdl).myController;
+aMovie = MCGetMovie(aController);</pre>
+<p>
+When we need to locate the first track of a particular type (in our case a text track) in<br>
+a movie, we can use the following handy utility routine:
+</p>
+<pre>Track GetFirstTrackOfType (Movie aMovie,
+                              OSType trackType)
+{
+   Track      theTrack = nil;
+   OSType     mediaType;
+   short      trackCount, index;
+  
+   trackCount = GetMovieTrackCount(aMovie);
+   for (index=1; index &lt;= trackCount; index++) {
+      Track t = GetMovieIndTrack(aMovie, index);
+      GetMediaHandlerDescription(GetTrackMedia(t),
+                  &amp;mediaType, nil, nil);
+      if (mediaType == trackType) {
+         theTrack = t;
+         break;
+      }
+   }
+   return theTrack;
+}</pre>
+<p>
+A new function, GetMovieIndTrackType, was introduced with QuickTime 2.0 for both<br>
+Macintosh and Windows. GetMovieIndTrackType provides an easy way to iterate<br>
+through all tracks in a movie that are either of a given media type or that support a<br>
+particular media characteristic. Documentation for this, and the other new QuickTime<br>
+calls, can be found in the QuickTime 2.0 Developer's Kit which is available from Apple<br>
+Developer Catalog
+</p>
+<h2>HANDLING TEXT TRACKS</h2>
+<p>
+By default, QuickTime displays the text for an enabled text track. We want to be able to<br>
+exercise more control over the format and display of the text track and to edit the text<br>
+embedded in the movie. Thus, we need to extract the text from the track and stuff it<br>
+into a TextEdit record.
+</p>
+<p>
+&nbsp;&nbsp;Our application needs to be able to access the text for a particular frame as it's<br>
+displayed. We do this by defining a text-handling procedure (or textProc for short)<br>
+with the following format:
+</p>
+<pre>pascal OSErr MyTextProc (Handle thisText,
+         Movie thisMovie, short *displayFlag,
+         long refCon)</pre>
+<p>
+The text is passed in the handle. To access the text, we need to determine the length of<br>
+the text and store it somewhere.
+</p>
+<pre>// This yields the actual size of the text.
+textSize = *(short*)(*thisText);
+// This yields a pointer to the text.
+textSamplePtr =
+            (char*)(*thisText + sizeof(short));</pre>
+<p>
+The style data for a text track is stored in one of two places. Information about the<br>
+default text style, together with other items of interest (such as the background<br>
+color), is stored in a text description handle (see page 2-291 of<i>Inside Macintosh:</i><br>
+<i>QuickTime</i>). Additional information may be supplied at the end of the handle passed to<br>
+the textProc, in the form of 'styl' atoms (see page 2-290 of <i>Inside Macintosh:</i><br>
+<i>QuickTime</i>). Our sample code&nbsp;&nbsp;demonstrates how to access the style information. To get<br>
+the text description, you need to call GetMediaSample in the textProc, as shown in<br>
+Listing 1. You need to parse the handle passed into your textProc to see if additional<br>
+information is supplied; the sample code illustrates how to do this.
+</p>
+<p>
+<b>Listing 1. </b>Getting the text description
+</p>
+<pre>theErr = GetMediaSample(aMedia, myData, nil, nil, mediaCurrentTime,
+         nil, sampleDescriptionH, nil, nil, nil, nil);
+...
+if (sampleDescriptionH) {
+   scrapHdl = (StScrpHandle)NewHandle(sizeof(StScrpRec));
+   if (scrapHdl == nil)
+      CheckError(MemError(),
+         "\pCouldn't allocate memory for the style table");
+   (**scrapHdl).scrpNStyles = 1;
+   (**scrapHdl).scrpStyleTab[0] =
+      (**((TextDescriptionHandle)sampleDescriptionH)).defaultStyle;
+
+   // Delete the previous contents of the TextEditHandle.
+   TESetSelect(0, (**myDocTEH).teLength, myDocTEH);
+   TEDelete(myDocTEH);
+
+   // Insert the new text.
+   TEStylInsert(textPtr, textSize, scrapHdl, myDocTEH);
+
+   DisposeHandle((Handle)scrapHdl);
+}
+else TESetText(textPtr, textSize, myDocTEH);</pre>
+<p>
+We can control whether QuickTime also displays the text, by returning a value in the<br>
+displayFlag parameter. For example, if we want the default display, we set it in the<br>
+following way:
+</p>
+<pre>*displayFlag = txtProcDefaultDisplay;</pre>
+<p>
+Other flags are available either to suppress output or to ensure that QuickTime always<br>
+displays the text track, regardless of the settings saved in the movie. Check page<br>
+2-364 of <i>Inside Macintosh: QuickTime</i> for more details.
+</p>
+<p>
+In order for the textProc we've defined to get called, we need to tell QuickTime about it.<br>
+This is easily accomplished with the SetMovieTextHandler routine (shown in Listing<br>
+2), which uses the utility routine described earlier to get the first text track.
+</p>
+<p>
+<b>Listing 2. </b>The SetMovieTextHandler routine
+</p>
+<pre>OSErr SetMovieTextHandler (WindowPtr aWindow)
+{
+   MediaHandler        aMediaHandler;
+   MovieController     aController;
+   Movie               aMovie;
+   Track               aTrack;
+   DocumentHandle      aDocHdl;
+
+   aDocHdl = (DocumentHandle)GetWRefCon(aWindow);
+   aController = (**aDocHdl).myController;
+   if (aController != nil) {
+      aMovie = MCGetMovie(aController);
+
+      // If there's a text track in the movie, set the textProc.
+      if (aMovie != nil &amp;&amp; (aTrack = GetFirstTrackOfType
+             (aMovie, TextMediaType)) != nil) {
+         aMediaHandler = GetMediaHandler(GetTrackMedia(aTrack));
+         if (aMediaHandler != nil)
+            SetTextProc(aMediaHandler, NewTextMediaProc(MyTextProc),
+               (long)aWindow);
+      }
+   }
+   return GetMoviesError();
+}</pre>
+<h2>SEARCHING FOR TEXT</h2>
+<p>
+One feature that should be provided in movies that have embedded text is the ability to<br>
+search for words. Consider a scenario where you're providing an interactive learning<br>
+experience. The video track of your QuickTime movie contains a play, and the text<br>
+track contains its script. Students can search for a particular scene just by searching<br>
+for a few words. If the play were Shakespeare's <i>Julius Caesar</i>, for example, searching<br>
+for "Lend me your ears" would find Marc Antony's speech at Caesar's funeral.
+</p>
+<p>
+Searching for text in a movie is a straightforward operation using QuickTime's<br>
+FindNextText routine (which is described on page 2-298 of <i>Inside Macintosh:</i><br>
+<i>QuickTime</i>). You can control the way this routine works by passing in the following<br>
+flags:
+</p>
+<ul>
+<li>    findTextWrapAround -- wraps the search around at the end or start of<br>
+the movie and continues searching for the text</li>
+<li>    findTextReverseSearch -- searches backward</li>
+<li>    findTextCaseSensitive -- makes the search case sensitive</li>
+</ul>
+<p>
+Under QuickTime 1.5 or 1.6, however, you shouldn't use all three of these flags<br>
+together in the same call; if you do, a bug will cause a bus error. You can work around<br>
+this by manually implementing a wrapped search. This was fixed in QuickTime 2.0.
+</p>
+<p>
+The sample code illustrates the use of FindNextText in the<br>
+DoSearchForStringInMovieWindow routine. This routine gets the movie controller and<br>
+its associated movie from the movie window. We pass in the text to search for, the<br>
+direction to search in, and whether to wrap the search. The sample code shows one way<br>
+of doing this with a simple dialog.
+</p>
+<p>
+The new routine MovieSearchText, which was added to the Movie Toolbox in QuickTime<br>
+2.0 and in QuickTime 2.0 for Windows, also aids in searching for text in a movie. It<br>
+can search any track that supports the text characteristic. (For a track to support the<br>
+text characteristic, it must implement the FindNextText and HiliteTextSample calls as<br>
+defined in the Movies.h file.) MovieSearchText is defined like this:
+</p>
+<pre>pascal OSErr MovieSearchText(Movie theMovie,
+   Ptr text, long size, long searchFlags,
+   Track *searchTrack, TimeValue *searchTime,
+   long *searchOffset);</pre>
+<p>
+In this definition, theMovie is the movie to search, text is a pointer to a block of text<br>
+that contains the search string, and size is the length of the search string in bytes. The<br>
+other parameters are as follows:
+</p>
+<ul>
+<li> searchFlags is a combination of findText flags as defined for media<br>
+handlers that support text and searchText flags that manage the higher-level<br>
+searching operation.</li>
+<li>    searchTrack is a pointer to the first track to search (or the only track,<br>
+if searchTextOneTrackOnly is set in searchFlags). If the text is found,<br>
+searchTrack will be updated to point to the track in which the text was found.<br>
+If nil is passed in for searchTrack or if it points to nil, the search will start<br>
+from the first track in the movie.</li>
+<li>    searchTime is a pointer to the movie time at which to start the current<br>
+search. If the text is found, searchTime will be updated to reflect the movie<br>
+time at which the text was found. If nil is passed in for searchTime or if it<br>
+points to -1, the current movie time will be used.</li>
+<li>    searchOffset is a pointer to the offset within the text sample (as defined<br>
+by searchTrack and searchTime) in which to start the search. If the text is<br>
+found, searchOffset will be updated to reflect the offset into the text sample<br>
+where the text was found. If nil is passed in for this parameter, an offset value<br>
+of 0 will be used.</li>
+</ul>
+<p>
+If MovieSearchText doesn't succeed in finding the search string because either there<br>
+were no text tracks in the movie or the text simply wasn't found, an error value is<br>
+returned.
+</p>
+<h2>EDITING TEXT</h2>
+<p>
+While the text media handler provides routines to add and delete text track segments, it<br>
+doesn't provide routines to edit the text contained in a text track. Most applications<br>
+won't need to edit text, but in case you're interested, this section looks at the Movie<br>
+Toolbox routines involved.
+</p>
+<p>
+The DoUpdateText routine in the sample code shows how the user can edit the text<br>
+contained in a movie's text track. The steps involved in this process are listed below,<br>
+and the code to accomplish these steps is shown in Listing 3. Note that error checking<br>
+isn't included in this simplified version of the sample code; you'll find the complete<br>
+code on this issue's CD.
+</p>
+<p>
+1. Determine which text track to edit.
+</p>
+<p>
+2. Determine the segment of the track to be edited. To do this we need to find<br>
+the start time and duration of the sample we want to edit.
+</p>
+<p>
+3. Delete the existing text using the start time and duration we've determined.
+</p>
+<p>
+4. Add the text from the TextEdit handle into the media, using the QuickTime<br>
+routine AddTESample (described on page 2-295 of <i>Inside Macintosh:</i><br>
+<i>QuickTime</i>). Then call the InsertMediaIntoTrack routine to insert the media we<br>
+just created into the track.
+</p>
+<p>
+Like all movie editing operations, editing text will cause the movie to become<br>
+fragmented. You should ensure that the final production version of your movie is<br>
+flattened; this will remove any fragmentation introduced by editing.
+</p>
+<p>
+<b>Listing 3. </b>The DoUpdateText routine, simplified version
+</p>
+<pre>// Step 1:
+
+// Get the text track; remember to check that it's not nil.
+aTrack = GetFirstTrackOfType(aMovie, TextMediaType);
+...
+
+// Step 2:
+
+// Get the media time of the current sample.
+mediaCurrentTime = TrackTimeToMediaTime(currentTime, aTrack);
+...
+// Get detailed information on start and duration of the current
+// sample (this is used later).
+MediaTimeToSampleNum(aMedia, mediaCurrentTime, &amp;mediaSampleIndex,
+   &amp;mediaSampleStartTime, &amp;mediaSampleDuration);
+...
+// Look back and find where this text starts.
+theErr = GetTrackNextInterestingTime(aTrack,
+         nextTimeMediaSample | nextTimeEdgeOK, currentTime,
+         -kFix1, &amp;interestingTime, nil);
+
+currentTime = interestingTime;
+
+// Determine the duration of this sample.
+theErr = GetTrackNextInterestingTime(aTrack,
+         nextTimeMediaSample | nextTimeEdgeOK, currentTime,
+         kFix1, &amp;interestingTime, &amp;theDuration);
+...
+
+// Step 3:
+
+// Tell the media that we're about to edit stuff.
+theErr = BeginMediaEdits(aMedia);
+...
+// Delete whatever was there before.
+theErr = DeleteTrackSegment(aTrack, interestingTime, theDuration);
+...
+
+// Step 4:
+
+// Write out the new data to the media.
+theErr = AddTESample(aMediaHandler, aTEH,
+         (RGBColor *)&amp;theTextColor, teFlushDefault, nil,
+         dfClipToTextBox, 0, 0, 0, nil, mediaSampleDuration,
+         &amp;sampleTime);
+...
+// Insert the new media into the track.
+theErr = InsertMediaIntoTrack(aTrack, interestingTime, sampleTime,
+    mediaSampleDuration, kFix1);
+...
+theErr = EndMediaEdits(aMedia);
+...</pre>
+<h2>NEW IN QUICKTIME 2.0: BURNT TEXT</h2>
+<p>
+QuickTime 1.6 introduced the capability for applications to apply special effects to the<br>
+text in text tracks, notably antialiased text and drop shadows. Antialiased text is<br>
+generally easier to read and looks more attractive than fonts rendered in the normal<br>
+manner. However, antialiasing text takes time, and the performance penalty that's<br>
+incurred playing movies with antialiased text tracks limits their usefulness.
+</p>
+<p>
+QuickTime 2.0 allows applications to prerender text tracks, with a new facility called<br>
+<i>burnt text.</i> Burnt text not only incurs less of a performance penalty than antialiased<br>
+text but also has the advantage that a font doesn't need to be installed on the target<br>
+machine in order to be rendered correctly. Applications that want to take advantage of<br>
+this facility need to write data to the movie file in the form of a number of new atoms;<br>
+for information on these additional atoms, see the file Text Imaging in QuickTime 2.0,<br>
+accompanying this column on the CD.
+</p>
+<h2>THAT'S ALL THERE IS TO IT</h2>
+<p>
+Adding text track support to QuickTime applications really makes sense. With just a<br>
+few lines of code, you can add a great deal of functionality. Most applications that use<br>
+text tracks won't need to support editing the text, but it's a good idea to support<br>
+searching because it provides an easy and powerful way of indexing into a movie<br>
+containing text tracks.
+</p>
+<p>
+Take a look at the sample code on the CD. It will help you get started with adding basic<br>
+searching to your applications and (if required) with more advanced text track<br>
+features, such as editing. Have fun!
+</p>
+<p>
+<b>NICK THOMPSON </b>(AppleLink NICKT) found his first job in a surfboard factory,<br>
+gluing wetsuits together. Then he scammed a job finishing custom surfboards.<br>
+Somewhere along the way he learned how to program, and he's been riding that wave<br>
+ever since. Last summer he&nbsp;&nbsp;snagged a job at Apple in Developer Technical Support and<br>
+moved from London to California. Now he dresses up in a neoprene seal suit on<br>
+weekends and goes shark fishing in the cold Pacific, armed only with a surfboard. (The<br>
+glue from his first job must have affected his brain.)
+</p>
+<p>
+<b>Thanks </b>to Ken Doyle, C. K. Haun, Peter Hoddie, Don Johnson, and John Wang for<br>
+reviewing this column.
+</p>
+</body>
+</html>

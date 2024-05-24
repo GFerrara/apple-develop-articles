@@ -1,0 +1,927 @@
+<html>
+<head>
+<!-- Article ID: 13 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 94 - DEBUGGING ON POWERPC</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>DEBUGGING ON POWERPC</h2>
+<h1>DAVE FALKENBURG AND BRIAN TOPPING</h1>
+<p>
+<img src="img/146.gif" width="180 px"></img>
+</p>
+<p>
+<i>Debugging on a PowerPC processor-based Macintosh is just like debugging on any</i><br>
+<i>other Macintosh, only different. You should bring along the debugging skills you</i><br>
+<i>carefully honed on 680x0-based machines but expect the mechanics of debugging to be</i><br>
+<i>easier thanks to the PowerPC two-machine debugger. We give you basic instructions</i><br>
+<i>and provide a sample program that you can crash like crazy while you learn to debug</i><br>
+<i>PowerPC code.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The most important thing to realize when you set out to develop (and hence debug) for<br>
+the PowerPC processor-based Macintosh is that this beast is still a Macintosh. Besides<br>
+having a 680x0 emulator, the CPU has a Macintosh Toolbox in ROM, low-memory<br>
+globals, a trap dispatcher, and 680x0 interrupt vectors. Since it retains so many<br>
+elements you know and love, you don't have to throw away any of what you've learned<br>
+about debugging with MacsBug, TMON, or any other debugger.
+</p>
+<p>
+On the other hand, if all the new Macintosh had up its sleeve were 680x0 emulation,<br>
+we wouldn't be writing this article. As described in "Making the Leap to PowerPC"<br>
+in<i>develop</i> Issue 16 and in the imminent<i>Inside Macintosh: PowerPC System Software</i> ,<br>
+the PowerPC runtime architecture is new and improved. A couple of new managers --<br>
+the Code Fragment Manager and the Mixed Mode Manager -- help bridge the software<br>
+gap between the 680x0 emulator and the PowerPC 601 microprocessor, and introduce<br>
+some new twists and turns in how code is loaded and executed.
+</p>
+<p>
+This article introduces you to the two-machine debugger developed for debugging<br>
+PowerPC code. It then lays down some debugging ground rules, describes the<br>
+circumstances in which your program might end up in the debugger, and discusses<br>
+extensions and dcmds old and new to assist you in debugging. Finally, it talks about how<br>
+to debug even in the absence of the debugger nub. 
+</p>
+<p>
+On this issue's CD you'll find CrashOMatic, a sample program you can use to explore<br>
+the debugger without risking your own code. CrashOMatic is designed to cause crashes<br>
+or demonstrate unusual aspects of PowerPC debugging. When launching CrashOMatic,<br>
+hold down the Control key to force the debugger to take control. 
+</p>
+<p>
+To experiment with debugging CrashOMatic and to develop and debug native PowerPC<br>
+applications, you'll need the Macintosh on RISC Software Developer's Kit (soon to be<br>
+available from APDA) or one of the other PowerPC development kits available from<br>
+third parties. The Macintosh on RISC Software Developer's Kit contains R2Db, an<br>
+MPW-based cross-compiler called PPCC, and other assorted tools used for building<br>
+PowerPC applications.
+</p>
+<h2>INTRODUCING R2DB</h2>
+<p>
+Apple's new debugger for the PowerPC processor-based Macintosh is called R2Db, for<br>
+"RISC two- machine debugger." (As this issue goes to press, the fate of this name is<br>
+undecided, so it may be different by the time you read this.) This modernized cross<br>
+between ReAnimator and SourceBug allows for single stepping, setting breakpoints,<br>
+and disassembling PowerPC code fragments. Like MacsBug, it's a systemwide low-level<br>
+debugger; unlike MacsBug, R2Db also enables source-level debugging and is designed<br>
+for debugging PowerPC applications. But as we hinted at earlier, you probably don't<br>
+want to throw away your MacsBug skills just yet. R2Db can be used in conjunction<br>
+with MacsBug, as explained in the section "Working With dcmds and MacsBug."
+</p>
+<p>
+<b>THE TWO-MACHINE SCHEME</b><br>
+R2Db is a two-machine debugger, as illustrated in Figure 1. The R2Db application<br>
+runs on the<i>host machine</i> , which can be any Macintosh at all, preferably one with a<br>
+large screen and enough CPU power to run a debugger built with MacApp 3.0. The part<br>
+of R2Db called the PPC Debugger Nub runs on the<i>target machine</i> , the PowerPC<br>
+processor-based Macintosh running the program you want to debug. The host machine<br>
+acts as a remote control panel for the target. The machines need to be connected by a<br>
+standard 8-pin printer cable. 
+</p>
+<p>
+Using two machines to debug code has several advantages. For one, a bug in your<br>
+application that locks up the keyboard can't bring your debugging to a halt. For<br>
+another, you can debug interrupt- level code without having to have incredible luck.<br>
+(Can you say "MacsBug caused the exception"?) Throughout the development of<br>
+Macintosh with PowerPC, the system software team relied on R2Db to debug such<br>
+nasty (but necessary) things as the Memory and Resource Managers. Running a<br>
+single-machine debugger on such shaky ground can lead to premature aging and the<br>
+loss of some motor functions.
+</p>
+<p>
+On the other hand, two-machine debugging has the disadvantage of requiring two<br>
+Macintosh systems. (Oh darn, I guess it's time to ask the boss for another Macintosh<br>
+Quadra.) Don't worry, though -- Apple (and others) are busy working on<br>
+single-machine debugging environments for those folks who develop on smaller<br>
+budgets. 
+</p>
+<p>
+<img src="img/147.gif" width="557 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1</b> The Two-Machine Debugging Scheme
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>R2DB BASICS</b><br>
+When you first launch R2Db, it presents a Standard File dialog box from which you<br>
+choose an xSYM file to use when debugging. If you've used SourceBug, you know that a<br>
+SYM file bundles together information about the application's source and object code<br>
+and enables the debugger to associate a range of machine-language instructions with a<br>
+line of C source code. The xSYM file is an extended version of the MPW SYM file that<br>
+supports both 680x0 and PowerPC code. To support debugging "fat" applications --<br>
+those with both 680x0 and PowerPC versions packaged together -- twodifferent kinds<br>
+of SYM files are needed: the SYM file for the 680x0 version and the xSYM file for the<br>
+PowerPC version.
+</p>
+<p>
+When a PowerPC application is being debugged at the source level, its xSYM file and all<br>
+its source code must be available on the machine running R2Db. Without the xSYM<br>
+file, your application can still be debugged, but not at the source level. 
+</p>
+<p>
+When you choose an xSYM file, the R2Db browser window appears. This window,<br>
+which will be familiar to users of Smalltalk or MacApp's Mouser, enables you to<br>
+examine source code by file and function. Choosing Go To Debugger from the Debug<br>
+menu makes the browser window look like the one shown in Figure 2. In the top left<br>
+corner, a list of source files is presented. When a source file is chosen, the functions<br>
+belonging to that file are listed in the top right corner. (Sorry, C++ fans -- there's<br>
+no object browsing in this release of R2Db.) The status of the target machine, along<br>
+with a few stepping controls, appears in a control palette.
+</p>
+<p>
+A small arrow points to the current instruction or line of code being executed.<br>
+Breakpoints can be set by clicking to the left of the source display; a small hexagonal<br>
+"stop sign" marks any breakpoints you've set. Double-clicking a breakpoint enables<br>
+you to choose from a myriad of useful variants on the traditional behavior. Finally,<br>
+you can switch between assembly and source views by using the pop-up menu at the<br>
+lower left of the display. To see exactly how the compiler translates your C code into<br>
+native PowerPC code, select a line of source code and then switch to the assembly view,<br>
+where it's highlighted. 
+</p>
+<p>
+<img src="img/148.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 2</b>The R2Db Browser During CrashOMatic Debugging
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Lurking under the R2Db menu bar are some useful commands, including commands to<br>
+get register displays, memory dumps, and even 680x0 disassembly. If you ever find<br>
+yourself stopped outside ofyour application, choose Show Instructions from the Views<br>
+menu to get a disassembly at the current point of execution. This can also be helpful<br>
+when debugging without an xSYM file.
+</p>
+<p>
+<b>R2DB IDIOSYNCRASIES</b><br>
+Like all things in life, R2Db has a couple of idiosyncrasies you should be aware of. 
+</p>
+<p>
+<b>Debugger versus SysBreak. </b>If you're familiar with SADE and SourceBug, you're<br>
+probably accustomed to using SysBreak and SysBreakStr to add high-level breakpoints<br>
+to your code. These functions aren't supported by R2Db, so you should use the familiar<br>
+Debugger and DebugStr calls that you would normally use with MacsBug or other<br>
+low-level debuggers. If a PowerPC debugger isn't installed, these calls are routed to<br>
+MacsBug for handling. If you prefer using MacsBug to inspect data structures or log<br>
+debugging messages, you can use the functions Debugger68k and DebugStr68k.
+</p>
+<p>
+<b>Memory Manager access faults. </b>Starting with the Macintosh IIci, Apple added a<br>
+hack to the existing Memory Manager to correctly support changes for 32-bit<br>
+addressing and NuBusTMexpansion cards.&nbsp;&nbsp;&nbsp;The change involved adding bus error<br>
+wrappers within several internal routines to automatically call StripAddress and<br>
+retry when a 24-bit handle is passed to the Memory Manager while the machine is<br>
+temporarily operating in 32-bit mode. These bus error wrappers don't exist on<br>
+68000 machines like the Macintosh Plus, SE, and Classic (a fine reason to test your<br>
+software on all sorts of machines).
+</p>
+<p>
+These handlers also mask a serious problem: fake handles, fake pointers, and fake heap<br>
+zones being passed to the Memory Manager. For Macintosh with PowerPC, the Memory<br>
+Manager has been completely rewritten and actually preserves this tolerant behavior<br>
+-- but with a twist. When any PowerPC debugger is installed, these Memory Manager<br>
+exceptions get routed through the debugger to point out the problem to the developer. 
+</p>
+<p>
+We would have added a "feature" to CrashOMatic so that you could see this behavior in<br>
+action, but fortunately it doesn't happen that often. Before examining the fields of a<br>
+handle or pointer block, the Memory Manager checks a magic cookie in the block as a<br>
+first guard against fake handles. If we were to contrive an example without setting that<br>
+magic cookie, the HLock call would still return an error code as it should; we just<br>
+wouldn't see the bus error handlers get hit. 
+</p>
+<p>
+There are, however, some applications in which you will see the bus error handlers<br>
+get hit. Open a file in ResEdit 2.1.1, for example, and you'll see access faults in R2Db.<br>
+Choose Propagate Exception from R2Db's Control menu and the Memory Manager will<br>
+clean up after ResEdit. 
+</p>
+<p>
+In future versions of Macintosh system software, this compatibility hack will be<br>
+removed. Consider yourself warned. 
+</p>
+<h2>GROUND RULES FOR DEBUGGING ON POWERPC</h2>
+<p>
+Before you start debugging your PowerPC application, you should commit the following<br>
+ground rules to memory. This will ensure that you get off on the right foot. 
+</p>
+<p>
+<b>Rule 1: Always use a nonoptimized build for source-level debugging.</b>RISC<br>
+C compilers radically reorder the sequence of instructions when generating optimized<br>
+code.&nbsp;&nbsp;&nbsp;This makes straightforward source-level debugging impossible -- imagine<br>
+single stepping to the next line of code and having the arrow move to a statement three<br>
+lines before where you just were.&nbsp;&nbsp;&nbsp;Following is a little program to demonstrate why<br>
+you don't want to do source-level debugging with an optimized build of your code unless<br>
+you really know what you're doing. Ignore the fact that "dude" is never initialized<br>
+before being used.
+</p>
+<pre>void main(void)
+{
+    long    counter, dude;
+    float fooVal = 1.0;
+
+    for (counter = 1; counter &lt; 1000; counter++)
+    {
+        fooVal = counter * fooVal;
+        dude++;
+    }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Below is the nonoptimized compiler output. (Incidentally, we compiled this program<br>
+using the IBM compiler; if you compile it with PPCC you'll see different results.)<br>
+Notice that the basic top-to- bottom structure of the C source is preserved. 
+</p>
+<pre>Main:
+    stw r31,-4(SP)      ;# Preserve nonvolatile registers (r31)
+    stwu    SP,-128(SP)     ;# Create stack frame
+
+;#  Variable initialization starts here.
+    lwz r31,xx(RTOC)    ;# Get address of a 1.0
+    stw r3,152(SP)      ;# Save r3 - we are going to use it
+    lfs fp1,0(r31)      ;# Put 1.0 in a register
+    stfs    fp1,56(SP)      ;# Put 1.0 into fooVal
+
+;#  The FOR loop starts here.
+    li      r3,1                ;# Get a 1
+    stw r3,60(SP)       ;# Put it in counter
+
+    liu r4,r0,0x4330    ;# Make floating-point version of counter
+    stw r4,96(SP)
+    cmpi    cr1,r3,1000     ;# (counter &lt; 1000)?
+    bgt cr1,Exit            ;# Goto end of loop
+
+;#  Body of the FOR loop starts here.
+Loop:
+    lwz r3,60(SP)       ;# Load counter into register
+    lfd fp2,8(r31)      ;# Make fp_version_of_counter from counter
+    xoris   r3,r3,0x8000
+    stw r3,100(SP)
+    lfd fp1,96(SP)
+    fsub    fp1,fp1,fp2
+    frsp    fp2,fp1
+
+    lfs fp1,56(SP)      ;# Get fp_version_of_counter
+    fmul    fp1,fp1,fp2 ;# fooVal = fooVal * fp_version_of_counter;
+    frsp    fp1,fp1
+    stfs    fp1,56(SP)
+
+    lwz r3,64(SP)       ;# dude++;
+    addic   r3,r3,1
+    stw r3,64(SP)
+
+    lwz r3,60(SP)       ;# counter++
+    addic   r3,r3,1
+    stw r3,60(SP)
+
+;#  Conditional test of FOR loop here.
+    cmpi    cr1,r3,1000     ;# if (counter &lt; 1000)
+    blt cr1,Loop            ;# goto loop
+
+Exit:
+    lwz r31,124(SP)     ;# Restore saved registers (r31)
+    addic   SP,SP,128       ;# Release stack frame
+    blr                     ;# Outta here!</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The optimized compiler output is shown below. Note the interleaving of instructions<br>
+used to initialize fooVal. Also note the radically different loop structure, which has no<br>
+straightforward correspondence to the C code -- counter is now zero-based and<br>
+decrements, fooVal is calculated in a totally different fashion, and dude is nowhere to<br>
+be found in the generated code. 
+</p>
+<pre>Main:
+    lwz r3,xxx(RTOC)        ;# Get address of a 1.0
+    li      r0,999          ;# counter = 999;
+    lfd fp1,8(r3)           ;# Finish fooVal = 1.0;
+    fmr fp0,fp1             ;# tmp = fooVal
+    mtspr   CTR,r0          ;# CTR = counter
+Loop:
+    fadd    fp0,fp0,fp1     ;# tmp = tmp + fooVal
+    bdnz    loop            ;# CTR--; if (CTR != 0) goto loop
+    blr                     ;# Outta here!</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The moral of this story is that if you want to debug your application by looking at<br>
+source code, you should create a special version compiled<i>without</i>&nbsp;&nbsp;optimization turned<br>
+on. (Of course, the version you ship should be optimized.) If you can't cause the<br>
+problem to occur with compiler optimizations turned off, you'll need to become<br>
+familiar with debugging techniques involving animal or human sacrifice (or just learn<br>
+to love reading optimized PowerPC assembly language). 
+</p>
+<p>
+<b>Rule 2: Enable generation of symbol information by the compiler.</b>It's also<br>
+important at build time to enable generation of symbol information by the compiler.<br>
+This is analogous to "-sym on" and "-mbg on" for 680x0. The extra information<br>
+generated is used by the MPW tools Link and MakeSYM to create the xSYM file that<br>
+R2Db uses to enable source-level debugging. Here's a makefile to build a simple<br>
+PowerPC program using PPCC (with debugging extras in boldface):
+</p>
+<pre>APPNAME =  CrashOMatic
+APPOBJECTS  =  CrashOMatic.o
+PPCC = PPCC</pre>
+<pre>PPCCOPTIONS = -w conformance -appleext on</pre>-sym on -opt off
+<p class="spacer">&nbsp;</p>
+<pre>PEFOPTIONS = -ft 'APPL' -fc 'GDed'
+LIBEQUATES = -l InterfaceLib.xcoff=InterfaceLib&#8706;
+-l StdCLib.xcoff=StdCLib &#8706;
+-l MathLib.xcoff=MathLib</pre>
+<pre>{APPNAME} &#402;&#402; {APPOBJECTS}</pre>
+<pre>PPCLink -warn</pre> -sym on
+<pre> &#8706;
+{APPOBJECTS} &#8706;
+"{PPCLibraries}"InterfaceLib.xcoff &#8706;
+"{PPCLibraries}"StdCLib.xcoff &#8706;
+"{PPCLibraries}"MathLib.xcoff &#8706;
+"{PPCLibraries}"StdCRuntime.o &#8706;
+"{PPCLibraries}"PPCCRuntime.o &#8706;
+-o {APPNAME}.xcoff
+# Create PEF executable from linker output
+makepef {APPNAME}.xcoff -o {APPNAME} {LIBEQUATES} {PEFOPTIONS}
+# Rez in 'cfrg' (0) resource</pre>
+<pre>rez {APPNAME}.r -a -o {APPNAME}</pre> # Create xSYM file for debugging
+makesym -o {APPNAME}.xSYM{APPNAME}.xcoff<br>
+<pre>CrashOMatic.o &#402; CrashOMatic.c
+{PPCC} {PPCCOPTIONS} CrashOMatic.c -o CrashOMatic.o</pre>
+<p>
+<b>Rule 3: Always test with virtual memory both on and off.</b><br>
+Macintosh developers have long been used to having free access to any bits in memory,<br>
+whether they contain code, data, or teachings of the illuminati. Meanwhile, users have<br>
+been complaining that the Macintosh doesn't offer "modern" features like protected<br>
+memory. The first release of System 7 for the PowerPC microprocessor includes the<br>
+ability to protect PowerPC application code from errant write instructions; however,<br>
+write protection is enabled only when virtual memory is turned on. 
+</p>
+<p>
+In addition, several PowerPC C compilers create string constants and initialized<br>
+arrays in read-only sections by default. Modifying these values from your program<br>
+will cause an access fault. For instance, it's surprisingly easy to write the following:
+</p>
+<pre>DebugStr(C2PStr("Hello, world"));</pre>
+<p>
+Because C2PStr modifies a string in place, your program will attempt to write into<br>
+the read-only storage where "Hello, world" lives. There are compiler options to turn<br>
+this feature off, but we don't recommend them.
+</p>
+<p>
+The stricter runtime environment isn't the only reason to make sure that your<br>
+software works properly when virtual memory is active. PowerPC programs are<br>
+usually larger than their 680x0 cousins, so the likelihood of a user's enabling virtual<br>
+memory on a PowerPC machine is much higher than on an earlier Macintosh. Apple has<br>
+been telling you to be virtual-memory compatible for years.&nbsp;&nbsp;&nbsp;Just do it now and your<br>
+customers will thank all of us later when Apple can release a protected- memory,<br>
+preemptive multitasking version of the Macintosh operating system without breaking<br>
+any of their favorite applications. 
+</p>
+<p>
+<b>Rule 4: Don't write self-modifying code.</b><br>
+Unlike its later siblings the 603 and the 604, the PowerPC 601 has a merged data and<br>
+instruction cache, which makes it much easier to write self-modifying code without<br>
+getting caught. Remember all those 68040 compatibility problems you had when the<br>
+Macintosh Quadra first came out? Don't forget what you learned. Also remember that<br>
+writing to application code will cause an access fault in any PowerPC application when<br>
+virtual memory is active. 
+</p>
+<p>
+Use the Code Fragment Manager to load all executable code. The Code Fragment Manager<br>
+will take care of invalidating instruction caches (and flushing data caches) in an<br>
+efficient manner on later versions of the PowerPC chip. If you're one of those crazed<br>
+folks who still wants to write "structs" of code, custom-compiled shape blitters, or<br>
+stub defprocs, be forewarned that you do so at your own risk. 
+</p>
+<p>
+With the ground rules laid, it's time to look at the reasons why your application might<br>
+end up in the debugger. 
+</p>
+<h2>EXCEPTIONAL CIRCUMSTANCES</h2>
+<p>
+Just like the 680x0, the PowerPC microprocessor has a list of things it can't handle<br>
+without the help of developers like you. Any program can come to a screeching halt as a<br>
+result of any of the following exceptions. (Note that these are hardware exceptions, as<br>
+opposed to the software exceptions discussed in the article "Living in an Exceptional<br>
+World" in<i>develop</i> Issue 11.)
+</p>
+<pre>illegalInstructionException</pre>
+<p>
+You executed some code that wasn't code. This usually happens when you accidentally<br>
+call 680x0 code without using CallUniversalProc or one of its macro shortcuts. 
+</p>
+<pre>trapException</pre>
+<p>
+A trap instruction that the debugger didn't know about was encountered. The most<br>
+likely cause is hitting a developer-inserted debug trap.
+</p>
+<pre>accessException</pre>
+<p>
+This PowerPC version of a bus error usually occurs when a memory access was made<br>
+in never-never land. You might encounter the fabled address 0xDEADBEEF in an access<br>
+exception; someone (probably the same person who came up with the eieio<br>
+instruction) decided it would be cool to initialize registers with this weird value to<br>
+help you understand that you probably used an uninitialized variable.
+</p>
+<pre>readOnlyMemoryException</pre>
+<p>
+As mentioned earlier, when virtual memory is active, application code is mapped<br>
+read-only for your protection. You may also see this exception when errant PowerPC<br>
+code attempts to write to ROM.&nbsp;&nbsp;&nbsp;Sometimes this exception masquerades as a generic<br>
+access exception. 
+</p>
+<pre>privilegeViolationException</pre>
+<p>
+Remember how users wanted protected memory? Part of ensuring this capability in a<br>
+future Macintosh is ensuring that nobody writes code that can mess with the operating<br>
+system behind its back. Learn to live with it -- the users who pay you want things this<br>
+way. For a list of privileged instructions that you should avoid in your application,<br>
+check out the<i>PowerPC 601 RISC Microprocessor User's Manual</i> . (By the way, even<br>
+the debugger and the 680x0 emulator are written using only user- level<br>
+instructions.)
+</p>
+<pre>traceException</pre>
+<p>
+If the debugger goes astray, you may see this exception. It's pretty tough to cause. 
+</p>
+<p>
+In a departure from 680x0 Macintosh applications, PowerPC applications can attempt<br>
+to field these exceptions before the dreaded bomb is emblazoned on the user's screen,<br>
+without resorting to low- memory antics. Using the Exception Manager (new on the<br>
+Macintosh with PowerPC) it's possible to catch memory faults, illegal instructions,<br>
+and other faults within your application. 
+</p>
+<p>
+If you encounter an exception inside R2Db and would like to give the application a<br>
+crack at fixing things, you can choose the Propagate Exception command from the<br>
+Control menu.&nbsp;&nbsp;With some work, it's even possible to debug your application's<br>
+exception handler.
+</p>
+<h2>USING OLD TRICKS IN THE NEW WORLD</h2>
+<p>
+Experienced developers know that extensions (such as Double Trouble and Dispose<br>
+Resource) and dcmds (such as<b>rd</b>,<b> file</b>,<b> drive</b>, and<b> driver</b>) make the job of<br>
+debugging go much more quickly. Most of the existing MacsBug extensions and dcmds<br>
+work in the PowerPC world much as you would expect, but you should be aware of a<br>
+few caveats.
+</p>
+<p>
+<b>WORKING WITH DEBUGGING EXTENSIONS</b><br>
+Tried-and-true debugging extensions install 680x0 code that will be emulated. When<br>
+they detect a problem, they may behave differently depending on whether they're<br>
+discipline-style extensions or memory-modification extensions.
+</p>
+<p>
+Discipline-style extensions are extensions that patch traps to check parameters to<br>
+calls for validity.&nbsp;&nbsp;&nbsp;Since the code that patches into the trap is emulated and signals<br>
+failure via a 680x0 DebugStr trap, MacsBug is entered during a failure.
+</p>
+<p>
+Memory-modification extensions such as EvenBetterBusError work by causing a bus<br>
+error (also known as an access fault) in the problem program. You should remember<br>
+that EvenBetterBusError works by setting the value at location 0 to be an illegal<br>
+instruction, an illegal address, and an odd address, all in one 4-byte value. This<br>
+catches lots of programs that accidentally use stale data in empty handles and nil<br>
+pointers returned by NewPtr. 
+</p>
+<p>
+Through the magic of emulation, EvenBetterBusError works as before for 680x0<br>
+applications.&nbsp;&nbsp;&nbsp;Because EvenBetterBusError causes the problem to surface within the<br>
+application (and notMacsBug), the bus error exception is thrown to the application's<br>
+exception handler. If no exception handler is installed, control is passed to the PPC<br>
+Debugger Nub. As with all PowerPC exceptions, if the debugger nub isn't installed, the<br>
+PowerPC system software generates a 68000 "spurious interrupt" exception, which<br>
+is caught by MacsBug. We'll come back to this in the section "Debugging Without the<br>
+Debugger Nub."
+</p>
+<p>
+<b>WORKING WITH DCMDS AND MACSBUG</b><br>
+Because R2Db does have its shortcomings (mostly due to lack of maturity), it gives<br>
+you a way to enter MacsBug -- by choosing Enter MacsBug from the Extras menu. This<br>
+enables you to use almost any Macintosh debugging trick in the PowerPC world. You<br>
+might want to do this, for instance, to gain access to commands that display data in<br>
+forms not yet available in R2Db. For more information on how the old and new worlds<br>
+coexist in a compatible yet forward-thinking manner, see "Traps and the PowerPC<br>
+InterfaceLib: More Than You Want to Know."
+</p>
+<p>
+When in MacsBug, you need to remember that you got there as a result of a Mixed Mode<br>
+transition to a 680x0 R2Db subroutine that contains a 680x0 DebugStr, and nothing<br>
+more. You can look and touch, but you can't step. Stepping will only walk you into the<br>
+hands of the Mixed Mode monster, returning control to the PPC Debugger Nub and<br>
+upward to R2Db. It's more dignified to return to R2Db when you choose to, by typing<br>
+"G."
+</p>
+<p>
+Be aware that the step-and-check commands such as<b>step spy</b> work only while the<br>
+emulator is active.&nbsp;&nbsp;&nbsp;This is because they rely on 680x0 trace vectors or 680x0<br>
+breakpoints. The emulator is good enough to oblige MacsBug when between emulated<br>
+instructions, but remember that the PowerPC microprocessor pays no attention to<br>
+such things. This changes the definition of these commands from "do<i>neato thing you</i><br>
+<i>really like</i> after each instruction" to "do<i>neato thing you really like</i> after each 680x0<br>
+instruction." The difference is subtle but important, as illustrated by the following<br>
+example. 
+</p>
+<p>
+Choose Step Spy from the Debug menu in CrashOMatic; this will bring up a dialog<br>
+where you can type an address to spy on. Then choose Clobber from the Debug menu,<br>
+which will bring up a dialog in which you type the same address. MacsBug will know<br>
+that the memory got hit, but it won't know who hit it. Since the subroutine that did the<br>
+clobbering and everything else back out to the main event loop is PowerPC code,<br>
+the<b>step spy</b> won't get hit until the next call to the emulator (usually a Toolbox<br>
+trap), in this case WaitNextEvent. You may be thinking, "Funny, it looks like there's<br>
+no way that the previous instruction could have done that much damage," but<br>
+remember that a lot of PowerPC code could have executed in the meantime. 
+</p>
+<p>
+Another funny thing about the 680x0 emulator is the way in which trap dispatching is<br>
+performed for emulated code. To gain an immense performance boost, if the emulator<br>
+recognizes that the A-line exception vector points at the ROM trap dispatcher, it takes<br>
+some shortcuts and runs its own superfast version. Unfortunately, doing an<b>atb</b> in<br>
+MacsBug modifies this behavior and throws the emulator into low gear. Just for fun,<br>
+try doing an<b>atb</b> _Chain (a trap that never gets called) and see how much your machine<br>
+slows down. 
+</p>
+<p>
+Speaking of<b>atb</b>, the way PowerPC code calls Macintosh traps makes this dcmd almost<br>
+useless for PowerPC debugging. Remember that<b>atb</b> works by replacing the ROM trap<br>
+dispatcher with its own version, but because all PowerPC calls to the Toolbox are<br>
+invoked via Mixed Mode and not the 680x0 emulator trap dispatcher, the new<br>
+dispatcher is never invoked. Unfortunately, the same is true for<b> atr</b>. Fortunately,<br>
+there is a fix for this in the form of a new dcmd. 
+</p>
+<h2>TRAPS AND THE POWERPC INTERFACELIB: MORE THAN YOU<br>
+WANT TO KNOW</h2>
+<p>
+Why would you want to use MacsBug and R2Db at the&nbsp;&nbsp;same time? As mentioned<br>
+earlier, Macintosh with PowerPC still has the familiar A-line trap dispatcher present<br>
+on earlier Macintosh models. With the advent of system-supported shared libraries, it<br>
+may seem strange to still support the trap dispatcher. Two main reasons motivated the<br>
+use of the trap table by the PowerPC native toolbox: support should be provided for<br>
+systemwide patching to preserve compatibility with existing System 7.x-friendly<br>
+system extensions; and existing 680x0 software should be able to access<br>
+PowerPC-accelerated Toolbox managers like QuickDraw.
+</p>
+<p>
+Toolbox accelerations such as PowerPC QuickDraw are implemented by using<br>
+NSetTrapAddress to patch out the 680x0 implementation with a PowerPC subroutine<br>
+wrapped by a Mixed Mode routine descriptor. This allows existing 680x0 software to<br>
+call PowerPC code in an application-transparent fashion.
+</p>
+<p>
+&nbsp;On the other side of the coin, PowerPC applications must be able to call patchable<br>
+versions of the Macintosh Toolbox. This is accomplished by building an interface<br>
+library that calls through the trap dispatch table via CallUniversalProc, as illustrated<br>
+below.
+</p>
+<p>
+&nbsp;Understanding the behavior shown in the illustration is useful for debugging now, but<br>
+in the future several new managers will be released that don't use this bizarre<br>
+mechanism (most notably QuickDraw GX and the Thread Manager). For future<br>
+compatibility, don't rely on this behavior.
+</p>
+<p>
+<img src="img/149.gif" width="548 px"></img>
+</p>
+<h2>NEW EXTENSIONS AND DCMDS</h2>
+<p>
+&nbsp;So far we've looked only at extensions and MacsBug dcmds created for the 680x0<br>
+environment. As you'd expect, many more have been created for debugging the changes<br>
+that came with the PowerPC technology. In this section we look at some of the most<br>
+important ones. These dcmds were created by the PowerPC development team to aid in<br>
+the construction of Macintosh with PowerPC and are provided on this issue's CD in a<br>
+completely unsupported and barely documented fashion. If they weren't so useful, the<br>
+people in charge probably wouldn't let us give them to you. 
+</p>
+<p>
+<b>&nbsp;atbv</b> Given a trap name,<b>atbv</b>sets a breakpoint on the trap vector so that both<br>
+emulated and PowerPC callers can be intercepted by the debugger. Unlike<b>atb</b>, it<br>
+doesn't ignore PowerPC callers or affect the emulator's ability to run at full speed. 
+</p>
+<p>
+<b>&nbsp;brp</b> The dcmd<b>brp</b>stands for "breakpoint PowerPC." Given an address,<b>brp</b> will set a<br>
+one-time breakpoint at the address in R2Db. Unlike<b>br</b>, its 680x0 cousin, the<br>
+breakpoint set by<b>brp</b>is cleared once it's been hit.&nbsp;&nbsp;<b>cfm</b>All code must be loaded by the<br>
+Code Fragment Manager before it can be executed. The dcmd<b>cfm</b>displays the Code<br>
+Fragment Manager contexts of loaded PowerPC code and is thus a very powerful way to<br>
+find exactly where an address lives. This dcmd is case sensitive. 
+</p>
+<p>
+Typing "cfm" all by itself gives a dump that looks like this:
+</p>
+<pre>CFM Info for all loaded fragments:
+  contextID = 3: heapZone = 004cbe00 processName = "DiaTim"
+   connID=3: 'DiaTim'#0; file (v=-1,d=232) "DiaTim" @ 0:#12592
+      inf = 'peff','pwpc', sym = #0, use = 1, pef = 004cddf0, flg = 20
+      sect 0: @ 004ce3a0-004d0e78, exec, use = 1, len = #10968
+      sect 1: @ 004d36e0-004d6240, writ, use = 1, len = #11104
+   connID=4: 'InterfaceLib'#0; inMem @ 409f3690:#214592
+      inf = 'peff','pwpc', sym = #2466, use = 1, pef = 409f3690,
+          flg = 00
+      sect 0: @ 40a03ac0-40a268ec, exec, use = 2, len = #142892
+      sect 1: @ 000143c0-0001b744, writ, use = 2, len = #29572</pre>
+<p>
+The entire dump shows many more libraries. All loaded code fragments, including<br>
+shared libraries and applications, are listed. Every application running, whether<br>
+emulated or PowerPC code, is provided with a Code Fragment Manager context ID.<br>
+Individual code fragments, which include the application itself and any referenced<br>
+shared libraries, are loaded into this context. The listing above shows that the<br>
+application DiaTim has a code fragment context ID of 3, has a single executable (exec)<br>
+code section and a writable (writ) data section, and references a shared library called<br>
+InterfaceLib. 
+</p>
+<p>
+Typing "cfm" followed by a name will dump the code fragment with that name, plus the<br>
+libraries it references. Remember that PowerPC applications are fragments, so this is<br>
+quite useful for seeing only the fragments associated with your program. (In this<br>
+example and the others that follow, what you type is shown in italic.)
+</p>
+<p>
+<i>cfm DiaTim</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>CFM Info for fragment named "DiaTim"
+  contextID = 3: heapZone = 004cbe00 processName = "DiaTim"
+   connID=3: 'DiaTim'#0; file (v=-1,d=232) "DiaTim" @ 0:#12592
+      inf = 'peff','pwpc', sym = #0, use = 1, pef = 004cddf0, flg = 20
+      sect 0: @ 004ce3a0-004d0e78, exec, use = 1, len = #10968
+      sect 1: @ 004d36e0-004d6240, writ, use = 1, len = #11104</pre>
+<p>
+<b>dis</b>The dcmd<b>dis</b>is like<b> il</b>for PowerPC instructions. Given an address that points to<br>
+code,<b>dis</b>disassembles the PowerPC instructions at that address. 
+</p>
+<p>
+<i><code>dis 409cdf28</code></i>
+</p>
+<p><table border="0"><tr><td><code>409cdf28</code></td><td><code>mfspr</code></td><td><code>r0,LR</code></td><td><code>| 7c0802a6</code></td></tr>
+<tr><td><code>409cdf2c</code></td><td><code>stwu</code></td><td><code>SP,0xffffffc0(SP)</code></td><td><code>| 9421ffc0</code></td></tr>
+<tr><td><code>409cdf30</code></td><td><code>stw</code></td><td><code>r0,0x48(SP)</code></td><td><code>| 90010048</code></td></tr>
+<tr><td><code>409cdf34</code></td><td><code>ori</code></td><td><code>r6,r3,0x0000</code></td><td><code>| 60660000</code></td></tr>
+<tr><td><code>409cdf38</code></td><td><code>addis</code></td><td><code>r4,r0,0x0003</code></td><td><code>| 3c800003</code></td></tr>
+<tr><td><code>409cdf3c</code></td><td><code>addis</code></td><td><code>r0,r0,0x0001</code></td><td><code>| 3c000001</code></td></tr>
+<tr><td><code>409cdf40</code></td><td><code>addic</code></td><td><code>r4,r4,0x3932</code></td><td><code>| 30843932</code></td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>drd and pp</b>The dcmds<b>drd</b> and<b> pp</b> are used to examine the contents of a Mixed Mode<br>
+routine descriptor. The<b>drd</b>dcmd, which stands for "display routine descriptor," is<br>
+used to examine how a given trap is patched with PowerPC code.
+</p>
+<p>
+<i>drd NewHandle</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>drd: 00064ad0
+  MixedModeMagic: 0xAAFE, version: #7, flags: 0x00 (NotIndexable)
+  LoadLoc: 0x00000000, reserved2: 0x00000000, SelectorInfo: 0x00
+     (No Selector)
+  Routine Count (zero-based): 0x0000 (#0)
+  ---- Routine Record 0x0000 (#0) at 0x00064adc ----
+      ProcInfo: 0x00033132, Reserved1: 0x00000000, ISA: #1 (PowerPC)
+      Record Flags: 0x0004 (Absolute, IsPrepared, NativeISA,
+          PassSelector, IsNotDefault)
+      ProcPtr: 0x00064458, offset: 0x00000000, selector: 0x00000000</pre>
+<p>
+Included in this information about the routine descriptor is the procInfo value, which<br>
+describes the calling conventions, and the procPtr, which is the address of a transition<br>
+vector. Using<b>pp</b>, which stands for "parse procInfo," we can convert a procInfo value<br>
+into a more readable form. 
+</p>
+<p>
+<i>pp 33132</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>ProcInfo: 00033132
+-----------------------------
+  Calling Convention: 0x02 (#2) Register Based
+  Return value: 4 Bytes in Register A0
+  Parameter 1: 2 Bytes in Register D1
+  Parameter 2: 4 Bytes in Register D0</pre>
+<p>
+Finally, we can use our old friend<b>dis</b> to look at the code, remembering that a PowerPC<br>
+procPtr is a pointer to a pointer to code (hence the extra caret in the following). 
+</p>
+<p>
+<i><code>dis 64458^</code></i>
+</p>
+<p><table border="0"><tr><td><code>40a9cb24</code></td><td><code>mfspr</code></td><td><code>r0,LR</code></td><td><code>| 7c0802a6</code></td></tr>
+<tr><td><code>40a9cb28</code></td><td><code>stmw</code></td><td><code>r26,0xffffffe8(SP)</code></td><td><code>| bf41ffe8</code></td></tr>
+<tr><td><code>40a9cb2c</code></td><td><code>stw</code></td><td><code>r0,0x8(SP)</code></td><td><code>| 90010008</code></td></tr>
+<tr><td><code>40a9cb30</code></td><td><code>stwu</code></td><td><code>SP,0xfffffe90(SP)</code></td><td><code>| 9421fe90</code></td></tr>
+<tr><td><code>40a9cb34</code></td><td><code>lwz</code></td><td><code>r30,0x0(TOC)</code></td><td><code>| 83c20000</code></td></tr>
+<tr><td><code>40a9cb38</code></td><td><code>rlwinm</code></td><td><code>r29,r3,0,16,31</code></td><td><code>| 547d043e</code></td></tr>
+<tr><td><code>40a9cb3c</code></td><td><code>addic</code></td><td><code>r6,SP,0x004c</code></td><td><code>| 30c1004c</code></td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>findsym</b>Typing "findsym" followed by a symbol name gives specific information about<br>
+an exported symbol.
+</p>
+<p>
+In the following example, we see that NewHandle lives in ROM at address 40a0d5d0<br>
+(your results will vary), has a TOC value of 1b704, and occupies the shared library<br>
+called InterfaceLib. 
+</p>
+<p>
+<i>findsym NewHandle</i>
+</p>
+<pre>findsym: "NewHandle"
+  "NewHandle" #952 TVec 00015f10 (40a0d5d0,0001b704)
+  in "InterfaceLib" (1,4)</pre>
+<p>
+<b>frown</b>The dcmd<b>frown</b>, which stands for "fragment ownership," is similar to<b>wh</b> in<br>
+MacsBug but is used to display the code fragment and closest exported routine name<br>
+associated with a given address. Unlike<b>wh</b>,<b> frown</b>doesn't give you any information<br>
+about where an address is located within a Memory Manager heap. 
+</p>
+<p>
+<i>frown 40a0d5d0</i>
+</p>
+<pre>frown: 40a0d5d0
+is owned by: section #0 (exec,non-writ) of "InterfaceLib"
+is near: "NewHandle" #952 TVec 00015f10 (40a0d5d0,0001b704)</pre>
+<p>
+<b>r2db</b>The dcmd<b>r2db</b>allows you to enter R2Db from MacsBug. It's the complement of<br>
+R2Db's Enter MacsBug command. But because Enter MacsBug executes a _Debugger<br>
+trap, it isn't the greatest ideato use<b> r2db</b>as a way of getting back to R2Db -- MacsBug<br>
+and R2Db aren't reentrant in all cases.&nbsp;&nbsp;&nbsp;Instead, the best way to get back to R2Db is by<br>
+typing a simple "G" in MacsBug. 
+</p>
+<p>
+<b>scp</b>The dcmd<b>scp</b> stands for "stack crawl PowerPC." Given an address, it will unwind<br>
+PowerPC stack frames to display a calling sequence. This dcmd doesn't understand<br>
+Mixed Mode switch frames, so it may not prove useful in the general case. 
+</p>
+<p>
+<b>tdp</b>The dcmd<b>tdp</b> stands for "total dump PowerPC." Much like its MacsBug sibling<b>td</b>,<br>
+<b>tdp</b> displays all the registers from the PowerPC context. This is useful for looking at a<br>
+crash when the PPC Debugger Nub isn't installed. 
+</p>
+<h2>DEBUGGING WITHOUT THE DEBUGGER NUB</h2>
+<p>
+Believe it or not, you can remove the PPC Debugger Nub and still debug your code.<br>
+While this isn't the optimal debugging environment, you may find yourself in it in the<br>
+future, and it's good to be prepared.
+</p>
+<p>
+The basic problem is to understand the context that the unhandled native exception will<br>
+put you in, what values are a good reflection on the native execution context, and how<br>
+to reconstruct what happened in your mind. 
+</p>
+<p>
+Remove the debugger nub from your System Folder and reboot. Then launch<br>
+CrashOMatic and choose the Bus Error command from the Debug menu. This will drop<br>
+you into MacsBug with a spurious interrupt. MacsBug has no idea what a PowerPC<br>
+exception frame looks like and makes this not-so-great guess as to the cause of your<br>
+problem. 
+</p>
+<p>
+Start the attack by looking at the native context. (You may need the<i>PowerPC 601 RISC</i><br>
+<i>Microprocessor User's Manual</i> handy if you haven't done much of this yet.) Type "tdp"<br>
+to get a dump that will show you the context of the native machine. 
+</p>
+<pre>Spurious Interrupt or Uninitialized Interrupt Vector at
+00643762 while fetching instructions from FFFFFFFE and 00000000
+while reading word from 20104802 in F</pre>
+<p>
+<i>tdp</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<pre>  PowerPC registers from context block
+   PC = 08c877e0  LR = 08c87cf0 CR = 24000004
+  CTR = 409EEE18 XER = 20000010
+   r0 = 000225F8  r8 = 08CA4908 r16 = 00000000 r24 = 00000000
+   r1 = 08D93DDA  r9 = 00000000 r17 = 00000000 r25 = 409DF150
+   r2 = 00022904 r10 = 0003AB30 r18 = 46810000 r26 = 00133002
+   r3 = deadbeef r11 = 409EEE18 r19 = 00000000 r27 = 00000002
+   r4 = deadbeef r12 = 6802D764 r20 = 00000000 r28 = 08D93DDA
+   r5 = 68FFF740 r13 = 68FFF400 r21 = 00000000 r29 = 0008C838
+   r6 = 00000000 r14 = 00000000 r22 = 48400000 r30 = 0008C82C
+   r7 = 08CA4808 r15 = 00000000 r23 = 00000000 r31 = 68FFF740</pre>
+<p>
+The PowerPC runtime environment specifies that R1 is used as the stack pointer and<br>
+that the return address is kept inside the link register, LR. If we<b>dis</b> at the PC, we can<br>
+see that we're inside the routine doWithoutProtection. 
+</p>
+<p>
+<i>dis 8c877e0</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<pre> doWithoutProtection+34
+   +0034 08c877e0 lwz r5,0x0(r4) | 80a40000
+   +0038 08c877e4 stw r5,0x3c(SP) | 90a1003c
+   +003c 08c877e8 b doWithoutProtection+58 | 4800001c
+   +0040 08c877ec lha r6,0x5a(SP) | a8c1005a +0044 08c877f0
+             cmpi 0,r6,0x0005 | 2c060005
+   +0048 08c877f4 bc BO_IF,CR0_EQ,doWithoutProtection+20 | 4182ffd8
+   +004c 08c877f8 lha r7,0x5a(SP) | a8e1005a
+   +0050 08c877fc cmpi 1,r7,0x0004 | 2c870004
+   +0054 08c87800 bc BO_IF,CR1_VX,doWithoutProtection+30 | 4186ffdc
+   +0058 08c87804 lwz r0,0x48(SP) | 80010048
+   +005c 08c87808 addic SP,SP,0x0040 | 30210040
+   +0060 08c8780c mts LR,r0 | 7c0803a6
+   +0064 08c87810 bclr BO_ALWAYS,CR0 | 4e800020</pre>
+<p>
+Of course, it's pretty easy to debug a rigged example, but nonetheless it's a valuable<br>
+experience to get practice reading hex dumps of PowerPC stack frames inside MacsBug.<br>
+This actually has some historical significance, in that many folks (in the original<br>
+generation of programmers) debugged problems almost exclusively through large<br>
+printed stacks of octal numbers known affectionately as "dumps." Now a new<br>
+generation of hackers can learn how difficult life was when their bosses not only<br>
+programmed with toggle switches but also had to walk to school through a snowstorm,<br>
+uphill -- both ways. 
+</p>
+<h2>NOW BUG OFF!</h2>
+<p>
+For more interesting examples of hybrid debugging, check out the Debug menu in<br>
+CrashOMatic.&nbsp;&nbsp;&nbsp;Included at no extra charge are examples of using the PowerPC<br>
+Exception Manager to do strange and exciting things with your program. We hope that<br>
+these hints and techniques will help you debug your PowerPC application in less time<br>
+than it took us to write this article. 
+</p>
+<p>
+<b>REFERENCES</b>
+</p>
+<ul>
+<li>"Making the Leap to PowerPC" by Dave Radcliffe, <i> develop</i>  Issue 16.</li>
+<li>"Macintosh Debugging: The Belly of the Beast Revisited" by Fred Huxham<br>
+and Greg Marriott, <i> develop</i> Issue 13.</li>
+<li>"Macintosh Debugging: A Weird Journey Into the Belly of the Beast" by<br>
+Bo3b Johnson and Fred Huxham,<i>develop</i>&nbsp;&nbsp;Issue 8.</li>
+<li>Macintosh Technical Note "Memory Manager Compatibility" (Memory<br>
+13).</li>
+<li><i>Inside Macintosh: PowerPC System Software</i>  (Addison-Wesley, 1994).</li>
+<li><i>PowerPC 601 RISC Microprocessor User's Manual</i>  (Motorola, 1993).</li>
+</ul>
+<p>
+<b>DAVE FALKENBURG</b> (falken@apple.com on the Internet) begins his ideal day with<br>
+French toast&nbsp;&nbsp;at Angelo's, continues with a #54 (poached chicken, Vermont cheddar,<br>
+cucumbers, and ranch dressing grilled on challah) at Zingerman's, and ends at<br>
+Metzger's with a large portion of brown food served with beer. Between culinary<br>
+experiences he sandwiches in some work for the Macintosh Low-Level Toolbox Group<br>
+at Apple. He just bought a house in California, so a trip back to Ann Arbor is probably<br>
+out of the question. Dave has no pets with hair. *
+</p>
+<p>
+<b>BRIAN TOPPING </b>spends most of his days as part of the PowerPC team at Apple<br>
+sandblasting the Memory Manager and debugging his Porsche 911. He's easily amused<br>
+by such things as the kind of people who put Kleenex boxes in the back window of their<br>
+cars and likes to exercise on weekends in mosh pits. He's currently as young as he'll<br>
+ever be. *
+</p>
+<p>
+<b>To brush up on your debugging skills, </b>see "Macintosh Debugging: A Weird<br>
+Journey Into the Belly of the Beast" in <i> develop</i>&nbsp;&nbsp;Issue 8 and "Macintosh Debugging: The<br>
+Belly of the Beast Revisited" in <i> develop</i>&nbsp;&nbsp;Issue 13.*
+</p>
+<p>
+<b>Don't try to use file sharing </b> to make an xSYM file and its source code accessible<br>
+from the target machine. When R2Db suspends the program being debugged, it will<br>
+lock up the target machine, including file sharing. *
+</p>
+<p>
+<b>For more about the evils of fake handles, </b>see the Macintosh Technical Note<br>
+"Memory Manager Compatibility" (Memory 13). *<b>If you use the IBM AIX</b><br>
+<b>PowerPC compiler, </b> check your documentation to find out how to disable<br>
+optimization, suppress traceback information, set up structure alignment, and disable<br>
+generation of code that uses the MQ register. *
+</p>
+<p>
+<b>PowerPC code is bigger </b>than the equivalent 680x0 code because all instructions<br>
+are four bytes long to make things easier for the hardware. Instructions are also<br>
+typically register-based and may require a few surrounding instructions to<br>
+accomplish the same task as a single 680x0 instruction. On the positive side, RISC<br>
+compilers are much better at keeping these extra instructions to a minimum.*
+</p>
+<p>
+<b>Those interested in obscure hexadecimal numbers </b>will want to know that<br>
+0x7F800008 is the value corresponding to one of the many variants of the PowerPC<br>
+trap instruction. *
+</p>
+<p>
+<b>See the Exception Manager chapter </b> of <i>Inside Macintosh: PowerPC System</i><br>
+<i>Software</i>&nbsp;&nbsp;for details on teaching your application to deal with exceptions.*
+</p>
+<p>
+<b>You can port MacsBug dcmds </b>to the PowerPC platform very easily. For more<br>
+information, check out the R2Db documentation that accompanies the Macintosh on<br>
+RISC Software Developer's Kit. *
+</p>
+<p>
+<b>When you use MacsBug </b>from within an R2Db session, sometimes the connection<br>
+between host and target can be dropped. The connection can usually be reestablished by<br>
+relaunching R2Db on the host machine. *
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Jeff Cobb, Bruce Jones, Bill Kincaid,<br>
+Dave Radcliffe *
+</p>
+<p>
+<b>Many thanks </b>to the folks on the PowerPC development team who came up with the<br>
+techniques and dcmds mentioned here. Even more thanks to the Macintosh debugging<br>
+demigods who gave us things like EvenBetterBusError, Programmer's Key,<br>
+XapHandles, and MacsBug.*
+</p>
+</body>
+</html>

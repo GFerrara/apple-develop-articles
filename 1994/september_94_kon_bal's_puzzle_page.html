@@ -1,0 +1,485 @@
+<html>
+<head>
+<!-- Article ID: 45 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 94 - KON & BAL'S PUZZLE PAGE</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>KON &amp; BAL'S PUZZLE PAGE</h2>
+<h2>Heaps of Fun</h2>
+<h1>KONSTANTIN OTHMER, BRUCE LEAK, AND Steve<br>
+NEWMAN</h1>
+<p>
+<img src="img/239.gif" width="200 px"></img>
+</p>
+<p>
+<img src="img/240.gif" width="140 px"></img>
+</p>
+<p>
+<i>See if you can solve this programming puzzle, presented in the form of a dialog</i><br>
+<i>between Konstantin Othmer (KON) and Bruce Leak (BAL) -- and a special guest,</i><br>
+<i>developer Steve Newman. The dialog gives clues to help you. Keep guessing until you're</i><br>
+<i>done; your score is the number to the left of the clue that gave you the correct answer.</i><br>
+<i>Even if you never run into the particular problems being solved here, you'll learn</i><br>
+<i>some valuable debugging techniques that will help you solve your own programming</i><br>
+<i>conundrums. And you'll also learn interesting Macintosh trivia.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Steve I've got a machine that crashed into MacsBug. I think it's this bug that some of<br>
+our beta testers have been reporting; it's <i> really</i>&nbsp;&nbsp;intermittent, so I may not get it to<br>
+happen again. I've got to find it just by looking at this one crash.
+</p>
+<p>
+KON It's not reproducible?
+</p>
+<p>
+Steve Not if it's the bug I've been hearing about. The reports are always the same: The<br>
+machine crashes while saving a file. Afterward the file is unreadable. If they go back to<br>
+an older copy of the file, the problem doesn't recur. No single user seems to have had<br>
+this crash happen more than twice, and no one has been able to associate it with<br>
+something they were doing in the program before they told it to save.
+</p>
+<p>
+BAL What does this program do?
+</p>
+<p>
+Steve It's a PIM -- personal information manager. Data entry and dialog boxes and<br>
+stuff. It's a pretty big program, but very vanilla in its use of the ROM -- strictly<br>
+Volume I stuff, plus the Memory Manager and File Manager, of course.
+</p>
+<p>
+KON You've tried stress testing? Heap scramble, low-memory conditions, MemHell,<br>
+QC, all of that?
+</p>
+<p>
+Steve Yeah. It was a war zone, and we couldn't bring out the bug. But it just happened to<br>
+one of our tech support people, Stephanie. I've taken over her machine until I can<br>
+figure out what's going on. She closed a file, it asked her if she wanted to save changes,<br>
+she clicked Yes, and it crashed into MacsBug with an illegal instruction.
+</p>
+<p>
+BAL Illegal instruction? Sounds like you've branched off into the middle of nowhere.<br>
+Where's the program counter?
+</p>
+<p>
+<b>100</b> Steve<b> wh pc</b> says we're in CODE segment 44, $017C bytes into a routine called<br>
+Preflush. According to a link map I can look at on another machine, segment 44 has the<br>
+file-saving code.
+</p>
+<p>
+KON Is the heap trashed?
+</p>
+<p>
+<b>95</b> Steve MacsBug says the heap is fine.
+</p>
+<p>
+BAL Perhaps some random memory-trashing bug has overwritten part of the code<br>
+segment. Disassemble around the program counter.
+</p>
+<p>
+<b>90</b> Steve It looks like valid code, but the PC is in the middle of an instruction.
+</p>
+<p>
+KON Do you have any purgeable code segments?
+</p>
+<p>
+<b>85</b> Steve We have a fairly complicated code segment management scheme based on<br>
+reference counting. We're pretty careful about it, though; it's been a long time since<br>
+we've had any problems there. As it happens, segment 44 is purgeable, but it has too<br>
+many entry points to do reference counting, so we just unload it from our event loop.
+</p>
+<p>
+BAL Sounds like code right out of the Finder. Let's try to find out how we managed to<br>
+branch into the middle of an instruction. Do a stack crawl and see where we came from.<br>
+Let's look at all the registers to see if one of them contains a clue as to how we got here.
+</p>
+<p>
+<b>80</b> Steve OK. <b>sc6</b> says the last call came from a function named "Document::<br>
+SaveAs(int, unsigned char)".
+</p>
+<p>
+KON What kind of a function name is that? It looks more like a UNIX pathname than a<br>
+function name.
+</p>
+<p>
+Steve Hey, you should see what it looks like with name unmangling&nbsp;&nbsp;disabled. <b>sc7</b><br>
+shows another return address under that one, in "Document::SaveAs(char*, short,<br>
+unsigned char, int, unsigned char)".
+</p>
+<p>
+BAL SaveAs? I thought it was just doing a regular save. And why two functions called<br>
+SaveAs?
+</p>
+<p>
+<b>75</b> Steve Stephanie insists that it was a regular save -- the document had been opened<br>
+from an existing file and was being saved to that same file.&nbsp;&nbsp;But if that were true, the<br>
+program should have called a function&nbsp;&nbsp;named Save, not SaveAs. As far as having two<br>
+functions with the same name, the five- parameter one saves into a specified disk file;<br>
+the two-parameter one brings up a Standard File dialog and then calls the<br>
+five-parameter one. I'm using C++ function overloading.
+</p>
+<p>
+BAL You sure you're not running the Finder? Mercer should be able to solve this for<br>
+you in a snap.
+</p>
+<p>
+KON I heard Mercer moved to Chicago. So, how did we get called?
+</p>
+<p>
+<b>70</b> Steve The call came from a "JSR (A1)" instruction. It looks like a standard C++<br>
+virtual function call.
+</p>
+<p>
+KON What's the value of A1?
+</p>
+<p>
+Steve It points into the jump table. Disassembling at that address shows a JMP to the<br>
+current program counter.
+</p>
+<p>
+KON That makes sense. Virtual function tables are stored in the global data segment, so<br>
+their function pointers are data-to-code references, which have to go through the<br>
+jump table. So all virtual function calls go through the jump table. That would be<br>
+necessary no matter how the vtables were implemented, since at link time there's no<br>
+way of knowing what version of the function will get called or what segment it's in.
+</p>
+<p>
+BAL So the jump table is trashed relative to the data in the heap. I still think<br>
+something's wrong with the heap. MacsBug can be funny about deciding whether a heap<br>
+is trashed. Do a heap dump and page down until you see the block containing the<br>
+program counter.
+</p>
+<p>
+<b>65</b> Steve It's code segment 44, and everything around it looks reasonable. But there's<br>
+a question mark next to the master pointer address.
+</p>
+<p>
+KON That probably means the master pointer doesn't point back to this heap block.<br>
+Let's look at the header for the heap block and find its master pointer to double-check<br>
+MacsBug. The format of the header depends on whether the machine is using 24- or<br>
+32-bit addressing. We can tell the current mode, which is probably the machine's<br>
+standard mode unless we're in some slimy QuickDraw code, by looking at MacBug's<br>
+status display along the left side of the screen.
+</p>
+<p>
+Steve MacsBug says the machine is in 24-bit mode. It's an old IIci with only 8 meg of<br>
+memory.
+</p>
+<p>
+BAL In that case, the block header is 8 bytes long. The first byte is a tag byte that<br>
+indicates the type of block (free, pointer, or handle) and the slop factor; the next<br>
+three bytes are the size; and for handles, the final four bytes are the offset from the<br>
+beginning of the heap zone to the master pointer for this block. Check that offset in the<br>
+heap and make sure there's a valid master pointer there.
+</p>
+<p>
+<b>60</b> Steve It agrees with the location printed in the heap dump. But the value in that<br>
+master pointer doesn't point back to this heap block. It turns out MacsBug won't flag<br>
+this as heap corruption, but it will put a question mark next to the master pointer for<br>
+blocks where the master pointer doesn't make sense.
+</p>
+<p>
+KON Do a heap dump and keep paging down until you find the address that it does point<br>
+to.
+</p>
+<p>
+<b>55</b> Steve It points to a block labeled "CODE segment 44". There are two code segment<br>
+44s in the heap!
+</p>
+<p>
+KON Is there a question mark on this one?
+</p>
+<p>
+<b>50</b> Steve No, MacsBug seems to be happy with the second block. According to MacsBug,<br>
+it has the same master pointer address as the first block. Both blocks are marked as<br>
+being locked and purgeable.
+</p>
+<p>
+BAL But the master pointer really does point to this block, so there's no question<br>
+mark. And "locked and purgeable" is the expected state for a purgeable code segment<br>
+that's currently loaded -- the lock flag overrides the purgeable flag.
+</p>
+<p>
+KON To decide whether a heap block is a resource, MacsBug looks at the resource flag<br>
+for the block. In a 24-bit heap, that flag is stored in the high byte of the master<br>
+pointer. Since both blocks think they have the same master pointer, they're sharing<br>
+the same flag byte; and when MacsBug searches the open resource maps to figure out<br>
+which resource each block comes from, it gets the same answer.
+</p>
+<p>
+BAL Now we have two mysteries: why there are two heap blocks with the same master<br>
+pointer, and why the jump table points into the middle of a routine. Let's see if the<br>
+heap blocks are really the same. Check the heap dump to see if they have the same size,<br>
+and then dump memory from each one to see if they're the same.
+</p>
+<p>
+<b>45</b> Steve They are the same. And by the way, you left out one mystery: If we're doing a<br>
+Save, why is SaveAs on the stack? There's no way that the two-parameter SaveAs can<br>
+call the five-parameter SaveAs without first bringing up the Standard File dialog; but<br>
+Stephanie insists there was no such dialog.
+</p>
+<p>
+KON Maybe we took another bad branch through the jump table earlier on. Take<br>
+another look at the stack crawl. When did we first enter segment 44?
+</p>
+<p>
+<b>40</b> Steve A routine called OKToClose, which is not in segment 44, called the<br>
+two-parameter SaveAs, which is.
+</p>
+<p>
+BAL Look at the JSR instruction in OKToClose.
+</p>
+<p>
+<b>35</b> Steve It's jumping to an A5-relative address, in the jump table. That address<br>
+contains a JMP into the middle of the two-parameter SaveAs, shortly before the place<br>
+where it calls the five-parameter version.
+</p>
+<p>
+KON Aha! By taking a wild branch into the middle of the routine, it skipped over the<br>
+call to Standard File. Maybe all the jump table entries for this segment are skewed by<br>
+the same amount. Disassemble from $017C bytes above where this JMP points.
+</p>
+<p>
+<b>30</b> Steve $017C bytes above the JMP target is the beginning of Document::Save.
+</p>
+<p>
+BAL That makes sense. OKToClose tried to call into segment 44 to the Save routine, but<br>
+something went wrong with LoadSeg, and it ended up $017C bytes farther down, in the<br>
+middle of the two-parameter SaveAs. Two-parameter SaveAs called five-parameter<br>
+SaveAs; this is an intra-segment call, so it wasn't affected by the bad jump table. Then<br>
+five-parameter SaveAs called Preflush, which is a virtual function, so it went through<br>
+the jump table even though it's in the same segment. This time the wild branch<br>
+happened to hit an illegal instruction, so it dropped into MacsBug.
+</p>
+<p>
+KON It's interesting that the two SaveAs routines were able to function more or less<br>
+correctly even though OKToClose branched into the middle of the first routine, thus<br>
+bypassing all of its parameter setup.
+</p>
+<p>
+BAL Well, it sounds like all of these functions are methods of the same object. MPW's<br>
+C++ compiler usually puts the object pointer in A4. So any references to object data<br>
+members or virtual functions would work even though we skipped the entry code for<br>
+the first SaveAs.
+</p>
+<p>
+KON Aren't all C++ functions fairly interchangeable? Link, save A4, load A4, test a bit<br>
+off A4, restore A4, unlink, rts? That's part of the efficiency.
+</p>
+<p>
+BAL In any case, we need to find out what went wrong in the LoadSeg call. Maybe there's<br>
+a clue on the stack. Dump memory for a few hundred bytes starting at the stack<br>
+pointer.
+</p>
+<p>
+<b>25</b> Steve $0028 bytes after the stack pointer, you notice a funny value: $4080BD0A.
+</p>
+<p>
+KON That's an address in ROM, probably a return address. Disassemble around that<br>
+address.
+</p>
+<p>
+<b>20</b> Steve It's in LoadSeg, one instruction after a call to StripAddress. It looks like this:
+</p>
+<pre>Disassembling from 4080bce0
+    _LoadSeg
+        +0000   4080BCE0     MOVEM.L    D0-D2/A0/A1,-(A7)
+        +0004   4080BCE4     MOVE.L D1,-(A7)
+        +0006   4080BCE6     JSR        Dispatcher+00C6
+        +000A   4080BCEA     MOVE.L (A7)+,D1
+        +000C   4080BCEC     MOVE.W $0018(A7),D0
+        +0010   4080BCF0     BSR.S      LoadSeg+007C
+        +0012   4080BCF2     BEQ.S      LoadSeg+0076
+        +0014   4080BCF4     HGetState
+        +0016   4080BCF6     BTST       #$07,D0
+        +001A   4080BCFA     BNE.S      LoadSeg+0026
+        +001C   4080BCFC     TST.B      SegHiEnable
+        +0020   4080BD00     BEQ.S      LoadSeg+0024
+        +0022   4080BD02     MoveHHi
+        +0024   4080BD04     HLock
+        +0026   4080BD06     MOVE.L (A0),D0
+        +0028   4080BD08     StripAddress
+        +002A   4080BD0A     MOVEA.L    D0,A0
+        +002C   4080BD0C     MOVEA.L    A5,A1
+        +002E   4080BD0E     ADDA.W CurJTOffset,A1
+        +0032   4080BD12     ADDA.W (A0),A1
+        +0034   4080BD14     CMPI.W #$4EF9,$0002(A1)
+        +003A   4080BD1A     BEQ.S      LoadSeg+005C
+        +003C   4080BD1C     MOVE.W $0002(A0),D0
+        +0040   4080BD20     BEQ.S      LoadSeg+005C
+        +0042   4080BD22     MOVE.W $0018(A7),D1
+        +0046   4080BD26     MOVEQ      #$00,D2
+        +0048   4080BD28     MOVE.W (A1)+,D2
+        +004A   4080BD2A     MOVE.W D1,-$0002(A1)
+        +004E   4080BD2E     MOVE.W #$4EF9,(A1)+
+        +0052   4080BD32     PEA        $04(A0,D2.L)
+        +0056   4080BD36     MOVE.L (A7)+,(A1)+
+        +0058   4080BD38     SUBQ.W #$1,D0
+        +005A   4080BD3A     BNE.S      LoadSeg+0048
+        +005C   4080BD3C     MOVEA.L    $0014(A7),A1
+        +0060   4080BD40     SUBQ.L #$6,A1
+        +0062   4080BD42     MOVE.L A1,$0016(A7)
+        +0066   4080BD46     MOVEM.L    (A7)+,D0-D2/A0/A1
+        +006A   4080BD4A     ADDQ.W #$2,A7
+        +006C   4080BD4C     TST.B      LoadTrap
+        +0070   4080BD50     BEQ.S      LoadSeg+0074
+        +0072   4080BD52     Debugger
+        +0074   4080BD54     RTS
+        +0076   4080BD56     MOVEQ  #   $0F,D0
+        +0078   4080BD58     SysError
+        +007A   4080BD5A     Debugger
+        +007C   4080BD5C     ST         ResLoad
+        +0080   4080BD60     SUBQ.W #$4,A7
+        +0082   4080BD62     MOVE.L #$434F4445,-(A7)    ;'CODE'
+        +0088   4080BD68     MOVE.W D0,-(A7)
+        +008A   4080BD6A     GetResource
+        +008C   4080BD6C     MOVEA.L    (A7)+,A0
+        +008E   4080BD6E     MOVE.L A0,D0
+        +0090   4080BD70     RTS</pre>
+<p>
+BAL The JSR to Dispatcher+00C6 flushes the instruction cache. Because the 68030<br>
+has separate instruction and data caches, LoadSeg needs to do that to make sure that the<br>
+newly loaded data is eligible to make it into the cache. Next the subroutine at +007C<br>
+gets the code resource.&nbsp;&nbsp;If the handle isn't locked, it's moved high and locked. Then we<br>
+find the first jump table entry for the segment, and test to see if it's loaded by<br>
+checking whether the first instruction is $4EF9 (a JMP.L). If it's not loaded, each<br>
+entry for this segment is updated from the unloaded form (involving a call to LoadSeg)<br>
+to the loaded form (involving a JMP.L). But it must have skipped this, because<br>
+otherwise the PEA at +0052 would have overwritten the return address from the call<br>
+to StripAddress, and that return address is still on the stack.
+</p>
+<p>
+KON It skipped over the code to transform the jump table entries, so the segment must<br>
+have already been loaded. But if the segment was loaded, the jump table wouldn't have<br>
+any LoadSeg calls for that segment. Somehow LoadSeg was called for a segment that was<br>
+already loaded. So your application must be calling LoadSeg manually!
+</p>
+<p>
+<b>15</b> Steve Honest, I'm not calling LoadSeg manually. A search of my source code verifies<br>
+this.
+</p>
+<p>
+BAL The only other way for LoadSeg to get called is through the jump table. How does<br>
+your reference-counting segment unloader work? Is it possible that a segment gets<br>
+called by your reference-counting code while you're in the process of loading it?
+</p>
+<p>
+<b>10</b> Steve It shouldn't be. The reference counting is done manually; we don't patch<br>
+LoadSeg or anything nasty like that. At any rate, segment 44 isn't reference-counted.
+</p>
+<p>
+KON Here's an idea: When LoadSeg was called to bring in segment 44, it called<br>
+GetResource to bring the resource into memory. Assuming the code segment had been<br>
+loaded in the past and later unloaded and purged, GetResource would have called<br>
+ReallocHandle, which was short on memory and called your GrowZone hook. Your<br>
+GrowZone function started freeing memory and then called another function in segment<br>
+44, triggering a recursive call to LoadSeg.
+</p>
+<p>
+BAL With enough memory free, segment 44 was loaded. Then the GrowZone function<br>
+exited back to the ReallocHandle call, which succeeded, and segment 44 was loaded<br>
+again when the GetResource call completed. When the original LoadSeg checked the state<br>
+of the jump table, it was already kosher, so the test for $4EF9 fired and the return<br>
+address from StripAddress didn't get overwritten.
+</p>
+<p>
+KON That certainly explains the confused heap. The GZSaveHnd that was passed to the<br>
+GrowZone function shouldn't be touched, but you called GetResource on it indirectly via<br>
+LoadSeg. It also explains the skewed jump table entries: after allocating a memory<br>
+block, ReallocHandle simply assigns the master pointer to point to that block, without<br>
+preserving the handle state stored in the high byte of the master pointer. This<br>
+effectively sets the handle state to 0, erasing the HLock call from the inner LoadSeg.<br>
+Thus, when the outer LoadSeg called MoveHHi on the second copy of the segment, the<br>
+lock bit in the master pointer -- which is shared by both blocks -- was clear. So<br>
+when MoveHHi called CompactMem, the first copy of the segment was free to move (in<br>
+this case, by $017C bytes). Finally, GetResource returned to the original LoadSeg,<br>
+which set the lock bit again.
+</p>
+<p>
+BAL Take another look at your link map. Are there any routines in segment 44 that<br>
+could be called from your GrowZone hook?
+</p>
+<p>
+<b>5</b> Steve That's funny. There are some routines in this segment that shouldn't be there<br>
+-- in fact, they shouldn't be anywhere. They're supposed to be inline functions!
+</p>
+<p>
+BAL The C++ compiler won't always copy a function inline, even if it's declared that<br>
+way. This can happen if the function body is too complicated. Segment loading is a<br>
+foreign concept that doesn't fit well into a C++ class hierarchy, and the MPW<br>
+implementation has a few puzzlers.
+</p>
+<p>
+KON Some of the calls to these "inline" functions were from segment 44, so they<br>
+happened to be placed in that segment. Then, when the GrowZone hook tried to call one<br>
+of the inline functions, it had to load segment 44 -- and the rest is history.
+</p>
+<p>
+BAL C++ claims another victim.
+</p>
+<p>
+Steve So how do I avoid this in the future? Put segment #pragmas around all my inline<br>
+functions?
+</p>
+<p>
+BAL That's a superstition believed by some people who should know better. It doesn't<br>
+work.
+</p>
+<p>
+KON What does work is what those Finder folks did. MPW CFront puts the uninlineable<br>
+functions at the end of the file it's compiling. The Finder folks just end every file with<br>
+"#pragma segment CFrontCruft," and all the unexpected functions wind up in one<br>
+easy-to-manage segment.
+</p>
+<p>
+Steve "Uninlineable" isn't a word.
+</p>
+<p>
+BAL That's why it's called cruft. Incidentally, this technique also catches functions that<br>
+the compiler has to synthesize entirely, such as constructors and destructors for<br>
+classes where they're needed (to initialize the vtable, for example) but aren't declared<br>
+explicitly. And by looking at the link map, you can see what the compiler is doing<br>
+behind your back -- although you might be happier not knowing.
+</p>
+<p>
+KON Nasty.
+</p>
+<p>
+BAL Yeah.
+</p>
+<p>
+<b>SCORING</b>
+</p>
+<ul>
+<li>80-100 You should be a guest puzzler yourself; send in a draft to<br>
+AppleLink DEVELOP.</li>
+<li>55-75 Pretty sharp; maybe you can write the first hot OpenDoc<br>
+container app.</li>
+<li>30-50 Maybe you can write an OpenDoc part.</li>
+<li>5-25 Maybe you'd better stick to AppleScript. *</li>
+</ul>
+<p>
+<b>KONSTANTIN OTHMER AND BRUCE LEAK </b>have given up sleep because they need<br>
+all the time they can get to manipulate the penny stock market via the budding<br>
+information superhighway. They're no longer trying to break the sound barrier, but<br>
+are working on the Hedgehog barrier. BAL wonders, "What's that blue Hedgehog got that<br>
+our green Armadillo doesn't have?"*
+</p>
+<p>
+<b>Steve NEWMAN </b>(AppleLink STEVENEWMAN) has been programming on the<br>
+Macintosh since&nbsp;&nbsp;1984. Currently, he works at Common Knowledge, Inc., writing<br>
+information management tools. In a previous life he cowrote FullPaint, FullWrite<br>
+Professional, and Spectre. When asked if he thought the Power Macintosh was the<br>
+hottest new game platform he'd seen since the Atari 800, he replied "yes." *
+</p>
+<p>
+<b>Thanks </b>to scott douglass for reviewing this column, and to Ludis Langens for wading<br>
+into a haystack of hex and emerging with a needle labeled 4080BD0A.*
+</p>
+</body>
+</html>

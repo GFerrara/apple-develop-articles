@@ -1,0 +1,567 @@
+<html>
+<head>
+<!-- Article ID: 14 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 94 - STANDALONE CODE ON POWERPC</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>STANDALONE CODE ON POWERPC</h2>
+<h1>TIM NICHOLS</h1>
+<p>
+<img src="img/150.gif" width="180 px"></img>
+</p>
+<p>
+<i>A new format for standalone code in the PowerPC world brings increased functionality</i><br>
+<i>and easier implementation. You'll no doubt want to port existing code resources and</i><br>
+<i>write plug-ins for the new platform. Here you'll learn how to do both while also</i><br>
+<i>retaining or building in the ability to run the standalone code on the old 680x0</i><br>
+<i>platform.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Standalone code is an important part of the Macintosh environment and will continue to<br>
+be in the age of the PowerPC processor. Such code takes many different forms and<br>
+serves many different purposes. It can serve as a definition function -- such as an<br>
+MDEF or a WDEF -- for Macintosh system software, act as a dynamic extension to an<br>
+application, or find other, more esoteric uses. In the PowerPC world, it can also be<br>
+used to port time-critical portions of an application written in 680x0 code. 
+</p>
+<p>
+This article shows you how to develop and package standalone code modules to run in<br>
+both the PowerPC and 680x0 worlds. We start by discussing the differences between<br>
+standalone code in the two runtime environments. Then we go through the steps of<br>
+compiling, linking, and packaging different types of standalone code, and calling it<br>
+from within your application. We look at the following:
+</p>
+<ul>
+<li>how an application can support a plug-in that contains code in both the<br>
+680x0 and PowerPC formats, illustrated by preparing a plug-in sort<br>
+algorithm for a simple application called SuperSort</li>
+<li>how to use a similar mechanism to port time-critical portions of an<br>
+existing application to the PowerPC platform</li>
+<li>how to make an existing WDEF into a "fat" resource -- one that will work<br>
+in either a 680x0 or a PowerPC environment, depending on the machine<br>
+executing the code</li>
+</ul>
+<p>
+SuperSort, the plug-in, and the WDEF, along with their source code, are all on this<br>
+issue's CD. All the code can run on either the 680x0 or the PowerPC platform,<br>
+although you do need MPW to compile it. 
+</p>
+<p>
+This article assumes that you know how to write a standalone code resource for the<br>
+680x0 platform and that you have a general grasp of PowerPC technology and runtime<br>
+architecture.
+</p>
+<h2>THE STORY ON STANDALONE CODE</h2>
+<p>
+The format of standalone code has changed in the PowerPC world. Standalone code in the<br>
+680x0 world is packaged in resources such as WDEFs and INITs, with limited<br>
+functionality and significant restrictions on their implementation. PowerPC<br>
+standalone code, on the other hand, can be packaged as a resource or stored in the data<br>
+fork of a file and enjoys a more flexible and powerful mechanism for managing global<br>
+data and importing and exporting functions based on shared libraries.
+</p>
+<p>
+<b>STANDALONE CODE IN THE 680X0 WORLD</b><br>
+In the 680x0 world, developers can write two types of code: applications and<br>
+standalone code.&nbsp;&nbsp;&nbsp;Applications have special privileges that aren't available to<br>
+standalone code. Perhaps the most notable is the ability to easily access global and<br>
+static data via the A5 world. The A5 register is maintained by the Process Manager for<br>
+each application, to facilitate access to the QuickDraw global data as well as application<br>
+global and static data. All references to global and static data by the application are<br>
+made via the A5 register.
+</p>
+<p>
+By contrast, standalone code resources have no A5 world and therefore don't have<br>
+access to global or static data. This can limit the functionality of the code. There are<br>
+mechanisms to get around this limitation, but they differ from one environment to the<br>
+next. THINK C has a mechanism for using A4 as a pointer to global data for standalone<br>
+code, while MPW uses special functions and macros to create a pseudo A5 world for the<br>
+code resource. Both of these place a burden on developers by forcing them to set up and<br>
+restore the appropriate registers before they can access their globals. 
+</p>
+<p>
+<b>STANDALONE CODE IN THE POWERPC WORLD</b><br>
+In the PowerPC world, there's only one type of code, known as a<i>code fragment</i> . A code<br>
+fragment is a collection of code and its corresponding data. Fragments can be packaged<br>
+in a number of different kinds of containers. A PowerPC application consists of one or<br>
+more code fragments packaged in the data fork of the application. Part of the Macintosh<br>
+system software consists of code fragments packaged in the Macintosh ROM. Standalone<br>
+code is really just another code fragment packaged in a resource or in the data fork of a<br>
+file. 
+</p>
+<p>
+Whether standalone code is packaged in a resource or in the data fork depends on how<br>
+it's being used. If you're writing a PowerPC version of an existing code resource such<br>
+as a WDEF or an XCMD, the standalone code should be packaged in a resource, for<br>
+purposes of compatibility. (The existing code only knows to look for code in resources<br>
+of a specific type; for example, the Window Manager only looks for window definition<br>
+functions in resources of type 'WDEF'.) If, on the other hand, you're developing a new<br>
+standalone code module as a plug-in or to accelerate some part of your application, the<br>
+standalone code should be stored in the data fork of your application or plug-in file to<br>
+fully exploit the PowerPC runtime environment. Code can be loaded rapidly and<br>
+efficiently from the data fork of a file without using a large memory footprint, thanks<br>
+to the mechanism of file- mapped virtual memory.
+</p>
+<p>
+Fragments can export symbols (code or data) by name to other fragments and can<br>
+import symbols by name from other fragments. Each fragment contains an array of<br>
+pointers known as the<i>table of contents</i>&nbsp;&nbsp;(TOC), which allows the fragment to share<br>
+symbols with other fragments and is used to reference the fragment's own global and<br>
+static data. Each entry in the TOC is a reference to either an imported symbol from<br>
+another fragment or a static data item in the fragment itself. For example, suppose the<br>
+code fragment Foo exports a procedure DoThis, contains a single global variable<br>
+gMyGlobal, and imports a function DoThat from the shared library Bar. The TOC will<br>
+contain an entry for each one of these symbols (DoThis, DoThat, gMyGlobal), and each<br>
+entry will point to the address of the corresponding symbol, as shown in Figure 1.
+</p>
+<p>
+<img src="img/151.gif" width="390 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1</b> A Fragment's Table of Contents
+</p>
+<p>
+The R2 register in the PowerPC processor is dedicated to storing the currently active<br>
+TOC and thus is sometimes called the RTOC. The RTOC is saved, modified, and restored<br>
+each time a new fragment is invoked. Because the TOC allows references to global and<br>
+static data, it's analogous to the A5 world in the 680x0 environment. However, it's<br>
+important to emphasize that in the 680x0 environment only applications have an A5<br>
+world and easy access to global and static data, while in the PowerPC environment, all<br>
+fragments have a TOC and easy access to global and static data. So the great thing about<br>
+standalone code being handled as a code fragment is that you can have globals in your<br>
+WDEFs, INITs, and plug-ins without having to jump through any hoops at all!
+</p>
+<p>
+Because a fragment can contain symbols from other fragments, these symbols must be<br>
+resolved or bound at run time. This preparation is performed by the Code Fragment<br>
+Manager. In most cases, such as when a PowerPC application is loaded, this is done<br>
+transparently. Standalone code can be automatically prepared by the Mixed Mode<br>
+Manager, but the preferred method is to have your application call the Code Fragment<br>
+Manager directly. Fortunately, the Code Fragment Manager makes this an easy task, as<br>
+we'll see later. Once a fragment has been prepared, the Code Fragment Manager<br>
+returns a connection ID to identify the fragment. This connection ID is used when<br>
+unloading the fragment, similar to a refNum that's returned when opening a file and<br>
+later used to close the file. 
+</p>
+<p>
+The Code Fragment Manager has the ability to resolve symbols by name, so you can<br>
+export any routine or data by name and then import that symbol in another fragment.<br>
+This allows you to store multiple routines in your fragment, export them, and then<br>
+call each routine when necessary by asking the Code Fragment Manager for its address.<br>
+This is much nicer than having a dispatch-based, single- entry-point code resource as<br>
+we do in the 680x0 environment. 
+</p>
+<p>
+<b>CALLING STANDALONE CODE</b><br>
+At any given time a PowerPC processor-based Macintosh may be executing in the<br>
+native PowerPC runtime architecture or in an emulated 680x0 runtime architecture.<br>
+The switching between the two runtime environments is transparent and handled by<br>
+the Mixed Mode Manager. And thanks to the Mixed Mode Manager, code from one<br>
+instruction set can call code from another instruction set, which is just what happens<br>
+when a 680x0 application calls a standalone code module written in PowerPC code or a<br>
+native PowerPC application calls a standalone code module written in 680x0 code. 
+</p>
+<p>
+So whenever we're running on a PowerPC processor-based Macintosh and our<br>
+application calls standalone code, we're presented with an interesting problem. Given a<br>
+pointer to standalone code, how do we know what kind of code it points to? In the<br>
+680x0 world, a procedure pointer is simply the address of a procedure. But in the<br>
+PowerPC environment, a procedure pointer is actually the address of a transition<br>
+vector, which in turn contains pointers to the actual routine and the TOC for the<br>
+fragment. Figure 2 shows the difference. 
+</p>
+<p>
+To solve this problem, the Mixed Mode Manager creates a generic procedure pointer<br>
+known as a UniversalProcPtr (UPP). A UPP can point to one of two things: a 680x0<br>
+procedure (in which case the UPP is really just a 680x0 ProcPtr in disguise) or a<br>
+routine descriptor (data type RoutineDescriptor). A routine descriptor is a data<br>
+structure that describes the instruction set,parameters, and calling convention of the<br>
+routine. The Mixed Mode Manager looks at the routine descriptor to determine whether<br>
+a mode switch is necessary and, if so, how to perform the switch.
+</p>
+<p>
+To run in a PowerPC environment, we use a UPP anywhere we would formerly have<br>
+passed a ProcPtr, such as in specifying a dialog filter procedure. In the case of 680x0<br>
+standalone code (which typically is stored in a resource), we indirectly pass a<br>
+ProcPtr, and thus a UPP, to the calling routine via the handle to the resource. For a<br>
+PowerPC code resource (or for a "fat" resource), we have to replace this ProcPtr<br>
+with a UPP, which points to a routine descriptor describing the routine in our code<br>
+resource. Figure 3 compares the forms taken by the three different kinds of code<br>
+resources (680x0, PowerPC, and fat). 
+</p>
+<p>
+Now that you have the necessary background information on standalone code, we can<br>
+move on to demonstrate how to handle three different types of standalone code: a<br>
+universal plug-in module, a module to port time-critical code, and a fat resource. 
+</p>
+<p>
+<img src="img/152.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 2</b> 680x0 and PowerPC Procedure Pointers Compared
+</p>
+<p>
+<b>Figure 3</b> Forms of Code Resources Compared
+</p>
+<h2>A UNIVERSAL PLUG-IN MODULE</h2>
+<p>
+Plug-ins are a popular way for third-party developers to extend the functionality of<br>
+an application.&nbsp;&nbsp;&nbsp;To demonstrate how to create and support a universal plug-in module<br>
+-- one that will run in either the PowerPC or the 680x0 world -- we'll use the<br>
+example of a plug-in module for an application called SuperSort, which you'll find on<br>
+this issue's CD.
+</p>
+<p>
+SuperSort is a simple application that visually sorts data represented as bars of<br>
+varying height according to a specified algorithm. SuperSort has two built-in<br>
+algorithms -- bubble sort and quick sort -- and can add new algorithms through a<br>
+plug-in mechanism. We'll compile and package a shell-sort algorithm into a plug-in<br>
+that will work with either the 680x0 or the PowerPC version of SuperSort. The<br>
+application will pick the correct version of the plug-in automatically at run time. 
+</p>
+<p>
+<b>EXAMPLE CODE</b><br>
+Below is the code for our plug-in sort routine that implements the shell-sort<br>
+algorithm. ShellSort's data parameter is a pointer to the data to be sorted, the size is<br>
+the number of elements to be sorted, and the swap parameter is a callback procedure to<br>
+SuperSort to animate the sort. 
+</p>
+<pre>#include "SortPlugIn.h"
+
+#if powerc
+#include &lt;MixedMode.h&gt;
+ProcInfoType swapPI = kCStackBased
+                        | STACK_ROUTINE_PARAMETER(1, kFourByteCode)
+                        | STACK_ROUTINE_PARAMETER(2, kFourByteCode);
+#endif
+
+void ShellSort(DataPoint *data, short size, SwapProc swap);
+
+void ShellSort(DataPoint *data, short size, SwapProc swap)
+{
+    short i, j, incr;
+   
+    incr = size / 2;
+    while (incr &gt; 0) {
+        for (i=incr; i&lt;size; i++) {
+            j = i - incr;
+            while (j &gt;= 0) {
+                if (data[j].n &gt; data[j + incr].n) {
+                #if powerc
+                    // We must use CallUniversalProc since we will
+                    // be passed a UPP for the SwapProc.
+                    CallUniversalProc(swap, swapPI, &amp;data[j],
+                        &amp;data[j + incr]);
+                #else
+                    // If we're 680x0, we can just call the proc
+                    // directly. MixedMode will handle switching if
+                    // swap is a UPP.
+                    (*swap)(&amp;data[j], &amp;data[j + incr]);
+                #endif
+                    j -= incr;
+                } else
+                    j = -1;
+            }
+        }
+        incr /= 2;
+    }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>COMPILING, LINKING, AND PACKAGING</b><br>
+We execute the following commands to compile and link this procedure in order to<br>
+create the 680x0 version stored in a 'SORT' resource:
+</p>
+<pre>C ShellSort.c -o ShellSort.o
+link -t 'rsrc' -c 'RSED' -m ShellSort -rt SORT=128 ShellSort.o&#8706;
+    -o ShellSort.rsrc</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+We compile and link the procedure again to create the PowerPC version to be stored in<br>
+the data fork. The output of the PowerPC linker is known as an XCOFF (extended<br>
+common object file format) file. This is a bloated file that we then strip to turn into a<br>
+leaner file known as a PEF file (your guess as to what PEF stands for is as good as<br>
+any). Here are the commands:
+</p>
+<pre>PPCC -w conformance -appleext on -sym full ShellSort.c
+    -o ShellSort.c.o
+PPCLink -main ShellSort -export ShellSort &#8706;
+    ShellSort.c.o  &#8706;
+    "{PPCLibraries}"StdCRuntime.o  &#8706;
+    "{PPCLibraries}"PPCCRuntime.o  &#8706;
+    -o ShellSort.xcoff
+makepef ShellSort.xcoff -e ShellSort &#8706;
+    -o ShellSort.pef</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Now that we have the two pieces, we join them together:
+</p>
+<pre>duplicate -y -d ShellSort.pef ShellSort
+duplicate -y -r ShellSort.rsrc ShellSort
+SetFile ShellSort -t 'SORT' -c 'TimN'</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The resulting file, ShellSort, is our plug-in that can be executed on either the 680x0<br>
+or the PowerPC platform. The code fragment that's stored in the data fork will be<br>
+loaded, prepared, executed, and unloaded by the PowerPC version of the SuperSort<br>
+application, while the code contained in the 'SORT' resource will be loaded, executed,<br>
+and unloaded by the 680x0 version. 
+</p>
+<p>
+<b>CALLING THE PLUG-IN</b><br>
+When calling a universal plug-in, your native PowerPC application should first check<br>
+to see whether there's a code fragment in the data fork of the plug-in, using the Code<br>
+Fragment Manager routine GetDiskFragment. If so, the pointer returned by<br>
+GetDiskFragment can be used to call the module. If not, the application should then look<br>
+for the appropriate plug-in resource in the resource fork of the plug-in.
+</p>
+<p>
+GetDiskFragment locates and loads a fragment found in the data fork of a file.
+</p>
+<pre>OSErr GetDiskFragment(FSSpecPtr fileSpec, long offset, long length,
+        Str63 fragName, Mask findFlags, ConnectionID *connID,
+        Ptr *mainAddr, Str255 errName);</pre>
+<p>
+The parameters are as follows:
+</p>
+<p><table border="0"><tr><td>fileSpec</td><td>The file to check for a fragment</td></tr>
+<tr><td>offset</td><td>Offset into the data fork where the fragment resides</td></tr>
+<tr><td>length</td><td>The length of the fragment, in bytes</td></tr>
+<tr><td>fragName</td><td>The name of the fragment, used for debugging only</td></tr>
+<tr><td>findFlags</td><td>The operation to be performed on the fragment</td></tr>
+<tr><td>connID</td><td>The fragment connection ID</td></tr>
+<tr><td>mainAddr</td><td>The main entry point of the fragment</td></tr>
+<tr><td>errName</td><td>The error string returned if the call fails</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Here's an example of how you might call a universal plug-in:
+</p>
+<pre>Handle          myProcHandle;
+MyProcType      myProcPtr;
+OSErr               err;
+ConnectionID    connID;
+
+err = GetDiskFragment(theFile, 0, 0, theFile.name, kLoadNewCopy,
+                &amp;connID, &amp;myProcPtr, errName);
+if (err == noErr) {
+    /* We have a fragment, ladies and gentlemen! */
+    (*myProcPtr)(p1, p2, p3);
+    CloseConnection(connID);
+} else
+{
+    /* We have a resource. */
+    myProcHandle = Get1Resource(kMyCodeType, kMyCodeID);
+    if (myProcHandle != nil) {
+        HLock(myProcHandle);
+        myProcPtr = (MyProcType)*myProcHandle;
+        #if powerc
+            CallUniversalProc(myProcPtr, kMyProcInfo, p1, p2, p3);
+        #else
+            (*myProcPtr)(p1, p2, p3);
+        #endif
+        HUnlock(myProcHandle);
+        ReleaseResource(myProcHandle);
+    }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The address that's returned is whatever symbol was defined as the main entry point<br>
+during the linking of the PowerPC code. Because this is a true pointer to the routine<br>
+and not a routine descriptor, it can be dereferenced and called directly as with any<br>
+other ProcPtr you may be used to. 
+</p>
+<p>
+If your fragment has multiple entry points, you can use the Code Fragment Manager<br>
+function FindSymbol after loading the fragment via GetDiskFragment in order to locate<br>
+a particular symbol by name. The FindSymbol routine returns the address of the<br>
+symbol you request.
+</p>
+<h2>A MODULE TO PORT TIME-CRITICAL CODE</h2>
+<p>
+To port only time-critical portions of your application, you would use a technique<br>
+similar to the one just described. Factor out the code whose execution you want to<br>
+accelerate, create a fragment, and package the fragment in the data fork of your<br>
+application. In your application's initialization code, call the Code Fragment Manager<br>
+to get the entry point to this fragment from your application's data fork and store this<br>
+pointer. When you no longer need the pointer, call the Code Fragment Manager to close<br>
+the connection to the code fragment.
+</p>
+<p>
+Your code fragment will need a routine descriptor as its main entry point since it will<br>
+be called from 680x0 code. To make a routine descriptor your main entry point,<br>
+declare a global routine descriptor in your code that describes the fragment's main<br>
+entry point. When you link the resulting object file, tell the linker to use this global<br>
+routine descriptor rather than the actual code entry point as the main entry point.
+</p>
+<p>
+Here's an example of using a global routine descriptor as an entry point to a fragment:
+</p>
+<pre>RoutineDescriptor MyEntryPointRD =
+    BUILD_ROUTINE_DESCRIPTOR(kMyEntryPointProcInfo, MyEntryPoint)</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+When we go to link this code, we tell the linker that the main entry point is our<br>
+routine descriptor. 
+</p>
+<pre>link -main MyEntryPointRD -export MyEntryPointRD {MyObject}
+    {MyLibs} &#8706; -o {MyXCOFF}</pre>
+<p class="spacer">&nbsp;</p>
+<h2>A FAT RESOURCE</h2>
+<p>
+Although existing resources can run on a PowerPC processor-based Macintosh thanks<br>
+to the 680x0 emulator, they run much more slowly than they would if they were<br>
+written in native PowerPC code.&nbsp;&nbsp;&nbsp;If you make an existing resource "fat," it will work<br>
+in either the 680x0 or the PowerPC environment and you won't need to ship two<br>
+different versions of your resource. For example, if you have a fat WDEF, the code will<br>
+run as usual on the 680x0 platform but will execute as native PowerPC code on the<br>
+PowerPC platform, with the Macintosh system software choosing the correct code at<br>
+run time.
+</p>
+<p>
+<b>CREATING A FAT RESOURCE</b><br>
+There's a template defined in MixedMode.r that allows easy creation of fat resources.<br>
+We'll create a fat resource version of a WDEF to show how it's done. We won't present<br>
+all of the code here but simply the steps involved in making the WDEF into a fat<br>
+resource. The code for the WDEF is on this issue's CD along with an application called<br>
+TestWDEF that shows the WDEF working. 
+</p>
+<p>
+Recall from our earlier discussion that we call a code resource through a ProcPtr,<br>
+which in this case is a dereferenced resource handle. That means that we need to create<br>
+a routine descriptor for our PowerPC version of the WDEF so that the Mixed Mode<br>
+Manager can invoke a mode switch, if necessary, when the system software calls the<br>
+WDEF. This is consistent with the requirement that all ProcPtrs be replaced with<br>
+UPPs in native PowerPC code. 
+</p>
+<p>
+Here's an example of a fat resource Rez definition:
+</p>
+<pre>#include "MixedMode.r"
+
+type 'WDEF' as 'sdes';
+
+resource 'WDEF' (128) {
+    0x00003BB0,                                  // 680x0 ProcInfo
+    0x00003BB0,                                  // PowerPC ProcInfo
+    $$Resource("WDEF.rsrc", 'oCod', 128),
+                                       // Name, type, ID of resource
+    // containing 680x0 code
+    $$Resource("WDEF.rsrc", 'pCod', 128)
+                                       // Name, type, ID of resource
+    // containing PowerPC code
+};</pre>
+<p>
+The resource type 'sdes' is defined in MixedMode.r. The 'sdes' resource template<br>
+inserts into the start of your resource some 680x0 code that checks whether you're<br>
+running on a PowerPC platform.&nbsp;&nbsp;&nbsp;If so, it copies your PowerPC code to the start of the<br>
+resource data in memory and calls the PowerPC code via a UniversalProcPtr embedded<br>
+in the resource at the start of the PowerPC code.&nbsp;&nbsp;&nbsp;Once the PowerPC code has been<br>
+copied, each subsequent call to the resource goes straight to the PowerPC code,<br>
+bypassing the initial checks. If you're running on a 680x0 platform, the same process<br>
+occurs, but instead the 680x0 code is copied over the resource data in memory. All of<br>
+this is done transparently by the 'sdes' resource template. 
+</p>
+<p>
+<b>CALLING THE FAT RESOURCE</b><br>
+If your fat resource was created using the template in MixedMode.r, you don't have to<br>
+change your calling code to execute the PowerPC code fragment. Calling PowerPC<br>
+standalone code is exactly the same as calling 680x0 code. Due to the magic of the fat<br>
+resource, the calling code doesn't have to know the PowerPC processor even exists. It<br>
+simply grabs the resource and calls it. 
+</p>
+<p>
+Here's what the code looks like:
+</p>
+<pre>Handle      myProcHandle;
+MyProcType  myProcPtr;
+
+myProcHandle = Get1Resource(kMyType, kMyID);
+if (myProcHandle == nil) {
+    // Handle the error.
+    . . .
+} else
+{
+    HLock(myProcHandle);
+    myProcPtr = (MyProcType)*myProcHandle;
+    (*myProcPtr)(/* Params go here. */);
+    HUnlock(myProcHandle);
+    ReleaseResource(myProcHandle);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+When this code is compiled into 680x0 code, the parameters are placed on the stack<br>
+and the actual routine is called via a 680x0 JSR(A0) instruction. When the JSR<br>
+instruction is executed, the pointer in A0 points to a routine descriptor, not to 680x0<br>
+code. This causes the emulator to invoke the Mixed Mode Manager, which then<br>
+performs the necessary context switch, automatically prepares the fragment for<br>
+execution, and calls the PowerPC code. Upon exit from the PowerPC code, the Mixed<br>
+Mode Manager performs a switch back to the emulated 680x0 environment and<br>
+execution continues as if the call were to 680x0 code. The calling code never knows the<br>
+difference.
+</p>
+<h2>NOW WHAT?</h2>
+<p>
+Now that you've learned the basics of standalone code on the PowerPC platform, you can<br>
+start thinking about what you can do with your application or existing code resource to<br>
+exploit the speed of the PowerPC processor. A good exercise is to consult your favorite<br>
+algorithm book and create your own SuperSort plug-in using a different algorithm, or<br>
+to recompile your favorite WDEF or other code resource into a fat resource that you<br>
+can run on any Macintosh, whether PowerPC processor-based or 680x0-based.<br>
+Remember to package your new code fragments in the data fork, and your<br>
+recompilations of existing resources as resources. Then watch your creations take off!
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>REFERENCES</b>
+</p>
+<ul>
+<li>"Making the Leap to PowerPC" by Dave Radcliffe, <i> develop</i>  Issue 16.</li>
+<li>"Another Take on Globals in Standalone Code" by Keith Rollin, <i> develop</i> <br>
+Issue 12.</li>
+<li>Macintosh Technical Note "Stand-Alone Code, <i>ad nauseam</i> " (Platforms &amp;<br>
+Tools 35).</li>
+<li><i>Data Structures and Algorithms</i>  by Alfred V. Aho, John E. Hopcroft, and<br>
+Jeffrey D. Ullman (Addison- Wesley, 1983).</li>
+<li><i>Fundamentals of Computer Algorithms</i>  by Ellis Horowitz and Sartaj Sahni<br>
+(Computer Science Press, 1978).</li>
+<li><i>Inside Macintosh: PowerPC System Software</i>  (Addison-Wesley, 1994).</li>
+</ul>
+<p>
+<b>TIM NICHOLS </b>(Internet tim.nichols@3do.com) says the eight years he spent earning<br>
+his bachelor's and master's degrees at UC Santa Barbara in between trips to the beach<br>
+were the best years of his life. At Apple, he was a member of the PowerPC software<br>
+team, where he developed some of the first PowerPC applications for demos and<br>
+performance evaluation. He now works at 3DO in their ROM/OS group doing drivers<br>
+and low-level system software. When not working, he plays softball and volleyball,<br>
+fueling his activity with pizza and burritos. *
+</p>
+<p>
+<b>For more on standalone code</b> in the 680x0 world, see the Macintosh Technical<br>
+Note "Stand-Alone Code, <i> ad nauseam</i> " and the article "Another Take on Globals in<br>
+Standalone Code"&nbsp;&nbsp;in <i>develop</i>&nbsp;&nbsp;Issue 12 *
+</p>
+<p>
+<b>MixedMode.r is part of </b>the Macintosh on RISC Software Developer's Kit, soon to be<br>
+available from APDA. *
+</p>
+<p>
+<b>For an overview of PowerPC</b> technology and runtime architecture, see the article<br>
+"Making the Leap to PowerPC" in <i> develop</i> Issue 16 and the soon-to-be-available<br>
+<i>Inside Macintosh: PowerPC System Software.</i> *
+</p>
+<p>
+<b>For details on the shell-sort algorithm, </b>see any book on algorithms, such as <br>
+<i>Fundamentals of Computer Algorithms</i>&nbsp;&nbsp;by Horowitz and Sahni or <i>Data Structures and</i><br>
+<i>Algorithms</i>&nbsp;&nbsp;by Aho, Hopcroft, and Ullman.*
+</p>
+<p>
+<b>THANKS TO OUR TECHNICAL REVIEWERS </b>Erik Eidt, Jim Gochee, Ed Navarrete,<br>
+Jim Reekes *
+</p>
+</body>
+</html>

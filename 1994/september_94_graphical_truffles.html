@@ -1,0 +1,241 @@
+<html>
+<head>
+<!-- Article ID: 46 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 94 - GRAPHICAL TRUFFLES</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>GRAPHICAL TRUFFLES</h2>
+<h2>A Cool QuickDraw GX Clipping Effect</h2>
+<h2>PETE ("LUKE") ALEXANDER</h2>
+<p>
+<img src="img/241.gif" width="180 px"></img>
+</p>
+<p>
+Wading through the vast sea of documentation you get with the QuickDraw GX Software<br>
+Developer's Kit, you may not realize all the cool things this new graphics model lets<br>
+you do. In this column, we'll look at just one of those cool things: clipping one shape to<br>
+the inside of another arbitrary shape. As an illustration, we'll take a bitmapped image<br>
+of a tropical beach (Figure 1) and clip it to the word "BAY" (Figure 2). Figure 3<br>
+shows the result. There's a sample application and source code on this issue's CD. 
+</p>
+<p>
+<b>CREATING THE SHAPES</b><br>
+We'll be collecting the results of our operations into a picture shape. We'll assume<br>
+that the QuickDraw GX environment has already been set up and that we have a window<br>
+ready to draw into.
+</p>
+<p>
+<b>For information </b>on setting up the QuickDraw GX environment, see "Getting Started<br>
+With QuickDraw GX" in <i> develop</i>&nbsp;&nbsp;Issue 15. The full details are in<i> Inside Macintosh:</i><br>
+<i>QuickDraw GX Objects</i>&nbsp;&nbsp;and<i> Inside Macintosh: QuickDraw GX Graphics.</i>&nbsp;&nbsp;*
+</p>
+<p>
+We start by creating an empty picture to which we can add shapes:
+</p>
+<pre>gxShape  thePicture;
+thePicture = GXNewShape(gxPictureType);</pre>
+<p>
+The bitmap shape we'll be clipping (Figure 1) is stored in our application's resource<br>
+fork as a 'pxmp' resource. We retrieve it with the GetPixMapShape call from the qd<br>
+library.
+</p>
+<p>
+<img src="img/242.gif" width="576 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>The shape to be clipped
+</p>
+<pre>gxShape theBitmap;
+theBitmap = GetPixMapShape(kPixMapID);</pre>
+<p>
+To create the clip shape, we start with a text shape containing the word BAY. 
+</p>
+<pre>gxShape theClip;
+theClip = GXNewText(3, (unsigned char*)"BAY", nil);</pre>
+<p>
+<img src="img/243.gif" width="281 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>The clip shape
+</p>
+<p>
+<img src="img/244.gif" width="284 px"></img>
+</p>
+<p>
+<b>Figure 3. </b>Result of clipping Figure 1 to Figure 2
+</p>
+<p>
+<b>POSITIONING AND SCALING THE TEXT SHAPE</b><br>
+Before we set our text shape to be the clip of our bitmap shape, we need to move it to<br>
+the top left corner of the bitmap shape and then scale it to encompass the entire<br>
+bitmap.
+</p>
+<p>
+We'll look at two ways to do this. The first method takes us through all the steps in the<br>
+process, while the second is simpler and lets QuickDraw GX do more of the work for us.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The origin of a text shape is on the baseline, but in this case, because there are no<br>
+descenders in the text, we just use the bottom left corner of the shape's bounds. We<br>
+need to offset the text shape by its own height from the top of the bitmap shape. So we<br>
+need to know the bounds of both the bitmap shape (to find the coordinates of its top left<br>
+corner) and the text shape (to calculate its height):
+</p>
+<pre>gxRectangle     bitmapBounds, textBounds;
+GXGetShapeBounds(theBitmap, 0, &amp;bitmapBounds);
+GXGetShapeBounds(theClip, 0, &amp;textBounds);
+textHeight = textBounds.bottom - textBounds.top;
+GXMoveShapeTo(theClip, bitmapBounds.left,
+          bitmapBounds.top + textHeight);</pre>
+<p>
+Our original text shape, which is the default text size of 12 points, isn't big enough to<br>
+cover the entire bitmap shape. If we were to do the clipping at this point, we would get<br>
+just a tiny piece of the corner instead of the whole bitmap. To get the whole thing, we<br>
+have to scale the text shape to match the size of the bitmap shape.
+</p>
+<p>
+For the text shape to scale linearly, without taking the font's hinting into account, we<br>
+have to turn off QuickDraw GX's built-in metrics and contour grid-fitting capabilities.<br>
+We do this by setting the shape's text attributes as follows:
+</p>
+<pre>GXSetShapeTextAttributes(theClip,
+    gxNoMetricsGridText | gxNoContourGridText);</pre>
+<p>
+Although QuickDraw GX lets us clip to any arbitrary shape, clipping is actually limited<br>
+to primitive shapes only. That is, the clip shape must be a shape whose geometry and<br>
+fill properties by themselves define the shape; primitive shapes don't use information<br>
+from a style or transform object. This is not a problem, though, because we can easily<br>
+convert a shape to its primitive form. The following call does the job:
+</p>
+<pre>GXPrimitiveShape(theClip);</pre>
+<p>
+The result is a filled path shape (which is a primitive shape) representing the<br>
+outlines of the letters in the word BAY. 
+</p>
+<p>
+Next we need to determine how much to scale the text shape to encompass the entire<br>
+bitmap shape.&nbsp;&nbsp;&nbsp;We do this by finding the width and height of both shapes' bounds<br>
+rectangles and scaling the text shape in each direction by the ratio between the two:
+</p>
+<pre>Fixed           bitmapWidth, bitmapHeight;
+Fixed           textWidth, textHeight;
+Fixed           xScale, yScale;
+
+// Determine the width ratio.
+bitmapWidth = bitmapBounds.right - bitmapBounds.left;
+textWidth = textBounds.right - textBounds.left;
+xScale = FixedDivide(bitmapWidth, textWidth);
+
+// Determine the height ratio.
+bitmapHeight = bitmapBounds.bottom - bitmapBounds.top;
+textHeight = textBounds.bottom - textBounds.top;
+yScale = FixedDivide(bitmapHeight, textHeight);
+
+GXScaleShape(theClip, xScale, yScale,
+                 bitmapBounds.left, bitmapBounds.top);</pre>
+<p>
+We've now scaled the text shape to encompass the entire area of our bitmap shape, and<br>
+we're ready to use it to clip the bitmap shape. But it turns out that there's a shorter<br>
+way to do this; we can actually accomplish the same thing with only three lines of code:
+</p>
+<pre>GXSetShapeTextAttributes(theClip,
+    gxNoMetricsGridText | gxNoContourGridText);
+GXGetShapeBounds(theBitmap, 0, &amp;textBounds);
+GXSetShapeBounds(theClip, &amp;textBounds);</pre>
+<p>
+As in the earlier method, we turn hinting off and get the bounds of our bitmap shape.<br>
+The magic here is in the GXSetShapeBounds call: when applied to typographic shapes,<br>
+this call positions and scales the text to the new bounds and converts it to a primitive<br>
+shape. That's it! QuickDraw GX does the hard work for us automatically, and we're<br>
+ready to set the clip of our bitmap shape. 
+</p>
+<p>
+<b>SETTING THE CLIP SHAPE</b><br>
+Now that the text shape is positioned and scaled the way we want it, we're ready to set<br>
+it up as the clip of our bitmap shape:
+</p>
+<pre>GXSetShapeClip(theBitmap, theClip);</pre>
+<p>
+This call changes the clip shape contained within the transform used by our bitmap<br>
+shape, replacing it with the new clip shape that we've created. 
+</p>
+<p>
+<b>If the same transform </b> were being shared by other shapes, QuickDraw GX would<br>
+make a copy of the transform to associate with our bitmap shape, ensuring that the<br>
+new clip would not affect any of the other shapes sharing the same transform.*The<br>
+next step is to add the clipped bitmap shape to our picture with GXSetPictureParts.<br>
+(Note that we could also use the library call AddToShape or the core call<br>
+GXSetShapeParts to do the same thing, but I chose to be more explicit here.)
+</p>
+<pre>GXSetPictureParts(thePicture, 0, 0, 1, &amp;theBitmap,
+          nil, nil, nil);</pre>
+<p>
+The picture now contains a new reference to the original bitmap shape, complete with<br>
+the new clip we've added to it. Once there's a reference to it in the picture, we don't<br>
+need the original reference anymore, so we dispose of it:
+</p>
+<pre>GXDisposeShape(theBitmap);</pre>
+<p>
+<b>DRAWING THE OUTLINE</b><br>
+The last order of business is to draw an outline around the clipped bitmap. We can<br>
+accomplish this by setting up the drawing characteristics of our scaled text shape to<br>
+draw the outline and then adding it to our picture. To frame the shape with a closed<br>
+outline, we set its fill characteristic to gxClosedFrameFill. Since we want the frame to<br>
+lie outside the geometry of the shape, we set its style attributes to<br>
+gxOutsideFrameStyle. Finally, we set the pen size to 3 to get a satisfyingly fat outline,<br>
+and we set the color of the outline to blue:
+</p>
+<pre>GXSetShapeFill(theClip, gxClosedFrameFill);
+GXSetShapeStyleAttributes(theClip, gxOutsideFrameStyle);
+GXSetShapePen(theClip, ff(3));
+SetShapeCommonColor(theClip, blue);</pre>
+<p>
+Now we can add the outlined shape to our picture and dispose of it, as before:
+</p>
+<pre>GXSetPictureParts(thePicture, 0, 0, 1, &amp;theClip,
+          nil, nil, nil);
+GXDisposeShape(theClip);</pre>
+<p>
+<b>DRAWING THE PICTURE</b><br>
+Before drawing our picture, we'll move it down a little from the top left corner of the<br>
+window. We could do this by retrieving the picture's transform and shifting it down<br>
+and to the right with GXMoveTransform; however, since the gxMapTransformShape<br>
+attribute is set for pictures by default, we can just call GXMoveShape:
+</p>
+<pre>GXMoveShape(thePicture, f(20), ff(15));</pre>
+<p>
+Finally, we're ready to draw the picture:
+</p>
+<pre>GXDrawShape(thePicture);</pre>
+<p>
+We're done! The result should look like Figure 3.
+</p>
+<p>
+<b>THAT'S ALL, FOLKS</b><br>
+You've had a quick look at one of the many cool things you can do with the QuickDraw GX<br>
+graphics system. As you can see from this example, the power and flexibility of<br>
+QuickDraw GX can give your application the ability to do things you could only dream<br>
+about until now.
+</p>
+<p>
+<b>PETE ("LUKE") ALEXANDER</b>Regular readers of Luke's columns will know that he<br>
+took his sabbatical from Apple this summer. He sent us a postcard: "Hey dudes! While<br>
+you're looking out your windows at Silicon Valley smog, I'm looking out my windows at<br>
+the rocky faces of Montana. Have you heard of National Parks? They're places of<br>
+unusual beauty set apart from development.&nbsp;&nbsp;Not that kind of development! The kind<br>
+that causes smog. At Yellowstone Park I enjoyed the clear air, I found where the buffalo<br>
+roam, and I learned why they call it Old Faithful. I'm now flying somewhere over<br>
+Montana (don't worry, I'm steering with my knee), admiring the mountains with their<br>
+lingering snow and enjoying the wide open spaces. Oops, mountain ahead and no more<br>
+room on the card." He signed it, "See you later, Luke" but then crossed out the "See you<br>
+later." We're worried, really worried.*
+</p>
+<p>
+<b>Thanks </b>to Hugo Ayala and Cary Clark for reviewing this column. *
+</p>
+</body>
+</html>

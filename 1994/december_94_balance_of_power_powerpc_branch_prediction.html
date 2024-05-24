@@ -1,0 +1,226 @@
+<html>
+<head>
+<!-- Article ID: 57 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 94 - Balance of Power: PowerPC Branch Prediction</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Balance of Power: PowerPC Branch Prediction</h1>
+<h2>Dave Evans</h2>
+<p>
+<img src="img/261.gif" width="185 px"></img>
+</p>
+<p>
+<i>The PowerPC processors try to predict which way your code will execute. This sounds</i><br>
+<i>surprisingly astrological for a digital machine, but it becomes very useful for a</i><br>
+<i>pipelined processor and will often speed up your code. In this column I'll go over why</i><br>
+<i>and how this works, focusing especially on the new PowerPC 604 processor prediction</i><br>
+<i>techniques, and I'll answer the question "Can a Power Macintosh really tell the</i><br>
+<i>future?"</i>
+</p>
+<h2>PSYCHIC DECISIONS</h2>
+<p>
+Typically about one-seventh of the instructions in your code are branches, either to<br>
+call subroutines or to make logical decisions in your program. The PowerPC processor<br>
+would ordinarily tend to stall at branches, since it tries to work on more than one<br>
+instruction at a time and it's not always sure which code it should execute after a<br>
+branch. It could either take the branch or fall through, and often the processor won't<br>
+know which until a couple of cycles later.
+</p>
+<p>
+So the PowerPC processors allow for speculative execution, meaning they'll guess at<br>
+the most probable direction the branch will go and then will issue those instructions.<br>
+But the processor doesn't let the instructions commit until it's sure the guess was<br>
+correct. Usually it guesses right, and a few instructions are already completed when<br>
+the branch is decided. If the guess was wrong, it throws out those results and starts<br>
+over with the correct code.
+</p>
+<p>
+This predictive skill helps keep the processor executing successfully without stalls,<br>
+and better prediction techniques will yield better overall performance. The new<br>
+PowerPC 604 processor improves on earlier prediction techniques; I'll discuss all of<br>
+them in detail below.
+</p>
+<p>
+But first, a relevant astrological note: The "birthday" of the 601 makes it a Taurus,<br>
+whereas then 603 is a Libra. The 604 chip had a birthday in April, so it's an Aries.
+</p>
+<h2>TAURUS AND LIBRA ARE COMPATIBLE</h2>
+<p>
+The PowerPC 601 and 603 processors use basically the same techniques to predict<br>
+branches. For simple unconditional branches, for example, they both process and<br>
+remove the branch early in the instruction issue stage. This operation, called<i>branch</i><br>
+<i>folding</i>, keeps the instruction stream moving without having to wait for the branch to<br>
+be processed. The branch is handled early, and the new instructions are fetched from<br>
+the cache immediately.
+</p>
+<p>
+For conditional branches, both processors first try to handle the branch early in the<br>
+instruction issue stage. If the condition being tested has already been evaluated, the<br>
+branch is folded out of the instruction stream. But if the condition being tested is still<br>
+in the pipeline, the processor must guess at the branch direction.
+</p>
+<p>
+Prediction of guessed branches are based on two things: the direction of the branch and<br>
+a software "hint" bit. If the direction is negative -- backward in your code -- the<br>
+branch is taken (because loops often iterate a few times backward before falling<br>
+through, and this heuristic is more often true). All other branches fall through by<br>
+default. The hint bit is a way for the compiler to reverse this heuristic: if the bit is<br>
+set, the prediction will be reversed.
+</p>
+<p>
+As far as I know there are no compilers that allow you to specify the hint bit in your<br>
+code, although this could be a valuable feature. Also, profilers or similar tools could<br>
+take statistics on your code flow and then set the bits for you from trial runs of your<br>
+software.
+</p>
+<h2>THE TEMPERAMENT OF ARIES</h2>
+<p>
+The PowerPC 604 has much better branch prediction, which means better<br>
+performance. Because branch statements most often repeat themselves, it remembers<br>
+recent branch results to make its predictions:
+</p>
+<ul>
+<li>    It has a cache of the last 64 branches that it has taken, and any time it<br>
+sees one of these branches again it will immediately predict to the same<br>
+branch destination. This technique, called <i>dynamic branch prediction</i>, is used<br>
+on the Pentium and other processors with great results.</li>
+<li>    It keeps a history of all other branches and predicts based on the recent<br>
+directions that branch took.</li>
+</ul>
+<p>
+The cache technique has the advantage of being very fast. When the 604 fetches an<br>
+instruction, it also sends the instruction's address to the branch cache. If the<br>
+instruction is a recently executed branch, the cache will return the address of where<br>
+the branch last went. This is immediately used to fetch the next instruction. Because<br>
+this all occurs during the fetch of the branch instruction itself, there's no delay in<br>
+fetching the first predicted instruction.
+</p>
+<p>
+For conditional branches that aren't in the branch cache, the 604 keeps a history of<br>
+recent times it saw that instruction. It keeps 512 such histories, each two bits wide,<br>
+to remember whether the branch was taken during the last few executions. The<br>
+processor hashes the instruction address to keep the branch histories distinct, and<br>
+hash collisions are very rare.
+</p>
+<p>
+Each history is set to one of four states: strongly taken, taken, not taken, and strongly<br>
+not taken. The current state determines the branch prediction as taken or not taken.<br>
+After the branch commits, the state is updated. Each update adjusts the state one step<br>
+toward strongly taken or strongly not taken. The two intermediate steps are a hedge so<br>
+that it will usually take two mistakes before a prediction changes. Because branches<br>
+tend to repeat, this algorithm generally results in the following prediction:
+</p>
+<ul>
+<li>    If the branch was taken during the last two executions, the 604<br>
+predicts it will again be taken.</li>
+<li>    If the branch wasn't taken during both of the last two executions, the<br>
+604 predicts it again won't be taken.</li>
+</ul>
+<p>
+Also with the 604, branches on the count register base their prediction on the current<br>
+count value. This will usually predict loops correctly and yield good performance,<br>
+since loops count down for a number of iterations before the final iteration causes an<br>
+incorrect prediction.
+</p>
+<p>
+But these techniques also come with a tradeoff: the 604 has an extra pipeline stage to<br>
+dispatch instructions. This means instructions take longer to get through the pipe, and<br>
+mispredicted branches are more expensive.
+</p>
+<h2>ARIES RISING</h2>
+<p>
+The 604 is the fastest PowerPC processor yet, and I can't talk about it here without<br>
+also going into why it's such a fast engine. Besides its advanced branch prediction<br>
+hardware, it has significantly more integer and floating-point hardware, which yields<br>
+improved overall performance. Given that it's produced with a more advanced silicon<br>
+process than&nbsp;&nbsp;the original 601, it's clocked above 80 MHz and offers blazingly fast<br>
+computation for your code.
+</p>
+<p>
+As a backbone for the chip, the instruction issuing and control logic allow the 604 to<br>
+issue up to four instructions per clock, compared to the 601's and 603's effective<br>
+three. As mentioned above, however, its pipeline has one extra decode stage and<br>
+branches are issued and handled in their own branch unit. To help it speculatively<br>
+execute more instructions than the other chips, it also comes with twice the number of<br>
+"rename" registers than the 603. Twelve extra general-purpose and eight extra<br>
+floating-point registers are available to hold speculatively produced results until a<br>
+branch commits. The 604 is also the first PowerPC processor that can speculatively<br>
+execute two branches at once. This, combined with advanced branch prediction, should<br>
+keep the processor screaming even through complex code flow.
+</p>
+<p>
+What most people will notice, however, is the additional integer math performance on<br>
+the 604. At any one time, the 604 can have two add-subtract instructions and one<br>
+multiply-divide instruction completing in a cycle. IBM says that it therefore has three<br>
+integer units, but the multiply-divide hardware is also used for logical and bit<br>
+manipulation operations. The bottom line is much better integer performance than the<br>
+Power Macintosh 8100/80. As an example of this, the following code should execute<br>
+nearly twice as fast on the 604 than on the 601:
+</p>
+<pre>do {
+   unsigned long   datapoint;
+   datapoint = *(dataarray + datasize);
+   if (datapoint &gt; kThreshold) {
+      if (datapoint &gt; kMaxLong - accumulate)
+         MyOverflowError();
+      accumulate += datapoint;
+      samplecount += 1;
+      }
+   } while (datasize--);</pre>
+<p>
+Looking at this code, we see a few integer operations that will be dual-issued on the<br>
+604. As long as the datapoint values aren't too erratic, the 604 will better predict the<br>
+first <b>if </b>statement's branch: it will assume that the current datapoint is on the same<br>
+side of the threshold as on the previous iteration, which in fact is where it will tend to<br>
+be. And the second <b>if</b> statement, which checks for an overflow, will (barring an<br>
+exception) get predicted correctly out of the loop. The 601 or 603 may predict it<br>
+incorrectly. So even though one integer unit will be busy doing the math, the overflow<br>
+checking will effectively occur without stalling the pipeline.
+</p>
+<p>
+The floating-point hardware was also supercharged. On the 601 and 603 processors, a<br>
+single-precision floating-point instruction can issue and complete each cycle, but<br>
+double-precision numbers take twice as long. The 604 allows one full<br>
+double-precision multiply-add instruction to be issued and one to complete each cycle.<br>
+The chip is twice as fast as the 601 and 603 for these double-precision calculations.
+</p>
+<h2>THE FUTURE IS IN THE STARS</h2>
+<p>
+So can Power Macintosh tell your future? It certainly tries to with the prediction<br>
+techniques described above, and in doing so yields better performance. With the simple<br>
+methods of the 601 and 603, or the dynamic prediction of the 604, your Power<br>
+Macintosh will speculatively execute your code with seemingly psychic results.
+</p>
+<p>
+What about the future of the Power Macintosh? The PowerPC architecture allows<br>
+excellent growth. When I saw the specifications for the first processor, the 601, I was<br>
+very impressed. It's an excellent design and it has proven to be a potent engine for the<br>
+Macintosh. When I saw the specifications for the follow-on chips, however, I was<br>
+really blown away. The 603 and 604 offer incredible performance for the price, and<br>
+prove that the PowerPC architecture scales well both into low-cost/low-energy<br>
+solutions and to the cutting edge in performance. And the technology applied to the 604<br>
+can be expanded in future chips, adding more execution units and advanced caches at<br>
+higher clock speeds. The latest IBM POWER2 processors can issue two load/store, two<br>
+logic/branch, two floating-point, and two integer instructions per cycle. These<br>
+processors point to the future of PowerPC performance.
+</p>
+<p>
+So without any additional tuning on your part, PowerPC will continue to improve your<br>
+performance in the future. I also feel compelled to reiterate this advice from my<br>
+previous columns: tune your critical code. Tuning often trades performance for code<br>
+readability and maintainability, so carefully choose which code to tune and use code<br>
+profilers (and the stars?) to guide your way.
+</p>
+<p>
+<b>DAVE EVANS </b>(Aquarius, January 20-February 18)&nbsp;&nbsp;Look for opportunities to<br>
+communicate. You are bound to have fun. Love&nbsp;&nbsp;is in the air; don't work too much or<br>
+you'll miss it. Apple continues to hold promise for you. Compatible with Sagittarius.
+</p>
+<p>
+<b>Thanks </b>to Phil Sohn, Peter Steinauer, and Eric Traut for reviewing this column.
+</p>
+</body>
+</html>

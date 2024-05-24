@@ -1,0 +1,304 @@
+<html>
+<head>
+<!-- Article ID: 54 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 94 - Newton Q & A: Ask the Llama</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Newton Q &amp; A: Ask the Llama</h2>
+<h1>Newton Developer Technical Support</h1>
+<p>
+<b>Q</b><i> I could really use some help with speeding up my Newton application. Have you got</i><br>
+<i>any tips on performance?</i>
+</p>
+<p>
+<b>A </b> You're not the only one who wants this; my llama senses have recently been<br>
+overwhelmed by a call for information on performance. All the questions in this<br>
+issue's column will relate to performance in some way. Take a look and see if there's<br>
+something here that will help you.
+</p>
+<p>
+&nbsp;There are two important points to remember:
+</p>
+<ol>
+<li>None of these tips will work by themselves; you must <i> measure</i>  your<br>
+code. Use Ticks, use the<b> trace</b> global (see below), use Print. Find out where<br>
+your code is slow, or where your application is bloated.</li>
+<li>There is no silver bullet for a problem; you must <i> experiment</i>  with<br>
+different solutions.</li>
+</ol>
+<p>
+&nbsp;In the words of my wise programming master: "When is a llama not a llama? . . .<br>
+When it is a guanacos." Or, "When you can snatch these coconuts from my hand, then it<br>
+will be time for me to leave."
+</p>
+<p>
+<b>Q</b><i> I'm building an application that has a large set of static data. I search on a key term</i><br>
+<i>(a string) and get all the data associated with that string. Mike Engber's "Lost In</i><br>
+<i>Space" article (in the May 1994 issue of PIE Developers magazine) says that I should</i><br>
+<i>include this data in my package and things will be fast. But this doesn't seem to be the</i><br>
+<i>case. I have thousands of frames of data. Each frame contains one or more slots with</i><br>
+<i>strings that contain the key terms. I use FindStringInFrame to find all references to a</i><br>
+<i>key term but this takes a long time. Am I doing something wrong?</i>
+</p>
+<p>
+<b>A </b> This may seem like a simple question,&nbsp;&nbsp;but it isn't. The root of the problem is that<br>
+you've made an assumption that functions provided in the ROM are fast, so they'll solve<br>
+your problem. In this case, you assumed that FindStringInFrame would be fast. You're<br>
+both right and wrong.
+</p>
+<p>
+&nbsp;FindStringInFrame is fast, but it still has to linearly search every slot in every<br>
+frame recursively. That means that if you have thousands of entries, it's checking<br>
+thousands of frames. You can talk about how long something will take by calculating the<br>
+worst case. FindStringInFrame has to search all your data frames (thousands of<br>
+items), and for each frame it has to check each slot to see if it's a string. If so, it then<br>
+has to check to see if the string you gave it matches the string it's looking for (step by<br>
+step down the string). So if you had <i> n</i>&nbsp;&nbsp;strings (not just data items), and the average<br>
+length of a string was <i> m</i>&nbsp;&nbsp;characters, that's <i>n</i> *<i>m</i>&nbsp;&nbsp;checks. In computer science terms,<br>
+you would say that FindStringInFrame is an O(<i> n</i>&nbsp;&nbsp;*<i>m</i> ) operation; this is called Big-Oh<br>
+notation and, in its simplest form, refers to the worst-case time.
+</p>
+<p>
+&nbsp;This means you should think about other data structures and methods of accessing<br>
+them. In your case, a simple change of data representation would result in a massive<br>
+speedup. The idea is to make the expression in the Big-Oh notation have the smallest<br>
+possible value. One way to do this is to reduce the search time for your key phrases.<br>
+Since you have a fixed set of data, you can sort them and use a binary search algorithm.<br>
+You can store the actual data in arrays and store indexes along with the key items.
+</p>
+<p>
+&nbsp;The nice thing about a binary search is that you're always cutting your search space<br>
+in half. On average, you only have to check log to the base 2 of the data. In Big-Oh<br>
+notation, that's O(log<i> n</i> ). Of course you still have to do the individual string<br>
+comparisons, so you end up with O(<i> m </i> log<i> n</i> ).&nbsp;&nbsp;So for 1000 items, FindStringInFrame<br>
+takes 1,000,000 time units, but the modified method takes 3000, a speedup of 300<br>
+times! It's unlikely that a function implemented at a low level performs 300 times<br>
+faster than custom NewtonScript code.
+</p>
+<p>
+&nbsp;This excursion into computer science should make you think about your data<br>
+structures and how you access them. Of course an academic exercise can take you only<br>
+so far. You also have to get your feet wet and test the code. You can use Ticks to get<br>
+rough estimates of time, and Stats (after a GC) to get estimates of memory.
+</p>
+<p>
+<b>Q</b><i> The following is a viewClickScript from a pickList button in my application. Why</i><br>
+<i>does it take so long to execute?</i>
+</p>
+<pre>viewClickScript.func(unit)
+    begin
+    currentPickItems := [];
+    for i := 0 to Length(defaultPickItems) - 1 do
+        if i = currentSelectedItem then
+            AddArraySlot(currentPickItems,
+                {item: defaultPickItems[i], mark: kCheckMarkChar});
+        else
+            AddArraySlot(currentPickItems, defaultPickItems[i]);
+    if :TrackHilite(unit) then
+        DoPopUp(currentPickItems, :LocalBox().right+3,
+            :LocalBox().top, self);
+end</pre>
+<p>
+<b>A </b> There are several possible reasons why your code would execute slowly. Since they<br>
+potentially apply to lots of code out there, I'll go through each one separately. At the<br>
+end is a rewritten function that should execute considerably faster.
+</p>
+<ul>
+<li>Lookup costs. Assuming that currentPickItems, currentSelectedItem, and<br>
+defaultPickItems are slots somewhere in your view hierarchy, at best they're<br>
+slots in the pick button, at worst they're in your base application view.<br>
+Remember that each access to a variable requires an inheritance lookup: check<br>
+locals, then globals, then current context, then the _proto chain, then the<br>
+_parent chain. This cost isn't high for single references but can be deadly in<br>
+loops. Every cycle through your loop, you're doing three lookups; that's a lot<br>
+of overhead. The solution is to use local variables for faster access.</li>
+<li>Unnecessary object creation. The AddArraySlot call will grow, and<br>
+potentially copy, the array on the NewtonScript heap, resulting in a lot of<br>
+unnecessary memory movement. Since you know the length of the<br>
+currentPickItems array in advance, you should preallocate the array and use<br>
+the array accessor (that is, [n]) to add array elements. You can use the Array<br>
+function call to allocate the array:</li>
+</ul>
+<p class="spacer">&nbsp;</p>
+<pre>      local pickItems := Array(Length(defaultPickItems), nil);</pre>
+<ul>
+<li> Unnecessary execution. You need to create a new pick list only if the call<br>
+to TrackHilite succeeds. You should make the TrackHilite conditional be the<br>
+outer conditional:</li>
+</ul>
+<p class="spacer">&nbsp;</p>
+<pre>      if :TrackHilite(unit) then
+          begin
+              // construct pick list and DoPopUp
+              ...
+          end;</pre>
+<ul>
+<li> Inefficient variable initialization. It's inefficient to use a loop for<br>
+initializing currentPickItems from defaultPickItems, because<br>
+currentPickItems has only minor differences. It's better to use Clone for<br>
+initialization. This way you get a new array whose elements are references<br>
+back to the array items in defaultPickItems. All you need to do is replace the<br>
+individual references in currentPickItems with their new or modified values.<br>
+It's the difference between an O(<i> n</i> ) operation (traversing all the array items<br>
+in defaultPickItems)&nbsp;&nbsp;and an O(1) operation (accessing only the changed<br>
+item). In other words, expect about an order of magnitude difference.</li>
+<li> Unnecessary slot. In this case you don't need to have a currentPickItems<br>
+slot since its value is recreated each time the viewClickScript is executed.<br>
+You're better off using a local variable.</li>
+</ul>
+<p>
+&nbsp;The modified code is shown below. To illustrate the savings, I ran a brief test using a<br>
+defaultPickItems array of ten elements. Each function is called 100 times (note that<br>
+TrackHilite was always true). I found the following code to be over six times faster<br>
+than the original code.
+</p>
+<pre>viewClickScript.func(unit)
+begin
+    if :TrackHilite(unit) then
+    begin
+        local pickItems := Clone(defaultPickItems);
+        local selectedItem := currentSelectedItem;
+        local l := :LocalBox();
+        if selectedItem then
+            pickItems[selectedItem] :=
+               {item: pickItems[selectedItem], mark: kCheckMarkChar};
+        DoPopUp(pickItems, l.right+3, l.top, self);
+    end;
+end</pre>
+<p>
+<b>Q</b><i> I've written my own IsASCIIAlpha, IsASCIINumeric, etc. functions. They seem to be</i><br>
+<i>really slow. Why is that? Here's my IsASCIIAlpha:</i>
+</p>
+<pre> // returns true if s is an alpha string (i.e., between a..z or A..Z)
+IsASCIIAlpha.func(s)
+begin
+    local c := Upcase(Clone(s));
+    local i;
+    for i := 0 to StrLen(c) - 1 do
+        if (StrCompare(SubStr(c, i, 1), "A") &lt; 0) or
+            (StrCompare(SubStr(c, i, 1), "Z") &gt; 0) then
+            return nil;
+    true;
+end;</pre>
+<p>
+<b>A </b> The main source of the slowness is that you're using string functions when<br>
+character functions would be faster. The distinction is subtle but important. In the<br>
+code above, you loop through each length 1 substring of the target string to determine<br>
+whether it's an alpha character. All this takes time. The Upcase call is O(<i> n</i> ), as are<br>
+the SubStr and StrCompare. Of course, the StrCompare isn't really that slow, but it's<br>
+still slower than you need.
+</p>
+<p>
+&nbsp;The SubStr call is returning a single character at a time, but in the form of a string.<br>
+That means there is a memory allocation for at least two characters (the content and<br>
+the null terminator) for each call to SubStr. A better way is to compare each character<br>
+of the string. In certain circumstances you can access a character at a time with the<br>
+array accessor (that is,&nbsp;&nbsp;[]). An example of a function that does this is IsASCIIAlpha3<br>
+(see the code on this issue's CD). In general, when you need either a single character<br>
+from a string or character-by-character access, the array-like syntax is faster.
+</p>
+<p>
+&nbsp;Note that the final fix to the code is that it doesn't do any preprocessing of the string;<br>
+instead it uses a lookup in an pregenerated array of valid alphabetic ASCII characters.<br>
+That gives it a significant speed advantage. Since timing in the Inspector is a useful<br>
+technique, the code to do the timings and print results is included on the CD. Also note<br>
+that this function is specifically for ASCII characters, so characters like &#201; and &amp;szlig;<br>
+would fail. Something else to note:&nbsp;&nbsp;Newton is a Unicode-based device. ASCII is a subset<br>
+of Unicode (from 0x0000 to 0x007F), but Unicode characters up to 0xFFFD are<br>
+documented. Your routine is checking only some of the characters on page 0 (that is,<br>
+characters of the form 0x00<i> nn</i> ), but it must deal with <i>all</i>&nbsp;&nbsp;characters.
+</p>
+<p>
+<b>Q</b><i> I'm trying to use the </i><b><i> trace</i></b><i> global to get information on what methods are called.</i><br>
+<i>But I get lots of output that doesn't start or end where I want. What can I do?</i>
+</p>
+<p>
+<b>A </b> There are really two questions here: how to use <b> trace</b> effectively, and how to use<br>
+the output. Usually you would turn tracing on inside a method, then turn it off later on<br>
+in the code. Unfortunately, you need to do more than just set the value of <b> trace</b>; you<br>
+also have to force the interpreter to notice that <b> trace</b> has changed. The PIE Developer<br>
+Technical Support NewtonScript Q&amp;A on debugging (on this issue's CD, among other<br>
+places) tells you how to do this.
+</p>
+<pre>// to turn tracing on for functions
+trace := 'functions;
+// force interpreter to notice change in state of trace variable
+Apply(func () nil, []);
+
+// to turn tracing off
+trace := nil;
+Apply(func () nil, []);</pre>
+<p>
+&nbsp;Once you have the trace output, you should cut and paste it into a text processor. There<br>
+are three main bits of information you can get from a trace:
+</p>
+<ul>
+<li>You can look at how many messages are generated from an apparently<br>
+simple call. You can use <b>trace</b> in conjunction with function call timings made<br>
+using Ticks to see why a particular call takes so long. Using the find feature of<br>
+your text processor, you can jump to the function call you're looking at.</li>
+<li>You can look at the values passed in and returned by function calls.</li>
+<li>Perhaps most useful of all, you can use the text processor to strip away<br>
+all the extraneous information (things like the lines specifying return values<br>
+-- that is, lines that contain the string "=&gt;" as the first non-whitespace<br>
+entry) so that you're left with the messages sent. Then you can sort the<br>
+messages and get a histogram of the results. This process is easier if you have<br>
+a text processor that supports <b> grep</b>-like text substitution (regular<br>
+expressions) and sorts.</li>
+</ul>
+<p>
+<b>Q</b><i> I'm using the Newton Toolkit layout editor to organize my data object classes in my</i><br>
+<i>application. I have 20 classes with one layout per object type. To access the objects, I</i><br>
+<i>declare each class layout to the main application. This gives me the benefits of parent</i><br>
+<i>inheritance. Unfortunately, even my test applications are memory hogs. I would expect</i><br>
+<i>a time penalty, but why is there such a large space penalty?</i>
+</p>
+<p>
+<b>A </b> The space penalty is much larger than it needs to be. You're using a layout editor to<br>
+edit your classes so that you can graphically edit the classes' slots. But this has the<br>
+disadvantage that you have to specify each class as some sort of view class or<br>
+prototype, perhaps a simple clView. It's the cause of your space problem, because you<br>
+also carry all the memory and runtime allocation that goes with a view. Since your<br>
+layouts are declared to your base application view, and since the default for a clView is<br>
+visible, each of your classes is also a full runtime view. That can take a large amount<br>
+of space on the NewtonScript heap. For a clView, the penalty is roughly 40 bytes, so<br>
+that's an extra 800 bytes of NewtonScript heap that you can free.
+</p>
+<p>
+&nbsp;A better solution is to avoid using the NewtonScript heap for your class (after all,<br>
+that's one of the advantages of prototype inheritance). You can do this in one of two<br>
+ways:
+</p>
+<ul>
+<li>If you still want to use a layout editor to edit your class, you can use a<br>
+user prototype instead of a layout. At run time, you'll have access to the data<br>
+class using the PT_&lt;filename&gt;&nbsp;&nbsp;syntax documented in the <i>Newton Toolkit User's</i><br>
+<i>Guide</i>&nbsp;&nbsp;(page 4-25). Remember that the user prototype will be read-only.</li>
+<li>The other option is to textually define the class. You can do this in your<br>
+Project Data file, or use the Load command to read in a different text file. See<br>
+the PIE Developer Technical Support NewtonScript Q&amp;A document on this<br>
+issue's CD for more information.</li>
+</ul>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>The llama is </b>the unofficial mascot of the Developer Technical Support group in<br>
+Apple's Personal Interactive Electronics (PIE) division.*
+</p>
+<p>
+<b>Send your Newton-related questions</b> to NewtonMail DRLLAMA or AppleLink<br>
+DR.LLAMA. The first time we use a question from you, we'll send you a T-shirt.*
+</p>
+<p>
+<b>Thanks </b>to our PIE Partners for the questions used in this column, and to jXopher,<br>
+Bob Ebert, Mike Engber, Kent Sandvik, Jim Schram, and Maurice Sharp for the<br>
+answers. *
+</p>
+<p>
+<b>Have more questions? </b>Need more answers? Take a look at PIE Developer Info on<br>
+AppleLink. *
+</p>
+</body>
+</html>

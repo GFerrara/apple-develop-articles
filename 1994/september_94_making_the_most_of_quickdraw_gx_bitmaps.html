@@ -1,0 +1,945 @@
+<html>
+<head>
+<!-- Article ID: 38 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 94 - Making the Most of QuickDraw GX Bitmaps</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Making the Most of QuickDraw GX Bitmaps</h2>
+<h1>DAVID SUROVELL</h1>
+<p>
+<img src="img/224.gif" width="182 px"></img>
+</p>
+<p>
+<i>Besides letting you do a lot of cool things with geometric shapes and typography,</i><br>
+<i>QuickDraw GX has useful tools for manipulating bitmaps. For example, bitmap shapes</i><br>
+<i>(the QuickDraw GX counterpart to pixMaps) can be skewed, rotated, and scaled, and</i><br>
+<i>transforms allow these operations to be performed repeatedly without data loss.</i><br>
+<i>Bitmap shapes can share image data, can be used to clip other shapes, and can reside on</i><br>
+<i>disk instead of in memory. This article tells how you can use QuickDraw GX to improve</i><br>
+<i>the way you handle bitmapped graphics.</i>
+</p>
+<p>
+New users of QuickDraw GX will probably start by going through<i>Inside Macintosh:</i><br>
+<i>QuickDraw GX Objects</i>&nbsp;&nbsp;or the article "Getting Started With QuickDraw GX" in<i>develop</i><br>
+Issue 15. If you're mainly a QuickDraw programmer, however, you may have a lot of<br>
+questions about how QuickDraw GX applies specifically to bitmaps -- probably the<br>
+most commonly used graphic objects. As it turns out, it can do most anything<br>
+QuickDraw can do, and quite a few useful and exotic new things besides. 
+</p>
+<p>
+If you have at least a nodding familiarity with QuickDraw GX, this article will give<br>
+useful tips on how to apply your knowledge to bitmap shapes. If you're a QuickDraw GX<br>
+neophyte, this article will confuse you from time to time, but you may learn enough to<br>
+decide to make the leap to QuickDraw GX. 
+</p>
+<h2>CREATING BITMAP SHAPES</h2>
+<p>
+It takes about the same information to create a bitmap shape in QuickDraw GX as it does<br>
+to make a pixMap in QuickDraw. The biggest difference is that while QuickDraw insists<br>
+that you calculate the size of the image buffer and allocate it explicitly, QuickDraw GX<br>
+can optionally allocate it for you when the shape is created. This is illustrated in the<br>
+code in Listing 1, which creates an indexed bitmap shape. 
+</p>
+<p>
+For indexed pixelSize values (1, 2, 4, or 8), you set the gxBitmap's space field to<br>
+gxIndexedSpace and its set field to a color set (the QuickDraw GX equivalent of a<br>
+QuickDraw color table) with an appropriate number of entries. Direct pixelSize<br>
+values (16 or 32) require that the set field be nil. Forexample, to make the routine in<br>
+Listing 1 create a 16-bit bitmap shape, you would set the gxBitmap's space field to<br>
+gxRGB16Space and its set field to nil. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 1. </b>Creating an indexed bitmap shape
+</p>
+<pre>gxShape CreateIndexedBitmapShape(long horiz, long vert,
+        long targetDepth)
+{
+    gxBitmap        bitShapeInfo;
+    gxColorSet  targetSet;
+    gxShape     resultShape;
+
+    if ((horiz &lt;= 0) || (vert &lt;= 0))
+        return nil;
+    if (targetDepth &gt; 8)
+        return nil;
+
+    // Create a familiar "color" gxColorSet.
+    // (The default gxColorSet is a gray ramp.)
+    targetSet = GetStandardColorSet(targetDepth);
+    if (targetSet == nil)
+        return nil;
+
+    // Let QDGX calculate the image buffer block size and
+    // allocate it.
+    bitShapeInfo.image = nil;
+    bitShapeInfo.rowBytes = 0;
+    bitShapeInfo.width = horiz;
+    bitShapeInfo.height = vert;
+    bitShapeInfo.pixelSize = targetDepth;
+    bitShapeInfo.space = gxIndexedSpace;
+    bitShapeInfo.set = targetSet;
+
+    // Use the default color profile.
+    bitShapeInfo.profile = nil;
+    resultShape = GXNewBitmap(&amp;bitShapeInfo, nil);
+
+    return resultShape;
+}</pre>
+<p>
+Note that the gxBitmap's rowBytes is a long, not a short as in QuickDraw. This means<br>
+no more convoluted rowByte hacks, no more magic bits needed for flags, and no more<br>
+unreasonable limits on image width. 
+</p>
+<p>
+Note also that the gxBitmap contains a profile field, a reference to a gxColorProfile<br>
+(essentially an object with ColorSync data wrapped inside). If this field is nil,<br>
+QuickDraw GX uses its default profile. Color matching occurs only when the target<br>
+view port has the gxEnableMatchPort attribute set -- by default, it's off. 
+</p>
+<h2>MANIPULATING BITMAP SHAPES</h2>
+<p>
+Once a bitmap shape is created, you can access and change its characteristics with<br>
+GXGetBitmap and GXSetBitmap. 
+</p>
+<pre>GXGetBitmap(targetShape, &amp;bitmapInfo, &amp;origin);
+// Alter the necessary gxBitmap fields here.
+. . .
+GXSetBitmap(targetShape, &amp;bitmapInfo, &amp;origin);</pre>
+<p>
+GXSetBitmap is similar to QuickDraw's UpdateGWorld; it lets you change bitmap depth,<br>
+color specification, and size. To change specific attributes, you may need to modify a<br>
+combination of fields.
+</p>
+<p>
+To change a bitmap's width or height, set the width or height field. If QuickDraw GX<br>
+originally allocated the image buffer, you can set rowBytes to 0 and the image field to<br>
+nil, and QuickDraw GX will reallocate the buffer. If you allocated the buffer yourself,<br>
+you'll have to maintain it yourself. 
+</p>
+<p>
+<b>&nbsp;An image isn't scaled </b>when you change size this way. If you increase the width or<br>
+height, the new areas contain undefined values; if you decrease them, the image is<br>
+truncated. Bitmap scaling is discussed later in this article.*
+</p>
+<p>
+To change a bitmap's pixel depth, set the pixelSize field to the desired depth. If the<br>
+bitmap needs a new color set (which it will, unless the new depth is greater than 8<br>
+bits), create it and assign it to the set field. An example that changes the depth to 4-bit<br>
+is shown in Listing 2. 
+</p>
+<p>
+To change a bitmap's color characteristics, just change the set, space, and profile<br>
+fields. No changes to pixel data will occur -- all pixel values will be interpreted in the<br>
+new color set. To transform pixel values, you'd need to set up a new bitmap shape and<br>
+draw the existing bitmap into it. (The offscreen library routine CopyToBitmaps is<br>
+ideal for this.)
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 2. </b>Changing the depth of a bitmap shape
+</p>
+<pre>void ChangeDepthToFour(gxShape bitmapShape)
+{
+    gxBitmap    imageInfo;
+
+    if ((bitmapShape != nil) &amp;&amp;
+            (GXGetShapeType(bitmapShape) == gxBitmapType))
+    {
+        GXGetBitmap(bitmapShape, &amp;imageInfo, nil);
+        if (imageInfo.pixelSize != 4)
+        {
+            imageInfo.pixelSize = 4;
+            imageInfo.space = gxIndexedSpace;
+            imageInfo.set = GetStandardColorSet(4);
+            GXSetBitmap(bitmapShape, &amp;imageInfo, nil);
+        }
+    }
+}</pre>
+<p>
+<b>USING DISK-BASED PIXEL IMAGES</b><br>
+QuickDraw GX provides support for disk-based bitmap shapes. They're structurally<br>
+the same as regular bitmaps, except that their image data is contained in a file, so<br>
+they're always drawn from disk.&nbsp;&nbsp;&nbsp;Ten calls to GXDrawShape(diskBitmap) means<br>
+QuickDraw GX reads the entire file from disk ten times. (QuickDraw GX can't assume<br>
+that you didn't write into the file between accesses.) The idea is that the file system's<br>
+disk caches will do the work; if the file wasn't changed, subsequent reads should be<br>
+cached. 
+</p>
+<p>
+<b>&nbsp;Make sure the file size </b>is at least as large as the bitmap, or you'll get an<br>
+"unexpected end of file" error. *
+</p>
+<p>
+Disk-based bitmaps have limitations. For one thing, certain routines can't be<br>
+performed on them -- GXSetShapePixel, for example. (See<i>Inside Macintosh:</i><br>
+<i>QuickDraw GX Graphics</i> for the complete list.) You can't use disk-based bitmap shapes<br>
+as drawing destinations. If you draw into the data you trigger an error.&nbsp;&nbsp;So how do you<br>
+create a disk-based bitmap? As shown in Listing 3, you first set the gxBitmap's image<br>
+field to gxBitmapFileAliasImageValue. After creating the bitmap shape, create a tag of<br>
+type gxBitmapFileAliasTagType containing an alias record that references the file<br>
+containing the target raster data and attach it to the shape. 
+</p>
+<p>
+<b>ACCESSING IMAGE DATA</b><br>
+You can manipulate the image data of bitmap shapes directly. If the image data is<br>
+maintained by your application, all you have to do is call GXChangedShape afterward. If<br>
+the image data was allocated by QuickDraw GX, it's more complicated:
+</p>
+<ol>
+<li>Force the shape to be heap-resident with GXSetShapeAttributes. </li>
+<li>Lock the shape with GXLockShape and check for an error. </li>
+<li>Call GXGetShapeStructure to obtain a reference to the image data. </li>
+<li>Read from or write to the image data as desired. </li>
+<li>If the image data was changed, call GXChangedShape. </li>
+<li>Unlock the shape with GXUnlockShape.</li>
+<li>Call GXSetShapeAttributes to allow the shape to be cached again. </li>
+</ol><p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 3. </b>Creating a disk-based bitmap
+</p>
+<pre>gxShape CreateDiskBitmap(FSSpec *fsData, gxBitmap *targetBM)
+{
+    gxBitmap        localBM;
+    gxShape         targetShape;
+    gxTag           targetTag;
+
+    if ((fsData == nil) || (targetBM == nil))
+        return nil;
+    targetShape = nil;
+    targetTag = CreateBitmapAliasTag(fsData, 0L);
+    if (targetTag != nil)
+    {
+        localBM = *targetBM;
+        localBM.image = gxBitmapFileAliasImageValue;
+        targetShape = GXNewBitmap(&amp;localBM, nil);
+        if (targetShape != nil)
+            GXSetShapeTags(targetShape, gxBitmapFileAliasTagType,
+                           1L, -1L, 1L, &amp;targetTag);
+        GXDisposeTag(targetTag);
+    }
+    return targetShape;
+}
+
+gxTag CreateBitmapAliasTag(FSSpec *bitmapFS,
+         unsigned long fileOffset)
+{
+    struct gxBitmapDataSourceAlias  *aliasRecordPtr;
+    gxTag           targetTag;
+    FSSpec          targetFS;
+    AliasHandle     aliasHdl;
+    OSErr           iErr;
+    long            aliasSize, aliasRecordSize;
+    Boolean         wasChanged;
+
+    targetTag = nil;
+    aliasHdl = nil;
+    aliasRecordPtr = nil;
+
+    // Create an alias and resolve it.
+    iErr = NewAlias(nil, bitmapFS, &amp;aliasHdl);
+    if (iErr == noErr)
+        iErr = ResolveAlias(nil, aliasHdl, &amp;targetFS, &amp;wasChanged);
+
+    // Build up a compact representation for inclusion into a gxTag.
+    if (iErr == noErr)
+    {
+        aliasSize = GetHandleSize((Handle)aliasHdl);
+        aliasRecordSize = aliasSize + 2 * sizeof(long);
+        aliasRecordPtr = (struct gxBitmapDataSourceAlias*)
+                                NewPtr(aliasRecordSize);
+        iErr = MemError();
+    }
+    // Create the gxTag.
+    if (iErr == noErr)
+    {
+        // Create a gxBitmapDataSourceAlias with specified fileOffset
+        // and appropriate aliasRecordSize and aliasRecord.
+        aliasRecordPtr-&gt;fileOffset = fileOffset;
+        aliasRecordPtr-&gt;aliasRecordSize = aliasSize;
+        BlockMove(*aliasHdl, &amp;aliasRecordPtr-&gt;aliasRecord[0],
+            aliasSize);
+        targetTag = GXNewTag(gxBitmapFileAliasTagType,
+                       aliasRecordSize, aliasRecordPtr);
+    }
+    // Clean up.
+    if (aliasHdl != nil)
+        DisposeHandle((Handle)aliasHdl);
+    if (aliasRecordPtr != nil)
+        DisposePtr((Ptr)aliasRecordPtr);
+
+    return targetTag;
+}</pre>
+<p>
+GXLockShape loads an image into memory, so it might not succeed if there isn't enough<br>
+memory.&nbsp;&nbsp;&nbsp;And don't forget to check a bitmap shape's space field before processing the<br>
+shape -- don't assume that bitmap images are always in RGB space. 
+</p>
+<p>
+See Listing 4 for an example of changing a bitmap shape's data directly. 
+</p>
+<p>
+<b>MEMORY ISSUES</b><br>
+Raster surfers and Photoshop junkies know that raster images can be memory hogs;<br>
+it's easy to run out of application heap when you allocate them. So what happens when<br>
+QuickDraw GX runs out of memory? It doesn't. Well, almost never. Here are the steps<br>
+it will go through, in order, to deliver the memory you need:
+</p>
+<ol>
+<li>Flush out-of-date caches. </li>
+<li>Flush up-to-date caches. </li>
+<li>If allowed, grow the current gxHeap. </li>
+<li>Unload shapes and other objects to disk. </li>
+<li>Give up, and return an error. </li>
+</ol>
+<p>
+Most QuickDraw developers resort to some sort of GrowZoneProc to handle a tight<br>
+application heap. QuickDraw GX provides a tiered response to abnormal occurrences.<br>
+Items 1 through 4 above return notices (in the debugging version of QuickDraw GX);<br>
+item 5 returns an error. All you have to do is implement a routine to handle the<br>
+notices and errors. 
+</p>
+<p>
+<b>Listing 4. </b>Directly changing an indexed bitmap shape
+</p>
+<pre>void InvertBitmapShape(gxShape sourceBits)
+{
+    gxBitmap            sourceInfo, *sourceInfoRef;
+    gxShapeAttribute    curAttributes;
+    unsigned char       *sourcePtr, *rowPtr;
+    long                sourceRowSize, structLen, i, j;
+    Boolean             isQDGXImage;
+
+    // Make sure that this is an indexed bitmap shape.
+    if (sourceBits == nil)
+        return;
+    if (GXGetShapeType(sourceBits) != gxBitmapType)
+        return;
+    GXGetBitmap(sourceBits, &amp;sourceInfo, nil);
+    if (sourceInfo.pixelSize &gt; 8)
+        return;
+    if (sourceInfo.image == gxBitmapFileAliasImageValue)
+        return;
+    // If the image data was allocated by QuickDraw GX...
+    isQDGXImage = (sourceInfo.image == nil);
+    if (isQDGXImage)
+    {
+        // Load and lock the image data.
+        curAttributes = GXGetShapeAttributes(sourceBits);
+        if (!(curAttributes &amp; gxDirectShape))
+            GXSetShapeAttributes(sourceBits,
+                curAttributes | gxDirectShape);
+        GXLockShape(sourceBits);
+        if (GXGraphicsError(nil) != 0)
+            return;
+
+        // Get a reference to the image data.
+        sourceInfoRef =
+            (gxBitmap*)GXGetShapeStructure(sourceBits, &amp;structLen);
+        if ((sourceInfoRef == nil) || (structLen &lt; sizeof(gxBitmap)))
+            return;
+
+        sourceInfo = *sourceInfoRef;
+    }
+
+    // Invert index values, one row at a time.
+    sourcePtr = (unsigned char*)(sourceInfo.image);
+    for (i = sourceInfo.height; i &gt; 0; i--)
+    {
+        rowPtr = sourcePtr;
+        sourceRowSize = sourceInfo.rowBytes;
+        while (sourceRowSize-- &gt; 0)
+        {
+            *rowPtr = ~*rowPtr;
+            rowPtr++;
+        }
+        // Skip to the next row.
+        sourcePtr = (unsigned char*)sourcePtr + sourceInfo.rowBytes;
+    }
+
+    GXChangedShape(sourceBits);
+    if (isQDGXImage)
+    {
+        GXUnlockShape(sourceBits);
+        GXSetShapeAttributes(sourceBits, curAttributes);
+    }
+}</pre>
+<h2>&nbsp;GEOMETRIC OPERATIONS</h2>
+<p>
+One of the niftiest features of QuickDraw GX is the ability to perform geometric<br>
+operations on bitmap shapes. Most of the operators that apply to geometric shapes also<br>
+apply to bitmaps: rotate, scale, skew, perspective, and clip. In comparison, QuickDraw<br>
+provides only three geometric operators: scale, clip, and mask. 
+</p>
+<p>
+<b>&nbsp;ALTERING THE TRANSFORM VERSUS THE GEOMETRY</b><br>
+When you change a bitmap shape's geometry (that is, its actual pixel data), whether<br>
+by rotating, skewing, applying perspective, or scaling, you normally lose image data<br>
+-- it's often impossible to return the image to its pristine state.
+</p>
+<p>
+&nbsp;You can eliminate this data loss by instead applying geometric operators to a<br>
+shape's<i>transform.&nbsp;&nbsp;</i> A shape can make use of a 3 x 3 matrix to mathematically change<br>
+its appearance when rendered without changing the underlying data. This is especially<br>
+important for bitmaps. Figure 2 shows both possibilities of multiple rotations of a<br>
+bitmap. 
+</p>
+<p>
+<img src="img/225.gif" width="542 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>Successive rotations of a bitmap
+</p>
+<p>
+Rotation, translation (change in origin), skew, perspective, and scale operations can<br>
+all be performed on transforms directly, by GXRotateTransform, GXSkewTransform,<br>
+and so forth, or indirectly, using the gxMapTransformShape attribute. 
+</p>
+<p>
+&nbsp;When a shape's gxMapTransformShape attribute is set, geometric operations<br>
+automatically apply to its transform rather than its geometry. Bitmap and picture<br>
+shapes default to having this attribute set; other shapes begin with it off. This means<br>
+that if you convert a polygon shape (for example) to a bitmap shape, the<br>
+gxMapTransformShape attribute won't automatically be set. 
+</p>
+<p>
+<img src="img/226.gif" width="554 px"></img>
+</p>
+<p>
+<b>Figure 3. </b>Effect of GXRotateShape on bitmap geometry
+</p>
+<p>
+When a QuickDraw GX routine modifies a bitmap shape's geometry, a clip shape is<br>
+often attached to define the geometric extent of the modified bitmap. More often than<br>
+not, the bitmap's image buffer is expanded, as shown in Figure 3. Rotating a bitmap's<br>
+geometry can increase its memory requirements by over 40%. 
+</p>
+<p>
+<b>ROTATION</b><br>
+There aren't many QuickDraw programmers who haven't wished for a simple way to<br>
+rotate bitmaps.&nbsp;&nbsp;&nbsp;GXRotateShape takes parameters for the target shape, degrees<br>
+clockwise to rotate, and center point of rotation, as shown in Listing 5. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 5. </b>Rotating a bitmap shape
+</p>
+<pre>void RotateBitmap(gxShape targetShape, Fixed theta)
+{
+    gxBitmap    targetBM;
+    gxPoint     origin, shCenter;
+
+    // Determine the bitmap shape's current center point.
+    GXGetBitmap(targetShape, &amp;targetBM, &amp;origin);
+    shCenter.x = ff(targetBM.width) / 2 + origin.x;
+    shCenter.y = ff(targetBM.height) / 2 + origin.y;
+
+    // Rotate it around its center point.
+    GXRotateShape(targetShape, theta, shCenter.x, shCenter.y);
+}</pre>
+<p>
+<b>SKEWING AND PERSPECTIVE</b><br>
+Skewing and perspective are just as much fun as rotation, and even more useful as<br>
+general-purpose graphic effects. The code in Listing 6 illustrates a simple type of<br>
+perspective; Figure 4 shows the results of this perspective mapping. 
+</p>
+<p>
+<b>SCALING</b><br>
+You can expand or shrink bitmap shapes, like other shape types, with GXScaleShape.<br>
+QuickDraw pixMaps are scaled by setting the destination rectangle passed to CopyBits,<br>
+whereas GXScaleShape uses a scaling factor. To convert your QuickDraw bitmap scaling<br>
+code into the equivalent QuickDraw GX code, you have to calculate this scaling factor.<br>
+Listing 7 shows how. 
+</p>
+<p>
+<b>&nbsp;You can flip a bitmap </b> horizontally or vertically by using negative scaling values.<br>
+*
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 6. </b>Applying perspective to a bitmap shape
+</p>
+<pre>void TrapezoidalWarp(void)
+{
+    gxShape bitsShape, warpShape;
+    long        trapezoidData[] =
+    {
+        1L, 4L,
+        ff(130), ff(100), ff(170), ff(100),
+        ff(200), ff(200), ff(100), ff(200)
+    };
+
+    bitsShape = CreateBasicBitmapShape();
+    warpShape = GXNewShapeVector(gxPolygonType, trapezoidData);
+    if (warpShape != nil)
+    {
+        ShapeSetPolyMap(bitsShape, warpShape);
+        GXDisposeShape(warpShape);
+    }
+    GXDrawShape(bitsShape);
+}
+
+void ShapeSetPolyMap(gxShape targetShape, gxShape mappingShape)
+{
+    gxRectangle     boundsRect;
+    gxPolygon       *mapPoly, *targetPoly;
+    gxMapping       theMapping;
+    gxShape         targetBounds;
+    long            ignored;
+
+    if (targetShape == nil)
+        return;
+    if ((mappingShape == nil)
+            || (GXGetShapeType(mappingShape) != gxPolygonType))
+        return;
+
+    // Determine the dimensions of the target shape.
+    GXGetShapeBounds(targetShape, 0L, &amp;boundsRect);
+    targetBounds = GXNewRectangle(&amp;boundsRect);
+    if (targetBounds == nil)
+        return;
+
+    // Scale the mapping shape to the dimensions of the target shape.
+    GXSetShapeBounds(mappingShape, &amp;boundsRect);
+    GXSetShapeType(targetBounds, gxPolygonType);
+
+    // Load &amp; lock both shapes so that their structures can be
+    // accessed.
+    GXSetShapeAttributes(mappingShape,
+        GXGetShapeAttributes(mappingShape) | gxDirectShape);
+    GXLockShape(mappingShape);
+    GXSetShapeAttributes(targetBounds,
+        GXGetShapeAttributes(targetBounds) | gxDirectShape);
+    GXLockShape(targetBounds);
+    // NOTE: Structure is actually of type gxPolygon.
+    mapPoly =
+        (gxPolygon*)GXGetShapeStructure(mappingShape, &amp;ignored);
+    targetPoly =
+        (gxPolygon*)GXGetShapeStructure(targetBounds, &amp;ignored);
+
+    if ((mapPoly != nil) &amp;&amp; (targetPoly != nil))
+    {
+        // Skip past the gxPolygons contour count to the first
+        // contour.
+        mapPoly = (gxPolygon*)((Ptr)mapPoly + sizeof(long));
+        targetPoly = (gxPolygon*)((Ptr)targetPoly + sizeof(long));
+
+        // Calculate the desired shape mapping.
+        // PolyToPolyMap() is in "mapping library.c."
+        PolyToPolyMap(targetPoly, mapPoly, &amp;theMapping);
+    }
+
+    // Release both shapes from bondage.
+    GXUnlockShape(mappingShape);
+    GXSetShapeAttributes(mappingShape,
+        GXGetShapeAttributes(mappingShape) &amp; ~gxDirectShape);
+    GXUnlockShape(targetBounds);
+    GXSetShapeAttributes(targetBounds,
+        GXGetShapeAttributes(targetBounds) &amp; ~gxDirectShape);
+
+    // Set the target shape's mapping as desired.
+    GXSetShapeMapping(targetShape, &amp;theMapping);
+
+    GXDisposeShape(targetBounds);
+}</pre>
+<p>
+<img src="img/227.gif" width="452 px"></img>
+</p>
+<p>
+<b>Figure 4. </b>Applying perspective to a bitmap shape<b>Listing 7. </b>Calculating a scaling<br>
+factor
+</p>
+<pre>void BitmapShapeScaleQDStyle(gxShape targetShape, Rect *qdSourceR,
+            Rect *qdDestR)
+{
+    gxPoint     centerPt;
+    fixed       scaleFactorH, scaleFactorV;
+
+    scaleFactorH = FixRatio(qdSourceR.right - qdSourceR.left,
+                            qdDestR.right - qdDestR.left);
+    scaleFactorV = FixRatio(qdSourceR.bottom - qdSourceR.top,
+                            qdDestR.bottom - qdDestR.top);
+    centerPt.x = ff((qdDestR.right + qdDestR.left) / 2);
+    centerPt.y = ff((qdDestR.bottom + qdDestR.top) / 2);
+    GXScaleShape(targetShape, scaleFactorH, scaleFactorV, centerPt.x,
+                 centerPt.y);
+    GXMoveShapeTo(targetShape, ff(qdDestR.left), ff(qdDestR.top));
+    GXDrawShape(targetShape);
+}</pre>
+<p>
+<b>CLIPPING AND MASKING</b><br>
+QuickDraw GX can do some neat tricks with clipping. These tricks work with bitmap<br>
+shapes, too.&nbsp;&nbsp;&nbsp;For example, to create a gradient-filled polygon, you can make a<br>
+rectangular bitmap shape with a gradient and then set the polygon shape as the<br>
+bitmap's clip shape. (For another example, see Graphical Truffles in this issue.)
+</p>
+<p>
+You can use 1-bit bitmap shapes as clip shapes, too. The effect is just like that of<br>
+CopyMask; pixels in the source shape are drawn only where the clipping bitmap pixel<br>
+value is nonzero. (On this issue's CD, you'll also find example code that does image<br>
+processing similar to CopyDeepMask using the new transfer modes.)
+</p>
+<p>
+<b>&nbsp;Clipping occurs in geometry space, </b>before transform mapping, so a bitmap's<br>
+clip shape should be based on its bounds rectangle, not its rendered location. *
+</p>
+<p>
+To convert geometric shapes into masking bitmap shapes, you can call the<br>
+GXSetShapeType routine to convert the shape to a 1-bit mask bitmap. 
+</p>
+<p>
+With GXCheckBitmapColor, you can generate a masking bitmap from an existing<br>
+bitmap shape. If you pass GXCheckBitmapColor a color set, it puts 0 in the result<br>
+bitmap for source pixel values that are in the color set. If you pass it a color profile,<br>
+it puts 0 in the result bitmap for source pixel values that are within the color<br>
+profile's gamut. The result bitmap can be useful for color correction. 
+</p>
+<h2>QUICKDRAW GX TRICKS FOR QUICKDRAW DOGS</h2>
+<p>
+QuickDraw GX has ways to do almost anything you can do with QuickDraw. All you need<br>
+to know is how their environments and feature sets compare, and you'll understand<br>
+how to convert from one to the other. 
+</p>
+<p>
+<b>THE VIEW PORT LIST VERSUS THE GRAPHICS PORT</b><br>
+Most of the time you won't have to concern yourself with view ports at rendering time,<br>
+because there's no sense of the "current port" as there is in QuickDraw. Here's the<br>
+recommended method for drawing an existing shape into a new view port:
+</p>
+<ol>
+<li>Copy the shape's transform and install the desired destination view port<br>
+into the copy. </li>
+<li>Call GXDrawShape. </li>
+<li>Restore the original transform. </li>
+<li>Dispose of the copied transform. </li>
+</ol>
+<p>
+Examples of preserving view port lists can be found in the library routine<br>
+CopyToBitmaps and in the DrawShapeOffscreen example later in this article (Listing<br>
+9).
+</p>
+<p>
+<b>BITMAPS AND TRANSFER MODES</b><br>
+QuickDraw GX has a lot of transfer modes. This is a good thing, really. Not alltransfer<br>
+modes are functionally equivalent to those in QuickDraw, but the transferModelibrary<br>
+is fairly complete. Many of the capabilities of QuickDraw search procedures can be<br>
+implemented using transfer modes. (The first page of<i>Inside Macintosh: QuickDraw GX</i><br>
+<i>Graphics</i> has color pictures of the new transfer modes in action.)
+</p>
+<p>
+The transfer mode is contained in a shape's ink. Since transfer modes are applied on a<br>
+per- component basis, you can easily get some groovy effects. For example, you can<br>
+add the hue of one image to the brightness of another. Usually, though, you'll want all<br>
+components to use the same mode. The transferMode library routine<br>
+SetCommonTransfer will do this for you.
+</p>
+<p>
+There are some differences between QuickDraw GX transfer modes and those found in<br>
+QuickDraw:
+</p>
+<ul>
+<li> Dithering is a view port feature, not a transfer mode. Halftoning is also<br>
+available on a per-gxViewPort basis. These two features are mutually<br>
+exclusive; you can't dither and halftone at the same time. </li>
+<li> Transparency is not a single mode. It's a whole family of modes based on<br>
+alpha component values.</li>
+<li> All QuickDraw GX transfer modes occur in color space, while some<br>
+QuickDraw transfer modes are bitwise. </li>
+</ul>
+<p>
+<b>ONSCREEN BITMAPS</b><br>
+QuickDraw GX maintains a view device list that mirrors the QuickDraw GDevice list.<br>
+(Utility routines are provided for getting one if you have the other.) The Window<br>
+Manager is patched in a couple of places so that a window's view port transforms and<br>
+image memory are maintained when it enters and leaves GDevice real estate. 
+</p>
+<p>
+Drawing a bitmap onscreen obeys the screen GDevice's index entry protections --<br>
+QuickDraw GX doesn't use indexes reserved by the Palette Manager for other<br>
+applications. If you want to draw an image that uses animated palette entries, you'll<br>
+need to clone references to the destination viewDevice color set and profile, and then<br>
+insert those references into the bitmap shape before drawing. Example code that does<br>
+this is on this issue's CD. 
+</p>
+<p>
+<b>COPYBITS IN QUICKDRAW GX</b><br>
+Let's see what it takes to make GXDrawShape do what CopyBits does. CopyBits has<br>
+several explicit parameters: the source, destination, clipping region, and transfer<br>
+mode. In QuickDraw GX, the source is the bitmap shape. The destination is defined by<br>
+the shape's view port list. The clipping region is any shape that you attach to the<br>
+bitmap shape with GXSetShapeClip. As mentioned before, the transfer mode is<br>
+contained in the shape's ink. 
+</p>
+<p>
+So, to do a CopyBits-style blit in QuickDraw GX:
+</p>
+<ol>
+<li>Set up the shape's view port list. </li>
+<li>Determine the transfer mode (usually just "copy," but it's your choice). </li>
+<li>Adjust the shape clip. Don't change the device clip or view port clip. </li>
+<li>Adjust the transform if you want to reposition, scale, skew, rotate, or<br>
+apply perspective to the shape. </li>
+<li>Call GXDrawShape. </li>
+<li>Clean up as needed. </li>
+</ol>
+<p>
+<b>&nbsp;QuickDraw GX doesn't implement </b>all of the color capabilities of CopyBits.<br>
+There's no colorizing and no color interpolation for indexed values beyond the end of a<br>
+bitmap's color set. *
+</p>
+<p>
+<b>DRAWING OFFSCREEN WITH QUICKDRAW GX</b><br>
+Successive QuickDraw implementations have presented newer and better ways to draw<br>
+into a offscreen image buffer. The QuickDraw GX offscreen library contains routines to<br>
+help maintain the data structures necessary to implement the equivalent of a GWorld.
+</p>
+<p>
+The example in Listing 8 uses the CreateIndexedBitmapShape routine from Listing 1<br>
+and the library routine CreateOffscreen to create a fully functional offscreen bitmap. 
+</p>
+<p>
+You might think drawing into a QuickDraw GX offscreen bitmap would be difficult, but<br>
+it's not. To draw a shape into the offscreen bitmap, set its view port list to the<br>
+offscreen bitmap's view port and call GXDrawShape (see Listing 9). 
+</p>
+<p>
+<b>Listing 8. </b>Creating an offscreen bitmap
+</p>
+<pre>OSErr MakeIndexedOffscreen(offscreen *targetOffWorld, long horiz,
+                           long vert, long targetDepth)
+{
+    gxShape bitsShape;
+
+    if (!CheckArguments(...))
+        return paramErr;
+    bitsShape = CreateIndexedBitmapShape(horiz, vert, targetDepth);
+    if (bitsShape == nil)
+        return paramErr;
+    CreateOffscreen(targetOffWorld, bitsShape);
+    return noErr;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 9. </b>Drawing into an offscreen bitmap
+</p>
+<pre>void DrawShapeOffscreen(offscreen *offGXWorld, gxShape targetShape)
+{
+    gxTransform newXform, savedXform;
+
+    if ((offGXWorld == nil) || (targetShape == nil))
+        return;
+    if (offGXWorld-&gt;port == nil)
+        return;
+
+    savedXform = GXGetShapeTransform(targetShape);
+    newXform = GXCopyToTransform(nil, savedXform);
+    GXSetTransformViewPorts(newXform, 1L, &amp;(offGXWorld-&gt;port));
+    GXSetShapeTransform(targetShape, newXform);
+
+    GXDrawShape(targetShape);
+
+    GXSetShapeTransform(targetShape, savedXform);
+    GXDisposeTransform(newXform);
+}</pre>
+<p>
+<b>BITMAP SHAPES VERSUS PIXMAPS</b><br>
+Sometimes, converting existing QuickDraw code to QuickDraw GX is impractical. If<br>
+your application needs to use the same data in both offscreen pixMaps and bitmap<br>
+shapes, it can, provided that the bitmap shape is packed the same as the pixMap --<br>
+that is, of identical width, height, pixel depth, and color space. 
+</p>
+<p>
+To use bitmap shape data in a QuickDraw pixMap, build the pixMap with the baseAddr<br>
+the same as the gxBitmap.image. (Make sure that the bitmap shape is locked down.) To<br>
+use pixMap data in QuickDraw GX, create a gxBitmap with the image field set to the<br>
+base address of the source pixMap. 
+</p>
+<h2>THE QUICKDRAW GX LIBRARIES</h2>
+<p>
+Several libraries are included with the QuickDraw GX Software Developer's Kit. They<br>
+contain, among other things, routines for offscreen rendering and converting image<br>
+data between QuickDraw and QuickDraw GX. The library code instructs by example and<br>
+is a good starting point for your own library.
+</p>
+<p>
+<b>&nbsp;The library code is not completely tested. </b>You should treat it as template<br>
+code, not a final solution. *
+</p>
+<p>
+<b>The offscreen library. </b>This library contains support for offscreen bitmaps,<br>
+copyingbetween bitmap shapes, and simple gradient fills. The offscreen image<br>
+implementationis basic but solid (it lacks some of the features found in QuickDraw<br>
+GWorlds, such as automatic longword realignment of images).&nbsp;&nbsp;&nbsp;The utility routine<br>
+CopyToBitmaps is also useful; it shows a good example of saving a view port list. 
+</p>
+<p>
+<b>The math library. </b>This library contains a number of useful routines for<br>
+manipulatingmappings. The routine PolyToPolyMap is used in the trapezoidal warp<br>
+example (Listing 6). The header file math routine.h contains essential macros for<br>
+conversion between fixed-point, floating-point, and integral values. 
+</p>
+<p>
+<b>The ramp library. </b>Get your gradient fills here. Pleasing to the eye, easy on the<br>
+code. A gradient-filled bitmap can be rotated and clipped, and voil&agrave;!<br>
+Gradient-filled shapes. 
+</p>
+<p>
+<b>The qd and oval libraries. </b> The qd library has facilities for conversion of bitmap<br>
+and color data between QuickDraw and QuickDraw GX formats. The oval library has<br>
+real ovals, not those phony squished QuickDraw things. 
+</p>
+<p>
+<b>The transferMode library. </b>This library facilitates access to a shape's transfer<br>
+mode information and contains routines for emulating most of the QuickDraw transfer<br>
+modes. It also contains a bonus -- one of my favorite routines. If you've ever wanted to<br>
+get the results of a QuickDraw transfer mode on color values without having to use<br>
+CopyBits, TransmogrifyColor is for you. Check it out. 
+</p>
+<p>
+<b>The storage library. </b>This library implements spooling routines for use with<br>
+GXFlattenShape and GXUnflattenShape, which you'll need for reading and writing<br>
+shapes to and from files. These routines detect errors but don't report them, so they're<br>
+only useful as templates.
+</p>
+<p>
+<b>The camera library. </b>Perspective is cool, but hard to use unless your math skills<br>
+are well developed.&nbsp;&nbsp;&nbsp;This library provides nifty 3-D techniques. 
+</p>
+<h2>AND A FEW MORE THINGS . . .</h2>
+<p>
+Here I'll point out some caveats and additional interesting features of QuickDraw GX,<br>
+just so you know what to look for (and look out for). 
+</p>
+<p>
+<b>EXECUTION OVERHEAD</b><br>
+How fast are QuickDraw GX blits? How slow does an offscreen, 256 x 256,<br>
+45&amp;ordm;-rotated, 32-bit, YXY, gradient-filled bitmap draw into a window on a<br>
+4-bit monitor? How much for all of these shiny pebbles? It depends. Let's look at the<br>
+issues involved. QuickDraw GX and QuickDraw have much in common here:
+</p>
+<ul>
+<li>They're fastest when there's no conversion of value or image location. </li>
+<li>Common code paths are optimized inside the API: 8-bit to 8-bit, 1-bit to<br>
+1-bit, 24-bit to 8-bit, no clipping, rectangle clipped. </li>
+<li>Blits involving complex transformations are usually orders of magnitude<br>
+slower. </li>
+</ul>
+<p>
+<b>&nbsp;Some transformations require more processing. </b>QuickDraw GX does only as<br>
+much work as the transformation matrix mandates. From fastest to slowest, the order<br>
+is: no transformation (or translation only); scaling; skewing or rotation;<br>
+perspective.*
+</p>
+<p>
+The basic performance guidelines are similar to automotive fuel efficiency ratings --<br>
+though we have no hard estimates, mileage is better on a smooth highway (no color<br>
+mapping, skewing, or scaling) than on surface streets.
+</p>
+<p>
+A transform mutation can require a 3 x 3 matrix operation for each pixel value when<br>
+rendered. That's a lot of fixed-point multiplications. If execution speed is critical and<br>
+the mutated version will be used a lot, copy the bitmap shape, mutate the geometry,<br>
+and draw like crazy. Otherwise, mutate the transform and draw as needed. 
+</p>
+<p>
+<b>SHARED IMAGE BUFFERS</b><br>
+A bitmap shape's raster image buffer can be shared by other bitmap shapes. Just make<br>
+the source bitmap shape's image field the same as that of another bitmap shape.<br>
+GXCopyToShape uses this sharing of image buffers. If you need a copy of a bitmap shape<br>
+(or a picture that contains bitmap shapes) to have its own image buffer, use<br>
+GXCopyDeepToShape.
+</p>
+<p>
+<b>USING BITMAPS AS PATTERNS</b><br>
+Bitmap shapes can be used as patterns. Unlike QuickDraw, QuickDraw GX has no<br>
+limitation on area dimension or size of raster data in a pattern. To do simple tiling,<br>
+you can just set the bitmap pattern on the shape. 
+</p>
+<p>
+You can align the pattern to all destination view ports simply by setting the<br>
+gxPortAlignPattern attribute. This forces all shapes drawn with that pattern in a given<br>
+view port to visually line up with each other. Another pattern attribute,<br>
+gxPortMapPattern, keeps a pattern from being affected by a shape's transform; this is<br>
+useful, for example, when you want a shape rotated and its pattern unrotated. 
+</p>
+<p>
+<b>BITMAP SHAPE EQUIVALENCE</b><br>
+You can test QuickDraw GX shapes for equivalence by calling GXEqualShape. However,<br>
+this routine doesn't account for mapping effects. For example, a bitmap gradient from<br>
+black to white would be considered not equal to a white-to-black gradient bitmap<br>
+whose transform is rotated 180&amp;ordm;, even though the two shapes would produce<br>
+identical results when drawn. 
+</p>
+<p>
+<b>SIMPLIFICATION</b><br>
+GXSimplifyShape reduces an indexed bitmap to its simplest representation, even<br>
+reducing the pixel depth when possible. For example, if an 8-bit-deep bitmap shape<br>
+contains only 15 colors, GXSimplifyShape will convert it to a 4-bit-deep bitmap. If a<br>
+bitmap is all one color, it will be converted into a rectangle shape -- it won't be a<br>
+bitmap shape any more. 
+</p>
+<p>
+<b>SUBSET EDITING</b><br>
+QuickDraw GX provides tools for working with area subsets of bitmaps. A piece can be<br>
+copied from a source bitmap via GXGetBitmapParts, edited, and then blasted back into<br>
+the source image with GXSetBitmapParts. 
+</p>
+<p>
+Individual pixel values can be accessed with the GXGetShapePixel and GXSetShapePixel<br>
+routines.&nbsp;&nbsp;&nbsp;Unlike in QuickDraw, these routines don't need to reference a gxViewDevice<br>
+to determine the color. 
+</p>
+<h2>SO GET GOING</h2>
+<p>
+As you can see, QuickDraw GX does some really cool things with bitmaps. The<br>
+transforms alone make it worthwhile -- it's easy to get addicted to rotating and<br>
+skewing your bitmaps without having to do a lot of work. The new transfer modes are<br>
+great. All the rest is a bonus. In the future, when memory is cheap and every machine<br>
+is fast, you'll see more and more Macintosh systems and applications become dependent<br>
+on QuickDraw GX. 
+</p>
+<h2>PIXEL VALUE REPRESENTATION</h2>
+<p>
+A raster image is, naturally enough, an array of pixel values. For indexed color, each<br>
+pixel value is an index into an associated color set.
+</p>
+<p>
+For direct color (16 or 32 bits per pixel), a pixel value is converted directly into a<br>
+color value by expanding bit fields of the 16- or 32-bit value into three or four<br>
+16-bit unsigned integer values.
+</p>
+<p>
+The expansion of direct pixel values depends on the color space of the raster image and<br>
+the "packing" of the color components. QuickDraw supports only RGB and a handful of<br>
+packing schemes, but QuickDraw GX supports a whole family of color spaces and<br>
+packing formats, some of which are shown in Figure 1. The packing types are defined<br>
+in the gxColorSpaces enum in the header file graphics types.h. You'll also find<br>
+definitions for extended color space specifications, such&nbsp;&nbsp;as gxRGB16Space<br>
+(gxRGBSpace + gxWord5ColorPacking) and gxARGB32Space (gxLong8ColorPacking +<br>
+gxRGBASpace + gxAlphaFirstPacking). Only explicitly defined permutations are valid<br>
+-- you can't just make up your own.
+</p>
+<p>
+<img src="img/228.gif" width="528 px"></img>
+</p>
+<p>
+<b>DAVID SUROVELL</b>Where there was once one, there now are three: after<br>
+approximately 1500 years of bachelorhood, David recently married (Jane) and<br>
+achieved fatherhood (Elliot Ivan). He once wrote a book on QuickDraw, but that was<br>
+long ago. When he's not sleeping under his&nbsp;&nbsp;desk at Apple, David's passionate avocations<br>
+include auditioning as a guitarist for bands that fail to play in public, committing<br>
+brutal fouls in otherwise friendly soccer matches and basketball games, and playing<br>
+paintball with other rush- hour commuters.*
+</p>
+<p>
+<b>Thanks </b>to our technical reviewers Pete ("Luke") Alexander, Josh Horwich, and Chris<br>
+Yerga. *
+</p>
+</body>
+</html>

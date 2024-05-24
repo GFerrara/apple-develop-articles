@@ -1,0 +1,311 @@
+<html>
+<head>
+<!-- Article ID: 40 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 94 - SOMEWHERE IN QUICKTIME</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>SOMEWHERE IN QUICKTIME</h2>
+<h2>Media Capture Using the Sequence Grabber</h2>
+<h1>JOHN WANG AND FERNANDO URBINA</h1>
+<p>
+<img src="img/231.gif" width="180 px"></img>
+</p>
+<p>
+A very important and often overlooked feature of QuickTime is the standardization of<br>
+media capture.&nbsp;&nbsp;&nbsp;Since its initial release, QuickTime has defined an API for capturing<br>
+different types of media, including video and sound. This API, known as the sequence<br>
+grabber, makes it possible to easily add media capture to any application. 
+</p>
+<p>
+Not only are applications that use the sequence grabber able to automatically support<br>
+any QuickTime-compatible media capture hardware, but they also perform flawlessly<br>
+and efficiently regardless of system configuration. This is not an easy task considering<br>
+all the variations in hardware features and system configurations. In fact, we're even<br>
+hesitant to say that the sequence grabber "supports video and sound capture" because<br>
+the sequence grabber API also insulates the programmer from the actual media type<br>
+being captured. The sequence grabber supports any media type, and, with the release of<br>
+QuickTime 2.0, users can automatically capture the new music media type in addition<br>
+to sound and video. 
+</p>
+<p>
+To demonstrate the proper use of the sequence grabber, we've included on this issue's<br>
+CD a simple, but complete, sequence grabber application -- all in about 10K of<br>
+compiled C code! If you're looking for a general all-purpose capture application that's<br>
+efficient, reliable, and best of all, customizable, look no further. After a brief<br>
+introduction to the sequence grabber, we'll discuss the sample code, and then end with<br>
+some special considerations for media capture on Macintosh AV models. 
+</p>
+<p>
+<b>WHAT IS THE SEQUENCE GRABBER?</b><br>
+The sequence grabber is actually a component of type 'barg' (read it backwards).<br>
+Although the specification for the component is completely defined in Chapter 5<br>
+of<i>Inside Macintosh: QuickTime Components</i> , it's very unlikely that you'll ever want to<br>
+implement your own 'barg' component. Instead, you'll be using this component<br>
+specification as the API definition for the standard sequence grabber. 
+</p>
+<p>
+The sequence grabber component implements the basic functionality of media capture.<br>
+For handling specific media-related functions, the sequence grabber calls on various<br>
+sequence grabber channel components (as defined in Chapter 6 of<i>Inside Macintosh:</i><br>
+<i>QuickTime Components</i> ); there's one such component for each media type. Before<br>
+QuickTime 2.0, the two standard channel components available were the video and<br>
+sound sequence grabber channels, enabling the sequence grabber to capture video and<br>
+sound media. QuickTime 2.0 includes the new music sequence grabber channel,<br>
+allowing real-time capture of music from MIDI instruments. 
+</p>
+<p>
+Sequence grabber panel components (described in Chapter 7 of<i>Inside Macintosh:</i><br>
+<i>QuickTime Components</i> ) manage items in a settings dialog box that allows the sequence<br>
+grabber to obtain configuration information from a user. Applications typically don't<br>
+use sequence grabber panel components directly; instead, the sequence grabber<br>
+automatically uses them for relevant sequence grabber component calls. 
+</p>
+<p>
+<b>USING THE SEQUENCE GRABBER</b><br>
+Using the sequence grabber is as simple as opening the sequence grabber component<br>
+and calling SGInitialize (complete error checking can be found in the sample code on<br>
+the CD):
+</p>
+<pre>theSG = OpenDefaultComponent(SeqGrabComponentType, 0);
+SGInitialize(theSG);</pre>
+<p>
+It's also important to call SGSetGWorld to set the window used for displaying any<br>
+visual data. 
+</p>
+<pre>SGSetGWorld((**myWindowInfo).theSG, (CGrafPtr) myWindow, nil);</pre>
+<p>
+<b>Opening the channel components. </b>Now it's a matter of calling SGNewChannel to<br>
+open a sequence grabber channel component to access a particular channel media type.<br>
+However, rather than hard- coding the media types into the sample application, as in<br>
+the call
+</p>
+<pre>SGNewChannel(theSG, VideoMediaType, &amp;videoChannel);</pre>
+<p>
+it's better to use the Component Manager to search for all the different sequence<br>
+grabber channel components and open a connection to each one. This guarantees that the<br>
+capture application can automatically support new media types such as the music<br>
+media type in QuickTime 2.0. 
+</p>
+<p>
+For example, the following code compiles a list of sequence grabber channel<br>
+components:
+</p>
+<pre>cd.componentType = SeqGrabChannelType;
+cd.componentSubType = 0;
+cd.componentManufacturer = 0;
+cd.componentFlags = 0;
+cd.componentFlagsMask = 0;
+aComponent = 0;
+
+for (i=0, done=false; i&lt;kMAXCHANNELS &amp;&amp; !done; i++) {
+    aComp = FindNextComponent(aComp, &amp;cd);
+    if (aComp != 0) {
+        // Get the channel name and type.
+        gSGInfo.channelName[i] = NewHandle(4);
+        GetComponentInfo(aComp, &amp;theCD,
+            gSGInfo.channelName[i], nil, nil);
+        gSGInfo.channelType[i] = theCD.componentSubType;
+    } else
+        done = true;
+}</pre>
+<p>
+This list of component types can then be used to open a connection to each of the media<br>
+types with SGNewChannel, or SGNewChannelFromComponent if the channel component<br>
+is already open. 
+</p>
+<p>
+<b>Saving and restoring settings. </b>We want the sample application to start up each<br>
+time with the same channel settings and video compression settings as when the<br>
+application was last used. To implement this, we use a preferences file to store these<br>
+settings. The compression settings are restored with two sequence grabber calls:
+</p>
+<pre>SGSetVideoCompressorType(
+    (**myWindowInfo).channel[videoChannel],
+    gSGInfo.cInfo.compressorType);
+SGSetVideoCompressor(
+    (**myWindowInfo).channel[videoChannel],
+    gSGInfo.cInfo.depth, nil,
+    gSGInfo.cInfo.spatialQuality,
+    gSGInfo.cInfo.temporalQuality,
+    gSGInfo.cInfo.keyFrameRate);</pre>
+<p>
+The channel settings are restored by a simple call to SGSetChannelSettings with the<br>
+settings retrieved from the preferences file:
+</p>
+<pre>SGSetChannelSettings(theSG, channel[i],
+    channelSettings[i], 0);</pre>
+<p>
+<b>Previewing. </b>We're almost ready to begin previewing. But note that some sequence<br>
+grabber channel components require additional calls before they can be used. For<br>
+instance, spatial channels such as video require a call to SGSetChannelBounds to set the<br>
+channel's display boundary rectangle. So, once the channels are created and the<br>
+previous settings are restored as discussed above, we make a call to<br>
+SGSetChannelBounds for the video media to set the video capture to encompass the<br>
+entire window. We also call SGSetChannelUsage for all sequence grabber channels,<br>
+which tells the sequence grabber that we want to preview and record every channel. 
+</p>
+<p>
+To start previewing, we simply call SGStartPreview. However, while we're<br>
+previewing, any changes to the system must be handled with care. First, we'll pause<br>
+the preview whenever an event that requires updating of the channel information<br>
+occurs. For example, if the capture window is dragged, we'll pause the video, move the<br>
+window, and then unpause the video. Likewise, if we resize the window, we'll want to<br>
+pause the preview, resize the window, and then unpause the preview:
+</p>
+<pre>// Pause the sequence grabber before resizing.
+SGPause((**myWindowInfo).theSG, true);</pre>
+<pre>// Resize and then update the video channel.
+SizeWindow(theWindow, width, height, false);
+MyUpdateChannels(theWindow);</pre>
+<pre>// OK. We can restart again.
+SGPause((**myWindowInfo).theSG, false);</pre>
+<p>
+Notice the call to MyUpdateChannels. This is a routine in the sample application that<br>
+updates the video bounds and channel usage by calling SGSetChannelBounds and<br>
+SGSetChannelUsage. 
+</p>
+<p>
+<b>The user configuration dialog. </b>Another feature that needs to be handled in a<br>
+capture application is the user configuration dialog for each of the different capture<br>
+medias. This is actually one of the simplest things to deal with because the sequence<br>
+grabber component handles everything. It even stores the settings internally. To<br>
+retrieve the settings, we can simply call SGGetChannelSettings at a later time.&nbsp;&nbsp;&nbsp;In the<br>
+sample application, we get the channel settings before we close the connection to the<br>
+sequence grabber. Then we save the settings in the preferences file. 
+</p>
+<p>
+This is all the code necessary to display and handle the user configuration dialog:
+</p>
+<pre>SGSettingsDialog(theSG, theChannel, 0, nil, 0, nil, 0);</pre>
+<p>
+<b>Recording. </b>The last important part of the sample code is sequence grabber recording.<br>
+Before recording can begin, we need to specify an output file with SGSetDataOutput so<br>
+that the sequence grabber knows where to save the captured media data:
+</p>
+<pre>StandardPutFile("\PName of new movie:", "\pMovie", &amp;reply);
+if (!reply.sfGood)
+    return;
+SGSetDataOutput(mySG, &amp;reply.sfFile, seqGrabToDisk);</pre>
+<p>
+Then we start recording by simply calling
+</p>
+<pre>SGStartRecord(theSG);</pre>
+<p>
+We loop and call SGIdle until the mouse button is pressed to stop recording. This is the<br>
+most efficient way to record: we don't want to call WaitNextEvent, since that would<br>
+give other processes time. Instead, we want to hog the CPU time until the recording<br>
+process is done. 
+</p>
+<pre>while (!Button() &amp;&amp; !err) {
+    err = SGIdle(theSG);
+}</pre>
+<p>
+We stop recording and start previewing again as follows:
+</p>
+<pre>SGStop(mySG);
+SGStartPreview((**myWindowInfo).theSG);</pre>
+<p>
+And, of course, just to be nice, we flush the mouse-down events so that no application<br>
+switching takes place after the mouse button is pressed:
+</p>
+<pre>FlushEvents(mDownMask, 0);</pre>
+<p>
+That's really all there is to the sequence grabber sample application. 
+</p>
+<p>
+<b>SPECIAL CONSIDERATIONS FOR AV MODELS</b><br>
+As mentioned earlier, one of the key features of the sequence grabber is its ability to<br>
+work with all hardware and system configurations. This is not an easy task considering<br>
+all the different types of video capture boards. For example, there are boards that are<br>
+simply frame grabbers, and there are those that support on-board hardware video<br>
+compression. To make every configuration work, the sequence grabber has to handle<br>
+every case. Here we'll discuss the unique features of the Macintosh AV models and some<br>
+steps you can take to improve their capture rate. 
+</p>
+<p>
+The video-in circuitry allows the AV models to display 16-bit color and 8-bit<br>
+grayscale. And, although the hardware can't display video-in at 24 bits per pixel, you<br>
+can capture video using YUV 4:2:2 compression and achieve an effective 24 bits per<br>
+pixel. To capture in YUV, you must use the AV's video digitizer hardware compression<br>
+feature, which you can do simply by selecting "Component Video - YUV" from the list<br>
+of compressors in the Compression panel of the video settings dialog. You should also<br>
+make sure that you haven't checked a "Post Compress Video" or similar checkbox in a<br>
+movie-grabbing application. Selecting this checkbox would bypass the hardware<br>
+compression, and the sequence grabber would grab the data in raw RGB format. 
+</p>
+<p>
+The AV circuitry can't display video when it's capturing the compressed data. The<br>
+sequence grabber realizes that it needs to decompress the data into the capture window<br>
+in order to give the visual feedback that's normally expected. This is fine and dandy,<br>
+but since there's no hardware decompression in the system, the image decompression<br>
+is completed in software. This degrades the capture rate. 
+</p>
+<p>
+Knowing that the decompression during recording is what's hurting the capture rate,<br>
+you can easily rectify the problem by turning off preview during recording so that<br>
+decompression into the capture window won't take place. To do this, you just call<br>
+SGSetChannelUsage for the video channel with the seqGrabPlayDuringRecord flag set to<br>
+0. In the sample code, a menu selection allows you to turn off video playthrough during<br>
+recording. 
+</p>
+<p>
+The downside of using YUV compression is that playback without hardware<br>
+decompression isn't very smooth because of the high data rate and raw processing<br>
+power needed to decompress each pixel.&nbsp;&nbsp;&nbsp;After capturing, you should recompress the<br>
+movie using a compressor such as Cinepak or Video that provides a better playback<br>
+rate. 
+</p>
+<p>
+<b>GO MAKE A MOVIE</b><br>
+The sequence grabber obviously makes the job of media capture simpler. But there are<br>
+many other factors that can play a part. Hard drive transfer rate, disk fragmentation,<br>
+SCSI bandwith, sound settings, and AppleTalk activity all play an important part in<br>
+limiting the maximum capture rate. You can also maximize the capture rate by<br>
+rebooting with no AppleTalk connections. You should also experiment with the different<br>
+sound sample rates, as these also affect the capture rate. 
+</p>
+<p>
+New additions to the sequence grabber in QuickTime 2.0 also help. Instead of capturing<br>
+to a single movie file, it's now possible to specify a different file for each channel. For<br>
+example, you can record video to a large and fast external hard drive and record audio<br>
+to the internal hard drive. This optimization allows for better allocation of resources<br>
+and better efficiency because each channel has higher bandwidth. Using the sample<br>
+code, if QuickTime 2.0 is installed, you can select recording to separate files. 
+</p>
+<p>
+There are, of course, other optimizations that can be explored. With a bit of creativity<br>
+and testing, you<i> can</i> achieve the optimal capture rates. 
+</p>
+<h2>RELATED READING</h2>
+<ul>
+<li><i>Inside Macintosh: QuickTime Components</i> , Chapters 5-7, and <i>Inside</i><br>
+<i>Macintosh: More Macintosh Toolbox</i> , Chapter 6, "Component Manager"<br>
+(Addison-Wesley, 1993).</li>
+<li>"Video Digitizing Under QuickTime" by Casey King and Gary Woodcock, <br>
+<i>develop </i> Issue 14. About the sequence grabber and video capture.</li>
+</ul>
+<p>
+<b>JOHN WANG </b>(AppleLink WANG.JY) While writing the sequence grabber sample code<br>
+for this column, John watched the movie <i>Top Gun</i>&nbsp;&nbsp;so many times that he can now<br>
+duplicate each and every air combat scene with his favorite flight simulator, FA/18<br>
+Hornet. John once aspired to become a private pilot, but that idea was quickly quelled<br>
+once his significant others found out. As Skate so succinctly put it, "Woof woof wooof?"<br>
+Translation: "Who's going to feed me if you kill yourself?"*
+</p>
+<p>
+<b>FERNANDO ("NANO") URBINA </b>(AppleLink NANO) uses his Macintosh AV to<br>
+capture the views of the Rockies from his home office in Colorado Springs. He still<br>
+doesn't understand how it can thunder and snow at the same time, but thinks he'll be<br>
+able to figure this out once he adjusts to the lack of oxygen. Nano suffers severe<br>
+withdrawal from his favorite coffee shop near the Apple campus in Cupertino, but<br>
+manages to get a fix about once a month when he returns there. He worked on the<br>
+original AV models and is now a member of the second-generation AV team. *
+</p>
+<p>
+<b>&nbsp;Thanks </b>to Peter Hoddie and Don Johnson for reviewing this column. *
+</p>
+</body>
+</html>

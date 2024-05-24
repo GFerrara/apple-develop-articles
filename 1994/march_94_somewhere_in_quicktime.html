@@ -1,0 +1,235 @@
+<html>
+<head>
+<!-- Article ID: 15 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 94 - SOMEWHERE IN QUICKTIME</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>SOMEWHERE IN QUICKTIME</h2>
+<h2>CROSS-PLATFORM COMPATIBILITY AND MULTIPLE-MOVIE<br>
+FILES</h2>
+<h1>JOHN WANG</h1>
+<p>
+<img src="img/153.gif" width="180 px"></img>
+</p>
+<p>
+The success of QuickTime since its introduction in December of 1991 has been<br>
+extraordinary; not only are there now countless applications and multimedia products<br>
+for QuickTime on the Macintosh platform, but QuickTime has been successful for<br>
+cross-platform developers as well. QuickTime for Windows, shipping since November<br>
+of 1992, is becoming an important tool for Windows multimedia developers. Because<br>
+movies can be created with QuickTime on the Macintosh and then used unaltered with<br>
+QuickTime for Windows, developers are able to create a movie once and use it on both<br>
+systems. This capability has been available since the 1.0 release of QuickTime.
+</p>
+<p>
+To satisfy your curiosity and help you out with your own QuickTime products, this<br>
+column discusses how to create movie files that are cross-platform compatible and<br>
+then gives techniques for storing and accessing multiple movies in a single file (which<br>
+currently poses a problem in the cross-platform environment). 
+</p>
+<p>
+<b>CREATING CROSS PLATFORM-COMPATIBLE&nbsp;&nbsp;MOVIE FILES</b><br>
+The structure you choose for your QuickTime movie files will depend in part on the<br>
+platform your movies will run on. This is because the Macintosh file system is<br>
+different from other file systems in that there can be up to two forks in every file: a<br>
+data fork and a resource fork. The data fork is the standard file for I/O that most file<br>
+systems support. The resource fork, however, is unique to the Macintosh. It's a<br>
+"database" of resources that can be randomly accessed via the Resource Manager.
+</p>
+<p>
+There are two components to a movie file: the<i>movie resource atom</i>&nbsp;&nbsp;-- a small data<br>
+structure describing the movie, its tracks, and the tracks' media -- and the<i>movie data</i><br>
+<i>atom,</i> containing the movie's data such as video and sound. A typical movie file on the<br>
+Macintosh consists of a movie resource atom in the resource fork and a movie data<br>
+atom in the data fork. Storing the movie resource atom in the resource fork with<br>
+resource type 'moov' allows easy random access to the data it contains. The movie data<br>
+atom is stored in the data fork as sequential data, which optimizes playback<br>
+performance. 
+</p>
+<p>
+Because file systems on other platforms don't support a resource fork, a movie that is<br>
+to be used on other platforms must have its movie resource atom stored in the data<br>
+fork of the movie file. This type of file is called a<i>single-fork file</i> because the movie<br>
+resource atom and the movie data atom are both stored in the data fork of the movie<br>
+file, and the resource fork is not used.
+</p>
+<p>
+Movies that will be played on both Macintosh and non-Macintosh platforms can use a<br>
+file in which the movie resource atom is redundantly stored in both the resource fork<br>
+and the data fork of the file.&nbsp;&nbsp;&nbsp;The movie data atom is, as always, stored only in the data<br>
+fork. For lack of a better term, this type of file is also often called a single-fork file<br>
+since the resource fork of the movie file can be ignored.
+</p>
+<p>
+The simplest way to create a single-fork movie file for cross-platform compatibility<br>
+is to use the Movie Converter application from the QuickTime Starter Kit (available<br>
+from Apple-authorized dealers). The Save As dialog in this application has a checkbox<br>
+that allows a movie to be stored in thesingle-fork format. However, the QuickTime API<br>
+can easily be used to add this capability to any application. You simply call either<br>
+FlattenMovie or FlattenMovieData with the flattenAddMovieToDataFork flag set. When<br>
+called with this flag set, FlattenMovie places the movie resource atom in both forks,<br>
+while FlattenMovieData puts it only in the data fork, leaving the resource fork<br>
+untouched. 
+</p>
+<p>
+Movie files that are created with FlattenMovie orFlattenMovieData with the<br>
+flattenAddMovieToDataForkflag set are compatible with both QuickTime and QuickTime<br>
+for Windows because QuickTime is able to retrieve the movie resource atom and the<br>
+movie data from the data fork alone on either platform. 
+</p>
+<p>
+<b>MULTIPLE-MOVIE FILES FOR THE MACINTOSH</b><br>
+We'll return to cross-platform issues in a moment, but first let's take a look at the<br>
+simple case of multiple-movie files: those that will be used only on the Macintosh<br>
+platform. You can create such files in one of two ways, depending on whether you want<br>
+the resulting file to be self-contained (that is, to contain all of the movie information<br>
+in one file). Both of these methods have their benefits and drawbacks.&nbsp;&nbsp;&nbsp;The one that<br>
+will work best for you depends on your implementation and performance testing. 
+</p>
+<p>
+To create a self-contained multiple-movie file for the Macintosh, you can use the<br>
+FlattenMovie call (without the flattenAddMovieToDataFork flag set) to append an entire<br>
+movie to an existing movie file. This adds the movie resource atom to the resource fork<br>
+and the movie data atom to the data fork of the file.
+</p>
+<p>
+The second method creates a multiple-movie file that's not self-contained, but instead<br>
+consists entirely of movie resource atoms that reference other movie files containing<br>
+the movie data atoms.&nbsp;&nbsp;&nbsp;This technique can be useful if, for example, you're writing an<br>
+interactive CD application that uses multiple movies and you want to store all the<br>
+movie resource atoms in a single file that's relatively small. This file can be copied<br>
+locally to a hard disk for faster access. The drawback of this approach is that you have<br>
+to handle multiple files rather than have everything in one file. The excerpt below<br>
+from the sample code provided on the CD demonstrates -- without error checking, for<br>
+better readability -- how easy it is to add an existing movie's resource atom to a<br>
+movie file. 
+</p>
+<pre>// Open source movie file to add.
+OpenMovieFile(&amp;reply.sfFile, &amp;sourceRefNum, fsRdWrPerm);
+NewMovieFromFile(&amp;theMovie, sourceRefNum, &amp;resId,
+    movieName, 0, (Boolean *) 0);
+CloseMovieFile(sourceRefNum);
+
+// Write out to the collection file.
+currentResFile = CurResFile();
+UseResFile(collectionRefNum);
+myResId = 0;
+AddMovieResource(theMovie, collectionRefNum, &amp;myResId,
+    movieName);
+UseResFile(currentResFile);
+
+// Clean up.
+DisposeMovie(theMovie);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+AddMovieResource does more than just add the movie resource atom: it updates the data<br>
+references so that the new movie will refer to the correct movie data file. 
+</p>
+<p>
+Accessing multiple-movie files for Macintosh-only use is easy. You just use the<br>
+Resource Manager to access the movie resource atoms in the resource fork of the file.<br>
+The following excerpt from the sample code on the CD uses the Resource Manager to<br>
+access the various movies. (The code on the CD adds the resource names of all the<br>
+movies to a menu; your code can of course do whatever it wants with the movies.)
+</p>
+<pre>currentResFile = CurResFile();
+UseResFile(theRefNum);
+movieCount = Count1Resources('moov');
+for (i=1; i&lt;=movieCount; i++) {
+    movieResource = Get1IndResource('moov', i);
+    // Do whatever you want with this movie.
+    . . .
+    ReleaseResource(movieResource);
+}
+UseResFile(currentResFile);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>&nbsp;CROSS-PLATFORM MULTIPLE-MOVIE FILES</b><br>
+&nbsp;To create a multiple-movie file that's cross-platform compatible, you just repeatedly<br>
+call FlattenMovie orFlattenMovieData with the flattenAddMovieToDataForkflag set, as<br>
+described earlier under "Creating Cross Platform-Compatible Movie Files." Accessing<br>
+such a file, however, is complicated. Since it's a single-fork file, you can't access the<br>
+movie resource atoms randomly as with the Resource Manager. There's also a problem<br>
+with accessing the atoms directly; to understand this problem, you need to know how a<br>
+single-fork movie file is structured.
+</p>
+<p>
+&nbsp;The movie data atom appears before the movie resource atom in a single-fork file. The<br>
+first four bytes of the movie data atom contain the size of the atom. (Figure 4-2<br>
+in<i>Inside Macintosh: QuickTime</i> , page 4-5, illustrates this structure.) This permits<br>
+QuickTime to skip over the movie data atom to find the movie resource atom. If you<br>
+place several movies in the same file, the movie data atoms are interleaved with the<br>
+movie resource atoms. 
+</p>
+<p>
+&nbsp;Here's the problem: A bug in QuickTime through its current version (1.6.1) causes<br>
+the size field in the movie data atoms to be filled in incorrectly. The illustration below<br>
+shows how QuickTime currently creates a single-fork movie file in which<br>
+FlattenMovieData has been called multiple times.&nbsp;&nbsp;&nbsp;The atom size in the first movie data<br>
+atom takes you to the last movie resource atom rather than the first movie resource<br>
+atom. Therefore, you can locate only the last movie in the file. 
+</p>
+<p>
+<img src="img/154.gif" width="353 px"></img>
+</p>
+<p>
+&nbsp;This bug will be fixed in the next version of QuickTime. The solution for now is to use<br>
+the wrapper function called BetterFlattenMovieData, included on this issue's CD. This<br>
+function, when called multiple times, creates a single-fork file in which the size and<br>
+type fields of all atoms contain the correct information.
+</p>
+<p>
+&nbsp;To locate the movies in a file with correct size and type fields, you traverse the data<br>
+fork and read in those fields of each atom to determine its size and whether it's a movie<br>
+resource atom. When you know the size of the atom, it's easy to skip over it and access<br>
+the next atom. Of course, the last atom is reached when the end of the file is reached.<br>
+The following code from the CD demonstrates how you would do this. 
+</p>
+<pre>// Locate the file offset of the movie resource
+// atom stored at the specified index.
+if (FSpOpenDF(theFile, fsRdPerm, &amp;myRefNum)   == noErr) {
+    currentLoc = 0;
+    doneCounter = index;
+    *fileOffset = 0;
+    while ((doneCounter &gt; 0)) {
+          if (err = SetFPos(myRefNum, fsFromStart, currentLoc))
+                 return(err);
+          readLength = 8;
+          if (err = FSRead(myRefNum, &amp;readLength, header))
+                 return(err);
+    if (header[1] == 'moov')
+          doneCounter--;
+    *fileOffset = currentLoc;
+    currentLoc += header[0];
+    }
+    FSClose(myRefNum);
+} else
+    return (err);
+return (noErr);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>MOVING ON</b><br>
+I'm happy to see that QuickTime is being used in new and exciting ways. By taking full<br>
+advantage of the cross-platform and multiple-movie capabilities of QuickTime, you<br>
+can bring your products to new heights. The sample code on the CD will start you on<br>
+your way. Enjoy! 
+</p>
+<p>
+<b>JOHN WANG </b>(AppleLink WANG.JY) is often seen sneaking around the Apple campus<br>
+with a heavy duffle bag that one would think to be dozens of 8*24&nbsp;&nbsp;GC cards that John is<br>
+trying to get out of harm's way. But, in truth, John is protecting unknowing strangers<br>
+from his two attack dogs, shown above. *
+</p>
+<p>
+<b>For information on movie resource formats, </b> see&nbsp;&nbsp;Chapter 4 of <i>Inside</i><br>
+<i>Macintosh: QuickTime.</i>&nbsp;&nbsp;*
+</p>
+<p>
+<b>Thanks </b>to Peter Hoddie, Don Moccia, and Brigham Stevens for reviewing this column.<br>
+*
+</p>
+</body>
+</html>

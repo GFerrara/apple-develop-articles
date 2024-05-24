@@ -1,0 +1,807 @@
+<html>
+<head>
+<!-- Article ID: 21 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 94 - Programming for Flexibility: The Open Scripting Architecture</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Programming for Flexibility: The Open Scripting<br>
+Architecture</h2>
+<h1>PAUL G. SMITH</h1>
+<p>
+<img src="img/176.gif" width="180 px"></img>
+</p>
+<p>
+<i>Users -- and developers -- waited a long time for the Macintosh Operating System to</i><br>
+<i>support the ability to attach and run scripts as a way of customizing applications. The</i><br>
+<i>Open Scripting Architecture (OSA) that's part of AppleScript finally provides the</i><br>
+<i>necessary services. Now you can realize massive gains in flexibility by using</i><br>
+<i>embedded scripts and can pass similar gains along to the user by making your</i><br>
+<i>application OSA savvy.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Thanks to Apple's Open Scripting Architecture (OSA), an application can now be as<br>
+flexible as a set of Lego building blocks. Defining the program's high-level behavior<br>
+using scripts instead of traditional program code makes possible an unprecedented<br>
+amount of flexibility, a cause for celebration particularly among in-house developers<br>
+and developers of custom software. Want to make a change in the way your software<br>
+works? It's simple to modify the scripts that define the behavior of the objects<br>
+involved. Want to make a customized solution, using the program's components as<br>
+building blocks? Easy: just write some new scripts. Want to construct an OpenDoc part<br>
+from your program? You're already partway there.
+</p>
+<p>
+Varying degrees of OSA support are open to your application. The OSA gives you the<br>
+ability to do the following:
+</p>
+<ul>
+<li>execute scripts previously created with the AppleScript Script Editor</li>
+<li>store compiled scripts and other script values in your program and data<br>
+files</li>
+<li>directly compile and execute scripts</li>
+<li>decompile existing scripts, for editing</li>
+<li>use embedded scripts to automate your program's handling of Apple events</li>
+<li>enable users to customize and extend your program's capabilities by<br>
+attaching scripts to objects in the application's domain</li>
+</ul>
+<p>
+Further, the OSA makes it possible for all customizable applications to present a<br>
+common set of scripting languages and dialects for users to choose from.
+</p>
+<p>
+This article orients you to the OSA by outlining an OSA-savvy programming structure<br>
+and then describing techniques you can use to import scripts from the Script Editor,<br>
+run a script in your application, attach scripts to objects, compile and decompile<br>
+scripts, route Apple events to scripts, and handle user-interface events. The<br>
+programming structure and these techniques are demonstratedin the source code for<br>
+the sample program SimpliFace on this issue's CD. The AppleScript Software<br>
+Development Toolkit, available from APDA, contains the essential tools for OSA<br>
+development.
+</p>
+<h2>STRUCTURING THE OSA-SAVVY PROGRAM</h2>
+<p>
+You need to do some preliminary setup work in your application before you can take<br>
+full advantage of the services offered by the OSA and make use of scripts. Depending on<br>
+how your application is already structured, this can mean anything from a slight<br>
+restructuring to a complete rewrite from the ground up. I'll describe the basic<br>
+requirements for an OSA-savvy program here and then show you the structure of<br>
+SimpliFace so that you can see how one looks.
+</p>
+<p>
+<b>THE BASIC REQUIREMENTS</b><br>
+The first requirement for an OSA-savvy program is that it comply with the Apple<br>
+event object model. As you probably know, this model sets out a standard way of<br>
+structuring a program so that it can be controlled from other programs and so that it's<br>
+scriptable using standard terminology familiar to the user. This model is solution<br>
+oriented (that's the crucial part) because it concentrates on<i>what</i> users do with the<br>
+application, not on<i>how</i>&nbsp;&nbsp;they and the application do it. The articles "Apple Event Objects<br>
+and You" in<i>develop</i> Issue 10 and "Better Apple Event Coding Through Objects"<br>
+in<i>develop</i> Issue 12 provide useful information about the Apple event object model and<br>
+how to support it in your application. The Apple Event Registry is the essential<br>
+reference for standard Apple event classes and commands.
+</p>
+<p>
+The second requirement (which isn't completely separable from the first) is that the<br>
+application be fully factored -- that is, that it separate the interface from the<br>
+operations. In a factored program, the actions that result when users choose menu<br>
+items, click buttons, and so on, generate a sequence of Apple events. When a<br>
+user-initiated action is dispatched as an Apple event, or when an external program or<br>
+script sends an Apple event, the program resolves which object the Apple event relates<br>
+to.&nbsp;&nbsp;&nbsp;It then passes the Apple event to the appropriate handler for that object; this<br>
+program code is responsible for the object's behavior.
+</p>
+<p>
+When your application complies with the Apple event object model and is fully<br>
+factored, and when it publishes its scripting terminology, it's possible to make it<br>
+attachable -- that is, to make it handle and store the data involved in the process of<br>
+embedding or attaching a script. (I say "embedding a script" when I mean building one<br>
+in at the program development stage, whereas I refer to "attaching a script" when I<br>
+mean it's added or modified by the user.) And once your program enables scripts to be<br>
+attached to objects such as windows, documents, and the application object itself, these<br>
+scripts can customize the program's handling of object-model Apple events. 
+</p>
+<p>
+Scripts attached to program objects can affect the behavior of the program and its<br>
+objects in two cases. In the first case, scripts attached to objects can modify the<br>
+behavior of those objects when Apple events are resolved and handled. In the second<br>
+case, scripts attached to user-interface objects like menus and buttons can define the<br>
+sequence of Apple events that result from user-initiated actions. Both of these<br>
+mechanisms may have a place in your application. Fortunately, your application's<br>
+structure doesn't have to change much to allow scripts to customize behavior.
+</p>
+<p>
+An attachable program can give a compiled script first crack at handling an incoming<br>
+Apple event instead of passing the event first to the handler (the program code that<br>
+defines the object's behavior).&nbsp;&nbsp;&nbsp;If the script handles the Apple event, the program code<br>
+doesn't get called; if the script continues the Apple event (that is, passes the message<br>
+to the script's parent object) or if it doesn't handle it, the program code gets called as<br>
+usual, as illustrated in Figure 1. If necessary, the script can modify or add to the<br>
+original parameters for the Apple event before passing it on to the program code.
+</p>
+<p>
+For more on handling Apple events, see the description of command handlers on page<br>
+241 of the<i> AppleScript Language Guide</i> . *
+</p>
+<p>
+<img src="img/177.gif" width="518 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1. </b>Routing an Apple event
+</p>
+<p>
+Thus, attaching scripts to objects can make the operation of your program a great deal<br>
+more flexible.&nbsp;&nbsp;&nbsp;But you can go even further: instead of generating Apple events by<br>
+making long-winded calls to the Apple Event Manager in response to user-initiated<br>
+actions, you can attach scripts to user-interface objects. Selection of one of these<br>
+objects then results in a script being called; the result of executing the script is that<br>
+the appropriate Apple events are sent, as illustrated in Figure 2. In the first case, the<br>
+primary reason the program makes the Apple event calls is so that the action is<br>
+recordable; in the second case, the script makes the Apple event calls anyway, so that<br>
+no extra work is required to make the action recordable, and thus the recordability<br>
+comes for free. The overhead involved in this is minimal (and it may even reduce the<br>
+bulk of program code); the increased flexibility is massive. It's not even necessary to<br>
+make these embedded scripts user changeable -- that's entirely up to you. 
+</p>
+<p>
+<b>A SAMPLE PROGRAM: SIMPLIFACE</b><br>
+The sample program SimpliFace on this issue's CD demonstrates the principles just<br>
+outlined.&nbsp;&nbsp;&nbsp;SimpliFace is a basic scriptable and attachable user-interface builder<br>
+written in MPW C++.&nbsp;&nbsp;&nbsp;SimpliFace constructs scripted windows that can contain text<br>
+labels (though not editable text) and buttons. It demonstrates many of the features of<br>
+the OSA APIs, uses a lightweight C++ framework for Apple event object model<br>
+compliance, suggests a novel approach to a fully factored application, and allows<br>
+scripts to be attached to all application objects. SimpliFace has little preprogrammed<br>
+behavior; virtually everything is defined through scripts supplied by the user.
+</p>
+<p>
+<img src="img/178.gif" width="531 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>Generating Apple events
+</p>
+<p>
+SimpliFace is built around a rough-and-ready C++ framework, inspired by the one<br>
+used in the Apple Shared Library Manager's sample applications. I like to use<br>
+lightweight C++ classes that don't depend on one another too much (thus aiding their<br>
+reuse), so the program structure isn't as tightly integrated as that of, say, a MacApp<br>
+program. In the spirit of other Apple sample applications, most of the error handling<br>
+has been left for later. 
+</p>
+<p>
+Figure 3 illustrates the object containment hierarchy for SimpliFace at run time.<br>
+There is one application object, which can contain zero or more window objects. Each<br>
+window object can contain button objects and/or text label objects.
+</p>
+<p>
+<b>&nbsp;Figure 3. </b>SimpliFace's object containment hierarchy
+</p>
+<p>
+Figure 4 shows the SimpliFace class hierarchy. All application-domain scriptable<br>
+objects derive from a TScriptableObject class (see the source file<br>
+ScriptableObjects.h) that has an attached script and is able to assist with object<br>
+resolution and Apple event handling. A TObjModelToken class (see ObjModelTokens.h)<br>
+is defined to manage token resolution and Apple event dispatching; the interaction of<br>
+these is managed from a set of static functions in the file ObjModelEvents.cp.
+</p>
+<p>
+<img src="img/179.gif" width="447 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 4. </b>SimpliFace's class hierarchy
+</p>
+<p>
+The application's behavior is defined in the files Application.cp and SimpliFace.cp (the<br>
+latter contains the main program function). Outside the program's object containment<br>
+hierarchy, a separate script administrator class, TScriptAdministrator, is defined. <br>
+This class is responsible for fetching the script attached to objects and preparing it<br>
+for execution, and serves to encapsulate the script-handling code.&nbsp;&nbsp;&nbsp;It's implemented in<br>
+the file ScriptableObjects.cp. 
+</p>
+<p>
+The window, button, and text label objects are created by sending SimpliFace<br>
+appropriate Apple events. When it receives an Apple event, SimpliFace resolves the<br>
+object that the event is aimed at (the direct parameter of the event specifies the target<br>
+object). SimpliFace then dispatches the Apple event (unless it's an Open Application,<br>
+Get Data, or Set Data event) to the script of the target object.&nbsp;&nbsp;&nbsp;The work for this<br>
+ishandled in the file ObjModelEvents.cp. We'll look in greater detail at how SimpliFace<br>
+handles an incoming Apple event in the section "Routing Apple Events to Scripts."
+</p>
+<p>
+Two sample scripts written in the AppleScript language are supplied to demonstrate<br>
+SimpliFace; you can run these using the Script Editor. One is the startup script that's<br>
+run whenever SimpliFace is launched, and the other (called Test Simple Window)<br>
+creates a window that contains two buttons and a text label. Here's the latter script:
+</p><p class="spacer">&nbsp;</p>
+<pre>make new window &#172;
+    with properties {name:"Tests", bounds:{60, 60, 350, 300}}
+set the script of window "Tests" to winScript
+open window "Tests"
+   
+make new button &#172;
+    with properties &#172;
+    {name:"Quit", kind:standard, bounds:{10, 50, 80, 70}} &#172;
+    at end of window "Tests"
+make new button &#172;
+    with properties &#172;
+    {name:"Hello", kind:standard, bounds:{10, 10, 80, 30}} &#172;
+    at end of window "Tests"
+make new text label &#172;
+    with properties &#172;
+    {name:"Data entry", contents:"I'm a text label!", &#172;
+    bounds:{90, 80, 280, 130}} &#172;
+    at end of window "Tests"</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Open the SimpliFace Dictionary, using the Script Editor, to see more details of the<br>
+scripting interface.
+</p>
+<p>
+SimpliFace doesn't store window properties or object scripts on disk, so every time<br>
+you launch it you need to set up the application script, and you must recreate all<br>
+windows and window objects. This is facilitated by the automatic loading and execution<br>
+of the startup script (called SimpliFace Startup) whenever SimpliFace is launched. To<br>
+prevent this script from running, hold down the Control and Command keys while<br>
+SimpliFace starts up. The mechanism used to run this script is described under<br>
+"Running Scripts" later in this article. 
+</p>
+<h2>DEBUGGING SIMPLIFACE</h2>
+<p>
+To help debug the Apple event handlers in SimpliFace, I implemented a simple debug<br>
+transcript tool. A small amount of code (borrowed from MacApp) is used to intercept<br>
+the MPW &lt;stdio&gt; library. The information thus captured is packaged and sent via a<br>
+private Apple event to the Debug Transcript program, which you'll find along with the<br>
+rest of SimpliFace on the CD.
+</p>
+<p>
+The debugging mechanism is managed in the SimpliFace module DebugTrace. If you open<br>
+the Debug Transcript program before you run SimpliFace, a lot of information about<br>
+Apple events received and processed will appear in the transcript window. Apple<br>
+events are decoded in the Apple event prehandler using the AEPrint routine, part of<br>
+Jens Alfke's AEGizmos library. You can add to the information displayed simply by<br>
+adding extra printf statements to the program code.
+</p>
+<h2>TECHNIQUES FOR OSA-SAVVY PROGRAMS</h2>
+<p>
+Now that you have a general idea of how to structure an OSA-savvy program, we'll<br>
+consider the specific techniques your program can use to take advantage of the OSA's<br>
+services and enjoy the flexibility offered by using scripts. This section describes how<br>
+to import scripts from the Script Editor, run scripts from within the application,<br>
+attach scripts to objects, compile and decompile scripts, route Apple events to scripts,<br>
+and handle user-interface objects. You won't necessarily need to implement all of these<br>
+techniques in your program, but you should be aware of them so that you can decide<br>
+how you want to implement scripting. 
+</p>
+<p>
+<b>IMPORTING SCRIPTS FROM THE SCRIPT EDITOR</b><br>
+Unless you have a specialized requirement and want to write your own script editor,<br>
+you'll get the best mileage by creating and compiling scripts with Apple's Script Editor<br>
+and then importing these scripts into your application. You have some choices about<br>
+how to approach importing scripts into your application:
+</p>
+<ul>
+<li>You can keep the scripts in Script Editor files and load them only when<br>
+needed.&nbsp;&nbsp;&nbsp;This is the approach SimpliFace takes with its startup script: it looks<br>
+in the same folder as the application for the file called SimpliFace Startup and<br>
+loads and executes the script from that file.</li>
+<li>Extending this approach, your program can maintain a folder of script<br>
+files and look there for named files. For the user, adding a new script file is as<br>
+easy as dragging it to the folder in the Finder. </li>
+<li>Alternatively, your program can offer an import function that allows the<br>
+user to select a script file from which a compiled script is to be imported.<br>
+Your program can then store the compiled script object in any way it wishes,<br>
+using its own data storage mechanisms. </li>
+</ul>
+<p>
+Before we examine the technique you should use to import scripts, we need to quickly<br>
+review how the Script Editor and the OSA store scripts. AppleScript can compile<br>
+scripts in two forms: as contexts, which can contain handlers (for Apple events and<br>
+user-defined subroutines) and properties, and as ordinary compiled scripts, which<br>
+can only be executed. The Script Editor always compiles and saves scripts as script<br>
+contexts. To the OSA, compiled scripts are values and can be stored in variables and<br>
+manipulated just like numbers, text, lists, or records. When a program passes a<br>
+script value to the OSA, or when the OSA passes a script value to a program, it's<br>
+referred to through a special magic cookie called an OSAID. OSAIDs are 32-bit-long<br>
+integers, and the OSA uses an internal mechanism to map these onto the data they refer<br>
+to. The OSA provides a pair of routines that you can use to convert OSAIDs to and from<br>
+data handles you can save. OSAStore converts an OSAID into an AEDesc (Apple event<br>
+descriptor), of which the data handle portion can be saved. OSALoad does the opposite,<br>
+unpacking the contents of the data handle portion of an AEDesc (previously saved using<br>
+OSAStore) to create a new OSAID. A compiled script context that's been saved using the<br>
+OSAStore command is contained in resource number 128 of type 'scpt'<br>
+(kOSAScriptResourceType, the same constant as typeOSAGenericStorage), one of the<br>
+four resources of a Script Editor compiled script file.
+</p>
+<p>
+&nbsp;The AEDesc is the basic Apple event data structure, described in <i>Inside Macintosh:</i><br>
+<i>Interapplication Communication</i> , Chapter 3, and the earlier <i> Inside Macintosh </i> Volume<br>
+VI, Chapter 6. *
+</p>
+<p>
+SimpliFace's LoadScriptFromFile routine, shown in Listing 1, imports a compiled<br>
+script from a Script Editor file; you can use it as a model regardless of which of the<br>
+three approaches outlined above you choose to take. The key tasks undertaken by this<br>
+routine (apart from locating and opening the resource fork of the script file) are<br>
+loading the resource handle, putting a reference to it into an AEDesc of type 'scpt'<br>
+(typeOSAGenericStorage), and calling OSALoad to generate an OSAID that refers to the<br>
+compiled script.
+</p>
+<p>
+<b>Listing 1.</b> TScriptAdministrator::LoadScriptFromFile
+</p><p class="spacer">&nbsp;</p>
+<pre>OSAError  TScriptAdministrator::LoadScriptFromFile(FSSpec *fileSpec,
+               OSAID *theScriptID)
+{
+    short           fileRef = FSpOpenResFile(fileSpec, fsRdPerm);
+    OSAError        err = ResError();
+
+    if (err == noErr) {
+        Handle  h = Get1Resource(kOSAScriptResourceType, 128);
+        if (h != nil) {
+            AEDesc  scriptData;
+            scriptData.descriptorType = typeOSAGenericStorage;
+            scriptData.dataHandle = h;
+            err = OSALoad(gScriptingComponent, &amp;scriptData,
+                                kOSAModeNull, theScriptID);
+            ReleaseResource(scriptData.dataHandle);
+        }
+        CloseResFile(fileRef);
+    }
+    return err;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>RUNNING SCRIPTS</b><br>
+Now that you've loaded the script, it can be executed. So how do you run a script in<br>
+your application? It's easy -- all you do is pass the compiled script (which can be a<br>
+script context or a simple compiled script) to the OSA routine OSAExecute. To show<br>
+how it's done, here's some code from SimpliFace that executes the startup script:
+</p><p class="spacer">&nbsp;</p>
+<pre>FSSpec      theFileSpec;
+OSAID       startupScript = kOSANullScript;
+
+// ... Set up theFileSpec here....
+err = LoadScriptFromFile(&amp;theFileSpec, &amp;startupScript);
+if (err == noErr &amp;&amp; startupScript != kOSANullScript) {
+    OSAID           resultID = kOSANullScript;
+    err = OSAExecute(gScriptingComponent, startupScript,
+                        kOSANullScript, kOSAModeNull, &amp;resultID);
+    // ... More code goes here....</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The first parameter to the OSAExecute routine and all other OSA routines is the<br>
+scripting component instance. To make any OSA calls, you need to have opened a<br>
+connection to a scripting component (in this case, AppleScript) by means of the<br>
+OpenDefaultComponent call. This returns a component instance that you can save (in<br>
+this case, as gScriptingComponent) and pass to future OSA calls. 
+</p>
+<p>
+The second and third parameters to OSAExecute are both OSAIDs referring to compiled<br>
+scripts.&nbsp;&nbsp;&nbsp;The second parameter refers to the script to be executed and the third<br>
+parameter refers to the script context in which global variables will be bound (if the<br>
+script to be executed is a normal compiled script). Script contexts in the AppleScript<br>
+OSA component are equivalent to script objects in the AppleScript language. Whenever<br>
+a script object is compiled that contains commands in the body (not inside a handler),<br>
+these commands are collected into a default run handler (the handler that's executed<br>
+when the script object is sent the run message).&nbsp;&nbsp;&nbsp;The Script Editor uses this same<br>
+method to execute scripts. The run handler executes using the context to access and<br>
+store properties and global variables.
+</p>
+<p>
+In the above fragment, we supply kOSANullScript for the third parameter because the<br>
+script we've loaded from the Script Editor file is a script context. If a script context<br>
+with a run handler is given as the second parameter to OSAExecute, the run handler is<br>
+extracted from the context and used as the compiled script. In this case, the third<br>
+parameter passed to OSAExecute is ignored. 
+</p>
+<p>
+The above code from SimpliFace executes a predefined compiled script that sets up the<br>
+initial state of the program. You can use the same technique to attach scripts directly<br>
+to menu functions or to buttons in dialog boxes and data entry forms, but I don't<br>
+recommend that because you can gain more flexibility by generating Apple events from<br>
+user actions and then letting scripts handle the events.&nbsp;&nbsp;&nbsp;You can also use this technique<br>
+to extend your application so that scripts are triggered when interesting events occur.<br>
+For instance, if you were writing a storage management utility you could let the user<br>
+declare timers that triggered scripts at predefined intervals or at specified times of<br>
+the day or week to perform backups and disk reorganizations.
+</p>
+<p>
+<b>ATTACHING SCRIPTS TO OBJECTS</b><br>
+Attaching a script to an application-domain object can be a simple matter of extending<br>
+the definition of the object to include a script property. The Apple Event Registry<br>
+defines a class, property, and Apple event data type for script properties. The<br>
+constants for all these have the same value: 'scpt' (typeOSAGenericStorage).
+</p>
+<p>
+SimpliFace demonstrates how a script property can be attached to an object. As noted<br>
+earlier, all application-domain objects in SimpliFace that have an object-model<br>
+counterpart are derived from the class TScriptableObject. The definition of this class<br>
+includes a field of type OSAID called fAttachedScript, referring to the object's attached<br>
+script. Listing 2 shows the source code of the SetProperty function from the class<br>
+TScriptableObject. 
+</p>
+<p>
+<b>Listing 2. </b>TScriptableObject::SetProperty
+</p><p class="spacer">&nbsp;</p>
+<pre>OSErr TScriptableObject::SetProperty(DescType propertyID,
+                                               const AEDesc *theData)
+{
+    OSAError        err = errAEEventNotHandled;
+   
+    // Used switch statement instead of if statement to allow for
+    // future expansion.
+    switch (propertyID) {
+    case pScript:
+        OSAID theValueID = kOSANullScript;
+        if (theData-&amp;gt;descriptorType == typeChar
+                || theData-&gt;descriptorType == typeIntlText)
+            err = OSACompile(gScriptingComponent, theData,
+                            kOSAModeCompileIntoContext, &amp;theValueID);
+        else    // If it's not text, we assume the script is compiled.
+            err = OSALoad(gScriptingComponent, theData,
+                            kOSAModeNull, &amp;theValueID);
+        if (err == noErr) {
+            if (fAttachedScript != kOSANullScript)
+                OSADispose(fAttachedScript);
+            fAttachedScript = theValueID;
+        }
+        break;
+    }
+    return (OSErr)err;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+You or the user can write an AppleScript script that sets the script property of an<br>
+object. Here's an example that sets the script property of a window object:
+</p><p class="spacer">&nbsp;</p>
+<pre>tell application "SimpliFace"
+    script myWindowScript
+        on close
+            global numTimesClosed
+            set numTimesClosed to numTimesClosed + 1
+            continue close
+        end close
+    end script
+   
+    set the script of window "MyWindow" to myWindowScript
+end tell</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+If your application is constructed so that parts of the runtime behavior are defined<br>
+using attached scripts, it becomes feasible to write other scripts that update the<br>
+application to its latest version.&nbsp;&nbsp;&nbsp;These scripts could even update applications across a<br>
+network. What a boon this would be to MIS departments! 
+</p>
+<p>
+<b>COMPILING AND EXECUTING SCRIPTS</b><br>
+In some circumstances, your program will need to compile a script itself instead of<br>
+importing a compiled script from the Script Editor. For instance, the Do Script Apple<br>
+event lets the scripter supply the script source code as the event's direct parameter.<br>
+To handle this Apple event, your program needs to compile the source code before it<br>
+can be executed. You might also want the user to be able to set the script property of an<br>
+object by supplying the source code instead of a compiled script.
+</p>
+<p>
+The OSA provides a routine called OSACompile that compiles script source code and<br>
+returns an OSAID. The SimpliFace function TScriptableObject::SetProperty, shown in<br>
+Listing 2, uses OSACompile.
+</p>
+<p>
+SimpliFace uses a different routine, OSACompileExecute, to implement the Do<br>
+ScriptApple event.&nbsp;&nbsp;&nbsp;This is a convenience routine that compiles some script source<br>
+code and immediately executes it.&nbsp;&nbsp;&nbsp;Listing 3 shows DoScript, the SimpliFace function<br>
+that handles the Do Script Apple event. In this function, the AEDesc scriptDesc contains<br>
+the script to be executed. The data type is checked to see if it contains source code; if<br>
+so, the script is compiled and executed using OSACompileExecute. If a script value<br>
+result is returned by the OSA, it's coerced to an AEDesc and returned in resultDesc. 
+</p>
+<p>
+<b>Listing 3. </b>TScriptAdministrator::DoScript
+</p><p class="spacer">&nbsp;</p>
+<pre>OSAError TScriptAdministrator::DoScript(AEDesc *scriptDesc,
+                                                  AEDesc *resultDesc)
+{
+    OSAError        err = errAEEventNotHandled;
+
+    if (scriptDesc != nil &amp;&amp; (scriptDesc-&gt;descriptorType == typeChar
+            || scriptDesc-&gt;descriptorType == typeIntlText)) {
+        OSAID   resultID = kOSANullScript;
+        err = OSACompileExecute(gScriptingComponent, scriptDesc,
+                  kOSANullScript, kOSAModeAlwaysInteract, &amp;resultID);
+        if (err != noErr)
+            DumpOSAerrorInfo(gScriptingComponent, err);
+        else if (resultID != kOSANullScript)
+            err = OSACoerceToDesc(gScriptingComponent, resultID,
+                        typeWildCard, kOSAModeNull, resultDesc);
+        OSADispose(gScriptingComponent, resultID);
+    }
+    return err;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Eagle-eyed students of the Apple Event Registry will notice that the DoScript function<br>
+doesn't implement the other standard form of the Do Script Apple event, which allows<br>
+the script to be specified by reference to a script file on disk. As discussed earlier in<br>
+the section "Importing Scripts from the Script Editor," the source code for SimpliFace<br>
+includes a mechanism to read a script from a script file, so I'll leave it to you to<br>
+modify TScriptAdministrator::DoScript. 
+</p>
+<p>
+<b>DECOMPILING SCRIPTS</b><br>
+The counterpart of the Set Data Apple event is the Get Data Apple event. An attachable<br>
+application should allow scripts to get, as well as set, the script property of objects.<br>
+By default, the script property should be returned as a compiled script, but the<br>
+definition of the Get Data Apple event permits the caller to request a property as a<br>
+different data type. If this data type is text, and if the script property of an object is<br>
+being requested, your program will need to decompile the script. 
+</p>
+<p>
+The function OSAGetSource is used to extract the source code from a compiled script.<br>
+SimpliFace demonstrates the use of OSAGetSource in the GetProperty function from the<br>
+class TScriptableObject (see Listing 4). The SimpliFace Get Data handler extracts the<br>
+desired data type from the Apple event and passes it to the GetProperty function in the<br>
+parameter wantType; if the caller doesn't specify a data type, typeWildCard is used to<br>
+signify the default type for the property. If the object has an attached script,<br>
+GetProperty checks to see what data type is requested by the caller.&nbsp;&nbsp;&nbsp;If the data type is<br>
+text, the script is decompiled and the source code is returned. Otherwise, the compiled<br>
+script is returned as the result using the OSAStore function (the converse of OSALoad,<br>
+discussed earlier). 
+</p><p class="spacer">&nbsp;</p>
+<pre>OSErr TScriptableObject::GetProperty(DescType propertyID,
+                                 DescType wantType, AEDesc *result)
+{
+    OSErr       err = errAEEventNotHandled;
+
+    switch (propertyID)     // Used to allow for future expansion
+    {
+    case pScript:
+        if (fAttachedScript != kOSANullScript) {
+            printf("::GetProperty(): get script as type '%.4s'\n",
+                        (char*)&amp;wantType);
+            if (wantType == typeChar || wantType == typeIntlText) {
+                // If caller wants text, we need to decompile the
+                // script.
+                err = (OSErr)OSAGetSource(gScriptingComponent,
+                                 fAttachedScript, wantType, result);
+            }
+            else {
+                if (wantType == typeWildCard)
+                    wantType = typeOSAGenericStorage;
+                err = (OSErr)OSAStore(gScriptingComponent,
+                                     fAttachedScript,
+                                     wantType, kOSAModeNull, result);
+            }
+        }
+        break;
+    }
+    return err;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 4. </b>TScriptableObject::GetProperty
+</p>
+<p>
+<b>ROUTING APPLE EVENTS TO SCRIPTS</b><br>
+As noted earlier in this article, the way to customize your application's handling of an<br>
+object-model Apple event is to pass the event to an attached script first, passing it to<br>
+the program's normal handler for that event only if the script fails to handle or<br>
+continues the event. Note that this can be done only if the attached script was compiled<br>
+as a script context; simple compiled scripts can't be used this way.&nbsp;&nbsp;&nbsp;The OSA provides<br>
+two functions for passing Apple event handling to script contexts: OSAExecuteEvent<br>
+returns the result of executing the script as an OSAID that you must coerce back to an<br>
+AEDesc to supply to the reply event, and OSADoEvent automatically puts the result into<br>
+the reply event.
+</p>
+<p>
+<b>&nbsp;OSADoEvent had a problem </b>in version 1.0 of AppleScript: it never disposed of the<br>
+temporary OSAID it used to hold the result of executing the script. This could cause the<br>
+AppleScript 1.0 component to fail. The recommended workaround was to use<br>
+OSAExecuteEvent. This problem was fixed in AppleScript 1.1.*
+</p>
+<p>
+The AppleScript language permits a message to be "continued" -- that is, passed to the<br>
+parent of the script object that's currently handling the message. The AppleScript<br>
+Continue statement is similar to the Pass statement in HyperTalk. The OSA allows your<br>
+program to get in on the act when a message is continued, by specifying a<br>
+resume/dispatch procedure (so called because it lets your program resume handling of<br>
+a continued event or dispatch an event that isn't handled in the script). To do this, you<br>
+use the OSASetResumeDispatchProc call. The resume/dispatch procedure takes the<br>
+same parameters as an Apple event handler and might be your application's default<br>
+handler for the Apple event in question. It will be called by the OSA during a call to<br>
+OSAExecuteEvent or OSADoEvent if the script continues the Apple event. 
+</p>
+<p>
+The OSA also allows you to specify another kind of resume/dispatch handling: if instead<br>
+of specifying an actual Apple event handler for the resume/dispatch procedure you<br>
+pass the special constant kOSAUseStandardDispatch or kOSADontUsePhac, and if the<br>
+script continues the handling of an Apple event, it will be dispatched directly to the<br>
+default Apple event handler for that event, ignoring any special prehandling. To make<br>
+full use of this facility, you need to implement an Apple event prehandler procedure in<br>
+your program as well. 
+</p>
+<p>
+The prehandler gets first crack at any incoming Apple event; it's called for all Apple<br>
+events that are dispatched to the application, except those that have been redispatched<br>
+by the OSA (assuming you set up resume/dispatch handling as just described). A<br>
+prehandler procedure is installed by calling the Apple Event Manager function<br>
+AEInstallSpecialHandler. 
+</p>
+<p>
+To illustrate how Apple events are routed to scripts, let's look in detail at how<br>
+SimpliFace handles an incoming Apple event.
+</p>
+<ol>
+<li>The Apple Event Manager routine AEProcessAppleEvent passes the event to<br>
+the program's Apple event prehandler procedure.</li>
+<li>The prehandler procedure tries to resolve the application-domain object<br>
+that should handle the Apple event, by resolving the event's direct parameter. </li>
+<li>If an application-domain object is successfully resolved and if it has a<br>
+script attached, the resume/dispatch mechanism is set up and the Apple event<br>
+is passed to the script by a call to OSADoEvent. If the script handles the Apple<br>
+event successfully, we're done with it. </li>
+<li>If the script doesn't handle the Apple event, the OSA returns the error<br>
+errAEEventNotHandled, which the prehandler returns as its result. The Apple<br>
+Event Manager then redispatches the Apple event to the appropriate installed<br>
+handler. </li>
+<li>If the script continues the Apple event, it's redispatched by the OSA<br>
+directly to the installed handler for that Apple event.</li>
+<li>If there is no script to handle the event (maybe the application-domain<br>
+object doesn't have an attached script) or the attached script handles but<br>
+continues the Apple event, the handler you previously installed for the Apple<br>
+event receives the event and tries to resolve the application-domain object<br>
+that should handle it. </li>
+<li>If an application-domain object is successfully resolved, it's asked to<br>
+handle the Apple event, implementing the object's standard behavior. </li>
+</ol>
+<p>
+The prehandler routine from SimpliFace is shown in Listing 5. The routine starts by<br>
+extracting the Apple event class and ID from the event record. It then checks to see if<br>
+the attached-script behavior should be ignored: SimpliFace doesn't pass the Open<br>
+Application, Get Data, and Set Data Apple events to attached scripts. The routine then<br>
+tries to resolve the direct object of the Apple event, creating a token object. If no token<br>
+is resolved, a token that refers to the application object is created.&nbsp;&nbsp;&nbsp;A global script<br>
+administrator object is then asked to locate and return the attached script; unless<br>
+there was no attached script, the Apple event is passed to the script by calling the<br>
+SimpliFace routine ExecuteEventInContext, which in turn calls OSADoEvent. If the<br>
+script fails to handle the Apple event, or if an error occurs, the error is returned via<br>
+the Apple Event Manager. 
+</p>
+<p>
+<b>HANDLING USER-INTERFACE EVENTS</b><br>
+User-interface events, such as mouse clicks, keystrokes, and menu selections, are<br>
+handled in a special way in SimpliFace. This allows SimpliFace to delegate the behavior<br>
+of these user-interface objects to their attached scripts. User-initiated mouse and<br>
+keyboard actions are intercepted by a routine in SimpliFace.cp called<br>
+TSimpliFace::HandleEvent. This routine, in conjunction with a group of support<br>
+routines, packages and dispatches the user-initiated event as a system event. This<br>
+special kind of Apple event is dispatched to the script of the object the user clicked in,<br>
+if there is one, or the current window if not. If there's a mouse click in a text field or<br>
+button, the script for the field or button (if there is one) gets the event.
+</p>
+<p>
+If any runtime error occurs in a script while an event is being handled, or if the<br>
+message is continued out of the last handler that caught it, or if an event isn't handled<br>
+at all, the normal behavior for that event takes place in the program code. For<br>
+instance, when a SimpliFace window is closed (either by a script's sending a Close<br>
+event or by the user's clicking in the window's close box), a Close event is dispatched<br>
+to the window's script (if it has one). If this script handles the event and returns<br>
+without error, the Close event goes no further and the window stays open. If the script<br>
+fails to handle the event or continues the Close event, the window is closed by the<br>
+default Apple event handler in the C++ program code. 
+</p>
+<h2>FURTHER OSA SUPPORT</h2>
+<p>
+Now that you have a grasp of the basic requirements of an OSA-savvy program and<br>
+know the techniques to import scripts from the Script Editor, run those scripts,<br>
+attach scripts to objects, compile and decompile scripts, route Apple events to scripts,<br>
+and handle user-interface events, you may want to go even further with your support<br>
+of the OSA. There are two issues in particular that you may want to address: how to<br>
+handle global variables so that variables can be shared between scripts, and how to<br>
+allow scripts to share libraries of subroutine handlers so that the application object's<br>
+attached script behaves something like HyperCard's stack script.
+</p>
+<p>
+I've completed another version of SimpliFace that implements these features, and it<br>
+may be the subject of a future article in<i>develop</i> -- if you clamor loudly enough for it.<br>
+Meanwhile, I've left as an exercise for you a couple of other enhancements to<br>
+SimpliFace: implementing editable text fields and making all window and button kinds<br>
+and object properties work. Roll up your sleeves and have a go at it. 
+</p>
+<p>
+<b>Listing 5. </b>StdAEvtPreHandler
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>static pascal OSErr StdAEvtPreHandler(AppleEvent *theEvent,
+                            AppleEvent *theReply, long theRefCon)
+{
+    OSAError            err = errAEEventNotHandled;
+    AEEventClass        theEvtClass;
+    AEEventID           theEvtID;
+    DescType            theType;
+    Size                theSize;
+    AEDesc              directParam, theTokenDesc;
+    OSAID               theScriptID = kOSANullScript;
+    objModelTokenPtr    theToken = nil;
+    Boolean             madeAppToken = false;
+   
+    theTokenDesc.descriptorType = typeNull;
+    theTokenDesc.dataHandle = nil;
+    // Extract the class and ID of the event from the Apple event.
+    AEGetAttributePtr(theEvent, keyEventClassAttr, typeType, &amp;theType,
+                      (Ptr) &amp;theEvtClass, sizeof(theEvtClass),
+                      &amp;theSize);
+    AEGetAttributePtr(theEvent, keyEventIDAttr, typeType, &amp;theType,
+                      (Ptr) &amp;theEvtID, sizeof(theEvtID), &amp;theSize);
+    if ((theEvtClass == kCoreEventClass
+                &amp;&amp; theEvtID != kAEOpenApplication)
+            || (theEvtClass == kAECoreSuite
+                &amp;&amp; theEvtID != kAESetData &amp;&amp; theEvtID != kAEGetData)
+            || (theEvtClass == kSignature
+                &amp;&amp; theEvtID == kAESystemEvent)
+            || (theEvtClass == kASAppleScriptSuite
+                &amp;&amp; theEvtID == kASSubroutineEvent)) {   
+        // Above test skips the events we don't want to be scriptable.
+        err = AEGetParamDesc(theEvent, keyDirectObject, typeWildCard,
+                             &amp;directParam);
+        if (err == noErr) {
+            err = AEResolve(&amp;directParam, kAEIDoMinimum,
+                            &amp;theTokenDesc);
+            AEDisposeDesc(&amp;directParam);
+            if (err == noErr)
+                theToken = ObjModelTokenFromDesc(&amp;theTokenDesc);
+        }
+        if (err != noErr || theToken == nil) {
+            err = MakeAppToken((TObjModelToken**)&amp;theToken);
+            madeAppToken = (err == noErr);
+        }
+        if (theToken != nil)
+            theScriptID =
+                gScriptAdministrator-&gt;GetAttachedScript(theToken
+                -&gt;GetTokenObj());
+        if (theScriptID != kOSANullScript)  // Pass to script.
+            err = ExecuteEventInContext(theEvent, theReply, theRefCon,
+                    theScriptID, kOSAUseStandardDispatch,
+                    kOSADontUsePhac);
+        else
+            err = errAEEventNotHandled;
+        if (theToken != nil)
+            gScriptAdministrator-&gt;ReleaseAttachedScript
+                (theToken-&gt;GetTokenObj());
+        AEDisposeToken(&amp;theTokenDesc);
+        if (madeAppToken == true)   // Will be executed only
+            delete theToken;        // if token was made locally.
+    }
+    return (OSErr)err;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<h2>RECOMMENDED READING</h2>
+<ul>
+<li>"Apple Event Objects and You" by Richard Clark, <i>develop</i> Issue 10.</li>
+<li>"Better Apple Event Coding Through Objects" by Eric M. Berdahl, <i>develop</i><br>
+Issue 12.</li>
+<li><i>Inside Macintosh: Interapplication Communication</i>  (Addison-Wesley,<br>
+1993), Chapters 3-10, or <i>Inside Macintosh </i> Volume VI (Addison-Wesley,<br>
+1991),&nbsp;&nbsp;Chapter 6.</li>
+<li><i>Apple Event Registry: Standard Suites</i> , available on this issue's CD or in<br>
+print from APDA.</li>
+<li>The AppleScript Suite, available on this issue's CD or in the AppleScript<br>
+Software Development Toolkit from APDA.</li>
+<li><i>AppleScript Language Guide</i>  (Addison-Wesley, 1993). Also in the<br>
+AppleScript Software Development Toolkit.</li>
+</ul>
+<p>
+<b>PAUL G. SMITH </b> (AppleLink SMITH.PG) is a developer and consultant specializing in<br>
+intelligent agent software, computer- based communications, and object-oriented<br>
+programming techniques, currently in his eleventh year of developing for the<br>
+Macintosh. He divides his time between the offices of Full Moon Software Inc. near<br>
+Cupertino, California, and his native England, where he runs a small European<br>
+consultancy called commstalk hq and lives with his wife, Steph, and his cat, Mack.<br>
+Steph leads a more glamorous life than Paul, having been a dancer in big productions<br>
+in the London West End and now making glorious hats as a fashion milliner; Mack leads<br>
+an easier life than Paul and takes a lot more naps. *
+</p>
+<p>
+<b>Thanks </b>to our technical reviewers Jens Alfke, Warren Harris, Ron Karr, and Jeroen<br>
+Schalk. *
+</p>
+</body>
+</html>

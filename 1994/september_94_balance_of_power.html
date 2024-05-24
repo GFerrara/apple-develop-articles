@@ -1,0 +1,236 @@
+<html>
+<head>
+<!-- Article ID: 35 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 94 - BALANCE OF POWER</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>BALANCE OF POWER</h2>
+<h2>Tuning PowerPCMemory Usage</h2>
+<h1>DAVE EVANS</h1>
+<p>
+<img src="img/215.gif" width="183 px"></img>
+</p>
+<p>
+If you care about the performance of code you write for the Power Macintosh, memory<br>
+usage should be your foremost concern. With the PowerPCTM601 processor today, and<br>
+even more important with future processors, memory usage of your code will have the<br>
+greatest effect on its performance. Poorly written code will execute at a fraction of its<br>
+potential, and often very simple changes will greatly improve the execution speed of<br>
+your critical code. 
+</p>
+<p>
+Processors are improving much faster than the memory subsystems that support<br>
+them. As the PowerPC chips move from 80 MHz to 100 MHz and beyond, their thirst<br>
+for data to process and instructions to execute will increasingly tax memory. Memory<br>
+caches attempt to mitigate that thirst, and all PowerPC processors come equipped with<br>
+built-in caches. But your code can work well with a cache or it can work very poorly<br>
+with a cache. I'll show you why and discuss what you can do to optimize your memory<br>
+usage. 
+</p>
+<p>
+<b>CACHE BASICS</b><br>
+As you know, a cache is simply very fast RAM that the processor can access quickly and<br>
+that it uses to store recently referenced data and code. On the PowerPC processors, any<br>
+data stored in the cache can be accessed without stalling the processor's pipeline.<br>
+Accesses to data not in the cache will take about 20 times as long reading from main<br>
+memory, or even 1 million times as long if the access causes a page fault with virtual<br>
+memory. Getting and keeping your performance-critical code and data in the cache are<br>
+therefore key to your execution speed. 
+</p>
+<p>
+A cache is divided into small blocks called<i>cache lines</i> . On the PowerPC 601, for<br>
+example, the cache has 1024 cache line blocks, each holding 32 bytes. In addition, the<br>
+601 will fetch two blocks when it can, making the cache line size effectively 64 bytes.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The first PowerPC processors have set associative caches of different sizes. The 601<br>
+has an eight-way set associative, unified cache that's 32K in size, and the 603 has a<br>
+two-way set associative, split cache with 8K for data and 8K for instruction code. The<br>
+term<i>set associative</i> refers to the way the cache relates to main memory, which is<br>
+important to your performance. In some simple caching schemes, each cache line maps<br>
+directly to specific areas of main memory; any access to one of these areas loads bytes<br>
+into that cache line. But on the PowerPC processor, sets of cache lines are combined<br>
+and then mapped to memory. There are eight cache lines in each set on the 601, and<br>
+two in each set on the 603. An access to one of the areas mapped to a set will load bytes<br>
+into the last-used cache line of the set, keeping the most frequently used cache lines<br>
+from being purged. This more complicated scheme typically yields much better<br>
+performance than the directly mapped cache. 
+</p>
+<p>
+<b>CACHE THRASHING</b><br>
+The cache will most affect your performance when you're accessing large amounts of<br>
+data. A typical example of this is walking through arrays to perform some operation.<br>
+The best strategy is to minimize cache collisions during your accesses, and the best<br>
+tactic for this is to access your data as sequentially as possible. If you walk through<br>
+memory sequentially, you'll load the cache every 64 bytes, but all 64 bytes will be<br>
+available for fast processing. Here's an example:
+</p>
+<pre>unsigned longdata[64][1024];
+for (row = 2; row &lt; 64; row++)
+    for (column = 0; column &lt; 1024; column++)
+        data[row][column] =
+            data[row-1][column] + data[row-2][column];</pre>
+<p>
+This example performs additions on each element of a large matrix and accesses that<br>
+matrix sequentially in memory. It walks across each row, adding elements and storing<br>
+the result. But just inverting the loops can significantly change the way memory is<br>
+accessed:
+</p>
+<pre>unsigned longdata[64][1024];
+for (column = 0; column &lt; 1024; column++)
+    for (row = 2; row &lt; 64; row++)
+        data[row][column] =
+            data[row-1][column] + data[row-2][column];</pre>
+<p>
+Reversing the loops leads to less than optimal performance since we perform each<br>
+addition for all the columns before moving to the next element of a row. Instead of<br>
+sequential access, this access pattern jumps across memory in even steps of 4K.<br>
+Unfortunately, on the PowerPC processor these accesses map to the same set of cache<br>
+lines, and every operation causes the cache to reload from main memory. This second<br>
+example takes twice as long to execute the same calculation on a Power Macintosh<br>
+6100/60. 
+</p>
+<p>
+By paying attention to how your code accesses memory, you can avoid serious cache<br>
+thrashing like that done by the second example. Things to look out for are loops that<br>
+iterate for a power of 2 steps (128, 256, and so on)and code whose memory accesses<br>
+are not close together. 
+</p>
+<p>
+An approach called <i>blocking</i> may help your loops. Often your code isn't as simple as<br>
+above, and your memory accesses aren't regular during the loop. If you're walking two<br>
+different arrays with different increments through memory, it may be impossible to<br>
+serialize your accesses. Blocking performs the calculations in blocks of rows and<br>
+columns. Instead of iterating across all the columns and then proceeding to the next<br>
+row, you divide the dimensional space into blocks and calculate one whole block at a<br>
+time. In this next example, we calculate the multiplication of two matrices. 
+</p>
+<pre>long result[64][64], foo[64][128], bar[128][64];
+for (row = 0; row &lt; 64; row++)
+    for (column = 0; column &lt; 64; column++) {
+        long    sum = 0;
+        for (i = 0; i &lt; 128; i++)
+            sum += foo[row][i] * bar[i][column];
+        result[row][column] = sum;
+    }</pre>
+<p>
+As this algorithm walks through memory, it accesses <b>result</b> and <b>foo</b>sequentially, but<br>
+<b>bar</b> is accessed in 256-byte steps. Accessing <b>bar</b> by jumping through memory causes<br>
+cache misses, and sequential elements of <b>bar</b> are flushed from the cache before they're<br>
+needed. 
+</p>
+<p>
+By performing this operation in small blocks, we can better use the cache. The key is<br>
+to use all the elements of <b>foo</b> and <b>bar</b> that are in a cache line before moving on. One<br>
+way to do this is to expand the loop and perform four operations in a single iteration:
+</p>
+<pre>long result[64][64], foo[64][128], bar[128][64];
+for (row = 0; row &lt; 64; row++)
+    for (column = 0; column &lt; 64; column += 4) {
+        long    sum1 = 0, sum2 = 0;
+        long    sum3 = 0, sum4 = 0;
+        for (i = 0; i &lt; 128; i++) {
+            sum1 += foo[row][i] * bar[i][column];
+            sum2 += foo[row][i] * bar[i][column+1];
+            sum3 += foo[row][i] * bar[i][column+2];
+            sum4 += foo[row][i] * bar[i][column+3];
+    }
+    result[row][column] = sum1;
+    result[row][column+1] = sum2;
+    result[row][column+2] = sum3;
+    result[row][column+3] = sum4;
+    }</pre>
+<p>
+This expanded loop calculates a block of four cells in each iteration. This executes<br>
+faster because elements of <b>bar</b> are read from the cache and don't always cause cache<br>
+misses as in the earlier example. Notice that in the expanded inner loop, a cache line of<br>
+the <b>bar</b> matrix will be loaded the first time that it's referenced; then the following<br>
+three references to <b>bar</b> will occur without stalling.&nbsp;&nbsp;&nbsp;Using the <b>bar</b> elements while<br>
+they're still in the cache gives us a significant improvement. 
+</p>
+<p>
+<b>CODE STYLE</b><br>
+Good compilers can pay attention to your memory accesses and will optimize how you<br>
+access memory. For example, load and store operations can be reordered by the<br>
+compiler to occur when the data is most likely to be available. The first time data is<br>
+accessed it tends to cause a cache line to load, and subsequent accesses to nearby data<br>
+must also wait for the cache load to complete. The compiler may be able to help by<br>
+inserting a few instructions between the loads. This way the cache line will be fully<br>
+loaded when the subsequent accesses are needed. 
+</p>
+<p>
+<b>For more information </b>on loop expansion and instruction reordering, see the<br>
+Balance of Power column in <i> develop </i> Issue 18.*
+</p>
+<p>
+You can help your compiler by using local variables when you can. These tell the<br>
+compiler exactly how the data will be used, enabling it to easily reorder the loads and<br>
+stores for this data. 
+</p>
+<p>
+You should also carefully note memory dereferences, especially double dereferences.<br>
+Although it may be obvious to you, the compiler often can't tell whether two pointers<br>
+address the same object in memory. The compiler may be prevented from reordering<br>
+instructions because it can't tell whether two operations are really dependent on each<br>
+other, just because they contain dereferences. Here's an example:
+</p>
+<pre>paramBlock-&gt;size = myStructure-&gt;size;
+paramBlock-&gt;offset = myStructure-&gt;offset;</pre>
+<p>
+Although it appears obvious, the compiler usually can't tell if paramBlock references<br>
+the same memory as myStructure. In the resulting binary, the compiler will be<br>
+conservative and not reorder these operations for best execution. Replacing the<br>
+dereference of myStructure with local variables for size and offset will allow the<br>
+compiler to fully optimize this example. 
+</p>
+<p>
+<b>INSTRUCTION THRASHING</b><br>
+Your code binary itself can cause the cache to thrash as it loads to be executed. This is<br>
+very hard to detect and optimize. The basic problem is that your subroutines may map<br>
+to the same areas of the cache, and frequent calls among them will stall to reload the<br>
+cache. Some code profilers for RISC workstations have attempted to detect this<br>
+problem, but for the Macintosh I can't suggest much help.&nbsp;&nbsp;&nbsp;Just changing the link<br>
+order of your code and then executing profiles may have an effect; some link orders<br>
+will thrash more than others. 
+</p>
+<p>
+<b>DATA STRUCTURES</b><br>
+The layout of your data structures can greatly affect your cache usage and your<br>
+memory usage in general. For example, memory accesses that cross 64-bit memory<br>
+boundaries take twice as long to process, as this forces two bus transactions. On the<br>
+PowerPC 601 processor, any misaligned data access within a memory boundary takes<br>
+the standard amount of time, which (because of typical Macintosh data structures) is a<br>
+valuable feature of the chip; future PowerPC processors, however, may take longer to<br>
+access misaligned data. If you can align your data structures, do so now. A good tactic is<br>
+to keep 64-bit data at the top of your structure, followed by your 32-bit data, and so<br>
+on to prevent accidental misalignment of elements. Pad the end of the structure to an<br>
+even 64-bit increment if you will have arrays of structures or will allocate them on<br>
+the stack. And if certain parts of your structure are accessed much more often than<br>
+other parts, keep these together so that they stay in the cache, and make sure they're<br>
+aligned. 
+</p>
+<p>
+<b>DON'T FORGET</b><br>
+The memory usage of your speed-critical code will greatly affect its performance<br>
+today, and current problems will just get worse when PowerPC processors go above<br>
+100 MHz. Profile your code to find the most critical bottlenecks; then pay close<br>
+attention to how that code addresses memory. You'll be rewarded with an excellent<br>
+return on your investment. 
+</p>
+<p>
+<b>DAVE EVANS </b>occasionally uses the combinatorics skills he learned at the<br>
+Massachusetts Institute of Technology, but more often he's been practicing his<br>
+combination punches at a Thai kickboxing gym. Designing fast algorithms for Apple's<br>
+OS Platforms Group is definitely rewarding, but developing a fast left hook really gets<br>
+him pumped up. *
+</p>
+<p>
+<b>Thanks </b>to Tom Adams, Mike Cappella, Rob Johnston, and Mike Neil for reviewing this<br>
+column. *
+</p>
+</body>
+</html>

@@ -1,0 +1,940 @@
+<html>
+<head>
+<!-- Article ID: 39 - Extracted from develop-1994 -->
+<!-- on 2024-05-24 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 94 - Pick Your Picker With Color Picker 2.0</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Pick Your Picker With Color Picker 2.0</h2>
+<h1>SHANNON HOLLAND</h1>
+<p>
+<img src="img/229.gif" width="179 px"></img>
+</p>
+<p>
+<i>The limitations of the old Color Picker Package forced many developers to write their</i><br>
+<i>own color pickers. The flexibility of Color Picker version 2.0 overcomes the old</i><br>
+<i>limitations and provides many new features -- most notably, use with ColorSync</i><br>
+<i>color. Now it's easy to design color pickers to suit your needs. This article describes</i><br>
+<i>how to use the new Color Picker Manager and take advantage of its customization</i><br>
+<i>features from within your application.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Apple designed the Color Picker Package as a way for applications to present a standard<br>
+user interface for color selection. The goal in developing Color Picker version 2.0 was<br>
+to remain compatible with the existing Color Picker Package while providing tighter<br>
+integration of color pickers with the application and allowing development of<br>
+customized color pickers (for example, to support other color spaces or specific<br>
+devices).
+</p>
+<p>
+These goals were achieved by adding a Color Picker Manager, turning color pickers<br>
+into components, and separating the color picker components from the Color Picker<br>
+Manager. As components, color pickers are now accessed through the Component<br>
+Manager, which provides a layer between the application and the color picker<br>
+component. In other words, the application calls the Color Picker Manager, which then<br>
+calls the Component Manager, which calls the color picker component. In the old Color<br>
+Picker Package, the application called the color picker directly. 
+</p>
+<p>
+This separation of the color picker components from the Color Picker Manager allows<br>
+new color picker components to be dynamically added to the system by the user or an<br>
+application. Once a new color picker component has been registered to the Component<br>
+Manager, it's available for use by the Color Picker Manager. 
+</p>
+<p>
+The interface to the new Color Picker Manager is divided into high- and low-level<br>
+calls:
+</p>
+<ul>
+<li>The high-level calls are designed to be used with a minimum of fuss, but<br>
+provide access to nearly the whole feature set available to the application<br>
+through the Color Picker Manager. For compatibility with previous versions,<br>
+the old high-level call, GetColor, is still there. A new high-level call,<br>
+PickColor, replaces GetColor and offers a much broader feature set. </li>
+<li>The low-level calls are designed to allow maximum flexibility. They let<br>
+the application determine the type of dialog the color picker is placed in,<br>
+rather than using the modal dialog you get with high-level calls. The<br>
+application can also set the current color and maintain explicit control over<br>
+the event loop. Color pickers that are invoked through the low-level calls can<br>
+exist for the life of an application.&nbsp;&nbsp;&nbsp;This article discusses how to use these<br>
+calls and take advantage of the new Color Picker Manager.&nbsp;&nbsp;&nbsp;The code examples<br>
+are provided on this issue's CD. Color Picker 2.0 allows multiple color picker<br>
+components to exist on a system at one time (through the Component<br>
+Manager). Although the interface for these components is public, this article<br>
+doesn't discuss the creation of color picker components.</li>
+</ul>
+<h2>SPECIFYING COLORS</h2>
+<p>
+Unlike the old Color Picker Package, Color Picker 2.0 uses the more complete<br>
+ColorSync definition of a color, which contains both a color and a profile. The profile<br>
+defines the color space of the color (which includes the type of color -- CMYK, HSL,<br>
+RGB, and so on). You can also specify a destination profile, which describes the color<br>
+space of the device for which the color is being chosen (for example, a color printer<br>
+that will eventually print the document). Given knowledge of the destination profile,<br>
+color pickers that are ColorSync aware can help the user choose a color that's within<br>
+the destination device's gamut. 
+</p>
+<p>
+<b>&nbsp;ColorSync is described </b>in the forthcoming <i>Inside Macintosh: Advanced Color</i><br>
+<i>Imaging</i> . See also "Print Hints: Syncing Up With ColorSync" in <i>develop </i> Issue 14.*
+</p>
+<p>
+The ColorSync definition for a color, shown below, is used only with the new calls. The<br>
+old call, GetColor, still uses RGBColor for compatibility. These structures are<br>
+compatible with QuickDraw GX. 
+</p>
+<pre>typedef struct CMProfile **CMProfileHandle;
+
+typedef union {
+    RGBColor        rgb;
+    unsigned short  reserved[4];
+} CMColor, *CMColorList;
+
+typedef struct PMColor {
+    CMProfileHandle     profile;
+    CMColor             color;
+} PMColor, *PMColorPtr;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+If you're specifying an RGB color with no particular profile, you can simply set the<br>
+CMProfileHandle field of PMColor to nil, which uses the system profile. To specify a<br>
+color that uses a profile, you need to provide the profile that describes that color. 
+</p>
+<h2>USING THE HIGH-LEVEL CALLS</h2>
+<p>
+The high-level calls are designed to handle the most common uses for the Color Picker<br>
+Manager.&nbsp;&nbsp;&nbsp;The old GetColor call provides access to the new dialog and the color picker<br>
+component, but not to any of the new features that are accessible through the Color<br>
+Picker Manager (such as ColorSync colors). 
+</p>
+<p>
+The new PickColor call is designed to replace GetColor. It can be used very simply,<br>
+providing roughly the same feature set as GetColor, or it can be used to take advantage<br>
+of some of the more advanced features of Color Picker 2.0. 
+</p>
+<p>
+The new dialog for the high-level calls is much the same as the old one. A new button,<br>
+More Choices, reveals a list of all available color pickers (and changes to "Fewer<br>
+Choices"; see Figure 1).&nbsp;&nbsp;&nbsp;Clicking a color picker in the list makes it the current color<br>
+picker for the dialog. Both PickColor and GetColor display this dialog. 
+</p>
+<p>
+The biggest difference between PickColor and GetColor is that PickColor allows the<br>
+application to provide a pointer to an event filter procedure. If the application<br>
+supplies such a procedure, a movable modal dialog will be created rather than the old<br>
+modal dialog. You can do this from within PickColor because you're now able to pass<br>
+update events to windows within the same application layer as the color picker. <br>
+PickColor also uses the new ColorSync color definition, so you can specify a color in<br>
+any color space along with a destination profile. Likewise, a color can be returned in<br>
+any color space. 
+</p>
+<p>
+<img src="img/230.gif" width="600 px"></img>
+</p>
+<p>
+<b>&nbsp;Figure 1. </b>Color picker dialog for high-level calls
+</p>
+<p>
+<b>PICKCOLOR PARAMETER BLOCK</b><br>
+Listing 1 shows the parameter block that you pass through to PickColor. The first two<br>
+fields, theColor and dstProfile, are pretty obvious; they're simply the input (and<br>
+output) color and the profile for the final output device. If there's no output device,<br>
+you just set dstProfile to nil. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 1. </b>PickColor parameter block
+</p>
+<pre>typedef struct ColorPickerInfo {
+    PMColor                 theColor;
+    CMProfileHandle         dstProfile;
+    long                    flags;
+    DialogPlacementSpec     placeWhere;
+    Point                   dialogOrigin;
+    long                    pickerType;
+    UserEventProc           eventProc;
+    ColorChangedProc        colorProc;
+    long                    colorProcData;
+    Str255                  prompt;
+    MenuItemInfo            mInfo;
+    Boolean                 newColorChosen;
+} ColorPickerInfo;</pre>
+<p>
+The flags field is a little more complicated. (It's also used in many of the low-level<br>
+calls.) With PickColor, there are three flags you need to worry about:
+</p>
+<ul>
+<li>CanModifyPalette. If you set this flag, you're telling the color picker<br>
+component that it's able to install a palette of its own that may modify (but not<br>
+animate) the current color table. If you don't want the colors in your document<br>
+to change as you make choices in the color picker dialog, don't set this flag.</li>
+<li> CanAnimatePalette. This flag is similar to CanModifyPalette, except that<br>
+it allows the color picker component to modify or animate the palette as much<br>
+as it wants to.</li>
+<li> AppIsColorSyncAware. This informs the Color Picker Manager that your<br>
+application understands ColorSync colors. This means that a color may be<br>
+returned to you in a different space than the one you passed in. For example,<br>
+you could pass an RGB color (with no profile) to the Color Picker Manager and<br>
+receive back a CMYK color (with its associated profile). If you don't set this<br>
+flag, the Color Picker Manager automatically converts any color it receives<br>
+back from the color picker component to RGB space. </li>
+</ul>
+<p>
+The placeWhere field tells the Color Picker Manager where to position the color picker<br>
+dialog. The choices are kAtSpecifiedOrigin (at the point specified by the dialogOrigin<br>
+field), kDeepestColorScreen (centered on the deepest color screen), and<br>
+kCenterOnMainScreen (centered on the main screen). 
+</p>
+<p>
+The dialogOrigin field (in conjunction with kAtSpecifiedOrigin) is used when you<br>
+request that the color picker dialog be placed at a specific point. When PickColor<br>
+returns, this field contains the location of the color picker dialog at the time it was<br>
+closed. 
+</p>
+<p>
+You use the pickerType field to specify the component subtype of the color picker to<br>
+select initially.&nbsp;&nbsp;&nbsp;If you set this field to 0, the default system color picker will be used<br>
+(the last color picker chosen by the user). When PickColor returns, this field<br>
+contains the component subtype of the color picker that was open when the user closed<br>
+the dialog. 
+</p>
+<p>
+You should set the eventProc field to point to an event filter procedure that will handle<br>
+events meant for your application. If this procedure returns true, the Color Picker<br>
+Manager won't process the event further. If it returns false, the Color Picker Manager<br>
+will handle the event if it was meant for the color picker. If you set this field to nil, a<br>
+modal dialog will be created (rather than a movable modal dialog). 
+</p>
+<p>
+The colorProc field can contain a pointer to a procedure that will be called whenever<br>
+the color changes. This allows live updating of colors in application documents as the<br>
+user selects them. The colorProcData field contains a long integer that's passed to the<br>
+color-changed procedure and can be used for any private data. 
+</p>
+<p>
+The prompt field is a prompt string that the color picker displays to give the user<br>
+some indication as to what the new color is for (for example, a highlight color). 
+</p>
+<p>
+The mInfo field tells the Color Picker Manager what the Edit menu ID is and where the<br>
+various menu items are located within it.
+</p>
+<p>
+The newColorChosen field is set on return from PickColor. If true, it means that the<br>
+user chose a color and clicked OK; otherwise, the user clicked Cancel. 
+</p>
+<p>
+<b>IMPLEMENTING PICKCOLOR</b><br>
+Now let's look at an example of how all this would be used. Listings 2 and 3 show two<br>
+callbacks -- the event filter procedure (MyEventProc) and the color-changed<br>
+procedure (MyColorChangedProc).&nbsp;&nbsp;&nbsp;In the color-changed procedure we assume that<br>
+ColorSync is installed. This is because we'll be setting the AppIsColorSyncAware flag<br>
+when we call PickColor, so a non-RGB color might come back from the picker and, if<br>
+so, you need to call ColorSync to convert it to RGB.
+</p>
+<p>
+<b>Listing 2. </b>Event filter procedure
+</p>
+<pre>WindowPtr   myDocWindow;
+
+pascal Boolean MyEventProc(EventRecord *event) {
+    Boolean     handled = false; // Assume we don't handle the event.
+
+    switch (event-&gt;what) {
+        case updateEvt:
+            // Check to see if the update is for our window.
+            if ((WindowPtr) event-&gt;message == myDocWindow) {
+                DoTheUpdate(myDocWindow);
+                handled = true;
+            }
+    }
+    return handled;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 3. </b>Color-changed procedure
+</p>
+<pre>pascal void MyColorChangedProc(long userData, PMColorPtr newColor) {
+    GrafPtr     port;
+    CWorld      cWorld;
+    CMColor     color;
+    CMError     cwError;
+   
+    GetPort(&amp;port);
+    SetPort(myDocWindow);
+
+    // Now check to see if the color has a profile. If so, we need to
+    // convert it to RGB space.
+    if (newColor-&gt;profile) {
+        // Create a color world and convert the color. This color
+        // world matches from the color's space to the system space
+        // (RGB).
+        cwError = CWNewColorWorld(&amp;cWorld, newColor-&gt;profile, 0L);
+        if (cwError == noErr || cwError == CMProfilesIdentical) {
+            // We created the color world. Now match the color using
+            // a copy so that we don't munge the original.
+            color = newColor-&gt;color;
+            CWMatchColors(cWorld, &amp;color, 1);
+            CWDisposeColorWorld(cWorld);
+        }
+    } else
+        color.rgb = newColor-&gt;color.rgb;
+
+    // Set the new color and paint the port with it.
+    myRGBColor = color.rgb;
+    RGBForeColor(&amp;color.rgb);
+    PaintRect(&amp;myDocWindow-&gt;portRect);
+
+    SetPort(port);
+}</pre>
+<p>
+Once you have the two callback procedures, you can go ahead and call PickColor (see<br>
+Listing 4).&nbsp;&nbsp;<b>Listing 4. </b>Calling PickColor
+</p>
+<pre>ColorPickerInfo     cpInfo;
+PMColor             savedColor;
+
+// Set the input color to be an RGB color in system space.
+cpInfo.theColor.color.rgb = myRGBColor;
+cpInfo.theColor.profile = 0L;
+
+cpInfo.dstProfile = 0L;
+cpInfo.flags =
+    AppIsColorSyncAware | CanModifyPalette | CanAnimatePalette;
+
+// Center the picker on the deepest color screen.
+cpInfo.placeWhere = kDeepestColorScreen;
+
+// Use the default picker.
+cpInfo.pickerType = 0L;
+
+// Install the callbacks.
+cpInfo.eventProc = MyEventProc;
+cpInfo.colorProc = MyColorChangedProc;
+cpInfo.colorProcData = 0L;
+
+strcpy(cpInfo.prompt,"\pChoose a new color");
+// Tell the Color Picker Manager about the Edit menu.
+cpInfo.mInfo.editMenuID = kMyEditMenuID;
+cpInfo.mInfo.cutItem = kMyCutItem;
+cpInfo.mInfo.copyItem = kMyCopyItem;
+cpInfo.mInfo.pasteItem = kMyPasteItem;
+cpInfo.mInfo.clearItem = kMyClearItem;
+cpInfo.mInfo.undoItem = kMyUndoItem;
+
+// Save the current color, in case the user cancels.
+savedColor = cpInfo.theColor;
+
+// And finally, pick that color!
+if (PickColor(&amp;cpInfo) == noErr &amp;&amp; cpInfo.newColorChosen)
+    // Go use this new color. Remember it can be in any color space.
+    DoNewColorStuff(&amp;cpInfo.theColor);
+else
+    // Canceled or an error; restore old color.
+    DoNewColorStuff(&amp;savedColor);
+}</pre>
+<h2>USING THE LOW-LEVEL CALLS</h2>
+<p>
+The low-level Color Picker Manager calls are designed to allow tight integration of an<br>
+application and a color picker (a floating palette, for example). Two features make<br>
+this possible: the application can specify the type of dialog to put the color picker in,<br>
+and the application maintains control over the event loop. 
+</p>
+<p>
+You can create three types of color picker dialogs with the low-level calls:<br>
+system-owned, application- owned, and color picker-owned.
+</p>
+<ul>
+<li>A<i> system-owned</i> dialog is exactly like the dialog created by the high-level<br>
+calls -- it has OK, Cancel, and More Choices buttons. However, with the<br>
+low-level calls, you can make the dialog modal, movable modal, or modeless.</li>
+<li> An<i> application-owned</i> dialog is actually owned (and supplied) by the<br>
+application.&nbsp;&nbsp;&nbsp;You can use this type of dialog to integrate the color picker with<br>
+other application window features or to extend the controls of the color picker.<br>
+For example, you could add controls for altering the style of an object as well<br>
+as its color. </li>
+<li> A<i> color picker-owned</i> dialog is created and owned by the color picker<br>
+component itself, which gives that component great flexibility because it can<br>
+determine the size and shape of the color picker and the dialog (color pickers<br>
+in system-owned and application-owned dialogs are always the same size).<br>
+This is useful for implementing floating pickers (such as the color wheel in<br>
+Color MacCheese). </li>
+</ul>
+<p>
+The application interacts with all three types of dialogs in the same way once they're<br>
+created. The rest of this section describes how to create each type and then moves on to<br>
+discuss how the application interacts with the color pickers, no matter what type of<br>
+dialog you use. In other words, the type of dialog a color picker is in is abstracted<br>
+enough that the application can use roughly the same code to handle all three types. 
+</p>
+<p>
+<b>CREATING THE DIALOG</b><br>
+When creating a system-owned dialog, the application needs to choose whether the<br>
+dialog will be modal, movable modal, or modeless. This is handled by the use of two<br>
+flags: DialogIsModal and DialogIsMoveable. Through obvious combinations of these<br>
+flags, all three dialog types can be created. A nonmovable, modeless dialog (neither flag<br>
+set) is illegal.
+</p>
+<p>
+Listing 5 shows the code used to create a modeless system-owned dialog. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 5. </b>Creating a modeless system-owned dialog
+</p>
+<pre>SystemDialogInfo    sInfo;
+OSErr               result;
+
+sInfo.flags = DialogIsMoveable + AppIsColorSyncAware
+    + CanModifyPalette + CanAnimatePalette;
+sInfo.pickerType = 0L;
+sInfo.placeWhere = kDeepestColorScreen;
+
+sInfo.mInfo.editMenuID = kMyEditMenuID;
+sInfo.mInfo.cutItem = kMyCutItem;
+sInfo.mInfo.copyItem = kMyCopyItem;
+sInfo.mInfo.pasteItem = kMyPasteItem;
+sInfo.mInfo.clearItem = kMyClearItem;
+sInfo.mInfo.undoItem = kMyUndoItem;
+
+result = CreateColorDialog(&amp;sInfo, &amp;myPicker);</pre>
+<p>
+Listing 6 shows how to add a color picker to an application's own dialog<br>
+(application-owned dialog). 
+</p>
+<p>
+<b>Listing 6. </b>Creating an application-owned dialog
+</p>
+<pre>DialogPtr               myDialog;
+ApplicationDialogInfo   aInfo;
+OSErr                   result;
+
+// First create the dialog (make sure it's a color dialog so that the
+// color picker can do all the color stuff it needs to do!).
+myDialog = GetNewDialog(kMyDialogID, nil, (WindowPtr)-1);
+
+// Set up the ApplicationDialogInfo structure.
+aInfo.flags = DialogIsMoveable + AppIsColorSyncAware
+    + CanModifyPalette + CanAnimatePalette;
+aInfo.pickerType = 0L;
+aInfo.theDialog = myDialog;
+
+// Put the color picker's origin at (0,0) in the dialog.
+aInfo.pickerOrigin.h = 0;
+aInfo.pickerOrigin.v = 0;
+
+// Set the Edit menu information.
+aInfo.mInfo.editMenuID = kMyEditMenuID;
+aInfo.mInfo.cutItem = kMyCutItem;
+aInfo.mInfo.copyItem = kMyCopyItem;
+aInfo.mInfo.pasteItem = kMyPasteItem;
+aInfo.mInfo.clearItem = kMyClearItem;
+aInfo.mInfo.undoItem = kMyUndoItem;
+
+// Finally, add the color picker to the dialog.
+result = AddPickerToDialog(&amp;aInfo, &amp;myPicker);</pre>
+<p>
+Listing 7 shows how to create a color picker-owned dialog. As you can see, the code to<br>
+create all three types of dialogs is nearly identical. Likewise the code to manage them<br>
+after creation is very similar. Any explicit differences or requirements will be<br>
+pointed out and explained as they're encountered. 
+</p>
+<p>
+<b>Listing 7. </b>Creating a color picker-owned dialog
+</p>
+<pre>PickerDialogInfo    pInfo;
+OSErr               result;
+
+pInfo.flags = DialogIsMoveable + AppIsColorSyncAware
+    + CanModifyPalette + CanAnimatePalette;
+pInfo.pickerType = 0L;
+
+pInfo.mInfo.editMenuID = kMyEditMenuID;
+pInfo.mInfo.cutItem = kMyCutItem;
+pInfo.mInfo.copyItem = kMyCopyItem;
+pInfo.mInfo.pasteItem = kMyPasteItem;
+pInfo.mInfo.clearItem = kMyClearItem;
+pInfo.mInfo.undoItem = kMyUndoItem;
+
+result = CreatePickerDialog(&amp;pInfo, &amp;myPicker);</pre>
+<p>
+<b>SETTING AND GETTING THE CURRENT COLOR</b><br>
+One of the most obvious requirements for making a color picker useful is that there be<br>
+a way to set and get the current color. This is very simple. Complexities arise only if<br>
+you need to convert colors from the space they're returned in to a space you can<br>
+understand (such as RGB). The following examples assume you're familiar enough with<br>
+ColorSync to do this (Listing 2 shows how to convert from any space to system RGB<br>
+space). If you don't want to deal with this, don't set the AppIsColorSyncAware flag and<br>
+the Color Picker Manager will automatically convert any color it gets back from the<br>
+color picker to RGB. 
+</p>
+<p>
+The concepts of original color and new color have been carried through from the old<br>
+Color Picker Package to the new Color Picker Manager. Simply put, the<i>original color</i><br>
+is the color that the user is about to change and the<i>new color</i> is the color to which the<br>
+user changes it. When setting the color for a color picker, you need to set both colors.<br>
+Suppose, for example, that you're writing an object-based paint program and have<br>
+created a floating color picker. When the user clicks an object, you want the color<br>
+picker to show the color of that object. You would do this by setting the original color<br>
+and new color for the color picker to the current color of that object. As the user<br>
+changes the color of the object, the original color would remain the same and the new<br>
+color would change. This gives feedback as to what would happen if the user were to<br>
+cancel the color change. The code to do this is very simple:
+</p>
+<pre>void SetPickerToColor(RGBColor *rgb) {
+    PMColor  aColor;
+   
+    aColor.color.rgb = *rgb;
+    aColor.profile = 0L;
+    SetPickerColor(myPicker, kOriginalColor, &amp;aColor);
+    SetPickerColor(myPicker, kNewColor, &amp;aColor);
+}</pre>
+<p>
+Whenever the user changes the current color, you need to be able to get the new color<br>
+so that you can update your object accordingly:
+</p>
+<pre>void GetCurrentColor(RGBColor *rgb) {
+    PMColor  aColor;
+   
+    GetPickerColor(myPicker, kNewColor, &amp;aColor);
+    *rgb = aColor.color.rgb;
+}</pre>
+<p>
+Some of you might be saying, "But wait, this example is stupid. Isn't that what the<br>
+color-changed callback is for?" The answer is yes, in the modal case, when the<br>
+color-changed procedure is the only way the application knows that the color changed.<br>
+In the modeless case, as we'll see below in the section "Giving Events to the Color<br>
+Picker," the application is informed in other ways when the color changes. So in the<br>
+modeless case, you might want to view the colors that the color-changed procedure<br>
+provides you with as temporary colors and not update your internal data until the user<br>
+has actually chosen a color (or at least stopped dragging on a slider). You should then<br>
+make an explicit call to the Color Picker Manager to get the color, and update your<br>
+internal data. 
+</p>
+<p>
+<b>SETTING THE DESTINATION PROFILE</b><br>
+If you're picking a color for an output device for which you have a ColorSync profile,<br>
+you can give this profile to the color picker component so that it can communicate the<br>
+profile's information to the user (assuming it knows how). You do this with a simple<br>
+call, SetPickerProfile. There's also a matching call, GetPickerProfile, to get the<br>
+current profile from the color picker. It's important to remember that the application<br>
+owns the memory of any profiles it gives or receives from the color picker. When you<br>
+set the destination profile, the color picker component makes a copy of the profile<br>
+handle; when you get the destination profile, you give the color picker component a<br>
+handle into which it copies the profile data. The following code shows how to set and get<br>
+the destination profile.&nbsp;&nbsp;&nbsp;Setting it is optional; the color picker assumes that there's no<br>
+profile unless you explicitly set one. 
+</p>
+<pre>void SetDestinationProfile(CMProfileHandle profile) {
+    if (SetPickerProfile(myPicker, profile) != noErr)
+        HandleError();
+}</pre>
+<pre>void GetDestinationProfile(CMProfileHandle profile) {
+    if (GetPickerProfile(myPicker, profile) != noErr)
+        HandleError();
+}</pre>
+<p>
+<b>GIVING EVENTS TO THE COLOR PICKER</b><br>
+The basic model for giving events to the color picker is similar to DialogSelect. For the<br>
+most part, you give the event to the Color Picker Manager through the DoPickerEvent<br>
+call. It either handles the event or returns it to the application for the application to<br>
+handle. 
+</p>
+<p>
+There's one exception to this rule: menus. If you've created a modal system dialog, the<br>
+Color Picker Manager can handle the Edit menu events for you (as it does when you call<br>
+PickColor). However, for modeless color pickers there are many menu items that the<br>
+Color Picker Manager has no idea how to handle. If you do send these events through to<br>
+the Color Picker Manager, it will assume all Edit menu selections are meant for the<br>
+color picker and ignore everything else. Therefore, with modeless dialogs, the<br>
+application needs to be sure to handle its own menu events before calling<br>
+DoPickerEvent. 
+</p>
+<p>
+You'll also need to do some extra work in order for the Color Picker Manager to handle<br>
+the Edit menu correctly. If an Edit menu choice will be for the color picker (that is,<br>
+the color picker dialog is frontmost and the current text item in the dialog belongs to<br>
+the color picker), you need to set up the Edit menu as the Color Picker Manager and<br>
+color picker component want it. To determine how they want the Edit menu, call<br>
+GetPickerEditMenuState. If the user does choose an Edit menu item, the application<br>
+needs to call DoPickerEdit to tell the Color Picker Manager which edit operation to<br>
+perform. There's more on this later under "Handling the Edit Menu."
+</p>
+<p>
+Each time you call DoPickerEvent and the color picker component or the Color Picker<br>
+Manager handles the event, it returns a constant describing what happened. There are<br>
+several possible results, which are listed in Table 1. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Table 1. </b>DoPickerEvent return constants
+</p>
+<p><table border="0"><tr><td><b>Constant</b></td><td><b></b><b>Meaning</b></td></tr>
+<tr><td>kDidNothing</td><td>Nothing happened that's worth reporting.</td></tr>
+<tr><td>kColorChanged</td><td>The user changed the color; you may need to call</td></tr>
+<tr><td></td><td>GetPickerColor to get the new color.</td></tr>
+<tr><td>kOKHit</td><td>The user clicked OK; returned only by system- or</td></tr>
+<tr><td></td><td>color picker-owned dialogs.</td></tr>
+<tr><td>kCancelHit</td><td>The user clicked Cancel; returned only by system-</td></tr>
+<tr><td></td><td>or color picker- owned dialogs.</td></tr>
+<tr><td>kNewPickerChosen</td><td>The user chose a new color picker from the More</td></tr>
+<tr><td></td><td>Choices list; returned only by system-owned</td></tr>
+<tr><td></td><td>dialogs.</td></tr>
+<tr><td>kApplItemHit</td><td>The Dialog Manager returned an item intended for</td></tr>
+<tr><td></td><td>one of the application's dialog items; returned only</td></tr>
+<tr><td></td><td>by application-owned dialogs.</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Internally, the Color Picker Manager handles the event by calling DialogSelect and<br>
+then processing the event from there. If the color picker is in an application dialog and<br>
+an application item is selected, the Color Picker Manager returns kApplItemHit as<br>
+well as the item number. 
+</p>
+<p>
+There are a few things to keep in mind regarding the DoPickerEvent return constants.<br>
+How you handle kColorChanged with application dialogs depends on your application;<br>
+for system-owned and color picker-owned dialogs you probably should wait until the<br>
+user clicks OK before treating the color as final. With kOKHit, you should save the new<br>
+color and close the dialog. With kCancelHit, you should restore the old color and dispose<br>
+of the color picker. If kApplItemHit is returned, you need to handle the event as you<br>
+would for the Dialog Manager. You don't need to care about kNewPickerChosen, which<br>
+happens only with a system-owned dialog. 
+</p>
+<p>
+If you have a color-changed procedure for the color picker to call, you supply the<br>
+procedure, along with any data it needs to be called with, to DoPickerEvent. 
+</p>
+<p>
+Listing 8 shows what your event loop might look like. In this code we assume that you<br>
+always want to handle the menu events yourself, as discussed above. <b>Listing 8.</b><br>
+Sample event loop
+</p>
+<pre>#define IsMenuKey(x)    ((x)-&gt;what == keyDown &amp;&amp; \
+                        (x)-&gt;modifiers &amp; cmdKey)
+Boolean SampleDoEvent(EventRecord *event) {
+    Boolean     handled = false, isMenuEvent = false;
+    EventData   pEvent;
+    short       inWhere;
+    WindowPtr   whichWindow;
+
+    // We are assuming that the application always wants to handle
+    // menus.
+    if (event-&gt;what == mouseDown) {
+        inWhere = FindWindow(event-&gt;where, &amp;whichWindow);
+        if (inWhere == inMenuBar)
+            isMenuEvent = true;
+    }
+    if (isMenuEvent || IsMenuKey(event)) {
+        DoMenu(event);
+        handled = true;
+    }
+       
+    // If the event's not handled yet, call the Color Picker Manager
+    // to give it a shot.
+    if (!handled) {
+        pEvent.event = event;
+        pEvent.colorProc = MyModelessColorChangedProc;
+        pEvent.colorProcData = 0L;
+        DoPickerEvent(myPicker, &amp;pEvent);
+        handled = pEvent.handled;
+
+        // If the color picker handled it, we might want to do
+        // something with the results.
+        if (handled) {
+            switch (pEvent.action) {
+                case kDidNothing:
+                    break;
+                case kColorChanged:
+                    UseNewColor(myPicker);
+                    break;
+                case kOKHit:
+                    UseNewColor(myPicker);
+                    DisposeColorPicker(myPicker);
+                    myPicker = nil;
+                    break;
+                case kCancelHit:
+                    UseOriginalColor(myPicker);
+                    DisposeColorPicker(myPicker);
+                    myPicker = nil;
+                    break;
+                case kNewPickerChosen:
+                    // You shouldn't care about this.
+                    break;
+
+                case kApplItemHit:
+                    // Handle the item as you would for the Dialog
+                    // Manager.
+                    HandleAppItem(pEvent.itemHit);
+                    break;
+            }
+        }
+    }
+    if (!handled) {
+        // The event hasn't been handled. Treat it as you would any
+        // normal Macintosh event. If you have other dialogs, you
+        // need to call DialogSelect. Remember, if the event is a
+        // mouseDown, you already called FindWindow!
+    }
+    return handled;
+}</pre>
+<p>
+<b>FORECAST EVENTS</b><br>
+When dealing with a color picker, you'll sometimes need to warn it about a user action<br>
+that might affect it. For example, if you have a color picker in an application dialog and<br>
+the user closes that dialog, you might want to see if the color picker is in a state that<br>
+can handle this. If the user had just typed some numbers into the color picker that left<br>
+it in an inconsistent state, it would be nice if the color picker could have a chance to<br>
+complain to the user before it was indiscriminately closed. 
+</p>
+<p>
+You can do this by using<i>forecast events.&nbsp;&nbsp;</i> These aren't really events in themselves,<br>
+butare warnings to the color picker. To send forecast events to the color picker<br>
+component,you use the same call as for regular events -- DoPickerEvent -- except<br>
+that you set the event field to nil and set the forecast field to an appropriate constant.<br>
+The color picker component tells you whether it's ready for the action to occur by<br>
+setting the handled field of the EventData structure to true if it's not ready and false if<br>
+it is. 
+</p>
+<p>
+For the most part, the only time your application needs to worry about this is when<br>
+the color picker is about to be closed. If the Color Picker Manager has instigated<br>
+theclosing (such as when the action field is set to kOKHit after you called<br>
+DoPickerEvent),you don't need to worry about telling the color picker component<br>
+because the Color Picker Manager has already done so. However, if the user has just<br>
+clicked the window's close box (for an application dialog) or has chosen Close from a<br>
+menu, you should send a forecast event to the color picker component. 
+</p>
+<p>
+The following example shows a function called CheckIfPickerCanClose. If this function<br>
+returns true, the color picker can close; otherwise, it can't close for some reason. It's<br>
+safe to assume that the color picker has informed the user of the problem. 
+</p>
+<pre>Boolean CheckIfPickerCanClose() {
+    EventData  pEvent;
+   
+    pEvent.event = 0L;      // Make it a forecast event.
+    pEvent.forcast = kDialogAccept;
+    DoPickerEvent(myPicker, &amp;pEvent);
+   
+    return !pEvent.handled;
+}</pre>
+<p>
+<b>HANDLING THE EDIT MENU</b><br>
+As mentioned earlier, the Edit menu takes some special work. In addition to standard<br>
+menu processing, if an Edit menu choice will be for the color picker, you need to set<br>
+the state of the Edit menu items according to the color picker specifications and, if an<br>
+Edit menu item is chosen, send the appropriate message to the color picker. This is<br>
+done through two simple calls: GetPickerEditMenuState and DoPickerEdit. 
+</p>
+<p>
+Once you've determined that there has been a mouse-down event in the menu bar or a<br>
+keyboard equivalent has been pressed, you need to determine who owns the Edit menu.<br>
+If the color picker is in a color picker-owned or system-owned dialog and it's<br>
+frontmost, the color picker obviously owns it.&nbsp;&nbsp;&nbsp;If the color picker is in an<br>
+application-owned dialog and it's frontmost, ownership of the Edit menu depends on the<br>
+current item. The choice really depends on your application. As a general rule,<br>
+whoever owns the current item owns the Edit menu. If you do call DoPickerEdit while<br>
+the current item belongs to your application, it will implement the standard cut, copy,<br>
+paste, and clear features for you. If your application needs to do more than this, you'll<br>
+need to handle it yourself.&nbsp;&nbsp;In Listing 9 we assume that the owner of the current item<br>
+owns the Edit menu. The item number for the application's last dialog item is<br>
+kMyLastItem. If you have a system-owned or color picker-owned dialog, this constant<br>
+should be set to 0. In an application-owned dialog the picker's items will always be<br>
+added after the application's, so your item numbers remain the same. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 9. </b>Handling the Edit menu
+</p>
+<pre>Boolean DoMenu(EventRecord *event) {
+    long            mChoice;
+    EditData        eData;
+    EditOperation   eOperation;
+
+    // If picker is in front and current edit item is the picker's,
+    // set up the Edit menu the way the picker wants it.
+    if (FrontWindow() == myDialog &amp;&amp;
+            ((DialogPeek)myDialog)-&gt;editField + 1 &gt; kMyLastItem) {
+        MenuState       mState;
+        MenuHandle      theMenu;
+        GetPickerEditMenuState(myPicker, &amp;mState);
+        theMenu = GetMenu(kMyEditMenuID);
+        if (mState.cutEnabled)
+            EnableItem(theMenu, kMyCutItem);
+        else
+            DisableItem(theMenu, kMyCutItem);
+        if (mState.copyEnabled)
+            EnableItem(theMenu, kMyCopyItem);
+        else
+            DisableItem(theMenu, kMyCopyItem);
+        if (mState.pasteEnabled)
+            EnableItem(theMenu, kMyPasteItem);
+        else
+            DisableItem(theMenu, kMyPasteItem);
+        if (mState.clearEnabled)
+            EnableItem(theMenu, kMyClearItem);
+        else
+            DisableItem(theMenu, kMyClearItem);
+        if (mState.undoEnabled) {
+            SetItem(theMenu, kMyUndoItem, mState.undoString);
+            EnableItem(theMenu, kMyUndoItem);
+        }
+        else
+            DisableItem(theMenu, kMyUndoItem);
+    }
+
+    // Give the event to the Menu Manager.
+    if (event-&gt;what == mouseDown)
+        mChoice = MenuSelect(event-&gt;where);
+    else
+        mChoice = MenuKey(event-&gt;message);
+   
+    // If not the Edit menu, handle normally.
+    if (HiWord(mChoice) != kMyEditMenuID) {
+        HandleMenuChoice(mChoice);
+        return true;
+    }
+       
+    switch (LoWord(mChoice)) {
+        case kMyCutItem:
+            eOperation = kCut;
+            break;
+        case kMyCopyItem:
+            eOperation = kCopy;
+            break;
+        case kMyPasteItem:
+            eOperation = kPaste;
+            break;
+        case kMyClearItem:
+            eOperation = kClear;
+            break;
+        case kMyUndoItem:
+            eOperation = kUndo;
+            break;
+        default:
+            eOperation = -1;
+            break;
+    }
+    if (eOperation &gt;= 0) {
+        eData.theEdit = eOperation;
+        DoPickerEdit(myPicker, &amp;eData);
+        // Ignore the results here; assume that the color changed.
+        UseNewColor(myPicker);
+    }
+    HiliteMenu(0);
+    return true;
+}</pre>
+<h2>USING BALLOON HELP</h2>
+<p>
+The Color Picker Manager provides support for Balloon Help. Most applications don't<br>
+need to do anything special for Balloon Help to work for a color picker in any type of<br>
+dialog. However, for applications in which you need more control over Balloon Help,<br>
+you can call ExtractPickerHelpItem to get the balloon for the color picker. It's up to<br>
+the application to determine whether the cursor is over a color picker's item or one of<br>
+its own. The best way to do this is to check to see if it's over one of the application<br>
+items. If so, put up your own balloon; otherwise, call ExtractPickerHelpItem and put<br>
+up the balloon it returns. ExtractPickerHelpItem will ask the color picker for a<br>
+balloon and search the color picker's help resource for an appropriate balloon. If it<br>
+can't find one, it returns the error noHelpForItem. 
+</p>
+<p>
+The hardest part about using ExtractPickerHelpItem is determining which item the<br>
+cursor is over.&nbsp;&nbsp;&nbsp;Fortunately, there's a Dialog Manager call, FindDItem, that does the<br>
+dirty work for you. Listing 10 shows how you would use these calls. Everything in this<br>
+example is actually done by the Color Picker Manager internally; the example just<br>
+gives you a general idea of how to use the ExtractPickerHelpItem call.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 10. </b>Using ExtractPickerHelpItem
+</p>
+<pre>void DoBalloonHelp(void) {
+    HelpItemInfo    helpInfo;
+    short           itemNo;
+    Point           where;
+    OSErr           err;
+
+    GetMouse(&amp;where);
+    itemNo = FindDItem(myDialog, where) + 1;
+
+    // Go and get the color picker's help item.
+    helpInfo.options = 0;
+    helpInfo.tip.v = helpInfo.tip.h = 0;
+    SetRect(&amp;helpInfo.altRect, 0, 0, 0, 0);
+    helpInfo.theProc = 0;
+    helpInfo.variant = 0;  
+    helpInfo.helpMessage.hmmHelpType = 0;
+    helpInfo.helpMessage.u.hmmPictHandle = 0L;
+    err = ExtractPickerHelpItem(myPicker, itemNo, 0, &amp;helpInfo);
+
+    // Show the balloon if we found one.
+    if (err == noErr) {
+        // If altRect is empty, we need to use the item's rectangle.
+        if (EmptyRect(&amp;helpInfo.altRect)) {
+            short       iType;
+            Handle  iHandle;
+           
+            GetDItem(myDialog, itemNo, &amp;iType, &amp;iHandle,
+                &amp;helpInfo.altRect);
+        }
+        // Convert the tip to dialog coordinates.
+        helpInfo.tip.h += helpInfo.altRect.left;
+        helpInfo.tip.v += helpInfo.altRect.top;
+        // Convert the tip and altRect to global coordinates.
+        LocalToGlobal(&amp;helpInfo.tip);
+        LocalToGlobal((Point *) &amp;helpInfo.altRect.top);
+        LocalToGlobal((Point *) &amp;helpInfo.altRect.bottom);
+
+        // Finally, put the balloon up.
+        HMShowBalloon(&amp;helpInfo.helpMessage, helpInfo.tip,
+            &amp;helpInfo.altRect, 0L, helpInfo.theProc,
+            helpInfo.variant, kHMRegularWindow);
+    }
+}</pre>
+<h2>TAKE YOUR PICK</h2>
+<p>
+You should now have a general idea of how to use the new Color Picker Manager. Most<br>
+applications will need only the high-level calls. However, developers who use color<br>
+more thoroughly may want to take advantage of the low-level calls. The low-level calls<br>
+were designed to be very flexible and easy to use. The simple implementations shown<br>
+in this article are trivial; more complicated uses are possible, and shouldn't be much<br>
+harder to write. 
+</p>
+<p>
+Having experimented with the new features of Color Picker 2.0, you may still want to<br>
+write your own color picker component -- for example, to implement your own<br>
+floating color picker. The new Color Picker Manager makes it easier for you to write<br>
+your own color picker component and allows you to share it among several applications<br>
+(and make it available for general system use as well).
+</p>
+<p>
+So take your pick of the color pickers already available through the high-level or<br>
+low-level calls or move beyond this article to create your own custom color picker<br>
+component. Either way, you're looking at a colorful future with Color Picker 2.0.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>SHANNON HOLLAND</b>, once of Apple and now starting up something elsewhere, had<br>
+little time to write his bio for this article. His only three activities include working,<br>
+eating, and sleeping. Once upon a time he had a life in which he enjoyed photography,<br>
+cultural activities, and abusing his friends.*
+</p>
+<p>
+<b>Color Picker version 2.0 </b>ships with QuickDraw GX and also with System 7.5. The<br>
+forthcoming <i> Inside Macintosh: Advanced Color Imaging </i> will describe Color Picker 2.0<br>
+in detail. *
+</p>
+<p>
+<b>Thanks </b> to our technical reviewers Don Moccia, Konstantin Othmer, and David<br>
+Surovell. *
+</p>
+</body>
+</html>
