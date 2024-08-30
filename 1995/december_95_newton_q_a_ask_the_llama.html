@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 57 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 95 - Newton Q & A: Ask the Llama</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Newton Q &amp; A: Ask the Llama</h1>
+<p><b>Q</b>&nbsp;<i>The on-line discussion groups for Newton developers have a lot of references to</i><br>
+<i>compatibility these days. My application works fine on the 120, 110, and 100 models.</i><br>
+<i>Does that mean I'm compatible?</i></p>
+<p><b>A</b>&nbsp;Good question. Compatibility doesn't mean your application works now, but that<br>
+it's written in such a way that it will work on future Newton devices and operating<br>
+systems. There are several APIs and methods for doing things on the 120, 110, and<br>
+100 models that will work with them but are not necessarily compatible with future<br>
+releases of the operating system.</p>
+<p>
+There are two main points to observe for the sake of compatibility:
+</p>
+<ul>
+<li>If it's not documented, don't use it.</li>
+<li>Catch exceptions; they <i>can</i> occur (especially if you ignore the first<br>
+point).</li>
+</ul>
+<p>
+Since compatibility is such an important question, it will be the focus of this column.<br>
+The rest of the column will cover the most common breaches of compatibility. Where<br>
+applicable, there will be an example of the incompatible and compatible ways of doing<br>
+things. After reading this and making copious notes (especially where you find<br>
+yourself saying "Oh dear" and "Oh no!"), you'll be in a position to make your code<br>
+compatible. We also recommend that you try out your application with the<br>
+Compatibility App Package (which is on this issue's CD and is available from various<br>
+on-line services).
+</p>
+<p>
+Note that we refer often to the Newton Toolkit platform file functions. The Toolkit<br>
+documentation and platform file release notes describe these functions, which are<br>
+provided in lieu of future APIs. You should use these platform file functions where<br>
+applicable. Call the code directly and don't modify it. That is, use the call/with syntax;<br>
+don't place the code in a slot in your application and use message sending.
+</p>
+<p>
+<b>UNDOCUMENTED GLOBAL FUNCTIONS</b>
+</p>
+<p>
+There are four common offenders here: CreateAppSoup, SetupCardSoups, MakeSymbol,<br>
+and GetAllFolders. The function kRegisterCardSoupFunc in the platform file replaces<br>
+CreateAppSoup and SetupCardSoups. It's much simpler to use than the undocumented<br>
+functions:
+</p>
+<pre>// RIGHT way
+constant kSoupName := "MySoup:MYSIG";
+constant kSoupIndices := '[];
+constant kAppObject := '["Item", "Items"];
+call kRegisterCardSoupFunc with
+   (kSoupName, kSoupIndices, kAppSymbol, kAppObject);
+
+// *** WRONG way ***
+CreateAppSoup(kSoupName, kSoupIndices, EnsureInternal([appSymbol]),
+   EnsureInternal(kAppObject));
+AddArraySlot(cardSoups, kSoupName);
+AddArraySlot(cardSoups, kSoupIndices);
+SetupCardSoups();</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The fix for MakeSymbol is to call the Intern function: it does the same thing as<br>
+MakeSymbol and it's documented.
+</p>
+<p>
+There's no replacement function for GetAllFolders; just don't call it.
+</p>
+<p>
+<b>UNDOCUMENTED GLOBAL VARIABLES</b>
+</p>
+<p>
+The three most common misused global variables are <b>cardSoups</b>, <b>extras</b>,<br>
+and<b>userConfiguration</b>.
+</p>
+<p>
+There are two uses of <b>cardSoups</b>: one is to register a card soup; the other to<br>
+unregister it. Registering is taken care of with kRegisterCardSoupFunc (see above).<br>
+Unregistering is done with another platform file function, kUnRegisterCardSoupFunc:
+</p>
+<pre>// RIGHT way
+call kUnRegisterCardSoupFunc with (kSoupName);
+
+// *** WRONG way ***
+SetRemove(cardSoups, kSoupName);
+SetRemove(cardSoups, kSoupIndices);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+You should never access the <b>extras</b> global variable. Not only is this variable<br>
+undocumented, but so is its format. Both are subject to major revisions. The platform<br>
+file function kSetExtrasInfoFunc is provided for setting information about items in the<br>
+extras drawer. The most common use of this function is to give your application a<br>
+different icon (see the ExtraChange DTS sample code on the CD).
+</p>
+<p>
+There are also platform file functions to manipulate <b>userConfiguration</b>:
+</p>
+<ul>
+<li>kGetUserConfigFunc gets a slot from the userConfiguration soup entry.</li>
+<li>kSetUserConfigFunc lets you set user configuration information.</li>
+<li>kFlushUserConfigFunc should be called when you've changed user<br>
+configuration information.</li>
+</ul>
+<pre>// RIGHT way
+local userName := call kGetUserConfigFunc with ('name);
+if userName then
+begin
+   if StrEqual(userName, "Doctor") then
+      call kSetUserConfigFunc with ('name, "The Doctor");
+   call kFlushUserConfigFunc with ();
+end;
+
+// *** WRONG way ***
+if userConfiguration.name AND
+      StrEqual(userConfiguration.name, "Doctor") then
+   userConfiguration.name := "The Doctor";</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>UNDOCUMENTED SLOTS AND METHODS</b>
+</p>
+<p>
+This is a broad category of problems. The most common is <b>keyboardChicken</b> in the<br>
+root view. But there are others, like <b>cursor.current</b>,<br>
+<b>paperRoll.dataSoup</b>,<b>dockerChooser</b> in the root view, <b>UnionSoup:Add</b>, and<br>
+anything in a built-in application. Unfortunately, there is no right way to access most<br>
+of these. The exceptions are <b>cursor.current</b> and <b>Add</b>.
+</p>
+<pre>// RIGHT way
+local currentEntry := cursor:Entry();
+myUnionSoup:AddToDefaultStore(anEntry);
+
+// *** WRONG way ***
+local currentEntry := cursor.current;
+myUnionSoup:Add(anEntry);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Also, don't rely on the routing slips, such as <b>mailSlip</b> and <b>printSlip</b>, being in the<br>
+root view. You can, however, still use those symbols in your routing frame.
+</p>
+<p>
+<b>UNDOCUMENTED MAGIC POINTERS</b>
+</p>
+<p>
+If you use one of these, you know it. Just think what would happen if the magic pointer<br>
+changed from a view to a string: you would get some pretty bad behavior. Note that<br>
+most of this could be dealt with by catching exceptions.
+</p>
+<p>
+<b>STORE AND SOUP ASSUMPTIONS</b>
+</p>
+<p>
+All you can assume is that store 0 is the internal store. You can't rely on there being<br>
+only one other store, nor can you rely on the position of a store in the array returned<br>
+by GetStores. Also, don't assume that another store is a card or even that there is just<br>
+one store per card.
+</p>
+<p>
+If you support moving or copying items between stores, you shouldn't find the title of<br>
+the store. Use the constant ROM_cardAction as provided in the platform file:
+</p>
+<pre>// RIGHT way
+routingFrame := {
+   print: ...
+   ...
+   card: ROM_cardAction
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+In addition, don't assume that your soup will exist on every store. Currently, if you<br>
+register your union soup, it's automatically created on every store that enters the<br>
+Newton; however, this may change in the future:
+</p>
+<pre>// RIGHT way
+GetUnionSoup(kSoupName):AddToDefaultStore(anEntry);
+
+// *** WRONG way ***
+aStore:GetSoup(kSoupName):Add(anEntry);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Remember that AddToDefaultStore or Add could throw exceptions. Wrap your calls to<br>
+these functions in exception handlers.
+</p>
+<p>
+Finally, if you support the soup change mechanism, don't assume that the change is<br>
+adding or deleting an entry. It could be something else, such as a soup being created or<br>
+removed from a store.
+</p>
+<p>
+<b>SCREEN SIZE</b>
+</p>
+<p>
+Don't assume the screen is any particular size. It could be larger or smaller than<br>
+current devices. It could also be wider than it is tall. Your application size setup<br>
+routine (usually in the viewSetupFormScript) should take this into account. Have<br>
+maximum and minimum sizes. Close your application if it can't handle the current<br>
+screen size.
+</p>
+<pre>// Code to close your application
+constant kUnsupportedScreenSize :=
+   "WiggyWorld does not support this screen size";
+
+DefConst('closeMeFunc, func(x) x:Close());
+
+:Notify(kNotifyQAlert, EnsureInternal(kAppName),
+   EnsureInternal(kUnsupportedScreenSize));
+AddDeferredAction(closeMeFunc, [self]);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>UNDOCUMENTED FEATURES OF DATA TYPES</b>
+</p>
+<p>
+Rely only on the features and details of built-in data types that are documented. There<br>
+are three common problem areas: order of slots in a frame, precision of integers, and<br>
+implementation of strings.
+</p>
+<p>
+The order of slots in a frame is undefined. It just so happens that in the current<br>
+implementation the first 20 slots are returned in the order added. This is not a<br>
+documented feature, so don't rely on it.
+</p>
+<p>
+Integers are documented as having at least 30 bits of precision. This doesn't mean<br>
+they'll always be 30 bits; they could be wider (as anyone who has used compiled<br>
+NewtonScript can tell you). Note that compiled NewtonScript integers may not be 32<br>
+bits; they also follow the "at least 30 bits" rule.
+</p>
+<p>
+The biggest offender is assumptions about how strings are implemented. Don't rely on<br>
+strings being null terminated or being composed of two-byte Unicode characters. The<br>
+practical upshot is that you should use StrLen to find the length, and StrMunger (or<br>
+&amp;) for length changes. Don't use Length, SetLength, or BinaryMunger with strings.<br>
+Don't use the array accessor to set a string; you can check a character, but don't set a<br>
+character.
+</p>
+<p>
+<b>MISCELLANEOUS BITS</b>
+</p>
+<p>
+Don't send messages directly to the IOBox; use the kSendFunc platform file function.<br>
+Nor should you read the items in the IOBox soups.
+</p>
+<p>
+Also note that there are platform file functions to register and unregister for Find that<br>
+you should use.
+</p>
+<p>
+Always use SetValue when you're changing the view or other system values.
+</p>
+<p>
+Use only the <b>body</b> slot in items that you route. Don't assume that slots other than <b>body</b><br>
+will survive the routing process. On a related note, don't rely on the <b>category</b> slot of<br>
+<b>fields</b> in your SetupRoutingSlip method either.
+</p>
+<p>
+Don't rely on the closing order of views in the viewQuitScript. If you need to do some<br>
+ordered cleanup, you can initiate your own message (for example, myViewQuitScript)<br>
+from the view that first receives the viewQuitScript.
+</p>
+<p>
+Replace system functions and messages at your peril. It's possible they will support<br>
+other data types in the future (for example, to take NIL now where before they only<br>
+took a string).
+</p>
+<p>
+Don't assume anything about the built-in applications. Don't assume that they exist, or<br>
+that their soups are there, or that the view structure will stay the same. If you do need<br>
+to use a system feature (for example, a particular prototype, global function, or root<br>
+method), test your assumptions.
+</p>
+<pre>local cardFileExists := GetRoot().cardfile;
+
+if cardFileExists then
+begin
+   local cardFileSoup := GetUnionSoup(ROM_cardfilesoupname);
+   if cardFileSoup then
+      ...
+end;
+// :-0
+if GetRoot().keyboardChicken then
+begin
+   ...
+end;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Current Newtons have two levels of Undo; this may change. There could be more or<br>
+fewer levels and it could change to Undo/Redo. It's safest to call AddUndoAction from<br>
+inside your undo action; this will support Undo/Redo if we implement it, but will do<br>
+nothing if we do not.
+</p>
+<p>
+The llama is the unofficial mascot of the Developer Technical Support group in Apple's<br>
+Newton Systems Group. Send your Newton-related questions to NewtonMail or eWorld<br>
+DRLLAMA or to AppleLink DR.LLAMA. The first time we use a question from you, we'll<br>
+send you a T-shirt.
+</p>
+<p>
+Thanks to our Newton Partners for the questions used in this column, and to jXopher<br>
+Bell, Henry Cate, Bob Ebert, David Fedor, Stephen Harris, Jim Schram, Maurice<br>
+Sharp, James Speir, and Bruce Thompson for the answers.
+</p>
+<p>
+<b>Have more questions? </b>Take a look at Newton Developer Info on AppleLink.
+</p>
+</body>
+</html>

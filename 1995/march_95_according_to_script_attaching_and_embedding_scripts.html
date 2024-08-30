@@ -1,0 +1,1660 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 14 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 95 - According  to  Script: Attaching and Embedding Scripts</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Designing a Scripting Implementation</h1>
+<h2>Cal Simone</h2>
+<p>
+<img src="img/150.gif" width="182 px"></img>
+</p>
+<p>
+<i>Now that AppleScript is fast becoming an important core technology of the Macintosh</i><br>
+<i>operating system, more and more developers are making their applications scriptable</i><br>
+<i>or improving their scriptability. The way you design your scripting implementation</i><br>
+<i>can make the difference between satisfaction and frustration for users who want to</i><br>
+<i>script your application. The tips presented in this article will help you do it right.</i>
+</p>
+<p>
+A well-designed user interface enables users to discover your application's<br>
+capabilities and take full advantage of them. Likewise, the way you design your<br>
+scripting implementation determines the degree of success users will have in<br>
+controlling your application through scripting -- writing simple, understandable,<br>
+and, in most cases, grammatically correct sentences.
+</p>
+<p>
+And just as the consistency of its user interface has been perhaps the most important<br>
+factor in the Macintosh computer's ongoing adoption and success, consistency is an<br>
+essential part of the world of scripting. It's highly important for users (by which I<br>
+mean anyone who writes scripts, including power users, solutions providers,<br>
+consultants, in-house developers, resellers, and programmers) to feel as if they're<br>
+using a single language, regardless of which application they're scripting. As a<br>
+developer, you have a responsibility to extend the AppleScript language in a consistent<br>
+manner.
+</p>
+<p>
+My purpose in this article, which might be considered a first attempt at some "human<br>
+scriptability guidelines," is to offer conventions, suggestions, and general guidelines<br>
+that you can follow to maintain consistency with the AppleScript language. I also give<br>
+some suggestions for redoing a poorly done scripting implementation. (I'm assuming<br>
+you're already convinced that you should make your application scriptable; if you're<br>
+not, see "Why Implement Scriptability?") The result of doing all this work is that the<br>
+AppleScript language feels consistent across applications of different types produced<br>
+by different vendors.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WHY IMPLEMENT SCRIPTABILITY?</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;If you're still wondering why you should implement scriptability in your<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;application, consider these reasons:
+</p>
+<ul>
+<li style="margin-left: 17px">    Scripting gives users a way to control your application through a<br>
+different interface. This alternate interface allows users to incorporate your<br>
+application into multi-application scenarios, as well as to automate tedious,<br>
+repetitive tasks.</li>
+<li style="margin-left: 17px"> Allowing your application to be controlled through Apple events enables<br>
+Apple Guide to give your users truly active assistance.</li>
+<li style="margin-left: 17px"> Implementing scripting prepares your application for OpenDoc by<br>
+ensuring that your part handlers will be able to mesh smoothly with other<br>
+parts.</li>
+<li style="margin-left: 17px"> Making your application scriptable ensures that as speech recognition<br>
+matures, you'll be able to give users the option of voice control.</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;It's important to implement AppleScript support in your core application,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rather than through an external API, as some databases such as 4th Dimension<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;and Omnis do. When your core application isn't Apple event-aware, two things<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;happen: (1) no dictionary resides in the application itself, and (2)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;functionality is usually limited. Users have difficulty doing decent scripting of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;these applications, by and large. If you simply must support Apple events<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;through an external API, at least support the dynamic terminology mechanism<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for your extensions.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The bottom line is this: If your application isn't scriptable soon, you'll be left<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;out in the cold. If you do the work now, not only will you open up more uses for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;your application in the "big picture," but you'll also be that much closer to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;implementing what you need in order to support several other technologies. So<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;please, don't put it off!
+</p><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________</p>
+<h2>FIRST, SOME BASIC CONCEPTS</h2>
+<p>
+A good scripting implementation consists of two parts:
+</p>
+<ul>
+<li>    An Apple event <i>object model hierarchy</i>, which describes the objects in<br>
+your application and the attributes of those objects.</li>
+<li> A <i>semantic vocabulary</i>, also called a <i>terminology,</i>consisting of the terms<br>
+used in the construction of command statements. Your vocabulary is stored in<br>
+your application's 'aete' resource, known to users as the <i>dictionary.</i></li>
+</ul>
+<p>
+Your terms, and the organization of those terms in your dictionary, directly affect the<br>
+ability of users to explore and control your application through scripting. Creating a<br>
+vocabulary through which users can effectively and easily script your application<br>
+takes time and careful effort. Don't expect to spend six months implementing Apple<br>
+events and then simply to throw together a dictionary at the last second.
+</p>
+<p>
+It's important to note that a well-designed Apple event structure greatly increases the<br>
+ease of scripting your application. In a minute I'll say more about that, but first let's<br>
+look at the basic anatomy of an AppleScript command.
+</p>
+<p>
+<b>ANATOMY OF A COMMAND</b>
+</p>
+<p>
+You should design your scripting implementation so that users will be guided into<br>
+using a clean, natural-language sentence structure. To help you begin to visualize the<br>
+kinds of sentences your users should be encouraged to write, let's look at AppleScript's<br>
+syntactic statement structure (say that three times fast!). All application-defined<br>
+commands are in the form of imperative sentences and are constructed as follows:
+</p>
+<p>
+verb [noun] [keyword and value] [keyword and value] . . .
+</p>
+<p>
+These elements of sentence construction can be thought of as parts of speech that make<br>
+up a human-oriented computer language. Here are a couple of examples of commands:
+</p>
+<pre>close the front window saving in file "Goofballs:Razor"
+set the font of the first word in the front window to "Helvetica"</pre>
+<p>
+Let's dissect these:
+</p>
+<pre>close                          verb, corresponding to kAECloseElement
+the front window               noun, corresponding to keyDirectObject
+                               typeObjectSpecifier)
+saving in                      keyword, corresponding to keyAEFile
+file "Goofballs:Razor"         value, of typeFSS
+set                            verb, corresponding to kAESetData
+the font of the first word     noun, corresponding to keyDirectObject
+   in the front window             (typeObjectSpecifier)
+to                             keyword, corresponding to keyAEData
+"Helvetica"                    value, of typeWildCard</pre>
+<p>
+Note that for application-defined commands, a <i>verb </i>-- for example,<b> close</b>or <b>set </b>--<br>
+is the human language representation for the action described by an Apple event<br>
+(which I often shorten to just <i>event</i>), so there's a general correspondence between<br>
+Apple events and verbs. In this article, I identify Apple events by the event's name, its<br>
+4-byte ID, or the constant name for the ID. For example, the Close Element event has<br>
+the ID 'clos' and the constant name kAECloseElement, and corresponds to the<br>
+AppleScript verb <b>close</b>; the Set Data event has the ID 'setd' and the constant name<br>
+kAESetData, and corresponds to the AppleScript verb <b>set.</b>
+</p>
+<p>
+Your ability to guide users toward writing clean, natural-language statements depends<br>
+a great deal on your use of the object model, as I explain next.
+</p>
+<p>
+<b>WHY USE THE OBJECT MODEL?</b>
+</p>
+<p>
+Supporting the object model facilitates scripting by allowing the use of familiar terms<br>
+for objects and actions. In the last couple of years, some important applications that<br>
+don't implement the object model have shipped, and most of them range from difficult<br>
+to impossible to script. Let's explore a couple of examples of how using the object<br>
+model can make scripting a lot easier.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Apple events and the object model </b>are covered extensively in "Apple<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Event Objects and You" in <i>develop</i> Issue 10 and "Better Apple Event Coding<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Through Objects" in Issue 12.*
+</p>
+<p>
+The following script is the result of a lack of defined objects in the application we'll<br>
+call My Charter. The lack of defined objects leads to a vocabulary in which every<br>
+noun-verb combination must be covered by verbs alone -- a vocabulary that doesn't<br>
+relate to other applications and that forces users to learn a new set of commands.
+</p>
+<pre>tell application "My Charter"
+   Plot Options myOptions
+   Set Axis Lengths for X 100 for Y 100
+   Output PICT
+   Plot chart "pie"
+end tell</pre>
+<p>
+By contrast, the script below describing the same operation in much more familiar<br>
+terms results when the application uses familiar objects and characteristics of objects<br>
+(properties):
+</p>
+<pre>tell application "My Charter"
+   make new chart
+   tell chart 1
+      set the type to pie
+      set the x axis to 100
+      set the y axis to 100
+   end tell
+end tell</pre>
+<p>
+As illustrated by this script, a principal indication of solid use of the object model is<br>
+that the most common verbs used in scripts are <b>make, set,</b> and<b>get.</b>
+</p>
+<p>
+Users are more likely to remember the terms for objects than commands. Moreover,<br>
+from the user interface, they often use Command-key shortcuts for the actions instead<br>
+of looking at the menu items once they get comfortable using your application. If you<br>
+don't implement the standard commands, they'll probably need to go back to your<br>
+application's menus to find out that the menu command is, for instance, Plot Chart. You<br>
+can help them by making the scripting terms intuitive. For instance, they already<br>
+know what a chart is, and they're familiar with the standard AppleScript verbs <b>make</b><br>
+and <b>set,</b> which they're using to script other applications. Thus, the second script<br>
+above will feel like an extension of the same language used in scripting other<br>
+applications, while the first script won't.
+</p>
+<p>
+Now consider this partial list of custom verbs from a popular mail application that<br>
+doesn't follow the object model:
+</p>
+<pre>AddAttachment     SetSubject     GetSubject
+AddTo             SetText        GetText
+AddCC             SetReceipt     GetReceipt
+AddBCC            SetPriority    GetPriority
+AddToAtPO         SetLog         GetLog</pre>
+<p>
+Notice some patterns here? All of them start with Add, Set, or Get -- and this isn't<br>
+even a complete list of all the commands in this application starting with these verbs.<br>
+It's definitely time for this application to go with the object model. Most of the above<br>
+commands can be replaced by <b>set </b>and <b>get</b>commands applied to properties such as<br>
+<b>subject, receipt, priority, log,</b>and so forth.
+</p>
+<h2>DESIGNING YOUR OBJECT MODEL</h2>
+<p>
+Now that you know how important the object model is to scriptability, let's look at how<br>
+to get started with your design. As you approach the design of your object model, keep<br>
+in mind both your application's objects and the style of the commands you expect your<br>
+users to write.
+</p>
+<p>
+<b>DECIDE WHICH OBJECTS TO INCLUDE</b>
+</p>
+<p>
+Base the design of your object model only partly on your application's objects. Keep in<br>
+mind that the objects in an object model aren't necessarily the same as the<br>
+programmatic objects in an object-oriented program but rather represent tangible<br>
+objects that the <i>user</i> thinks about when working with your application.
+</p>
+<p>
+Generally, you won't want the user to script interface elements, such as dialog box<br>
+items (whose meaning should be expressed through verbs, or properties of the<br>
+application or your objects), but rather objects that either contain or represent the<br>
+user's data (which I'll call <i>containers</i> and <i>content objects). </i>For example, an object<br>
+model might incorporate documents (containers); graphic objects (containers or<br>
+content objects); forms (containers) and the elements of a form, such as fields<br>
+(content objects); cells in a spreadsheet or database (content objects); and text<br>
+elements, like paragraphs, words, and characters (content objects).
+</p>
+<p>
+You should think carefully about whether to make something an object or a property;<br>
+this is discussed later in the section "Other Tips and Tricks."
+</p>
+<p>
+<b>THINK FROM ACTIONS TO OBJECTS</b>
+</p>
+<p>
+When you design your commands, the primary thing to keep in mind is how you want<br>
+the script command statements to read or to be written. The style of the commands you<br>
+expect your users to write should determine your object model, not the other way<br>
+around.
+</p>
+<p>
+As programmers, we have the notion that an object "owns" its methods; we think in<br>
+terms of sending messages to an object. For instance, the following C++ code fragment<br>
+sends several messages to one object:
+</p>
+<pre>CDocument::Print
+CDocument::Close
+CDocument::Save
+CDocument::Delete</pre>
+<p>
+By contrast, users think about doing some action to an object. So when you design your<br>
+commands, you should think about allowing verbs to be applied to many different types<br>
+of objects, as illustrated here:
+</p>
+<pre>print document "Fred"
+print form ID 555
+print page 4</pre>
+<p>
+Examine the actions that users take with your application and the objects that the<br>
+actions are taken on. This will lead you naturally to an effective object model design.
+</p>
+<p>
+<b>START -- BUT DON'T END -- WITH MENU COMMANDS</b>
+</p>
+<p>
+One place to start your scripting implementation is to implement your menu<br>
+commands as verbs for scripting. You can use this as a push-off point, but because<br>
+your menu commands most likely don't supply all the functionality of your<br>
+application, you shouldn't limit yourself to <i>only </i>implementing menu commands.
+</p>
+<p>
+Before I say any more about this approach, you should note these two very important<br>
+caveats:
+</p>
+<ul>
+<li>    Keep in mind that the philosophy of AppleScript is to allow the user to<br>
+script the <i>meaning </i>behind an action, not the physical act of selecting a menu<br>
+item or pushing a button. This perspective should be the foundation for your<br>
+entire design.</li>
+<li> When you use the standard events, often there's a <b>set &lt;property&gt;</b><br>
+scripting equivalent that's better than creating a new verb to match a<br>
+particular menu item. Menu commands are designed for user interface work<br>
+and don't always provide the best terminology for scripting. Thinking in terms<br>
+of <b>make, set</b>, and<b> get </b>can often be more useful than creating verbs that<br>
+mimic menu commands.</li>
+</ul>
+<p>
+That said, let me elaborate on the idea of implementing menu commands and beyond.
+</p>
+<p>
+Ideally, you should allow users to achieve through scripting everything that they can<br>
+with your user interface. To accomplish this, you should think of capabilities you<br>
+would like users to be able to script that go beyond your menu commands, such as<br>
+capabilities accessible only from tools in a palette or actions resulting from a drag and<br>
+drop operation. On the other hand, it's not entirely necessary to make the capabilities<br>
+available from your user interface identical to those controllable through scripting.<br>
+Scripting is a different interface into your program, so it's OK to do things a bit<br>
+differently.
+</p>
+<p>
+For example, you don't have to create exactly one script statement corresponding to<br>
+each user action. If a single menu item or button in your application results in a<br>
+complex action or more than one action, it might produce clearer scripting or give<br>
+more flexibility to allow the user to perform individual portions of the action through<br>
+separate statements in a script. Conversely, it can also be better to combine more than<br>
+one action into one statement, especially when the set of actions is always performed in<br>
+the same sequence.
+</p>
+<p>
+Also, actions that aren't even possible from the user interface can often be made<br>
+scriptable. For example, the Scriptable Text Editor allows a script to make a new<br>
+window behind the front window, something that the user normally can't do. You could<br>
+also provide a method of accomplishing a task that's too complex or impossible to<br>
+express through manipulation of objects on the screen.
+</p>
+<p>
+<b>MAKE AN EARLY BLUEPRINT</b>
+</p>
+<p>
+These two exercises can help you get started with designing your hierarchy and your<br>
+command scheme:
+</p>
+<ul>
+<li>    Write down in real human sentences as many commands as you can<br>
+think of to control your application. Refer to these sentences later when you're<br>
+thinking about what Apple events and objects to include in your<br>
+implementation.</li>
+<li> Make an early version of your 'aete' resource (see "Tools for Developing<br>
+an 'aete'"). You can then do your coding based on this resource.</li>
+</ul>
+<p>
+I would recommend that you go back and do both of these exercises again periodically<br>
+throughout your development cycle. Use the combination of your 'aete' resource and the<br>
+sentences as a blueprint during your implementation work.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TOOLS FOR DEVELOPING AN 'AETE'</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;To assemble your 'aete', you can choose from these tools:
+</p>
+<ul>
+<li style="margin-left: 17px">    The aete editor stack -- This HyperCard stack is a commonly used tool.<br>
+It's a good way to assemble your 'aete' if it's not too large.</li>
+<li style="margin-left: 17px"> The Rez files -- Rez source files can easily be changed and can handle any<br>
+size 'aete', so this is the tool of choice for developers who do serious work with<br>
+resources. You'll need AEUserTermTypes.r and AERegistry.r as include files.<br>
+In addition, you can refer to AppleEvents.r, AEObjects.r,<br>
+AEWideUserTermTypes.r, and ASRegistry.r. You can use EnglishTerminology.r<br>
+and EnglishMiscellaneous.r to examine the standard registry suites.</li>
+<li style="margin-left: 17px"> Resource editors -- Any resource editor except ResEdit will suffice. This<br>
+is one situation in which ResEdit isn't really useful unless your 'aete' is<br>
+microscopic; you can't open your resource using the 'aete' template if it's<br>
+more than about 2K in size. Resorcerer includes a pretty decent 'aete' editor,<br>
+considering the complexity of this resource -- but be warned, the editor is<br>
+equally complex.</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The aete editor stack and the include files for Rez are available on this issue's<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CD and as part of the AppleScript Software Development Toolkit from Apple<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Developer Catalog. Resource editors with good 'aete' editors are commercially<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;available.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Details of the structure and format of an 'aete' resource can be found in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Chapter 8 of <i>Inside Macintosh: Interapplication Communication.</i>
+</p>
+<p><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________</p>
+<b>MAKE THE CONTAINMENT HIERARCHY OBVIOUS</b>
+</p>
+<p>
+Your object model design includes an <i>object containment hierarchy,</i> a scheme<br>
+indicating which objects are contained in which other objects. When you design your<br>
+containment hierarchy, think again about the user's experience when writing scripts.<br>
+Make it easy for the user to determine that objects of class<i>y </i>are contained in objects of<br>
+class <i>x,</i> which is in turn contained in the application.
+</p>
+<p>
+For instance, Figure 1 shows part of the object containment hierarchy for an<br>
+imaginary application that contains text windows, folders, and a connection. The<br>
+windows can contain one or more paragraphs, words, or characters; paragraphs can<br>
+contain words or characters; and words can contain characters. Note that even though<br>
+only one connection is possible for this particular application,<b> connection i</b>s an<br>
+object class contained by the application, as opposed to being merely a property of the<br>
+application.
+</p>
+<p>
+<img src="img/151.gif" width="372 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>Part of a typical object containment hierarchy
+</p>
+<p>
+It's important to connect up all the appropriate pieces of your containment hierarchy.<br>
+It's <i>especially </i>important to hook up the main classes of objects -- such as windows,<br>
+documents, and other special objects not contained by other objects -- to the<i> top level</i><br>
+of the hierarchy by listing them as elements of your application. Never "orphan" a<br>
+class! Every object class (except the application) must be listed as an element of<br>
+<i>something. </i>Most classes or objects are contained by another object. If any object can't<br>
+be contained by another object, it <i>must</i> be contained by the application.
+</p>
+<h2>ASSEMBLING YOUR VOCABULARY</h2>
+<p>
+After you've taken a shot at writing down the kinds of commands suggested by your<br>
+application's capabilities and the object model, it's time to think about how to assemble<br>
+your vocabulary.
+</p>
+<p>
+The AppleScript terms (commands, objects, and properties) that you'll use in your<br>
+vocabulary fall into two categories:
+</p>
+<ul>
+<li>    standard terms -- those drawn from the standard Apple Event Registry<br>
+suites and other well-defined suites</li>
+<li>extended terms -- those you'll create to represent actions or  objects    <br>
+specific to your application</li>
+</ul>
+<p>
+To ensure that your scripting implementation will have as much consistency across<br>
+applications as the user interface, you should use the standard terms whenever<br>
+possible. As you've seen, this is inextricably tied to good object model design. See<br>
+"Registry Suites" for descriptions of the standard suites. Unless you have a excellent<br>
+reason, don't vary from the standard terms associated with these suites.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;REGISTRY SUITES</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The Apple event suites listed below (which include those defined in the<i>Apple</i><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>Event Registry </i>as well as additional standard suites) are collections of events,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;objects, properties, and other terms common to most applications. For the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sake of consistency with other scripting implementations, you should draw on<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;these suites as much as possible as you design your vocabulary.
+</p>
+<ul>
+<li style="margin-left: 17px">    The Required suite (kCoreEventClass = 'aevt') consists of the four<br>
+events that the System 7 Finder uses to launch and terminate an application<br>
+and to open and print documents. Note that while the Required suite's ID is<br>
+'reqd' (kAERequiredSuite), its four Apple events have the suite ID 'aevt'. Note<br>
+also that in the early days, Apple originally referred to the Apple events in the<br>
+Required suite as the core events (even including "core" in the C and Pascal<br>
+constant names), creating some confusion with the Core suite. Please don't<br>
+refer to the events in the Required suite as "core events."</li>
+<li style="margin-left: 17px"> The Core suite (kAECoreSuite = 'core') consists of 17 events (14 main<br>
+and 3 extra) and 8 objects that encompass much of the functionality that most<br>
+applications support, including creating, deleting, opening, closing, and<br>
+counting objects, as well as getting and setting properties. In an object<br>
+model-based application, a great deal of the work in AppleScript is done<br>
+through the Apple events in the Core suite. See the Scriptable Text Editor's<br>
+dictionary for an example of the standard implementation of this suite.<br>
+Applications generally support most but not all of the Core suite. Note that the<br>
+Core suite's ID is 'core', and while most of its events have that suite ID, the<br>
+Open, Print, and Quit events have the suite ID 'aevt'.</li>
+<li style="margin-left: 17px"> The Text suite (kAETextSuite = 'TEXT') defines the object classes used in<br>
+text handling, such as characters, words, and paragraphs, normally the direct<br>
+objects of events defined in the Core suite. No Apple events are defined in this<br>
+suite.</li>
+<li style="margin-left: 17px"> The Table suite (kAETableSuite = 'tbls') defines the essential object<br>
+classes used in table handling, such as rows, columns, and cells, normally the<br>
+direct objects of events defined in the Core suite. Again, no Apple events are<br>
+defined in this suite.</li>
+<li style="margin-left: 17px"> The Database suite (kAEDBSuite = 'dbst') consists of the Group and Sort<br>
+events; transaction-related events; the host, DBMS, database, session, and key<br>
+objects; and extended definitions for the Table suite objects. It focuses the<br>
+functionality of the Table suite specifically toward database activity.</li>
+<li style="margin-left: 17px"> Miscellaneous Standards (kAEMiscStandards = 'misc') is a collection of<br>
+additional Apple events, including editing events such as Cut, Paste, Undo,<br>
+Redo, Select, and Revert, and the menu, menu item, and text item objects. This<br>
+isn't used as a suite; only individual events or small groups of events are used.</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Other Apple event suites that are used less frequently include the following:
+</p>
+<ul>
+<li style="margin-left: 17px">    the Scheduling suite, used for applications such as calendars,<br>
+appointment books, and alarm programs</li>
+<li style="margin-left: 17px"> the Telephony suite, used by any application that handles phone numbers,<br>
+including PIM, database, forms, and scheduling applications</li>
+<li style="margin-left: 17px"> the Mail suite, based on the AOCE Mailer and used in mail-capable<br>
+applications to mail documents</li>
+<li style="margin-left: 17px"> the Collaborative Information suite, used in applications that access AOCE<br>
+catalog services or manage contact or human resources information</li>
+<li style="margin-left: 17px"> the System Object suite (not actually a suite), used for terminologies<br>
+defined in Apple's scripting additions</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The Word Services, QuickDraw, and QuickDraw Supplemental suites are<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;generally not used in scripting.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;To look up the accepted human-language constructs for the Required, Core,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Text, Table, and QuickDraw suites, see the file EnglishTerminology.r (also<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;available for French and Japanese); for the Database suite, see the file<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Database.aete.r; and for Miscellaneous Standards, see EnglishMiscellaneous.r<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(also available for French and Japanese). These files, which present the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;standard terms in the form of 'aete' resource templates (in Rez form), can be<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;found on this issue's CD and are included in the AppleScript Software<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Development Toolkit.
+</p><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________</p>
+<p>
+<b>USING STANDARD TERMS</b>
+</p>
+<p>
+When it comes to implementing the standard suites, you have three options:
+</p>
+<ul>
+<li>    supporting an entire suite as is</li>
+<li> supporting an entire suite and overriding or adding to it</li>
+<li> supporting part of a suite</li>
+</ul>
+<p>
+<b>Supporting an entire suite. </b>When you want to support <i>all </i>the events,<br>
+parameters, classes, properties, and so on, of a suite, you should include the entire<br>
+suite in your 'aete' resource. Listing 1 is an example of the Rez code you'll use to<br>
+indicate that an entire suite (in this case, the Required suite) is supported. The four<br>
+empty arrays in this listing are indicative of the fact that when you want a whole suite<br>
+intact, you don't supply any events, classes, and so on. The entire suite will appear in<br>
+your dictionary.
+</p>
+<p>
+<b>Listing 1.</b> Sample Rez code supporting an entire suite
+</p>
+<pre>"Required Suite",      /* The entire suite, as is */
+"Terms that every application should support",
+kCoreEventClass,      /* 'reqd' */
+1,
+1,
+{   /* array Events: 0 elements */
+},
+{   /* array Classes: 0 elements */
+},
+{   /* array ComparisonOps: 0 elements */
+},
+{   /* array Enumerations: 0 elements */
+},</pre>
+<p>
+Note that whenever you use the 4-byte suite ID for a<i> suite itself </i>(as opposed to the<br>
+suite ID for the individual events in a suite), <i>all </i>the standard definitions for that suite<br>
+will automatically appear in your dictionary. Do<i>not</i> use this technique if you're<br>
+implementing only a few of a suite's Apple events or objects. And note that this<br>
+technique works only for the Required, Core, Text, Table, and QuickDraw suites, which<br>
+are in AppleScript's 'aeut' resource. For all other suites, you'll need to include all the<br>
+details of the suite in your 'aete' resource if you support it in its entirety.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Supporting only the Required suite </b>doesn't qualify your application as<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Apple event-aware or scriptable. To qualify as being scriptable, your<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;application must support more than just the Required suite.
+</p>
+<p>
+<b>Supporting an entire suite to be modified. </b>When you want to support a whole<br>
+suite and then add to or otherwise modify it, use the Rez code in Listing 2 as a model. In<br>
+this example, the entire Core suite is supported, and a new copies parameter is added<br>
+to the print command. You can use the same technique to add property definitions to a<br>
+standard object class. Just as in the previous example, here we don't specify any of the<br>
+suite's details except the ones we're overriding or adding.
+</p>
+<p>
+<b>Listing 2. </b>Sample Rez code supporting an entire suite to be modified
+</p>
+<pre>"Standard Suite",    /* The entire suite, plus an extra parameter */
+"Common terms for most applications",
+kAECoreSuite,         /* 'core' */
+1,
+1,
+{   /* array Events: 1 element */
+   /* [1] */
+   "print",            /* This is the event being extended. */
+   "Print the specified object(s)",
+   kCoreEventClass,
+   kAEPrint,
+   ...
+   {   /* array OtherParams: 1 element */
+      /* [1] */
+      "copies",      /* This is the parameter being added. */
+      'NCOP',
+      'shor',
+      "The number of copies to print",
+      ...
+   }
+},
+{   /* array Classes: 0 elements */
+},
+{   /* array ComparisonOps: 0 elements */
+},
+{   /* array Enumerations: 0 elements */
+},</pre>
+<p>
+<b>Supporting part of a suite.</b>On the other hand, when you want to implement only<br>
+part of a suite, you need to explicitly define the subset of the suite's events and objects<br>
+that you support. For example, let's say you implement only seven of the events in the<br>
+Core suite (which nearly everyone implements only partially; these seven are the<br>
+minimum you should support). You'll create a new suite with a unique ID -- your<br>
+application's signature, perhaps, or, as used by the Scriptable Text Editor, 'CoRe'<br>
+(note the alteration from all lowercase, which prevents the whole Core suite from<br>
+appearing automatically). Then you'll include the events and objects you want. Listing<br>
+3 shows how to do this in Rez code. Note that you should retain the original suite ID of<br>
+'core' for the individual Apple events (except for Open, Print, and Quit, which get<br>
+'aevt', as mentioned earlier in "Registry Suites"), both in your 'aete' and in your<br>
+Apple event handlers.
+</p>
+<p>
+<b>Listing 3. </b>Sample Rez code supporting a partial suite
+</p>
+<pre>"Subset of the Standard Suite",
+                                  /* Only seven of the Core events */
+"Common terms used in this application",
+'CoRe',       /* Note uppercase alteration of the 'core' suite ID. */
+1,
+1,
+{   /* array Events: 7 elements */
+   /* [1] */
+   "count", "Return number of elements of a particular class ...",
+   kAECoreSuite, kAECountElements,   ...  
+   /* [2] */
+   "delete", "Delete an element from an object",
+   kAECoreSuite, kAEDelete, ...  
+   /* [3] */
+   "exists", "Verify if an object exists",
+   kAECoreSuite, kAEDoObjectsExist, ...  
+   /* [4] */
+   "get", "Get the data for an object",
+   kAECoreSuite, kAEGetData, ...  
+   /* [5] */
+   "make", "Make a new element",
+   kAECoreSuite, kAECreateElement, ...  
+   /* [6] */
+   "quit", "Quit an application program",
+   kCoreEventClass, /* Open, Print, and Quit have 'aevt' suite ID. */
+   kAEQuitApplication, ...  
+   /* [7] */
+   "set", "Set an object's data",
+   kAECoreSuite, kAESetData, ...
+},
+{   /* array Classes ...
+},
+...</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>The format for Rez listings </b>in <i>Inside Macintosh</i> puts one element on each<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;line, as I've done in Listings 1 and 2. To conserve space, I'll now begin putting<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;more elements on each line, which is also a permissible format.
+</p>
+<p>
+<b>USING EXTENDED TERMS</b>
+</p>
+<p>
+Whenever possible in your scripting implementation, you should use constructs and<br>
+terms that are already in use. But sometimes you need to express concepts unique to<br>
+your application. When you do, it's important to keep in mind the style of what's<br>
+already been done in the AppleScript language, and in other applications.
+</p>
+<p>
+The terms you create that aren't in the standard suites are actually extensions to<br>
+AppleScript. The nature of these terms will directly affect the experience your users<br>
+will have in scripting your application. You should create terms that give users the<br>
+feeling that they're working within a unified language.
+</p>
+<p>
+Keep in mind that creating new object classes or properties is generally better than<br>
+creating new verbs. If you do need to create your own verbs or use terms unique to<br>
+your application, it's better to try to do it in the spirit of what's been done before<br>
+instead of inventing your own "language within a language." Users shouldn't feel as if<br>
+they're jumping between what appear to be separate "pseudo-languages" for each<br>
+application.
+</p>
+<p>
+Although early documentation from Apple suggested creating one custom suite<br>
+containing your Core suite subset lumped together with your custom verbs, I don't<br>
+always recommend this. If you're adding a lot of vocabulary, either new events or<br>
+objects, you can make your dictionary more understandable by keeping the Core subset<br>
+in one suite and defining your own new verbs in a separate suite. In fact, it's OK to<br>
+make more than one custom suite if you have a great many new verbs or objects and if<br>
+you can separate them into distinct functional groupings.
+</p>
+<p>
+Make sure that the names for your new suites clearly indicate that they're custom<br>
+suites or specific to your application. And when you create ID codes for your new<br>
+events, objects, and such, remember that Apple reserves the use of all 4-byte codes<br>
+that contain only lowercase letters, so you should use at least one uppercase letter in<br>
+the codes. There isn't yet a way to register your codes, but the Webster project<br>
+(described at the end of this article in "Resources") aims to serve that end.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A WORD ABOUT SCRIPT AND DO</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;One of the easiest methods of gaining the appearance of scriptability is to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;implement the Do Script event. Do Script enables users to pass statements or<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;groups of statements written in your own internal scripting language to your<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;application for execution. If you have an internal scripting language already,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Do Script can be OK as a first step. Just don't stop there -- in the end, it's<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;useful as a supplement to the rest of your scriptability, but not as a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;substitute.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The drawbacks to Do Script are that (1) new users must learn a new language<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-- yours -- in addition to AppleScript, and (2) Do Script is a one-way<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;communication in most cases -- the script can control your application, but it<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;acts much more like a puppeteer than a team leader. In the end, Do&nbsp;&nbsp;Script<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;defeats the purpose of a single language for controlling all applications.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Another easy method of appearing to be scriptable is to implement a Do Menu<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;event, in which a user can simulate pulling down a menu and selecting menu<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;items. Again, this is no substitute for real scriptability.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;By the way, if you're thinking about creating a new scripting language<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;internal to your application, think again. The world doesn't need yet another<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;private application-specific language. AppleScript is there for you, with all of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;its rich expressiveness, to use as your own. The benefit is that by the time you<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;complete your scripting support, many of your users will already be familiar<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;with AppleScript.
+</p><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________</p>
+<h2>CONVENTIONS, TIPS, AND TRICKS</h2>
+<p>
+Here are some concepts and techniques that you can use to make your vocabulary more<br>
+helpful to the script writer. Included are well-known tricks as well as techniques that<br>
+aren't often considered. Adhering to these guidelines will make scripting cleaner and<br>
+promote a consistent language "look and feel" across applications.
+</p>
+<p>
+<b>STYLISTIC CONVENTIONS</b>
+</p>
+<p>
+<b>Begin terms with lowercase.</b>
+</p>
+<p>
+Begin all the terms in your dictionary with lowercase letters, except for proper<br>
+names like PowerTalk. It may seem trivial, but it's actually quite important. If you<br>
+use uppercase letters to begin your object names, for example, you'll end up with<br>
+strange-looking commands that contain a mixture of uppercase and lowercase letters:
+</p>
+<pre>make new History
+set the Title of the first History to ...</pre>
+<p>
+Using all lowercase letters gives a more consistent look:
+</p>
+<pre>make new history
+set the title of the first history to ...</pre>
+<p>
+<b>Separate all terms.</b>
+</p>
+<p>
+If you have terms that consist of more than one word, separate the words. Don't turn<br>
+them into Pascal-like names:
+</p>
+<pre>ReplaceAll
+set the TransferProtocol to ConvertFromMainframe</pre>
+<p>
+Instead, make them flow naturally:
+</p>
+<pre>replace all
+set the transfer protocol to convert from mainframe</pre>
+<p>
+<b>Use familiar terms, but avoid reserved words.</b>
+</p>
+<p>
+Generally speaking, you'll want to identify your object classes with terms your users<br>
+are already familiar with. When it comes to your verbs, you can use many of your<br>
+menu items, and for the rest use terms that will be familiar and that lend themselves<br>
+to starting clean and natural statements. Plain human language is always preferable to<br>
+C- or Pascal-style identifiers.
+</p>
+<p>
+On the other hand, when you attempt to use familiar terms, keep in mind that the list<br>
+of words that could potentially conflict with your dictionary is constantly growing and<br>
+also depends on which scripting additions and applications are currently running on a<br>
+particular computer. As a result, there's no official list of reserved words to avoid.<br>
+Choose your terms with extreme care -- remember, you're actually extending the<br>
+language and what you do here will affect the future.
+</p>
+<p>
+In summary, try to provide words that are familiar to users without running into<br>
+conflicts with existing terminology. Don't make up new terms to express something<br>
+when there's a clean way to do it using existing terminology: where possible, use<br>
+terms analogous to those already in use to represent constructs (verbs, parameters,<br>
+objects, properties, and enumerators) in your application. Conversely, don't use<br>
+existing terms to represent something that differs from a term's accepted use.
+</p>
+<p>
+<b>ENUMERATIONS, LISTS, RECORDS, AND TYPE DEFINITIONS</b>
+</p>
+<p>
+<b>Use lots of enumerations.</b>
+</p>
+<p>
+Very few developers have made effective use of enumerations. An <i>enumeration</i>is a set<br>
+of constants, usually representing a fixed set of choices. In AppleScript, these<br>
+constants, known as <i>enumerators,</i> are identified (like everything else) by 4-byte ID<br>
+codes. Use an enumeration as the type for a parameter or property whenever there's a<br>
+choice to be made from a specific list of possibilities, and make sure you use natural<br>
+language.
+</p>
+<p>
+For example,
+</p>
+<pre>set status to 1</pre>
+<p>
+or
+</p>
+<pre>set status to "warm"</pre>
+<p>
+isn't as helpful to the script writer as
+</p>
+<pre>set status to warm</pre>
+<p>
+This subtle change makes a great deal of difference. In the dictionary, the enumeration<br>
+is displayed as "hot|warm|cool|cold," as opposed to "integer" or "string," and the user<br>
+can easily see there's a choice. To accomplish this, you would create an enumeration<br>
+with the enumerators <b>hot, warm, cool, </b>and<b>cold, </b>and use the 4-byte enumeration<br>
+ID as the type for the <b>status</b>property of the class, as shown in Listing 4. The<br>
+dictionary entry for this property will read "status hot|warm|cool|cold," instead of<br>
+"status integer" or "status string."
+</p>
+<p>
+It's an extremely common mistake among developers to try using ordinal values as<br>
+enumerators, but it simply won't work. Unlike in C or Pascal, you can't use ordinal<br>
+values -- you must use 4-byte ID codes.
+</p>
+<p>
+<b>Listing 4.</b> Creating and using an enumeration
+</p>
+<pre>{  /* array Properties: ...
+   /* [1] */
+   "status",
+   'Psta',          /* Note uppercase in your IDs. */
+   'Esta',          /* The enumeration's ID */
+   "the status",
+   reserved,
+   singleItem,
+   enumerated,      /* Use "enumerated" */
+   ...
+},
+...
+{  /* array Enumerations: 1 element */
+   /* [1] */
+   'Esta',
+   {   /* array Enumerators: 4 elements */
+      /* [1] */
+      "hot", 'Khot', "A hot condition",
+      /* [2] */
+      "warm", 'Kwrm', "A warm condition",
+      /* [3] */
+      "cool", 'Kcoo', "A cool condition",
+      /* [4] */
+      "cold", 'Kfrz', "A cold condition"
+   }
+},</pre>
+<p>
+<b>Set the list flag to indicate lists in parameters and properties.</b>
+</p>
+<p>
+If you're normally expecting a list of items as a parameter or a property, set the <b>list</b><br>
+flag (kAEUTListOfItems) in the parameter or property definition flags; the dictionary<br>
+entry will then show "list of &lt;whatever&gt;." (Note that this is different from defining a<br>
+parameter's or a property's type as<b>list,</b> which you should do when you want to<br>
+indicate a mixed-type list or a list of lists.) An interesting possibility is to combine<br>
+lists with enumerations, to indicate that the user can specify more than one choice, as<br>
+in
+</p>
+<pre>set the applicability of filter 1 to {incoming, outgoing, ...}</pre>
+<p>
+<b>Define record labels in a record definition.</b>
+</p>
+<p>
+To document the labels for the elements that make up a record, create a record<br>
+definition in your dictionary. A record definition is actually a fake "class" in which the<br>
+"properties" represent the labels in the record. Although there won't really be any<br>
+objects in your application with this record type's class, your users can determine<br>
+what labels are appropriate in order to fill in a record used as a parameter or a<br>
+property value. Record definitions can also be helpful for users to interpret a record<br>
+passed back as a result.
+</p>
+<p>
+To create a record definition, invent a name for your record type and create a new<br>
+class in your 'aete' resource with the record type name as the class name. Define all<br>
+the possible labels as properties. As an example, Listing 5 shows the "class" definition<br>
+you would create in your 'aete' resource for a record that looks like the following:
+</p>
+<pre>{name:"Fred", age:3, status:warm}</pre>
+<p>
+In this case, you would also define the enumeration for <b>status </b>with the enumerators<br>
+<b>hot, warm, cool</b>, and <b>cold. </b>The record type would appear in the dictionary as<br>
+follows:
+</p>
+<pre>class person info: A record containing information about a person
+   person info
+      name string -- the name
+      age short integer -- age in years
+      status hot|warm|cool|cold -- current status</pre>
+<p>
+Since a record definition is an "abstract class," it should be placed in the Type<br>
+Definitions suite, described in the next section.
+</p>
+<p>
+<b>Listing 5.</b> Class definition for our sample record definition
+</p>
+<pre>{  /* array Classes: 1 element */
+   /* [1] */
+   "person info", 'CPIN',
+   "A record containing information about a person",
+   {   /* array Properties: 3 elements */
+      /* [1] */
+      "name", 'pnam', 'itxt', "the name",
+      reserved, singleItem, notEnumerated,
+      ...
+      /* [2] */
+      "age", 'AGE ', 'shor', "age in years",
+      reserved, singleItem, notEnumerated,
+      ...
+      /* [3] */
+      "status", 'Psta', 'Esta', "current status",
+      reserved, singleItem, enumerated,
+      ...
+   },
+   {   /* array Elements: 0 elements */
+   },
+}</pre>
+<p>
+<b>Put abstract class and primitive type definitions in special suites.</b>
+</p>
+<p>
+There are two suites you can use to organize your dictionary better: the Type<br>
+Definitions suite and the Type Names suite. These suites are used in special situations<br>
+where you want to define object and type classes that are used in your terminology but<br>
+that won't ever be actual instantiable objects in your application.
+</p>
+<p>
+In the case of the record definition classes described in the previous section, you need<br>
+to define abstract classes that don't refer to real objects. You'll also need to do this in<br>
+the case of extra classes defined for property inheritance, which aren't instantiable as<br>
+objects in your application. To include these record or type definitions, create a Type<br>
+Definitions suite (also known as an Abstract Class suite) with the ID 'tpdf'<br>
+(kASAbstractClassSuite; note that this constant isn't defined in any .r files, so you'll<br>
+need to define it yourself) and include your abstract class and record definitions.
+</p>
+<p>
+On some occasions you may want to add terms to your vocabulary that you don't want to<br>
+show up in your dictionary. For example, you might need to provide the terms for<br>
+primitive types, such as i<b>nteger </b>and <b>point, </b>to make AppleScript work properly, but<br>
+users are already familiar with these elemental terms and don't need to see them<br>
+defined. In this case, make a Type Names suite with the ID 'tpnm'<br>
+(kASTypeNamesSuite) and include your types as classes in this suite. Well-behaved<br>
+editors such as Apple's Script Editor and Scripter from Main Event will suppress the<br>
+display of this suite.
+</p>
+<p>
+To sum up, if you want these definitions to be visible to the user, include them in your<br>
+Type Definitions suite. If you want them to be hidden, include them in the Type Names<br>
+suite. Use of these suites will help keep the rest of your suites less cluttered.
+</p>
+<p>
+<b>NOTES ON DIRECT OBJECTS</b>
+</p>
+<p>
+<b>Be explicit about direct objects.</b>
+</p>
+<p>
+Some developers have relied on a default or current target, such that commands that<br>
+don't include a specific object target will act on the frontmost window or the last<br>
+explicitly set object. There are three reasons to be careful here:
+</p>
+<ul>
+<li>    Users of multiple applications may be confused by different<br>
+assumptions surrounding the notion of a current object used as the target.</li>
+<li> If your Apple events act just on the current object, your users can only<br>
+act on some other object by explicitly making it the current object. In the case<br>
+where the current object is considered to be the frontmost window, there's no<br>
+way to script other windows.</li>
+<li> Another script (or the user!) could make a different object the current<br>
+object while a script is running.</li>
+</ul>
+<p>
+The moral of this story is that it's best to be explicit at all times about the object that<br>
+will be acted on.
+</p>
+<p>
+<b>Make the target the direct object.</b>
+</p>
+<p>
+One of our goals in scripting is to maintain a natural imperative command style<br>
+throughout. However, there's one situation in which a technical issue might make it<br>
+difficult to preserve this style. From the scripting point of view, you'd really like to<br>
+allow the user to write something like the following:
+</p>
+<pre>attach &lt;document-list&gt; to &lt;mail-message-target&gt;</pre>
+<p>
+The problem is that OpenDoc requires the target to be in the direct parameter. In the<br>
+preceding script, the target is in the <b>to </b>parameter, not the direct parameter. To make<br>
+this compatible with OpenDoc, you'll need to change the<b>attach </b>verb to <b>attach to</b> and<br>
+swap the direct parameter and the<b>to </b>parameter, like this:
+</p>
+<pre>attach to &lt;mail-message-target&gt; documents &lt;document-list&gt;</pre>
+<p>
+<b>Help your users figure out which objects to use with a verb.</b>
+</p>
+<p>
+Due to limitations in the 'aete' resource, there's no provision for indicating which<br>
+Apple events can act on which objects. The AppleScript compiler will accept any<br>
+combination of verbs and objects, even though some of these combinations have no<br>
+meaning to your application and will result in runtime errors. To help your users<br>
+determine which objects work with which verb, you can use the following trick.
+</p>
+<p>
+Define the parameter's type as an enumeration instead of an object specifier. Use a #<br>
+as the first character of the 4-byte ID for the enumeration. Then define the<br>
+enumerators as the object classes that are appropriate for the event. You can use the<br>
+same enumeration for more than one event; you can define different enumerations with<br>
+different sets of object enumerators for different events; and you can even indicate the<br>
+same object class in more than one enumeration. For example, instead of
+</p>
+<pre>close reference</pre>
+<p>
+a dictionary entry incorporating this technique would read
+</p>
+<pre>close window|connection|folder</pre>
+<p>
+This entry indicates to the user that the only object classes that make sense for the<br>
+<b>close</b> command are <b>window, connection,</b> and <b>folder.</b>
+</p>
+<p>
+<b>OTHER TIPS AND TRICKS</b>
+</p>
+<p>
+<b>Think carefully about objects versus properties.</b>
+</p>
+<p>
+Often, most of the work in a script is accomplished through creating objects and<br>
+setting and getting properties, so use properties liberally. Be mindful that in certain<br>
+cases, what initially might seem to be good candidates for objects might, on more<br>
+careful examination, be represented as properties of another object, particularly<br>
+when there's only one of such an object in your application. On the other hand, don't<br>
+make something a property just because there's only one of it (such as a single object<br>
+class belonging to an application or a containing object).
+</p>
+<p>
+It's not always clear which is the better way to go -- object or property. Some<br>
+examples may help you understand how to decide this. Certain Finder objects have<br>
+properties but are themselves properties of the application or the desktop container.<br>
+The selection, an object of the abstract "selection-object" class, has properties such<br>
+as the selection's contents. However, the selection-object class is never actually used<br>
+in scripts; <b>selection </b>is listed as a property of the application and other selectable<br>
+objects, so that a script writer doesn't need to form an object specifier, and the class<br>
+name can be used as the object itself ("selection" instead of "selection 1").
+</p>
+<p>
+As another example, a tool palette, which would normally be an object class, might be<br>
+one of several objects of the palette class, or it might be better listed as a property of<br>
+the application. This would depend on whether you had several named palettes (palette<br>
+"Tools," palette "Colors") or wanted separate identifiers for each palette (tool palette,<br>
+color palette). It could also depend in part on whether there were properties (and<br>
+perhaps elements) of the palettes. In this particular case, using the <b>tool palette </b>and<br>
+<b>color palette </b>properties is more localizable than including the name of the palette in<br>
+the script. If you translate the program into some other language, it's a fair bet that<br>
+the tool palette won't be named "Tools" anymore. However, your 'aete' resource will<br>
+have been localized and thus <b>tool palette </b>will be transformed into the correct name<br>
+for the object.
+</p>
+<p>
+Try to be careful when deciding whether to make something a property or an object --<br>
+users can end up writing
+</p>
+<pre>&lt;property&gt; of &lt;property&gt; of &lt;object&gt;</pre>
+<p>
+or even
+</p>
+<pre>&lt;property&gt; of &lt;object&gt; of &lt;property&gt; of &lt;object&gt;</pre>
+<p>
+and may become confused by real objects that appear to be datalike or that normally<br>
+would be elements but are presented as properties. Make something a property only<br>
+when it's meaningful rather than for convenience; otherwise, the concept of an object<br>
+model hierarchy becomes eroded.
+</p>
+<p>
+Whether something is a property or an object really depends on the specifics of your<br>
+application. Still, in a large number of cases, objects are things that can be seen or<br>
+touched, while properties are characteristics of the objects or the application. A good<br>
+rule of thumb is: If the item in question is a characteristic of something else, it's<br>
+probably a property.
+</p>
+<p>
+<b>Use inheritance to shrink your 'aete'.</b>
+</p>
+<p>
+If you've got a large 'aete' resource, or large groups of properties used in multiple<br>
+classes, you can reduce the size and repetitiousness of your 'aete' by defining those sets<br>
+of properties in an abstract or base class. Then classes that include those property<br>
+definitions can include an inheritance property, with the ID code 'c@#^' (pInherits),<br>
+as their first property. The human name for this property should be <b>&lt;Inheritance&gt;</b><br>
+(be sure to include the angle brackets as part of the name). The inclusion of this<br>
+property will indicate to the user that this class inherits some or all of its properties<br>
+from another class.
+</p>
+<p>
+As an example, in QuarkXPress, several of the object classes have a large number of<br>
+properties. Without inheritance, there would have been up to a hundred properties in<br>
+the dictionary's list of properties for some of the classes! By creating abstract base<br>
+classes in the 'aete' (defined in the application's Type Definitions suite) and inheriting<br>
+from these, the application uses the same sets of properties (some quite large) in<br>
+several different classes. The size of the 'aete' resource was reduced from 67K to 44K,<br>
+and the lists of properties for many of the classes were reduced to just a few, including<br>
+the inheritance property.
+</p>
+<p>
+On the other hand, because this method produces a hierarchy that's smaller but more<br>
+complex (and therefore slightly more confusing), I recommend using it only in<br>
+situations where inheritance applies to more than one class. If you plan to use<br>
+inheritance in only one place in your 'aete', or if your 'aete' isn't particularly large,<br>
+it's probably better just to repeat all the properties in each class without using<br>
+inheritance.
+</p>
+<p>
+<b>Be cautious when you reuse type codes.</b>
+</p>
+<p>
+If you use the same term for more than one "part of speech" in your dictionary, use the<br>
+same 4-byte code. For example, if you use<b> input </b>as a parameter, again as a property,<br>
+and later as an enumerator, use the same type code for each of the various uses.
+</p>
+<p>
+By contrast -- and this is very important because it's the single most common&nbsp;&nbsp;source<br>
+of terminology conflicts -- don't use the same type code for more than one event, or<br>
+more than one class, and so on. If you do, AppleScript will change the script to show<br>
+the last event or class defined with that code, changing what the user wrote in the<br>
+script. This is usually not the desired effect, unless you specifically want synonyms.
+</p>
+<p>
+If you do want synonyms, you can create them this way. For instance, in HyperCard the<br>
+term "bkgnd field" is defined before "background field." The former can be typed and<br>
+will always be transformed into the latter at compile time, so that the latter is always<br>
+displayed. Just be careful not to have the script appear to change terminology<br>
+indiscriminately -- it's unsettling to the user.
+</p>
+<p>
+The section "ID Codes and the Global Name Space" later in this article discusses<br>
+additional considerations having to do with type codes.
+</p>
+<p>
+<b>Avoid using is in Boolean property and parameter names.</b>
+</p>
+<p>
+Because <b>is</b> can be used to mean "=" or "is equal to," and because it's a reserved word,<br>
+you should avoid using it in human names for properties and parameters, such as <b>is</b><br>
+<b>selected, is encrypted</b>, or <b>is in use.</b> It's better, and less awkward, to use<br>
+<b>selected, encrypted, </b>and i<b>n use</b>or <b>used.</b> In a script, writing
+</p>
+<pre>if selected of thing 1 then ...</pre>
+<p>
+or
+</p>
+<pre>tell thing 1
+   if selected then...
+end tell</pre>
+<p>
+is better than writing
+</p>
+<pre>if is selected of thing 1 then ...</pre>
+<p>
+or
+</p>
+<pre>tell thing 1
+   if is selected then ...
+end tell</pre>
+<p>
+However, it's OK to use <b>has </b>or <b>wants </b>(which have none of the problems presented by<br>
+<b>is</b>), as in
+</p>
+<pre>if has specs then ...</pre>
+<p>
+or
+</p>
+<pre>set wants report to true</pre>
+<p>
+When you name your Boolean parameters, keep in mind that AppleScript will<br>
+change<b>true </b>and<b> false </b>to <b>with</b> and <b>without.</b> If the user writes
+</p>
+<pre>send message "Fred" queuing true</pre>
+<p>
+it compiles to
+</p>
+<pre>send message "Fred" with queuing</pre>
+<p>
+<b>Control the number of parameters.</b>
+</p>
+<p>
+Sometimes you may find yourself implementing a verb that contains lots of options,<br>
+for which you might be tempted to make separate Boolean parameters. When the<br>
+number of parameters is small, it looks good to be able to say "with a, b, and c."<br>
+Excessive use of this technique, however, can lead to unwieldy dictionary entries for<br>
+these events with long lists of parameters.
+</p>
+<p>
+There are two solutions to this:
+</p>
+<ul>
+<li>    Make a parameter or parameters that accept a list of enumerators for<br>
+the option or set of options.</li>
+<li> Break the command into separate commands with more focused<br>
+functionality, reducing the number of options for each event.</li>
+</ul>
+<p>
+For example, suppose a statistics package creates a single command to perform any<br>
+type of analysis with lots of parameters, like this:
+</p>
+<pre>analyze &lt;reference&gt;     75 Boolean parameters indicating various
+                              analysis options</pre>
+<p>
+It would be better to split the analysis capability into multiple commands, followed by<br>
+small groups of Boolean parameters, forming a suite, such as
+</p>
+<pre>cluster &lt;reference&gt;     small number of Boolean parameters indicating
+                              clustering options, or list of
+enumerators
+correlate &lt;reference&gt;   small number of Boolean parameters indicating
+                              correlation options, or list of
+enumerators
+fit curve &lt;reference&gt;   small number of Boolean parameters indicating
+                              curve-fitting options, or list of
+enumerators</pre>
+<p>
+and so on.
+</p>
+<p>
+<b>Use replies meaningfully.</b>
+</p>
+<p>
+In your dictionary, including a reply in an event's definition helps the user understand<br>
+the behavior of an application-defined command and its role in the communication<br>
+between a script and your application. However, you shouldn't include a reply<br>
+definition if the only possible reply is an error message (except in the rare case<br>
+where the error message is a normal part of the event's behavior).
+</p>
+<p>
+When you return an object specifier as a reply, as in the case of the <b>make</b>command,<br>
+it's up to you to decide which reference form to use. <i>Reference forms </i>(the various<br>
+ways objects can be described in a script), also known as <i>keyforms, </i>include the<br>
+following:
+</p>
+<ul>
+<li style="margin-left: 19px">    name ("Fred", "Untitled 1")</li>
+<li style="margin-left: 19px"> absolute (first, second, middle, last)</li>
+<li style="margin-left: 19px"> relative (after word 2, behind the front window)</li>
+<li style="margin-left: 19px"> arbitrary (some)</li>
+<li style="margin-left: 19px"> ID (ID 555)</li>
+<li style="margin-left: 19px"> range (4 through 6)</li>
+<li style="margin-left: 19px"> test (whose font is "Helvetica")</li>
+</ul>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;For more information on reference forms,</b> see <i>Inside Macintosh:</i><br>
+<i>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Interapplication Communication</i> and the <i>AppleScript Language Guide.</i>
+</p>
+<p>
+Most scriptable applications to date implement the absolute reference form, such as<br>
+<b>window 1</b>, as the reply to a<b> make </b>command. If your users are likely to change the<br>
+position of this object during a script, you might consider using the name form<br>
+instead. When you absolutely want a unique value, reply with the ID form, as in<br>
+<b>window ID -5637. </b>The ID reference form ensures a unique value but usually<br>
+means much less to the user.
+</p>
+<p>
+Deciding which reference forms to use for object specifiers comes into play in<br>
+applications that are recordable, as well.
+</p>
+<p>
+<b>APPROACHES TO RECORDING COMMANDS</b>
+</p>
+<p>
+If your application will be recordable, take note. Some early adopters of AppleScript<br>
+recordability assumed that their users would only record an action and play it back to<br>
+see an example of how to script it. Their early scripting implementations were done<br>
+quickly, often without supporting the object model. Later they realized that users<br>
+would actually write scripts, sometimes from scratch, using the dictionary as their<br>
+guide. As a result, most have redone their implementations to clean them up or use the<br>
+object model. Don't use recordability as an excuse to take the easy route and implement<br>
+quickly. You'll end up wanting to redo it later, but you won't be able to because your<br>
+installed base will be too large. Instead, implement the object model the first time.
+</p>
+<p>
+There are two approaches to recording commands. One approach is to send something as<br>
+close as possible to what the user would write to the recorder. This isn't necessarily a<br>
+mirror image of the user's actions but produces recorded statements that more closely<br>
+resemble what a user will write.
+</p>
+<pre>open folder "Goofballs" in disk "Razor"</pre>
+<p>
+The other approach is to duplicate the actions of users. This is the method used in the<br>
+Scriptable Finder. In this method, what's recorded is that the user makes a selection<br>
+and then acts on that selection.
+</p>
+<pre>select folder "Goofballs" in disk "Razor"
+open selection</pre>
+<p>
+In the first case, the recorded statement helps the user understand how to write the<br>
+command (my personal favorite). In the other case, there's a relationship between<br>
+what the user did and what was recorded. Either method is useful -- it depends on your<br>
+objectives.
+</p>
+<p>
+As is the case with returning object specifiers as replies (discussed above), you decide<br>
+which reference forms to use for object specifiers that get recorded.
+</p>
+<p>
+<b>ID CODES AND THE GLOBAL NAME SPACE</b>
+</p>
+<p>
+One of the areas of greatest confusion among AppleScript developers is AppleScript's<br>
+global name space and its implications for choosing ID codes for properties and<br>
+enumerators. In this name space are all the terms used in all the scripting additions<br>
+installed on a user's computer (see "If You're Writing a Scripting Addition . . .") and<br>
+all the terms defined by AppleScript as reserved words. Properties and enumerators<br>
+must have either unique or identical codes, depending on the situation. (Events,<br>
+parameters, and classes that are defined within an application's dictionary aren't<br>
+affected by this requirement.)
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IF YOU'RE WRITING A SCRIPTING ADDITION...</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Scripting additions (otherwise known as<i> osaxen</i>, the plural of<i>osax,</i> for OSA<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;extension) add new core functionality to AppleScript by extending the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AppleScript language. If you're writing a scripting addition, either for general<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;purposes or for use with a particular application, you should be aware of a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;growing problem: the increasingly crowded name space for commands. When<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the number of additions was small, it was simple; each command (term)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;generally had only one usage. Now the situation is beginning to get out of hand.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The problem stems from three issues:
+</p>
+<ul>
+<li style="margin-left: 19px">    Unlike applications, which generally go through a fairly significant<br>
+development cycle, many osaxen have been written by programmers who<br>
+aren't commercial application developers. As a result, there tend to be a great<br>
+many more osaxen than scriptable applications.</li>
+<li style="margin-left: 19px"> The name space for osax terminology is global in the sense that these<br>
+gems are accessible from any script running on your computer. You might<br>
+think of all the osax dictionaries being lumped together as though they were a<br>
+single large application's dictionary (really a "system-level" dictionary). So<br>
+when two or more osaxen use the same terms in slightly (or radically)<br>
+different ways, trouble abounds. Only one of them will capture AppleScript's<br>
+attention, and you, the osax author, can't control which will win out.</li>
+<li style="margin-left: 19px"> If an application command is named the same as an osax command, the<br>
+application command will be invoked inside a <b>tell</b> block, while the osax will<br>
+be invoked outside the <b>tell</b> block. On the other hand, an osax command executed<br>
+inside a <b>tell</b> block for an application that doesn't define the same command<br>
+name will invoke the osax. Users writing scripts will undoubtedly make<br>
+errors.</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;It's impossible to completely avoid every term used in every application, but<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;where possible, try not to use terms that are likely to be used by application<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;developers. Remember that a user may load up a computer with any number of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;osax collections, without realizing that there are four different <b>rename file</b><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;osaxen among the horde (or should I say herd?).
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;In addition, remember that if, for example, you define an <b>open file</b>command<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;as an osax, the command
+</p>
+<pre>      open file "curly"</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;is ambiguous. A user might want the Open event
+</p>
+<pre>      open (file "curly")</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;or an osax command,
+</p>
+<pre>      (open file) "curly"</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Again, be extra careful when defining system-level terms.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A different problem exists in the special case where a set of osaxen is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;marketed for use with a special application, such as plug-ins or database<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;connectivity. In this case, you should name your commands so that they are<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unmistakably associated with their host application. One possible solution is to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin the command names with a prefix indicating that they should only be<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;used with the particular application.
+</p>
+<p><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________</p>
+As noted earlier, you can reuse terms for different "parts of speech" -- for example,<br>
+for a parameter, a property, and an enumerator -- but then you must use the same<br>
+4-byte ID code. By extension, if the term you want to use for a property or an<br>
+enumerator is defined in the global name space, you <i>must</i>use the 4-byte code already<br>
+defined there. For example, if you want to use the property <b>modification date, </b>you<br>
+must use the code 'asmo', which is defined in the File Commands scripting addition.<br>
+This applies across different parts of speech, so if, for instance, the term you want to<br>
+use for a parameter is already defined in the global name space as a property, you<br>
+must use the same code. If you use a different code, scripts that include your term may<br>
+not compile, or they may compile but send the wrong code to your application when<br>
+executed.
+</p>
+<p>
+Conversely, if you make up a new 4-byte ID code for your own property or<br>
+enumerator, you need to take reasonable precautions to avoid using a code that<br>
+corresponds to another term in the global name space. If you don't use a completely<br>
+new code, you can't be sure which term is represented by that code in scripts that<br>
+contain the code. So, for example, you shouldn't use the code 'asmo' unless you're<br>
+referring to the <b>modification date</b> property.
+</p>
+<p>
+How can you identify potential conflicts? One way is by using a script editor, MacsBug<br>
+(with the <b>aevt </b>dcmd and the <b>atsend </b>macro), and the templates on the AppleScript<br>
+Developer CD, notably the templates for the Apple Event Manager traps. Together,<br>
+these tools enable you to catch an Apple event as it's sent and to examine it. Here's what<br>
+you do:
+</p>
+<ul>
+<li>    Use the Formatting menu item in the editor to set the colors of the<br>
+AppleScript styles so that you can see whether a term parses as an<br>
+application-defined term or as a script-defined variable.</li>
+<li> Type in your desired terminology and compile.</li>
+<li> If it parses as a script-defined variable, it's free and you can use it with<br>
+your own unique code to represent your own term. If it parses as an<br>
+application-defined term, go on to the next step.</li>
+<li> Break into MacsBug, type "atsend," and go. Execute the script, and the<br>
+code for the property or enumerator will be displayed. You can then use this<br>
+term in a manner consistent with standard terminology or definitions in<br>
+scripting additions -- the appropriate ID code will be generated by<br>
+AppleScript. You must still include this term, along with the ID code you just<br>
+discovered, in your 'aete' resource so that users will see the term in your<br>
+dictionary. Then things will still work if the scripting addition that defines the<br>
+term is subsequently removed.</li>
+</ul>
+<h2>IT'S NOT TOO LATE TO CLEAN UP YOUR ACT</h2>
+<p>
+Let's say you took a first stab at scriptability, implemented it in your application, and<br>
+shipped it. Perhaps you did the expedient thing and didn't implement the object model.<br>
+Or maybe you implemented totally new terms in your dictionary. Don't be afraid to<br>
+redo some of your scripting implementation -- it's still early enough in the scripting<br>
+game to clean up your vocabulary or to go the distance and support the object model.<br>
+It's <i>much</i> better to do it now, when there are only 50 or 100 people struggling to<br>
+script your application. The overwhelming majority of your users will breathe a sigh<br>
+of relief and thank you profusely for making their lives easier, even if they have to<br>
+modify some of their existing scripts.
+</p>
+<p>
+Two well-known developers have each recently done a relatively full scripting<br>
+implementation and have indicated to their users that this is the first version, that<br>
+some of it is experimental and is likely to change. A number of others have retraced<br>
+their steps, rethinking their approach, and on occasion switched to object model<br>
+support. I'll give two examples of applications where changing a scripting<br>
+implementation made a significant difference.
+</p>
+<p>
+<b>EUDORA: CLEANING UP VOCABULARY</b>
+</p>
+<p>
+As one of the most widely distributed applications in the history of the Macintosh,<br>
+Eudora by Qualcomm is used by a vast number of people to manage their Internet mail.<br>
+Eudora originally used completely nonstandard terms. For example, this script created<br>
+a new message and moved it to a specific mail folder:
+</p>
+<pre>tell application "Eudora"
+   CreateElement ObjectClass message InsertHere mailfolder "Good
+stuff"
+   Move message 1 InsertHere mailfolder "Other stuff"
+end tell</pre>
+<p>
+This was an easy cleanup job, involving mostly just changes to the dictionary. Standard<br>
+human terms were substituted for Apple event constructs, as can be seen in this script<br>
+that now accomplishes the same thing as the preceding script:
+</p>
+<pre>tell application "Eudora"
+   make new message at mail folder "Good stuff"
+   move message 1 to mail folder "Other stuff"
+end tell</pre>
+<p>
+Your terms don't have to be quite this far afield for you to consider a scripting facelift.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>STUFFIT: SWITCHING TO THE OBJECT MODEL</b>
+</p>
+<p>
+By contrast, in the case of StuffIt from Aladdin, the developer revamped the<br>
+application, replacing a non-object model implementation with one that supports the<br>
+object model. This revision produced a dramatic increase in the ease of scriptability.
+</p>
+<p>
+Here's a synopsis of the original implementation:
+</p>
+<ul>
+<li>    Required suite: OpenApp, OpenDocs, PrintDocs, QuitApp</li>
+<li> StuffIt suite: Stuff, UnStuff, Translate, Copy, Paste, Clear, Get Max<br>
+Number of Archives, Get Current Number of Archives, Stack Windows, Tile<br>
+Windows, Get Version</li>
+<li> Selection suite: Select, Select All, DeSelect All, Select By Name, View<br>
+Selected Items, Rename Selected Items, Delete Selected Items, Get Selected<br>
+Count, Get Selected Name . . .</li>
+<li> Archive suite: New Archive, Create New Folder, Open Archive, Close<br>
+Archive, Verify Archive, Get Archive Pathname, Get Archive Name, Set/Get<br>
+Archive Comment, Set/Get Archive View, Stuff Item, UnStuff Item, Change<br>
+Parent, Save</li>
+<li> Item suite: Get Item Count, Get Item Type, Get Item Name (and 14 others<br>
+beginning with "Get Item"), Rename Item, Delete Item, Copy Items, Move<br>
+Items</li>
+</ul>
+<p>
+Notice the redundancy of Set, Get (more than 20 occurrences), Rename, Delete, Stuff,<br>
+UnStuff, and Select. Also, notice that the command names look much like Apple event<br>
+names. It was extremely hard to figure out how to script this application.
+</p>
+<p>
+Once the object model was implemented, the scheme became a lot simpler:
+</p>
+<ul>
+<li>    Required suite</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Events: open, print, quit, run
+</p>
+<ul>
+<li>    Core suite </li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Events: make, delete, open, and so on (the 14 main events)
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Classes: application, document, window
+</p>
+<ul>
+<li>    StuffIt suite</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Miscellaneous events: cut, copy, paste, select
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Custom events: stuff, unstuff, view, verify, segment, convert
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Classes: archive, item, file, folder
+</p>
+<ul>
+<li>    Type Definitions suite</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3 special record types used as property types in other classes
+</p>
+<p>
+Each of the classes has a multitude of properties, where most of the action takes place.<br>
+All the redundancies have been removed (the verbs can be remembered and used<br>
+naturally), and statements can be written that resemble those written for other<br>
+applications. The entries in the Type Definitions suite are record types used for<br>
+properties. The result of this redesign is that the dictionary is now smaller and more<br>
+understandable. A script to access all the items in an archive that was originally 68<br>
+lines long is now only 20 lines!
+</p>
+<h2>THE JOURNEY BEGINS</h2>
+<p>
+Making your application scriptable is an art. Think of AppleScript as a living, growing<br>
+human language. As you've seen, there are standard terms and object model constructs<br>
+that you can use when designing your application's scripting implementation, for those<br>
+capabilities that are common to many or all applications.
+</p>
+<p>
+In the end, though, a unique treatment is usually necessary to fully express the<br>
+particular capabilities of each application, and your scripting implementation should<br>
+be carefully constructed accordingly.
+</p>
+<p>
+I hope this article has convinced you to do the following:
+</p>
+<ul>
+<li>    Make AppleScript <i>your </i>application's language. Remember that<br>
+AppleScript isn't just for programmers -- many users will want to write and<br>
+record scripts to control your application.</li>
+<li> Develop a sense of style. Consider the nature of what your users will end<br>
+up writing in their scripts. "Clean and elegant" (like a user interface) will<br>
+serve your users well. Use human terms that can be easily understood by a<br>
+nonprogrammer.</li>
+<li> Strive for consistency. Follow the conventions, suggestions, and general<br>
+guidelines outlined here, for the sake of semantic consistency across<br>
+applications.</li>
+<li> Choose your terms carefully. Consider whether and how the terms you<br>
+use in your vocabulary will affect the name space for AppleScript.</li>
+</ul>
+<p>
+On the other hand, if you aren't comfortable designing a semantic vocabulary or if<br>
+you're having trouble formulating a clear picture in your mind of a natural-language<br>
+sentence structure, don't attempt to do it yourself. As in the case of graphic and<br>
+interface design, it might be better to engage the services of an expert.
+</p>
+<p>
+If you do undertake designing a scripting implementation yourself, you'll find it to be a<br>
+rewarding experience, one that can enable your users to accomplish things never<br>
+before possible. Happy implementing!
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;RESOURCES</h2>
+<ul>
+<li style="margin-left: 19px"><i>Inside Macintosh: Interapplication Communication</i> (Addison-Wesley,<br>
+1993), Chapters 3 through 10. (<i>Inside Macintosh</i> Volume VI is not<br>
+recommended.)</li>
+<li style="margin-left: 19px"> "Apple Event Objects and You" by Richard Clark, <i>develop</i> Issue 10.</li>
+<li style="margin-left: 19px"> "Better Apple Event Coding Through Objects" by Eric M. Berdahl,<i>develop</i><br>
+Issue 12.</li>
+<li style="margin-left: 19px"><i>Apple Event Registry: Standard Suites</i>, available on this issue's CD or in<br>
+print from Apple Developer Catalog.</li>
+<li style="margin-left: 19px"> AppleScript Software Development Toolkit, available from Apple<br>
+Developer Catalog.</li>
+<li style="margin-left: 19px"><i>AppleScript Language Guide</i> (Addison-Wesley, 1993). Also in the<br>
+AppleScript Software Development Toolkit.</li>
+<li style="margin-left: 19px"> The Webster Project. This master database, containing terms used in<br>
+scriptable applications and scripting additions, assists in resolving naming<br>
+collisions across applications and serves to regularize the common terms used<br>
+by applications of different types. I'm designing and implementing this;<br>
+contact me at AppleLink MAIN.EVENT for more information.</li>
+</ul><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________</p>
+<p>
+<b>CAL "MR. APPLESCRIPT" SIMONE </b>(AppleLink MAIN.EVENT) has dedicated his life<br>
+to bringing scripting to the masses. He can usually be found moving fast through the<br>
+Worldwide Developers Conference or MACWORLD Expo, a cloud of dust in his wake. A<br>
+founder of Main Event Software of Washington, DC, he designed the Scripter authoring<br>
+and development environment for AppleScript and sometimes teaches AppleScript at<br>
+corporate sites. An honorary member of the Terminology Police as a result of having<br>
+reviewed scripting vocabularies for more than two dozen third-party products, Cal is<br>
+available to look at yours. He lives about a mile from the White House and was fond of<br>
+saying of President Bush, "I don't bother him, and he doesn't bother me."
+</p>
+<p>
+<b>Thanks</b> to our technical reviewers C. K. Haun, Don Olson, and Jon Pugh, and to<br>
+Michael Bayer.
+</p>
+</body>
+</html>

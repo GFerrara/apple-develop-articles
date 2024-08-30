@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 52 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 95 - Printing Images Faster With Data Compression</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Printing Images Faster With Data Compression</h1>
+<h2>David Gelphman</h2>
+<p>
+<img src="img/242.gif" width="180 px"></img>
+</p>
+<p>
+<i>Using JPEG image compression techniques can dramatically improve performance</i><br>
+<i>during printing to PostScript(TM) Level 2 printers; compressed images are</i><br>
+<i>significantly smaller and take much less time to print. You don't need to write</i><br>
+<i>PostScript code or special-case your code for PostScript printing; QuickTime and the</i><br>
+<i>printer driver do most of the work for you. You don't have to wait to get started,</i><br>
+<i>either. If you implement JPEG image data compression techniques in your application,</i><br>
+<i>users printing to PostScript Level 2 printers with the current LaserWriter 8.3</i><br>
+<i>driver will see improvements in printing performance right away.</i>
+</p>
+<p>
+Many applications compress image data for storage and transmission, but compressing<br>
+images for printing is relatively uncommon. With the techniques presented in this<br>
+article, you can start printing with image data compression and realize significant<br>
+performance gains without a lot of effort. First we'll explore the concepts behind using<br>
+image data compression for printing, and then go through three sample applications<br>
+that show you how to do it.
+</p>
+<p>
+The first two samples demonstrate how to print existing compressed image data.<br>
+Applications that already deal with JPEG compressed data, such as Web browsers and<br>
+JPEG viewing applications, can benefit immediately from these techniques. Developers<br>
+whose applications handle other kinds of compressed data (such as fax) can see how<br>
+they might benefit in the future as printing software is enhanced to handle other types<br>
+of compressed data.
+</p>
+<p>
+Some applications don't already have compressed data to print. Painting applications,<br>
+for example, handle image data that may not be in a standard compressed format. The<br>
+third sample application shows you how to compress your data as you do your<br>
+print-time imaging.
+</p>
+<p>
+To give you an idea of the performance gains you might expect with these techniques, I<br>
+printed the same images with and without JPEG image data compression and compared<br>
+print times and data sizes. The improvements are notable -- compressed color images,<br>
+for example, can print in less than half the time. You may find the results so<br>
+compelling that you'll want to implement these techniques in your own application.
+</p>
+<p>
+This issue's CD contains the sample applications as well as some images you can use<br>
+with them. It also contains a prerelease version of LaserWriter 8.3.1, which you may<br>
+find useful for testing your application as you implement printing with compression.
+</p>
+<h2>THE BASICS</h2>
+<p>
+Realistic images can be quite large, resulting in slow print times. Compression<br>
+algorithms such as JPEG, fax, and LZW are used to reduce the size of these images for<br>
+storage and transmission. Image data compressed in these formats can be decompressed<br>
+on PostScript Level 2 printers.
+</p>
+<p>
+While many applications can handle compressed image data, at print time they usually<br>
+decompress the data and use CopyBits to draw the decompressed images. Only a few<br>
+applications use custom PostScript code to take advantage of the image decompression<br>
+available in PostScript Level 2 output devices.
+</p>
+<p>
+QuickTime's Image Compression Manager provides an API for applications to compress<br>
+and decompress still image data. By using the Image Compression Manager functions,<br>
+applications can draw JPEG compressed image data. If this drawing takes place at print<br>
+time, the application is effectively passing compressed image data to the printer<br>
+driver; this allows the driver to handle the compressed data appropriately for the<br>
+target output device, as described in the next section. The application doesn't need to<br>
+know whether that device is a QuickDraw, PostScript Level 1, or PostScript Level 2<br>
+device.
+</p>
+<p>
+If your application handles only QuickDraw pictures, it doesn't need to perform any<br>
+special action to take advantage of image data compression. QuickDraw pictures<br>
+containing JPEG compressed image data are available from various sources; QuickTime<br>
+can compress QuickDraw pictures transparently, and applications such as Adobe(TM)<br>
+Photoshop can create QuickDraw pictures containing JPEG compressed image data.<br>
+Applications that use DrawPicture to draw such pictures automatically take advantage<br>
+of printer drivers that have special handling of compressed image data. All they need to<br>
+do is let the QuickDraw low-level drawing routines do their normal thing.
+</p>
+<p>
+LaserWriter drivers starting with version 8.3 are savvy about JPEG compressed<br>
+images that are drawn with QuickTime. When the driver receives data that's<br>
+compressed with JPEG compression and the PostScript output is destined for a<br>
+PostScript Level 2 device, the driver sends the compressed data directly to the<br>
+printer. Since JPEG compressed images can be as much as 1/10 to 1/40 the size of<br>
+uncompressed images, the amount of data sent to the printer is much smaller, which<br>
+drastically reduces print times.
+</p>
+<p>
+<b>HOW THE PRINTER DRIVER HANDLES COMPRESSED IMAGE DATA</b>
+</p>
+<p>
+In general, printer drivers intercept QuickDraw drawing through the QuickDraw<br>
+low-level bottleneck routines. When an application draws compressed image data with<br>
+the Image Compression Manager functions (or draws a compressed QuickDraw picture<br>
+with DrawPicture), QuickTime passes the compressed data to the low-level QuickDraw<br>
+drawing routines through the StdPix bottleneck routine. Normally, StdPix<br>
+decompresses the data and passes the decompressed data to the bitsProc bottleneck<br>
+routine for drawing.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>StdPix is described in detail</b> in Inside Macintosh: QuickTime, pages<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3-137 to 3-139.*
+</p>
+<p>
+The LaserWriter 8.3 driver installs custom bottleneck routines as replacements for<br>
+the standard bottlenecks, including bitsProc and StdPix. The custom StdPix bottleneck<br>
+is key to the special handling of compressed image data, as shown in Figure 1. The<br>
+driver installs the custom StdPix bottleneck in the printing graphics port so that it<br>
+can intercept calls to StdPix and examine the compressed data. If the data is<br>
+compressed with a compression type that the driver recognizes and knows the printer<br>
+is capable of receiving, the driver sends the data directly to the printer. Otherwise, it<br>
+calls the standard StdPix, which, as described above, sends the decompressed data to<br>
+the bitsProc bottleneck. Drivers that don't have a custom StdPix bottleneck (such as<br>
+QuickDraw printer drivers and LaserWriter drivers previous to version 8.3) will<br>
+always have decompressed data passed to their bitsProc bottleneck.
+</p>
+<p>
+<img src="img/243.gif" width="432 px"></img>
+</p>
+<p>
+<b>Figure 1. Special handling of compressed image data in the LaserWriter</b><br>
+<b>8.3 driver</b>
+</p>
+<p>
+Using a custom StdPix bottleneck lets a printer driver handle different compression<br>
+types appropriately. It also allows for the generation of correct output both for<br>
+PostScript Level 2 output devices, all of which support JPEG, fax, and LZW<br>
+decompression, and for PostScript Level 1 devices, which don't support any<br>
+decompression. For drivers like LaserWriter 8.3 that spool (for background printing<br>
+or as part of foreground printing), there's another advantage: since the spool file can<br>
+contain compressed images instead of uncompressed images, users benefit from<br>
+smaller disk space requirements.
+</p>
+<p>
+The techniques described here for handling compressed image data will work correctly<br>
+with any printer driver, not just PostScript drivers with this special compressed<br>
+image data handling. Of course, the performance benefits will be seen only with<br>
+drivers that do have it. Most QuickDraw printer drivers will not gain a performance<br>
+benefit because they ultimately render decompressed data on the host system and send<br>
+the rendered results to the printer. In fact, if the data is being compressed on the host<br>
+specifically for printing, there will a performance penalty. A few QuickDraw drivers,<br>
+such as Adobe's Acrobat(TM) PDFWriter, create data files that could potentially take<br>
+advantage of image compression done by your application.
+</p>
+<p>
+Note that this technique of using a custom StdPix bottleneck applies to printing to a<br>
+color graphics port on a Macintosh system that has Color QuickDraw built in (most<br>
+do). Black-and-white ports don't have StdPix bottlenecks; later we'll look at what to<br>
+do if you're printing compressed data to a black-and-white port.
+</p>
+<p>
+<b>WHY THE DRIVER DOESN'T DO COMPRESSION FOR YOU</b>
+</p>
+<p>
+You might be wondering: "If using image data compression for printing is so great, why<br>
+doesn't the driver do it for me automatically?" It's a good question and one that<br>
+deserves a good answer.
+</p>
+<p>
+Different kinds of images, such as fax images, photographic images, and synthetic<br>
+images, have different characteristics. The best type of compression to apply depends<br>
+on the type of image. Printer drivers operate at too low a level to make good decisions<br>
+about image data compression. On the other hand, applications typically have a good<br>
+idea about the kind of data they handle.
+</p>
+<p>
+Additionally, some compression algorithms, such as JPEG, can be "lossy" (that is, they<br>
+throw away information), and it would be inappropriate for the driver to apply them<br>
+without user control. The driver user interface isn't well suited to specifying<br>
+compression preferences, particularly since such decisions should be on a document<br>
+by document basis or even on a per image basis within a document. The LaserWriter<br>
+8.x drivers do use PackBits compression for all image data passed to their low-level<br>
+bitsProc bottleneck, but that's the only active compression done by the drivers and it<br>
+isn't very effective for many types of image data.
+</p>
+<h2>PRINTING EXISTING COMPRESSED IMAGE DATA THAT FITS IN<br>
+MEMORY</h2>
+<p>
+As mentioned earlier, applications that use DrawPicture to draw QuickDraw pictures<br>
+containing JPEG data don't need to do anything special to print the images. In this<br>
+section we'll look at how applications can print compressed image data that is not in a<br>
+QuickDraw picture.
+</p>
+<p>
+The JPEG Print sample application reads an existing compressed JPEG data file for<br>
+display and printing. In this application, the JPEG data must fit completely in memory<br>
+before it can be imaged. This is not a requirement for using compressed data, but is the<br>
+simplest approach to describe initially. Later we'll talk about the case where the data<br>
+doesn't all fit in memory at once.
+</p>
+<p>
+At application startup, the JPEG Print sample code checks that QuickTime is installed.<br>
+The code also tests to make sure there's a compression-decompression codec that can<br>
+handle the decompression of JPEG data; the codec is used to decompress the data on the<br>
+host if the data can't be sent to the printer in a compressed form. Applications that can<br>
+already print compressed data without QuickTime and an appropriate codec should<br>
+continue using their existing code to print when QuickTime and the codec aren't<br>
+present.
+</p>
+<p>
+<b>FILLING IN THE IMAGEDESCRIPTION DATA STRUCTURE</b>
+</p>
+<p>
+The QuickTime image decompression functions require a handle to an ImageDescription<br>
+data structure. This structure contains information about an image, such as the<br>
+compression type used, the number of bytes in the compressed image, and the image<br>
+height, width, and depth. QuickTime needs this data separate from the compressed data<br>
+itself.
+</p>
+<p>
+In the case of JPEG compressed data, much of the information required in the<br>
+ImageDescription data structure is contained in the compressed JPEG data stream. The<br>
+JPEG Print application reads the JPEG data stream and extracts the width, height,<br>
+horizontal resolution, vertical resolution, and depth of the image. It then uses this data<br>
+to build up an ImageDescription structure for use with the Image Compression<br>
+Manager functions. The specifics of parsing a JPEG data stream for image description<br>
+information aren't discussed here; this part of the sample code comes almost directly<br>
+from the sample JFIF Translator application in the Macintosh OS Software Developer's<br>
+Kit, with little modification.
+</p>
+<p>
+<b>CHOOSING THE APPROPRIATE DECOMPRESSION ROUTINE</b>
+</p>
+<p>
+To draw compressed still images with QuickTime, you can use one of three functions:<br>
+DecompressImage, FDecompressImage, or the StdPix bottleneck routine. However, the<br>
+DecompressImage and FDecompressImage functions always call the standard StdPix<br>
+bottleneck; they do not call any custom StdPix bottleneck (including LaserWriter 8's)<br>
+in the graphics port. Since we want our compressed image data to pass through the<br>
+driver's StdPix bottleneck, we'll just call the StdPix bottleneck directly, as described<br>
+in the next section.
+</p>
+<p>
+For drawing to a black-and-white port, you'll need to use DecompressImage or<br>
+FDecompressImage since a black-and-white port doesn't have a StdPix bottleneck. One<br>
+of the arguments to DecompressImage and FDecompressImage (as specified in the<br>
+QuickTime documentation) is a handle to the pixel map in which the decompressed<br>
+image is to be displayed. In a black-and-white graphics port there is no PixMapHandle<br>
+available; instead, there is a BitMap data structure. DecompressImage and<br>
+FDecompressImage can accept a BitMap instead of a PixMapHandle as the destination to<br>
+draw to, and that's what we pass to DecompressImage when drawing to a<br>
+black-and-white graphics port.
+</p>
+<p>
+<b>CALLING THE STDPIX BOTTLENECK DIRECTLY</b>
+</p>
+<p>
+The StdPix bottleneck is declared as follows:
+</p>
+<pre>pascal void StdPix(PixMapPtr src, Rect *srcRect,
+   MatrixRecordPtr matrix, short mode, RgnHandle mask,
+   PixMapPtr matte, Rect *matteRect, short flags);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The first argument is a pointer to a PixMap "containing" the compressed image data.<br>
+This isn't a PixMap in the normal QuickDraw sense; instead, it's a PixMap data<br>
+structure that has compressed data "attached" to it with the QuickTime call<br>
+SetCompressedPixMapInfo. This call associates an ImageDescription data structure and<br>
+the corresponding compressed image data with a PixMap data structure. It's important<br>
+that the compressed data not move in memory after you've associated it with the<br>
+PixMap. If you use a handle to your compressed data, as we do in the sample code, you<br>
+should lock the handle before your call to SetCompressedPixMapInfo and keep it locked<br>
+until after you're done with the PixMap.
+</p>
+<p>
+The next two arguments to StdPix specify a source rectangle and a transformation<br>
+matrix that describes the mapping between the source rectangle of the image data and<br>
+the destination rectangle. By specifying a source rectangle and a matrix rather than a<br>
+source and a destination rectangle, the StdPix interface allows for more general<br>
+coordinate transformations than just scaling and translation. Currently, however,<br>
+QuickTime supports only scaling and translation.
+</p>
+<p>
+The mode argument specifies which QuickDraw transfer mode to use when drawing the<br>
+image. JPEG Print uses the ditherCopy mode. When printing to PostScript printers,<br>
+ditherCopy mode is treated by the LaserWriter 8.x driver exactly like srcCopy mode,<br>
+and the PostScript interpreter does any halftoning or dithering appropriate for the<br>
+PostScript output device. When imaging to QuickDraw output devices, ditherCopy<br>
+causes QuickDraw to dither the image, which usually yields better results than using<br>
+srcCopy.
+</p>
+<p>
+StdPix also accepts mask and matte arguments to obtain special effects. The mask<br>
+argument has the same effect as clipping to a mask region as part of the imaging call.<br>
+The matte arguments allow for effects similar to those of Color QuickDraw's<br>
+CopyDeepMask. Current LaserWriter 8.x drivers do not support clipping to bitmap<br>
+regions, or the CopyDeepMask-like effects available with the matte arguments.<br>
+Consequently, the mask and matte arguments are ignored by LaserWriter 8.x drivers.
+</p>
+<p>
+&nbsp;&nbsp;The final argument to StdPix is a flags parameter. The relevant flags are callOldBits<br>
+and callStdBits; they work together to specify whether a call to StdPix results in a call<br>
+to the bitsProc bottleneck with decompressed data. When the callOldBits and<br>
+callStdBits flags are both set, StdPix will always call the bitsProc bottleneck with<br>
+decompressed data. If callOldBits is set and callStdBits is not, StdPix will call the<br>
+bitsProc bottleneck with the decompressed data only if the bitsProc bottleneck is not<br>
+StdBits, but a custom bitsProc routine.
+</p>
+<p>
+The JPEG Print sample code uses a flags value of (callOldBits | callStdBits) to specify<br>
+the most conservative handling of compressed image data during printing. Printer<br>
+drivers that know how to handle compressed image data, such as LaserWriter 8.3, will<br>
+have a custom StdPix bottleneck to intercept the call and adjust the flags<br>
+appropriately. Drivers that don't know how to handle compressed image data will<br>
+always receive decompressed image data via their bitsProc bottleneck.
+</p>
+<p>
+&nbsp;&nbsp;Once we're ready to call the StdPix bottleneck, we don't want to just call the function<br>
+StdPix; instead, we must be careful to use any custom StdPix bottleneck that has been<br>
+installed. To do this, the code must check the current graphics port for custom<br>
+QuickDraw bottlenecks, as shown in Listing 1. If there aren't any, the code gets the<br>
+standard bottlenecks; otherwise, it gets the pointer to the CQDProcs record stored in<br>
+the graphics port. Once it has the appropriate bottlenecks, the code uses the procedure<br>
+pointer stored in the newProc1 field of the CQDProcs record; this is the StdPix<br>
+bottleneck.
+</p>
+<p>
+<b>Listing 1. </b>Calling the QuickDraw StdPix bottleneck directly
+</p>
+<pre>// Look to see if there are custom QuickDraw bottlenecks in the
+// current graphics port.
+if ((((CGrafPtr)qd.thePort)-&gt;grafProcs) == NULL) {
+   // Get the standard bottleneck procs.
+   SetStdCProcs(&amp;myStdProcs);
+   // The newProc1 field is the StdPix bottleneck.
+   MyProcPtr = (StdPixProcPtr)myStdProcs.newProc1;  
+} else {
+   // Use the grafProcs record in the current port to obtain the
+   // custom bottleneck procs. The newProc1 field is the StdPix
+   // bottleneck.
+   MyProcPtr =
+      (StdPixProcPtr) ((CGrafPtr)qd.thePort)-&gt;grafProcs-&gt;newProc1;
+}
+// Now call the bottleneck.
+CallStdPixProc(MyProcPtr, SpecialPixMapP, &amp;srcRect, &amp;theMatrix,
+   ditherCopy, NULL, NULL, NULL, flags);</pre>
+<p class="spacer">&nbsp;</p>
+<h2>USING DATA-LOADING TECHNIQUES TO PRINT LARGE<br>
+COMPRESSED IMAGES</h2>
+<p>
+The compressed image data you're working with may not fit completely in memory.<br>
+QuickTime supports this case through the use of a data-loading function, which you<br>
+supply. QuickTime calls this function as needed to obtain data during image<br>
+decompression. Data loading eliminates the need to have the full image in memory,<br>
+greatly reducing memory usage.
+</p>
+<p>
+The use of a data-loading function is described in somewhat sketchy terms in Inside<br>
+Macintosh: QuickTime, pages 3-148 to 3-150. Basically, your application creates a<br>
+buffer that your data-loading function uses for passing data to QuickTime. In<br>
+preparation for the StdPix call, you call SetCompressedPixMapInfo with a pointer to<br>
+the beginning of the buffer, the buffer length, and your data-loading function. When<br>
+you call the StdPix bottleneck, QuickTime calls the data-loading function as necessary<br>
+to obtain the compressed image data.
+</p>
+<p>
+The data-loading function is declared as follows:
+</p>
+<pre>pascal OSErr MyDataLoadingProc(Ptr *dataP, long bytesNeeded,
+    long refcon);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The first argument is a pointer to a pointer into your data buffer (the one you supplied<br>
+in the call to SetCompressedPixMapInfo as described earlier). The bytesNeeded<br>
+argument tells your function how many bytes need to be available in the data buffer<br>
+pointed to by the pointer in *dataP after the function call returns. The refcon<br>
+argument lets you pass additional information to your data-loading function.
+</p>
+<p>
+<b>EXTENDING JPEG PRINT WITH A DATA-LOADING FUNCTION</b>
+</p>
+<p>
+The sample application JPEG Print with Dataload, an extended version of JPEG Print,<br>
+uses the function MyDataLoadingProc, shown in Listing 2. Code not included here fills<br>
+up the buffer with the first chunk of compressed data and sets up the data-loading<br>
+function so that the refcon passed to it is a pointer to our application-defined DataLoad<br>
+structure.
+</p>
+<p>
+<b>Listing 2. </b>The data-loading function
+</p>
+<pre>static pascal OSErr MyDataLoadingProc(Ptr *dataP, long bytesNeeded,
+      long refcon)
+{
+   OSErr   theErr = noErr;
+
+   if (dataP != NULL) {
+      DataLoadPtr theDataLoadPtr = (DataLoadPtr) refcon;
+      // refcon is a pointer to a structure that contains the locked
+      // handle to our buffer, a field with the buffer size, and a
+      // field with the file reference number of the image data file
+      // we are decompressing.
+      Ptr theDataBufferP =
+         StripAddress(*(theDataLoadPtr-&gt;theDataBufferH));
+      long theBufferSize = theDataLoadPtr-&gt;theBufferSize;
+      short theRefNum = theDataLoadPtr-&gt;theRefNum;
+      // Calculate the number of bytes left in our existing data
+      // buffer.
+      long bytesAvail = theBufferSize - (*dataP - theDataBufferP);
+      // Are there enough bytes in our buffer for this call? If so,
+      // we don't need to read any more data.
+      if (bytesNeeded &gt; bytesAvail) {
+         // We don't have enough bytes of data in our buffer. Figure
+         // out how many bytes we should read to refill the buffer.
+         long bytesToRead = theBufferSize - bytesAvail;
+
+         // If there are bytes available at the end of our buffer,
+         // move them to the beginning of the buffer.
+         if (bytesAvail)
+            BlockMove(*dataP, theDataBufferP, bytesAvail);
+         // Go ahead and fill up the rest of the buffer, starting
+         // just after the last valid byte in the buffer.
+         theErr = FSRead(theRefNum, &amp;bytesToRead, theDataBufferP
+                     + bytesAvail);
+         // Ignore end of file errors.
+         if (theErr == eofErr) theErr = noErr;
+
+         // Reset the data pointer used by the caller of the data-
+         // loading function so that it points to the first byte of
+         // valid data, which is now at the beginning of our buffer.
+         *dataP = theDataBufferP;
+      }
+   } else {
+      // The data mark reset case. This implementation doesn't know
+      // how to reset the stream, so we return an error. We haven't
+      // seen a data mark reset as part of JPEG decoding. (Note that
+      // not handling this case slows down PhotoCD significantly.)
+      theErr = -1;
+   }
+   return theErr;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The data-loading function's job is to ensure that when it's called with a request for<br>
+bytesNeeded bytes of data, at least that many bytes are available in the buffer pointed<br>
+to by *dataP after the data-loading function returns. When MyDataLoadingProc is<br>
+called with dataP not NULL, the code first computes how many bytes remain in the<br>
+buffer from *dataP to the end of the buffer. If that number of bytes is greater than or<br>
+equal to bytesNeeded, there are enough bytes available and the function returns.<br>
+Otherwise, the data from *dataP to the end of the buffer is copied to the beginning of<br>
+the buffer, and the remainder of the buffer is filled up with new data. Once the buffer<br>
+is refilled, *dataP is set to point to the beginning of the buffer so that the caller starts<br>
+getting its data there.
+</p>
+<h2>TECHNIQUES FOR COMPRESSING AND PRINTING<br>
+UNCOMPRESSED DATA</h2>
+<p>
+Your application may not have compressed data to print. The third sample application<br>
+on this issue's CD, PrintPICTtoJPEG, compresses 32-bit-deep image data and prints<br>
+it. To obtain a source of bits to compress, PrintPICTtoJPEG takes a PICT file and<br>
+images it into a 32-bit-deep offscreen bitmap. It then draws from this bitmap into the<br>
+current graphics port. During printing, the data in the offscreen bitmap is<br>
+(optionally) compressed using JPEG compression, and then printed using the<br>
+techniques for printing compressed data as discussed above for the JPEG Print<br>
+application.
+</p>
+<p>
+The PrintPICTtoJPEG application uses PICT data solely as a source of bits to use to<br>
+demonstrate compression. By no means are we advocating this technique as the proper<br>
+way to print QuickDraw pictures. QuickDraw pictures may contain line art, text,<br>
+custom PostScript code, and images of varying depths that will image and print much<br>
+better if you just use DrawPicture. A good portion of the PrintPICTtoJPEG application<br>
+is devoted to getting a QuickDraw picture and drawing it into the offscreen bitmap as a<br>
+source of bits. The interesting part of the application is the compression and imaging<br>
+of the bits once we have them, and that's what we'll discuss here.
+</p>
+<p>
+The PrintPICTtoJPEG application compresses data only as part of printing it. Of<br>
+course, it isn't necessarily true that you would compress data only during printing;<br>
+it's very likely that you would maintain the data in a compressed form. Only you know<br>
+for sure how you want to handle it.
+</p>
+<p>
+PrintPICTtoJPEG also does image compression on the data only if the printing port is a<br>
+color graphics port; otherwise, it just does the usual CopyBits. (If you already have<br>
+compressed image data, you can use FDecompressImage as in the JPEG Print<br>
+application to draw already compressed images to a black-and-white graphics port. If<br>
+you're compressing strictly for printing, there's no obvious benefit to do so for a<br>
+black-and-white port.)
+</p>
+<p>
+<b>USING COMPRESSIMAGE</b>
+</p>
+<p>
+The simplest way to compress image data is to use the QuickTime functions<br>
+CompressImage and FCompressImage. You call GetMaxCompressionSize to determine<br>
+the maximum compression size of your image, and then allocate a handle of that size<br>
+and pass it to CompressImage or FCompressImage, as shown in Listing 3.
+</p>
+<p>
+<b>Listing 3. </b>Compressing image data with CompressImage
+</p>
+<pre>CodecType theCodecType = 'jpeg';
+CodecComponent theCodec = (CodecComponent) anyCodec;
+CodecQ spatialQuality = codecNormalQuality;
+short depth = 32;
+
+// sPixMap is a handle to the pixel map to be compressed.
+// bounds is a pointer to a rectangle specifying the portion of the
+// image to compress.
+if (theErr == noErr)
+   theErr = GetMaxCompressionSize(sPixMap, bounds, depth,
+      spatialQuality, theCodecType, theCodec, &amp;maxCompressionSize);
+if (theErr == noErr) {
+   // This allocation should be no problem.
+   theDescH = (ImageDescriptionHandle)
+      NewHandle(sizeof(ImageDescriptionHandle));
+   // This allocation is probably for a lot of memory.
+   compressedDataH = NewHandle(maxCompressionSize);
+   theErr = MemError();
+
+   // See if we allocated the ImageDescriptionHandle but not the
+   // memory to receive the compressed image.
+   if ((theDescH != NULL) &amp;&amp; (theErr != noErr)) {
+      // See if we can get temporary memory instead. Since we're
+      // going to use the temporary memory as a real handle, we
+      // require System 7.0 or later.
+      compressedDataH = TempNewHandle(maxCompressionSize, &amp;theErr);
+      // This probably can't happen, but just in case...
+      if (compressedDataH == NULL &amp;&amp; theErr == noErr)
+         theErr = iMemFullErr;
+   }
+}
+if ((theErr == noErr) &amp;&amp; (compressedDataH != NULL)
+      &amp;&amp; (theDescH != NULL)) {
+   MoveHHi(compressedDataH);
+   HLock(compressedDataH);
+   theErr = CompressImage(sPixMap, bounds, spatialQuality,
+      theCodecType, theDescH, StripAddress(*compressedDataH));
+   HUnlock(compressedDataH);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+GetMaxCompressionSize is likely to return a large size for full color images, perhaps<br>
+a larger amount of memory than the application can allocate out of its application heap.<br>
+To allow for this, PrintPICTtoJPEG first tries to allocate a handle in its application<br>
+heap by using NewHandle. If that fails, it attempts to allocate temporary memory using<br>
+the TempNewHandle function. In this way, the application can compress images when<br>
+temporary memory is available without requiring a large application heap. If there<br>
+isn't enough memory available, you can use the FCompressImage function with an<br>
+application-supplied data-unloading function to write the data to disk as it's being<br>
+compressed by QuickTime.
+</p>
+<p>
+The sample code directly chooses JPEG image compression with any codec that supports<br>
+JPEG compression with a quality value of codecNormalQuality. The other available<br>
+constants for compression quality values are codecLosslessQuality, codecMaxQuality,<br>
+codecMinQuality, codecLowQuality, and codecHighQuality. These constants give varying<br>
+compression ratios and corresponding image fidelity.
+</p>
+<p>
+<b>PROVIDING A USER INTERFACE FOR COMPRESSION PREFERENCES</b>
+</p>
+<p>
+Although PrintPICTtoJPEG doesn't do this, your application should provide the user a<br>
+way to specify compression parameters when using JPEG compression. This is<br>
+especially important when you're applying a lossy compression method such as JPEG,<br>
+since there's a tradeoff between compression size and image fidelity. Such a decision is<br>
+appropriate on a per document or even a per image basis.
+</p>
+<p>
+&nbsp;&nbsp;The PrintPICTtoJPEG application knows that the data it's working with is best suited<br>
+for JPEG compression. If your application has a good idea of what kind of image data it's<br>
+working with, it can make the choice of which compression scheme to apply to the data.<br>
+If not, you should probably use the standard image-compression dialog to let the user<br>
+choose both the compression scheme and the compression parameters.
+</p>
+<h2>PERFORMANCE MEASUREMENTS</h2>
+<p>
+As part of developing the sample applications, I did some stopwatch time measurements<br>
+to see what kind of performance improvements we'd get with JPEG image data<br>
+compression. (The image files I used are included on this issue's CD.) The results,<br>
+while carefully obtained, are obviously not comprehensive, but they'll give you an idea<br>
+of what you can expect. All measurements were taken using a Power Macintosh<br>
+6100/66 as the computing host on relatively unloaded LocalTalk and EtherTalk<br>
+networks. Unless the application uses JPEG image compression, the LaserWriter 8.3<br>
+driver compresses the data using PackBits compression.
+</p>
+<p>
+&nbsp;&nbsp;For comparison purposes, I used LaserWriter 8.3, which has the special support for<br>
+JPEG images described in this article, and LaserWriter 8.2.2, which does not. In both<br>
+cases, the application printing code was identical. LaserWriter 8.3 sends the<br>
+compressed JPEG data directly to a PostScript Level 2 printer; with LaserWriter<br>
+8.2.2, the data is decompressed on the host Macintosh by QuickTime and passed to the<br>
+driver's bitsProc bottleneck. Since the LaserWriter 8.2.2 driver is seeing<br>
+uncompressed data, it compresses the data with PackBits compression before sending<br>
+it to the printer.
+</p>
+<p>
+To measure print times for already existing compressed data, I used the JPEG Print<br>
+application to take an already compressed 186K JPEG image of a jaguar and print it to<br>
+a PostScript Level 2 printer. Table 1 shows the results.
+</p>
+<p>
+<img src="img/244.gif" width="600 px"></img>
+</p>
+<p>
+Next I used the PrintPICTtoJPEG sample application to measure and compare printing<br>
+times both with and without compression on the host (Table 2). I used the same jaguar<br>
+image as before but saved as a PICT file, and a smaller PICT file I already had on hand.<br>
+Doing image compression on the host is time intensive: it routinely took 2 to 4 seconds<br>
+to compress the large jaguar image. Even so, overall performance is better because the<br>
+data transfer times to the printer are so much smaller.
+</p>
+<p>
+<img src="img/245.gif" width="600 px"></img>
+</p>
+<p>
+Table 3 compares the data sizes for JPEG and PackBits compression.
+</p>
+<p>
+<img src="img/246.gif" width="464 px"></img>
+</p>
+<h2>PRINTING WITH DATA COMPRESSION: CURRENT AND FUTURE<br>
+DRIVERS</h2>
+<p>
+Today's LaserWriter 8.3 driver has direct support for handling JPEG compressed<br>
+images as described in this article. LaserWriter 8.3 supports JPEG compression only<br>
+when printing to Apple's PostScript Level 2 printers. When printing to other<br>
+PostScript printers or to PostScript files on disk, the driver uses the JPEG<br>
+decompressor on the host to decompress the data, regardless of user settings.
+</p>
+<p>
+LaserWriter 8.3.1 and future LaserWriter 8.x drivers will take advantage of JPEG<br>
+compression when printing to all PostScript Level 2 printers as well as when saving<br>
+to disk with Level 2 Only selected in the standard file dialog. Adobe's PostScript<br>
+printer driver for the Macintosh, PSPrinter, will soon take advantage of JPEG<br>
+compression, as will a future version of the PostScript printing system for<br>
+QuickDraw GX.
+</p>
+<p>
+The prerelease version of LaserWriter 8.3.1 on this issue's CD will enable you to test<br>
+your application with JPEG compression when printing to non-Apple printers or to<br>
+disk. Remember that JPEG compressed data will be written into the data stream only<br>
+when your application prints JPEG compressed data and the printer is a PostScript<br>
+Level 2 printer. If you're saving PostScript files to disk, be sure to choose the Level 2<br>
+Only setting in the standard file dialog. Choosing the Level 1 Compatible setting causes<br>
+the driver to write uncompressed data into the output file. When you print 24-bit<br>
+photo-realistic images using JPEG compression, files saved with the Level 1<br>
+Compatible setting will be about 10 to 40 times larger than files saved with the Level<br>
+2 Only setting.
+</p>
+<p>
+Since PostScript Level 2 output devices also have fax and LZW decompression filters<br>
+available, Apple is considering adding support for these compression formats to a<br>
+future LaserWriter 8.x driver so that applications handling these types of data can<br>
+take advantage of the techniques described here. If you would take advantage of fax or<br>
+LZW support in the LaserWriter driver, let us know at AppleLink DEVFEEDBACK or<br>
+devfeedback@applelink.apple.com on the Internet.
+</p>
+<h1>LET'S GET STARTED!</h1>
+<p>
+JPEG images are now abundant, especially on the Internet where more and more people<br>
+encounter them each day. Let's start printing these as compressed images! By<br>
+implementing the techniques presented here for printing JPEG compressed image data,<br>
+you can give your users immediate and substantial gains in printing performance. Plus<br>
+you'll be well on your way to printing other kinds of compressed data when printing<br>
+software is enhanced to support it.
+</p>
+<p>
+<b>DAVID GELPHMAN </b>(gelphman@rbi.com) seems to specialize in backwards-reading<br>
+programming languages. From FORTH he moved into PostScript at Adobe Systems and<br>
+then to Telescript at General Magic. He does do most other things in a more or less<br>
+forward direction, although he has been known to fall off a horse backwards. David,<br>
+together with his colleague Richard Blanchard, co-designed Apple's LaserWriter 8<br>
+PostScript printer driver while working at Adobe Systems. After a stint at General<br>
+Magic, David now works at RBI Software Systems (http://www.rbi.com) as a<br>
+contractor to Apple and Adobe on their PostScript printer drivers. He does other<br>
+contracting work as well, primarily in the area of PostScript printing.
+</p>
+<p>
+Thanks to Richard Blanchard, Paul Danbold, Peter Hoddie, Kent Sandvik, and Nick<br>
+Thompson for reviewing this article.
+</p>
+</body>
+</html>

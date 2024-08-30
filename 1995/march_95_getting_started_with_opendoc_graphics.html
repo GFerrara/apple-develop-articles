@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 13 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 95 - Getting Started With OpenDoc Graphics</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Getting Started With OpenDoc Graphics</h1>
+<h2>Kurt Piersol</h2>
+<p>
+<img src="img/146.gif" width="182 px"></img>
+</p>
+<p>
+<i>The layout and imaging services offered by OpenDoc, Apple's compound-document</i><br>
+<i>architecture, provide extremely powerful support for document layout. However, with</i><br>
+<i>power comes a certain amount of complexity. The introduction to OpenDoc graphics</i><br>
+<i>given in this article reduces some common graphics operations to simple recipes. By</i><br>
+<i>following these recipes, you'll get a sense of how to use OpenDoc that you can later</i><br>
+<i>build on as you learn about its more sophisticated capabilities.</i>
+</p>
+<p>
+OpenDoc's layout and graphics model is designed to allow maximum flexibility at<br>
+imaging time. You can use it to create very complex displays that include real-time<br>
+motion, offscreen rendering and compositing, and more. But at first glance, it can<br>
+appear complicated and bewildering. Don't despair: the good news, as you'll learn in<br>
+this article, is that you can use it for simple tasks without much trouble.
+</p>
+<p>
+I touched on some of the basics of the OpenDoc layout model and drawing code in my<br>
+article "Building an OpenDoc Part Handler" in <i>develop </i>Issue 19 (which you need not<br>
+have read before reading this article). Here I reiterate a little of that and add to it as I<br>
+explain the basic terminology and concepts of OpenDoc graphics. Then I present a<br>
+series of simple recipes (also provided on this issue's CD) that illustrate the use of<br>
+OpenDoc graphics objects. You'll learn how to draw a part, scroll the part, zoom or<br>
+rotate the part's content, make an embedded part visible, alter the coordinate system<br>
+scaling, and do simple printing under QuickDraw.
+</p>
+<h2>THE BASICS OF OPENDOC GRAPHICS</h2>
+<p>
+OpenDoc objects work together to lay out and draw each piece of content (each<i>part</i>) in<br>
+a compound document. We'll take a look at the layout model here before focusing on<br>
+each of its constituent objects and how the objects relate to one another.
+</p>
+<p>
+<b>THE LAYOUT MODEL</b>
+</p>
+<p>
+OpenDoc's layout model includes both a persistent representation and a runtime<br>
+representation of a document's state. Persistent information is represented in objects<br>
+called <i>frames</i>, while runtime information is captured in objects called <i>facets.</i> The two<br>
+sets of objects, working together, produce the structure of the displayed or printed<br>
+document.
+</p>
+<p>
+Frames are arranged in a lattice (speaking in mathematical, not geometric, terms).<br>
+Any frame can contain any other, but in practice they almost always fall into a strict<br>
+hierarchy, with each frame contained in only one other frame. Frames always contain<br>
+a pointer to their containing frame but not directly to their embedded frames. Some<br>
+applications -- like Personal Information Managers, which handle lots of<br>
+unstructured information -- have more sophisticated data models, however, so<br>
+OpenDoc is built to accommodate these applications.
+</p>
+<p>
+Facets are <i>always</i> arranged in a strict hierarchy, and every facet has pointers to every<br>
+contained facet as well as to the containing facet. OpenDoc walks this structure at run<br>
+time to perform drawing as well as to handle geometric events such as mouse clicks.
+</p>
+<p>
+The runtime representation is hooked into the window system by means of a window<br>
+object. This window object simply points to the topmost facet in that window's facet<br>
+hierarchy.
+</p>
+<p>
+To understand these objects in greater detail, you need to be familiar with three basic<br>
+ideas that form the foundation of OpenDoc's layout and imaging capabilities: canvas,<br>
+shape, and transform.
+</p>
+<ul>
+<li>    A <i>canvas </i>is simply a drawing context. Different platforms have<br>
+different ideas of what a canvas might be, based on the particular graphics<br>
+toolbox they provide. On the Macintosh, a canvas can be either a QuickDraw<br>
+graphics port or a QuickDraw GX view port.</li>
+<li> A <i>shape</i> is a way to describe an area of a canvas. OpenDoc provides a<br>
+platform-independent shape definition based on polygons. In addition, for<br>
+speed, QuickDraw regions and rectangles and QuickDraw GX shapes can serve<br>
+as shape objects in OpenDoc.</li>
+<li> A <i>transform </i>is a way of altering the coordinate system that applies to a<br>
+particular canvas. You're familiar with the concept of transforms if you<br>
+provide scrolling in your applications. When a window is scrolled, a new<br>
+origin is set in the graphics port before drawing calls are performed. This<br>
+offset is an example of a transform. In QuickDraw, the only transforms with<br>
+built-in support are offsets and (partly) scaling, both of which require a<br>
+certain amount of work on the programmer's part; QuickDraw GX offers<br>
+offsets and scaling as well as more interesting transforms such as rotating and<br>
+skewing. OpenDoc supports full two-dimensional transformations and<br>
+provides hooks to supply your own transform types.</li>
+</ul>
+<p>
+With these definitions in mind, let's take a closer look at frames, facets, and windows.
+</p>
+<p>
+<b>FRAMES</b>
+</p>
+<p>
+A containing part and its embedded part share a single frame object, which they use to<br>
+communicate persistent layout information. Much of this information is communicated<br>
+in the form of shapes, which are ways to describe a geometric area. Specifically,<br>
+layout information is communicated by way of the frame shape, the used shape, and the<br>
+internal transform associated with a frame.
+</p>
+<p>
+The <i>frame shape </i>is how the container tells the embedded part how much area it has in<br>
+which to lay itself out. The container "owns" this shape, meaning that it's allowed to<br>
+set the value. If the embedded part wants a different frame shape, it must ask the<br>
+container to change it, and the container might refuse.
+</p>
+<p>
+The rule in this sort of negotiation is "Don't ask twice!" This means that if an embedded<br>
+part asks for a new frame shape and is denied, it shouldn't ask again. It might want to<br>
+request a different shape later, but it should never again request exactly the same<br>
+shape. The reason, as you might imagine, is to avoid infinite loops in negotiation. Very<br>
+long, dull, and useless negotiations between parts may well result if the "Don't ask<br>
+twice!" rule isn't followed.
+</p>
+<p>
+The <i>used shape </i>serves to inform the container exactly what part of the frame shape the<br>
+embedded part decided to use, and is "owned" by the embedded part. For example,<br>
+imagine that a word processing container passes a rectangular area as the frame shape,<br>
+but an embedded pie chart uses only a circular area within the frame shape. The pie<br>
+chart can inform the word processor of this by setting the used shape of the frame to<br>
+the circular area actually used. It's then the responsibility of the container to fill in<br>
+any unused areas of the frame with an appropriate background or drawing. This is<br>
+what makes part transparency work.
+</p>
+<p>
+The <i>internal transform</i>, also "owned" by an embedded part, captures information about<br>
+how the embedded part wishes to transform its content when it's displayed. If, for<br>
+example, the pie chart of the previous example were too big to fit in the allotted space<br>
+in the word processor and wanted to scroll itself to a particular location, it could do so<br>
+by setting the internal transform of the frame. We'll look at some examples in the<br>
+recipes section to come.
+</p>
+<p>
+<b>FACETS</b>
+</p>
+<p>
+A facet is similar to a QuickDraw GX view port, or to a QuickDraw graphics port on<br>
+steroids; it's a description of the place where a particular frame of a part becomes<br>
+visible. Typically passed in to your part handler by an object at drawing time, a facet<br>
+has information about where the part should be drawing the content of the frame right<br>
+now. It specifies the canvas where all drawing calls should be made and also includes<br>
+clipping and transformation information.
+</p>
+<p>
+The clipping information appears in the form of the <i>clip shape.</i> This shape specifies<br>
+exactly where on a canvas a part handler can draw. It's equivalent to the content region<br>
+of a window in a traditional Macintosh application. Actually, there are two versions of<br>
+this shape that you can retrieve: the aggregate clip shape, which is the clipping<br>
+information relative to your drawing canvas, and the clip shape, which is relative to<br>
+the coordinate system of your container. Your container owns the clip shape and sets it<br>
+in its own coordinate system. You should always clip any drawing calls you make to the<br>
+aggregate clip shape of the facet you're drawing into.
+</p>
+<p>
+The transformation information comes in the form of a set of transform objects that<br>
+are available from the facet, each one specifying a particular coordinate system<br>
+related to the frame being displayed. The <i>external transform </i>of a facet specifies where<br>
+the facet sits in relation to its container. For example, as illustrated in Figure 1, if<br>
+the embedded facet should be offset by (100,100) from the origin of its container, the<br>
+external transform would specify an offset of (100,100). Note that in this figure,<br>
+only a portion of the content is being displayed in the embedded facet, and the<br>
+coordinates (0,0) refer to the content and indicate that the content's upper left corner<br>
+presently coincides with the upper left corner of the facet.
+</p>
+<p>
+The internal transform of a frame is composed with the external transform of its facet<br>
+plus all the transforms above it in the facet hierarchy to give the complete<br>
+transformation used to draw into the facet, called the <i>content transform.</i> In Figure 2,<br>
+which illustrates this process of composition, both transforms are simply offsets. The<br>
+external transform specifies an offset of (100,100), so the embedded facet is offset<br>
+by (100,100) from the origin of its container, the same as in Figure 1. The internal<br>
+transform specifies an offset of (0,-75), so the content is scrolled upward from its<br>
+position in Figure 1. A different portion of it now shows in the embedded facet, which<br>
+remains the same size as before.
+</p>
+<p>
+<img src="img/147.gif" width="468 px"></img>
+</p>
+<p>
+<b>Figure 1.</b> An embedded facet with an external transform of (100,100)
+</p>
+<p>
+<img src="img/148.gif" width="456 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>Composing internal and external transforms to obtain a content transfrom
+</p>
+<p>
+This composition is recursive, so every level of embedding adds a new external and<br>
+internal transform to the final transformation. All of the transforms must be<br>
+composed together to produce a correct graphical result. When drawing occurs, the<br>
+content transform should be applied to any drawing commands. The only exception to<br>
+this rule is if you're drawing content that shouldn't scroll as well as content that<br>
+should. In this case, use the content transform for scrolling content and use a different<br>
+transform, called the <i>frame transform,</i> to draw the rest. The frame transform is<br>
+exactly the same as the content transform except that it doesn't include the internal<br>
+transform of the innermost frame.
+</p>
+<p>
+<b>WINDOWS</b>
+</p>
+<p>
+Windows are the objects that hook OpenDoc facets and frames into the Macintosh<br>
+window structure. A window object holds a Macintosh window structure, as well as a<br>
+pointer to the topmost facet visible in the window. We call this facet the<i>root facet</i><br>
+because it's the root of the facet hierarchy in that window. The frame being displayed<br>
+through that facet is called the <i>root frame, a</i>nd the part being displayed in the root<br>
+frame is called the <i>root part.</i>
+</p>
+<p>
+<b>HOW THESE OBJECTS RELATE TO ONE ANOTHER</b>
+</p>
+<p>
+When a window is visible, it points to a facet at the root of the window. The graphics<br>
+port, or root QuickDraw GX view port, of that window is used as the canvas on which<br>
+that facet appears.
+</p>
+<p>
+Every facet displays a particular frame, but a frame can be visible in more than one<br>
+facet at the same time. Every frame displays a particular part, but a part can be<br>
+displayed in more than one frame, as shown in Figure 3. Here we see a window<br>
+displaying two parts: a drawing container that has chosen to split itself into two<br>
+independently scrollable sections, and an embedded charting part. To split itself, the<br>
+container has set up two facets on the same frame of its embedded charting part, as<br>
+indicated in the schematic to the right of the window (in which the arrows represent<br>
+pointers). This automatically causes the embedded charting part to display<br>
+synchronized views of itself in the two scrollable sections. This is the model that<br>
+people who already do splitting in their code are most likely to implement, although<br>
+there are more elegant models included in the standard recipes that are part of the<br>
+OpenDoc Software Development Kit.
+</p>
+<p>
+<img src="img/149.gif" width="540 px"></img>
+</p>
+<p>
+<b>Figure 3. </b>A split window using multiple facets of the same frame
+</p>
+<p>
+When the information in a part changes, the part needs to update every frame in which<br>
+it's displayed. When a part updates the information in a frame, it should redraw into<br>
+every facet of the frame. Let's assume, for example, that we have a charting part that<br>
+can display a bar chart. When someone changes a data value, the part should make sure<br>
+that every frame is redrawn. Since every frame may have multiple facets, the part<br>
+handler should iterate through every display frame, iterate through each frame's<br>
+visible facets, and draw the content into each. To accomplish this, you can decide to<br>
+invalidate all of the affected frames and let OpenDoc make sure everything is redrawn<br>
+correctly. However, if performance or timing constraints make this impractical, or if<br>
+flicker is an issue, your part handler can draw directly into each facet or each affected<br>
+frame, using a doubly nested loop.
+</p>
+<h2>SOME OPENDOC GRAPHICS RECIPES</h2>
+<p>
+Now let's look at a series of examples of how to use these objects to perform basic<br>
+graphics operations. Each of the following recipes is, by nature, just a skeleton. Every<br>
+part handler has different drawing code, so we'll concentrate on outlining general<br>
+recipes and wave our hands over the specific drawing commands.
+</p>
+<p>
+The examples are all based on Color QuickDraw, on the assumption that more readers<br>
+will be familiar with these calls than with the QuickDraw GX equivalents. I'm counting<br>
+on you QuickDraw GX aficionados to perform the necessary mapping between<br>
+QuickDraw and QuickDraw GX as you read. The QuickDraw GX equivalent calls will<br>
+work equally well to clip, set up drawing contexts, and perform geometric operations.<br>
+Of course, you'll find QuickDraw GX helps tremendously in implementing scaling,<br>
+rotation, and other transformations. Even though these examples are in Color<br>
+QuickDraw, I urge you to use QuickDraw GX as your basic imaging model if you can.
+</p>
+<p>
+The example code you'll see here is a simplified version of code written by Steve Smith<br>
+and Eric House. The good ideas are theirs; the mistakes are probably mine. This is not<br>
+intended to be working code, since error handling and some other pieces have been left<br>
+out for the sake of simplicity.
+</p>
+<p>
+<b>DRAWING A PART</b>
+</p>
+<p>
+Our first recipe tells how to draw a part. There are only a few simple steps here, for<br>
+the most basic case. Take a look at Listing 1 as we discuss the recipe. To keep things as<br>
+simple as possible, we'll ignore scrolling and printing for the moment. The basic steps<br>
+are as follows:
+</p>
+<ul>
+<li>    Get the canvas of the facet you're drawing into and set the graphics port<br>
+to that.</li>
+<li> Get the content transform out of the facet and use it to set offset<br>
+information.</li>
+<li> Get the aggregate clip shape out of the facet and use it to set the clipping<br>
+region.</li>
+<li> Draw your content.</li>
+<li> Clean up.</li>
+</ul>
+<p>
+<b>Listing 1.</b> MyPart::Draw, simplest case
+</p>
+<pre>void MyPart::Draw(Environment* ev, ODFacet* facet,
+         ODShape* invalShape)
+{
+   // Set up graphics port.
+   GrafPtr port = facet-&gt;GetCanvas(ev)-&gt;GetQDPort(ev);
+   SetPort(port);
+
+   // Set up graphics port offset for drawing content.
+   ODTransform* localToGlobal =
+       facet-&gt;GetContentTransform(ev, kODNULL);
+   ODPoint offset(0,0);
+   offset = localToGlobal-&gt;TransformPoint(ev, &amp;offset);
+   SetOrigin(-offset.IntX(), -offset.IntY());
+   localToGlobal-&gt;Release(ev);
+
+   // Set up graphics port clip; save old clip.
+   RgnHandle saveClip = NewRgn();
+   GetClip(saveClip);
+   ODShape* clipShape = facet-&gt;GetAggregateClipShape(ev, kODNULL);
+   RgnHandle clip = clipShape-&gt;GetQDRegion(ev);
+   SetClip(clip);
+   clipShape-&gt;Release(ev);
+
+   // And draw (insert your drawing code here).
+   // Remember to respect the scaling and rotation information
+   // in your content transform, if possible. If you can't do this,
+   // it's graceful to at least try to draw as best you can, rather
+   // than simply signaling an error.
+   ...
+
+   // Clean up.
+   SetClip(saveClip);
+   DisposeRgn(saveClip);
+   SetOrigin(0,0);
+}</pre>
+<p>
+As you may have noticed, this is only slightly more complex than using the existing<br>
+window system. Luckily, all of the added complexity comes only in the setup code, not<br>
+in the actual drawing calls. Once the drawing environment has been set up, you're free<br>
+to make the same drawing calls you always have.
+</p>
+<p>
+Incidentally, there's an easy way to get all of the correct setup code done for you: a<br>
+public utility called FocusLib, available as part of the OpenDoc Software Development<br>
+Kit, reduces the setup code you see in this and the following examples to a single call. I<br>
+didn't use it here because I wanted you to see exactly what needs to be done, just in case<br>
+FocusLib doesn't meet your precise requirements and you must do it yourself. For<br>
+instance, FocusLib is in C++, so not everyone can use it.
+</p>
+<p>
+<b>SCROLLING THE PART</b>
+</p>
+<p>
+Creating a scrolling part is only a bit more complex than making one that doesn't<br>
+scroll. The best way to scroll in OpenDoc is to modify the internal transform of your<br>
+part's display frame. This has the effect of automatically scrolling any embedded parts<br>
+that are visible right now, without any extra work on your part. Check out Listing 2,<br>
+which shows the changes in the draw method for this slightly more complex case. The<br>
+basic steps are as follows:
+</p>
+<ul>
+<li>    Get the canvas of the facet you're drawing into and set the graphics port<br>
+to that.</li>
+<li> Get the frame transform out of the facet and use it to set offset<br>
+information.</li>
+<li> Get the aggregate clip shape out of the facet and use it to set the clipping<br>
+region.</li>
+<li> Draw your scroll bar control.</li>
+<li> Get the content transform out of the facet and use it to set offset<br>
+information.</li>
+<li> Make sure the scroll bar area is removed from the clipping region.</li>
+<li> Draw your content.</li>
+<li> Clean up.</li>
+</ul>
+<p>
+<b>Listing 2.</b> MyPart::Draw, with scrolling
+</p>
+<pre>void MyPart::Draw(Environment* ev, ODFacet* facet,
+         ODShape* invalShape)
+{
+   Point      spclOffset = {0,0};
+   Point      contentOffset = {0,0};
+  
+   // Set up graphics port.
+   GrafPtr port = facet-&gt;GetCanvas(ev)-&gt;GetQDPort(ev);
+   SetPort(port);
+
+   // Set up graphics port offsets for controls.
+   ODTransform* localToGlobal =
+       facet-&gt;GetFrameTransform(ev, kODNULL);
+   ODPoint tempOffset1(0,0);
+   tempOffset1 = localToGlobal-&gt;TransformPoint(ev, &amp;tempOffset1);
+   SetOrigin(-tempOffset1.IntX(), -tempOffset1.IntY());
+
+   // Set up special offset for later efficient reset of clipping
+   // region.
+   spclOffset = localToGlobal-&gt;GetQDOffset(ev);
+   ODTransform* contentTransform = facet-&gt;GetContentTransform(ev,
+         kODNULL);
+   contentOffset = contentTransform-&gt;GetQDOffset(ev);
+   spclOffset.v -= contentOffset.v; spclOffset.h -= contentOffset.h;
+   localToGlobal-&gt;Release(ev);
+
+   // Set up graphics port clipping.
+   RgnHandle saveClip = NewRgn();
+   GetClip(saveClip);
+   ODShape* clipShape = facet-&gt;GetAggregateClipShape(ev, kODNULL);
+   RgnHandle clip = clipShape-&gt;GetQDRegion(ev);
+   SetClip(clip);
+
+   // Draw your controls (such as scroll bars) here, using the
+   // standard Toolbox calls. Remember to respect the scaling
+   // and rotation information in your transform, or at least
+   // try to draw as best you can, rather than simply signaling
+   // an error.
+   ...
+  
+   // Set up graphics port for drawing content.
+   ODPoint tempOffset2(0,0);
+   tempOffset2 = contentTransform-&gt;TransformPoint(ev, &amp;tempOffset2);
+   SetOrigin(-tempOffset2.IntX(), -tempOffset2.IntY());
+  
+   // Use the special offset we set up earlier to keep the clip in
+   // the right place relative to the origin. Remember to remove the
+   // scroll bar area from the clipping region.
+   OffsetRgn(clip, spclOffset.h, spclOffset.v);
+   SetClip(clip);
+
+   // And draw (insert your drawing code here).
+   // Remember to respect the scaling and rotation information
+   // in your content transform if possible, as mentioned above.
+
+   ...
+
+   // Clean up.
+   SetClip(saveClip);
+   DisposeRgn(saveClip);
+   contentTransform-&gt;Release(ev);
+   clipShape-&gt;Release(ev);
+   SetOrigin(0, 0);
+}</pre>
+<p>
+Listing 3 shows how you would handle the actual scrolling. The recipe here is also<br>
+quite simple. By altering the internal transform of the frame being displayed, you<br>
+change not only the display of the content but also the position of all embedded facets.<br>
+For this recipe to work, the previous recipe must have been implemented. The steps<br>
+are as follows:
+</p>
+<ul>
+<li>    Track the scroll bar control.</li>
+<li> Decide the scrolling distance.</li>
+<li> Create a transform that offsets by the correct amount.</li>
+<li> Call ScrollRect; invalidate the correct areas of the screen.</li>
+<li> Change the internal transform of the frame being scrolled.</li>
+</ul>
+<p>
+You can no doubt imagine much more complex scrolling behavior, with significantly<br>
+better optimization than you see in these examples.
+</p>
+<p>
+<b>Listing 3.</b> Handling the scrolling
+</p>
+<pre>ODBoolean MyPart::HandleMouseDownScrollBar(Environment* ev,
+      Point mouse, ODFrame* frame)
+{
+   ODSShort partcode = TrackControl(fScrollBar, mouse, kODNULL);
+   Point transPt;
+   ODSShort setting = GetControlValue(fScrollBar);
+
+   if (partcode) {
+      // Deal with the scroll bar and choose the scroll distance.
+      switch (partcode) {
+         case inUpButton:
+            setting--;
+            break;
+         case inDownButton:
+            setting++;
+            break;
+         case inPageUp:
+            if ((setting - kPBPageSize) &lt; 0) setting = 0;
+            else setting -= kPBPageSize;
+            break;
+         case inPageDown:
+            ODSShort max = GetControlMaximum(fScrollBar);
+            if ((setting + kPBPageSize) &gt; max) setting = max;
+            else setting += kPBPageSize;
+            break;
+         default:
+            break;
+      }
+     
+      SetControlValue(fScrollBar, setting);
+      SetPt(&amp;transPt, 0, (0-setting));   // This is a vertical
+                                 // scroll bar.
+  
+      // Set up the transform.
+      ODTransform* newIntTrans = frame-&gt;CreateTransform(ev);
+      newIntTrans-&gt;SetQDOffset(ev, &amp;transPt);
+      frame-&gt;ChangeInternalTransform(ev, newIntTrans, kODNULL);
+      newIntTrans-&gt;Release(ev);
+
+      // Here's some simplified code for invalidating any embedded
+      // facets that have been moved. This is a "saturation bombing"
+      // approach rather than the tuned code of a real application,
+      // but it gets the basic idea across. Typically, we do a
+      // ScrollRect followed by invalidation of the revealed area.
+      // Here we simply invalidate everything.
+      frame-&gt;Invalidate(ev, kODNULL, kODNULL);
+      return kODTrue;
+   }
+   return kODFalse;
+}</pre>
+<p>
+There's a bit of human interface to mention at this juncture. You shouldn't grab the<br>
+selection focus simply because scrolling is occurring. At first blush, it might make<br>
+sense to imagine that a part should become active when scrolling. There's no particular<br>
+reason to do this, though. Scroll bars should become active when the window is<br>
+frontmost, but a part should become active (that is, grab the selection focus) only<br>
+when a selection is made within it.
+</p>
+<p>
+<b>ZOOMING OR ROTATING THE PART'S CONTENT</b>
+</p>
+<p>
+The process of zooming or rotating your content is closely related to the scrolling<br>
+recipe we just examined. Again, the internal transform can be used to apply to not only<br>
+your own content but that of embedded parts as well. Listing 4 is a simple example of a<br>
+4x scaling operation that zooms in by a factor of 4. As before, it assumes correct<br>
+behavior from the drawing code, as illustrated in Listing 1.
+</p>
+<p>
+The recipe for both zooming and rotating is fairly simple:
+</p>
+<ul>
+<li>    Set up a transform that captures the desired transformation.</li>
+<li> Change the internal transform of the frame.</li>
+<li> Invalidate the frame to make sure it gets redrawn.</li>
+</ul>
+<p>
+<b>Listing 4.</b> A 4x scaling operation
+</p>
+<pre>void MyPart::ZoomContents4X(Environment* ev, ODFrame* frame)
+{
+   ODPoint      frameScale(4, 4);
+
+   // Apply the zoom transformation.
+   ODTransform* intTrans = frame-&gt;GetInternalTransform(ev, kODNULL);
+   intTrans-&gt;ScaleBy(ev, &amp;frameScale);
+   intTrans-&gt;Release(ev);
+
+   // Invalidate the frame for redrawing.
+   frame-&gt;Invalidate(ev, kODNULL, kODNULL);
+}</pre>
+<p>
+<b>MAKING AN EMBEDDED PART VISIBLE</b>
+</p>
+<p>
+When you're writing a handler for parts that can contain other parts, there comes a<br>
+time when you have a pointer to a part that hasn't yet been made visible. We won't go<br>
+into exactly how such a part is obtained from the Clipboard or the drag and drop object.<br>
+Suffice it to say that if you do things correctly, you'll end up with a pointer to a<br>
+storage unit that has part data inside it.
+</p>
+<p>
+To embed this part, you must create a frame and a facet for it. Once you've done that,<br>
+you probably want to remember the frame and the facet for further reference. Take a<br>
+look at Listing 5 for an example. The recipe for making a part visible and embedding it<br>
+inside your part is as follows:
+</p>
+<ul>
+<li>    Get the part, using the draft, from the storage unit pointer.</li>
+<li> Create a frame to display the part.</li>
+<li> Create a facet to make the frame visible.</li>
+<li> Invalidate the facet.</li>
+<li> Clean up.</li>
+</ul>
+<p>
+<b>Listing 5.</b> Making an embedded part visible
+</p>
+<pre>void MyPart::EmbedPartFromSU(Environment* ev, ODStorageUnit* newSU,
+      ODFacet* myFacet)
+{
+   ODPart* newPart = newSU-&gt;GetDraft(ev)-&gt;GetPart(ev, newPartID);
+   ODRect rect(0, 0, kPBDefaultFrameSize, kPBDefaultFrameSize);
+   ODShape* newFrameShape = myFacet-&gt;CreateShape(ev);
+   newFrameShape-&gt;SetRectangle(ev, &amp;rect);
+   ODFrame* newFrame = newSU-&gt;GetDraft(ev)-&gt;CreateFrame(ev,
+         kODNULL,                   // Use the default frame type.
+         myFacet-&gt;GetFrame(ev),  // Containing frame is my frame.
+         newFrameShape,             // Use the frame shape we set up.
+         (ODCanvas*)kODNULL,        // No special canvas.
+         newPart,                   // The part in the frame.
+         fSession-&gt;Tokenize(ev, kODViewAsFrame),
+                                    // View as a frame.
+         kODNullTypeToken,          // Undefined presentation.
+         kODFalse,                  // Not a root frame.
+   kODFalse);   // Not overlaid.
+  
+   newSU-&gt;Release(ev);
+   // Set up a clip shape, same as frame shape.
+   ODShape* frameShape = newFrame-&gt;GetFrameShape(ev, kODNULL);
+   ODShape* newClipShape = frameShape-&gt;Copy(ev);
+   Point offset = {100,100};
+   ODTransform* newExternalXForm = myFacet-&gt;CreateTransform(ev);
+   newExternalXForm-&gt;SetQDOffset(ev, &amp;offset);
+   ODFacet* newFacet = myFacet-&gt;CreateEmbeddedFacet(ev,
+         newFrame,           // Of this frame.
+         newClipShape,       // With this clip shape.
+         newExternalXForm,   // At this location/scale/rotation.
+         kODNULL,            // No special canvas.
+         kODNULL,            // No special bias canvas.
+         kODNULL,            // No sibling specified.
+         kODFrameInFront);   // Put this facet at front.
+
+   // At this point, we probably want to remember the new frame
+   // and facet in some data structure.
+   this-&gt;rememberFrame(newFrame, newFacet);
+
+   // Invalidate facet so that it displays. We need to invalidate our
+   // entire frame because the new facet may interact with other
+   // content in various ways. This is the simplest correct method,
+   // although optimizations may be reasonable in production code.
+   myFacet-&gt;GetFrame(ev)-&gt;Invalidate(ev, kODNULL, kODNULL);
+
+   // Clean up.
+   newPart-&gt;Release(ev);
+   newFrame-&gt;Release(ev);
+   newFrameShape-&gt;Release(ev);
+   newExternalXForm-&gt;Release(ev);
+   newClipShape-&gt;Release(ev);
+   frameShape-&gt;Release(ev);
+}</pre>
+<p>
+<b>ALTERING THE COORDINATE SYSTEM SCALING</b>
+</p>
+<p>
+A common misconception about OpenDoc is that its base coordinate system is<br>
+insufficient to handle truly large documents. The coordinate system is in fixed-point<br>
+16.16 numbers, where the number 72.0 represents 1 inch. If we take this literally,<br>
+it means that coordinates in this space can only represent an area of about 455 inches<br>
+on a side and that we can place elements in that area to a precision of about<br>
+1/2,000,000 of an inch.
+</p>
+<p>
+Clearly, we could trade off a little bit of that precision for a larger working area. This<br>
+would involve scaling any incoming points or shapes. Actually, by doing this, we can<br>
+easily lay out an area about 2,000 typical pages on a side at a precision of about<br>
+1/4,000 of an inch, including some bits for round-off error in the scaling<br>
+multiplications. You can ask why we chose 72.0 as the basic scale of our coordinate<br>
+system, but we won't tell you.
+</p>
+<p>
+The key here is to work internally in coordinates that suit you, without disturbing the<br>
+coordinate scaling of your embedded parts. The best way to do this is to apply an
+</p>
+<p>
+internal scaling transform for your own graphics and then apply external scaling<br>
+transforms to all of your embedded parts.
+</p>
+<p>
+For example, to get a larger area that still has adequate placement, you might decide to<br>
+work in a coordinate system where 1.0 = 1 inch. This would still let you place<br>
+elements with an accuracy of about 1/32,767 of an inch but would let you work in a<br>
+layout space that was 32,767 inches on a side. This is about 3,000 pages high, a<br>
+pretty good size. You'll probably get some rounding error during multiplication,<br>
+though, so it's best not to count on exact placement within more than about 1/1,000 of<br>
+an inch at this scaling. Listing 6 is an example of how to do this particular<br>
+transformative trick.
+</p>
+<p>
+<b>Listing 6. </b>Altering the coordinate system scaling
+</p>
+<pre>{
+   ODPoint      frameScale(72,72);
+
+   // Set up the transform.
+   ODTransform* existingTransform = frame-&gt;GetInternalTransform(ev,
+      kODNULL);
+   ODTransform* newIntTrans = existingTransform-&gt;Copy(ev);
+   existingTransform-&gt;Release(ev);
+   newIntTrans-&gt;ScaleDownBy(ev, &amp;frameScale);
+     
+   // Apply the zoom transformation within myself.
+   frame-&gt;ChangeInternalTransform(ev, newIntTrans, kODNULL);
+   newIntTrans-&gt;Release(ev);
+
+   // Now, be a good citizen and iterate over every facet of myself.
+   ODFrameFacetIterator* facets = frame-&gt;CreateFacetIterator(ev);
+   for (ODFacet* facet = facets-&gt;First(ev);
+         facets-&gt;IsNotComplete(ev); facet = facets-&gt;Next(ev)) {
+      // For each facet of myself, find every embedded facet.
+      ODFacetIterator* embeddedFacets = facet-&gt;CreateFacetIterator
+         (ev, kODTopDown, kODFrontToBack);
+      for (ODFacet* embeddedFacet = embeddedFacets-&gt;First(ev);
+            embeddedFacets-&gt;IsNotComplete(ev);
+            embeddedFacet = embeddedFacets-&gt;Next(ev)) {
+         // Alter the transform of each embedded facet.
+         existingTransform = embeddedFacet-&gt;GetExternalTransform(ev,
+            kODNULL);
+         ODTransform* newExtTrans = existingTransform-&gt;Copy(ev);
+         // Notice that we scale in the opposite direction in
+         // each embedded frame.
+         newExtTrans-&gt;ScaleBy(ev, &amp;frameScale);
+         embeddedFacet-&gt;ChangeGeometry(ev, kODNULL, newExtTrans,
+            kODNULL);
+         newExtTrans-&gt;Release(ev);
+         existingTransform-&gt;Release(ev);
+      }
+      ODDeleteObject(embeddedFacets);
+   }
+   ODDeleteObject(facets); }</pre>
+<p>
+<b>SIMPLE PRINTING UNDER QUICKDRAW</b>
+</p>
+<p>
+The last and most complicated recipe is getting a part to print under QuickDraw. As you<br>
+know, any printing activity on the Macintosh is fairly complex. OpenDoc doesn't add<br>
+much complexity to the process, as you'll see from the example.
+</p>
+<p>
+First, every part needs to understand how to draw correctly to a PostScript(TM)<br>
+printer. There's a trick to this because of how the LaserWriter drivers operate. They<br>
+don't clip to regions if asked to do so; instead, they merely clip to the bounding<br>
+rectangle of the suggested region. So to set a clipping region when printing to a<br>
+PostScript device, you'll need to create a clipping polygon in PostScript. This is true<br>
+even for parts that are always rectangular, because they might be clipped irregularly.
+</p>
+<p>
+You can detect the presence of a PostScript device by examining the printing job at<br>
+draw time. The printing job is always available in the canvas when you're being asked<br>
+to draw to a PostScript device. There are a number of ways to check this, but no<br>
+standard method that Apple supports; typically, you check the device number and make<br>
+a choice based on a table kept in your code. If you are in fact drawing to a PostScript<br>
+device, call the routines shown in Listing 7, rather than SetClip, to set clipping for<br>
+your part. You don't have to do this when you're printing to a non-PostScript printer,<br>
+because simple region clipping works just fine there.
+</p>
+<p>
+<b>Listing 7. </b>Setting clipping when printing to a PostScript device
+</p>
+<pre>#define kPostScriptBegin    190   // Picture comments for PostScript
+#define kPostScriptEnd      191   // printing.
+#define kPostScriptHandle   192
+
+void ODBeginPostScriptClip(Environment* ev, ODShape *shape)
+{
+   ODPolygon poly = shape-&gt;CopyPolygon(ev);
+   Handle clipHandle = NewEmptyHandle();
+  
+   AppendString("\pgrestore", clipHandle);
+                                         // Utility routine to append
+   AppendString("\pnewpath", clipHandle);      // string to a handle.
+
+   char buf[128];
+   ODContour *cont = poly.FirstContour();
+
+   for (long n=poly.GetNContours(); n&gt;0; n--) {
+      const ODPoint *v = cont-&gt;vertex;
+      long m = cont-&gt;nVertices;
+      if (m &gt; 2) {
+         sprintf(buf, "%.2f %.2f moveto", v-&gt;x/65536.0,
+             v-&gt;y/65536.0);
+         AppendBuf(buf, strlen(buf), clipHandle);
+              // Utility routine to append string buffer to a handle.
+         while (--m &gt; 0) {
+            v++;
+            sprintf( buf, "%.2f %.2f lineto", v-&gt;x/65536.0,
+               v-&gt;y/65536.0);
+            AppendBuf(buf, strlen(buf), clipHandle);
+         }
+      }
+      AppendString("\pclosepath clip", clipHandle);
+      cont = cont-&gt;NextContour();
+   }
+  
+   // Set pic comment; then delete clipHandle.
+   AppendString("\pgsave", clipHandle);
+   PicComment(kPostScriptBegin, 0, kODNULL);
+   PicComment(kPostScriptHandle, GetHandleSize(clipHandle),
+       clipHandle);
+   PicComment(kPostScriptEnd, 0, kODNULL);
+   DisposeHandle(clipHandle);
+}
+
+void ODEndPostScriptClip( )
+{
+   Handle clipHandle = NewEmptyHandle();
+   AppendString("\pgrestore", clipHandle);
+   PicComment(kPostScriptBegin, 0, kODNULL);
+   PicComment(kPostScriptHandle, GetHandleSize(clipHandle),
+       clipHandle);
+   PicComment(kPostScriptEnd, 0, kODNULL);
+   DisposeHandle(clipHandle);
+}</pre>
+<p>
+You may well want to consider using ColorSync during printing. There's nothing<br>
+special to worry about in OpenDoc; just go ahead and take advantage of it as desired.<br>
+Other parts may be using ColorSync independently when they draw as well, and all of<br>
+these may use independent color-matching methods.
+</p>
+<p>
+Every part should understand how to perform printing of the window if it's the root<br>
+part of that window. You'll invoke this recipe when the Print command is chosen from<br>
+the Document menu. The recipe presented here works for rather simple parts but<br>
+probably not for complex parts like full word processors or page layout programs that<br>
+have hundreds of pages to lay out and print. In addition, to simplify the look of the code,<br>
+a special helper object handles most of the direct calls to the printer driver. Finally,<br>
+this part doesn't alter its layout for printing, as some parts might want to do.
+</p>
+<p>
+Given these caveats, though, the basic recipe is as follows:
+</p>
+<ul>
+<li>Create a printing job.</li>
+<li>Use the graphics port from the printing job to create a canvas.</li>
+<li>Add a facet to your root frame on the canvas.</li>
+<li>Loop through copies and pages.<br>
+a. Reset the offset and clipping of the facet so that the correct page is showing<br>
+on the canvas.<br>
+b.&nbsp;&nbsp;Invalidate the facet to cause it to draw.</li>
+<li>    Clean up.</li>
+</ul>
+<p>
+Listings 8 through 10 contain some code to help you implement this recipe. Rather<br>
+than attempt to show you an entire printing loop here, I'll show three routines that<br>
+correspond to the key differences in the OpenDoc model of printing.
+</p>
+<p>
+Listing 8 shows how to perform steps 2 and 3 of the recipe above. This routine expects<br>
+to be passed a printing port, the page rectangle for the first page of the print job, and<br>
+the root frame of the window being printed. The routine takes this information and<br>
+creates a facet on the root frame. It then builds a canvas on the print job's printing<br>
+port and sets the facet to draw on that canvas. We do this so that we can use OpenDoc's<br>
+drawing code to image the page. Once we have a facet set up, we need only force the facet<br>
+to update to get all of the parts to image on the page.
+</p>
+<p>
+<b>Listing 8.</b> Setup for basic printing
+</p>
+<pre>ODFacet* MyPart::BeginPrinting(Environment *ev, ODFrame* rootFrame,
+      TPrPort* thePrPort, ODRect *pageRect)
+{
+   // Set up identity transform, get page rect, set up to clip to it.
+   ODTransform* xtransform = rootFrame-&gt;CreateTransform(ev);
+   ODShape* clipshape = rootFrame-&gt;CreateShape(ev);
+   clipshape-&gt;SetRectangle(ev, pageRect);
+
+   // Create a facet with the specific geometry we just set up.
+   ODFacet* prFacet = fSession-&gt;GetWindowState(ev)-&gt;
+         CreateFacet(ev, rootFrame, clipshape, xtransform, kODNULL,
+         kODNULL);
+   xtransform-&gt;Release(ev);
+   clipshape-&gt;Release(ev);
+
+   // Set up a canvas based on the print job's port.
+   ODCanvas* prCanvas = prFacet-&gt;CreateCanvas(ev, kODQuickDraw,
+         (GrafPtr)thePrPort, kODFalse, kODFalse);
+   prCanvas-&gt;SetPlatformPrintJob(ev, kODQuickDraw,
+       (GrafPtr)thePrPort);
+  
+   // Make it the canvas of the facet we created.
+   prFacet-&gt;SetCanvas(ev, prCanvas);
+   rootFrame-&gt;FacetAdded(ev, prFacet);
+  
+   // Return the facet to the main print routine.
+   return prFacet;
+}</pre>
+<p>
+Note that this particular setup routine doesn't handle a very important case:<br>
+QuickDraw GX-based part handlers. To set these up correctly, we would replace steps<br>
+1 and 2 of the recipe above with the following:
+</p>
+<ul>
+<li>Check for the existence of QuickDraw GX printing using Gestalt.</li>
+</ul>
+<p style="margin-left: 70px">
+If QuickDraw GX printing isn't present, set up a normal Color<br>
+QuickDraw print job.
+</p>
+<p style="margin-left: 70px">
+If QuickDraw GX printing is present, set up a QuickDraw GX print job.<br>
+Also, set up a Color QuickDraw graphics port, for use with the<br>
+QuickDraw-to-QuickDraw GX translator.
+</p>
+<ul>
+<li>Set up a canvas representing the printing job, ready for use by both<br>
+QuickDraw and QuickDraw GX.</li>
+</ul>
+<p style="margin-left: 70px">
+Install the QuickDraw-to-QuickDraw GX translator in your Color<br>
+QuickDraw graphics port.
+</p>
+<p style="margin-left: 70px">
+Install the Color QuickDraw graphics port as the QuickDraw platform<br>
+canvas in the canvas object.
+</p>
+<p style="margin-left: 70px">
+Install a view port that embedded part handlers can use as the<br>
+QuickDraw GX platform canvas in the canvas object.
+</p>
+<p>
+By setting up translators, a QuickDraw GX-based part handler can still work with<br>
+embedded QuickDraw-based parts. This is a fairly complex (though straightforward)<br>
+bit of code, one that we'll avoid for the purposes of this article. There's a complete<br>
+recipe in the OpenDoc Software Development Kit for handling this case.
+</p>
+<p>
+The next step is to loop through the pages, drawing each one. We'll assume that you can<br>
+handle the details of creating a standard print loop yourself. Listing 9 shows the<br>
+correct code to call in the middle of the page loop. This corresponds to steps 4a and 4b<br>
+of our printing recipe. This routine gets the basic page geometry, resets the offsets and<br>
+clipping for the page, and then forces the parts visible on the page to draw by calling<br>
+an update on the root facet we've created elsewhere.
+</p>
+<p>
+<b>Listing 9.</b> Printing a page
+</p>
+<pre>void MyPart::PrintPage(Environment *ev, ODFacet* prFacet,
+   ODUShort page, ODRect *pageRect)
+{
+   // Get some basic printing geometry.
+   ODRect   bbox;
+   Rect      frect, qdPRect;
+  
+   ODShape* frameShape = prFacet-&gt;GetFrame(ev)-&gt;
+         GetFrameShape(ev, kODNULL);
+   frameShape-&gt;GetBoundingBox(ev, &amp;bbox);
+   bbox.AsQDRect(frect);
+   frameShape-&gt;Release(ev);
+   Point pt = {0,0};
+   ODUShort locator = page-1;
+  
+   // Pick an appropriate offset, based on page number.
+   pageRect-&gt;AsQDRect(qdPRect);
+   while (locator) {
+      pt.v += (qdPRect.bottom+1);
+      locator--;
+      if (PtInRect(pt, &amp;frect))
+         continue;
+      else {
+         pt.v = 0; pt.h += (qdPRect.right+1);
+      }
+   }
+  
+   // Make a transform for that offset.
+   ODTransform* xtransform = prFacet-&gt;CreateTransform(ev);
+   xtransform-&gt;SetQDOffset(ev, &amp;pt);
+
+   // Create a clip shape for the page, based on the transform.
+   ODShape* clipshape = prFacet-&gt;CreateShape(ev);
+   clipshape-&gt;SetRectangle(ev, pageRect);
+   ODShape* invalshape = clipshape-&gt;Copy(ev);
+   clipshape-&gt;Transform(ev, xtransform);
+   xtransform-&gt;Invert(ev);
+
+   // Change the geometry of the printing facet.
+   prFacet-&gt;ChangeGeometry(ev, clipshape, xtransform, kODNULL);
+  
+   // Draw everything on the page. OpenDoc will call the Draw method
+   // on every part visible on the page.
+   prFacet-&gt;Update(ev, invalshape, kODNULL);
+
+   // Clean up.
+   clipshape-&gt;Release(ev);
+   invalshape-&gt;Release(ev);
+   xtransform-&gt;Release(ev);
+}</pre>
+<p>
+Once the print loop is complete, we'll want to clean up. Listing 10 shows the routine<br>
+that corresponds to step 5 of our printing recipe. It simply tosses away the facet and<br>
+the canvas we created in Listing 8.
+</p>
+<p>
+<b>Listing 10. </b>Cleanup after printing
+</p>
+<pre>void MyPart::EndPrinting(Environment *ev, ODFacet* prFacet)
+{
+   // Find the printing canvas and facet; delete them.
+   ODCanvas* prCanvas = prFacet-&gt;GetCanvas(ev);
+   prFacet-&gt;GetFrame(ev)-&gt;FacetRemoved(ev, prFacet);
+   delete prCanvas;
+   delete prFacet;
+}</pre>
+<p>
+If you're performing more advanced printing, you may want to allow embedded parts to<br>
+lay themselves out differently based on whether they're printing to a static or a<br>
+dynamic canvas. In this case, you'll need to create new frames and perform layout<br>
+negotiation. You should create nonpersistent frames, or they'll needlessly be written<br>
+out to the document the next time the user saves. You'll probably want to do this:
+</p>
+<p>
+Create a new nonpersistent frame for your part (the "master frame").
+</p>
+<p>
+Create new nonpersistent frames for each embedded part and allow shape negotiation to<br>
+occur on these new embedded frames.
+</p>
+<p>
+Use the previous recipe to print the master frame.
+</p>
+<h2>ONWARD AND UPWARD</h2>
+<p>
+For simple cases, as you can see, the OpenDoc layout and graphics model isn't much<br>
+more complex than what you probably already do. Even better, most of your code will<br>
+work fine in the new model with just some additional setup and cleanup code. This is no<br>
+accident, as OpenDoc has been designed from the start to allow you to reuse large parts<br>
+of your code. So go ahead and show us some cool new parts with great graphics.
+</p>
+<p>
+<b>KURT PIERSOL</b> is a system architect at Apple and has been involved with the Apple<br>
+events project, AppleScript, and OpenDoc. You can recognize him by his eccentric<br>
+fashion sense and his tendency to use funny accents during heated engineering<br>
+discussions.
+</p>
+<p>
+<b>Early releases of OpenDoc </b>will be made available through a number of different<br>
+sources, including <i>develop</i>.
+</p>
+<p>
+<b>Thanks </b>to our technical reviewers Jens Alfke, Steve Smith, and Joshua Susser.
+</p>
+</body>
+</html>

@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 20 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 95 - Custom Color Search Procedures</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Custom Color Search Procedures</h2>
+<h1>JIM WINTERMYRE</h1>
+<p>
+<img src="img/160.gif" width="180 px"></img>
+</p>
+<p>
+<i>&nbsp;Color QuickDraw can be customized for specific tasks in many ways, most commonly</i><br>
+<i>by replacing the "bottleneck" procedures at its heart. But another, often overlooked</i><br>
+<i>way of customizing Color QuickDraw is by writing and installing custom color search</i><br>
+<i>procedures. These procedures are very useful for color separation and other color</i><br>
+<i>processing tasks, and for modifying QuickDraw's default drawing behavior to solve</i><br>
+<i>particular problems. This article reviews some Color QuickDraw basics, explores </i><br>
+<i>how color search procedures work, and presents a sample search procedure.</i>
+</p>
+<p>
+&nbsp;It's 2 A.M., and you're finally ready to draw your carefully constructed offscreen<br>
+GWorld to a window. The GWorld is 32 bits deep and has been set up to contain a color<br>
+ramp using 100 shades of red. You've already created a palette containing the 100<br>
+shades of red you need and attached it to your window, so the exact colors will be<br>
+available on your 256-color screen. You plunk in your call to CopyBits, recompile,<br>
+and . . . Ack! Instead of the expected smooth red ramp, you get an image with 16 distinct<br>
+bands of color (see Figure 1 on the inside back cover of this issue).
+</p>
+<p>
+&nbsp;What happened? How can you get the results you want? This article attempts to<br>
+answer both of these questions, and a few others along the way. What happened has to do<br>
+with the way Color QuickDraw converts colors to pixel values, so we'll start with a<br>
+brief review of how this works. As for getting the results you want, one way is to use a<br>
+custom color search procedure, which is the main subject of this article. 
+</p>
+<h2>A QUICK REVIEW OF COLOR IN QUICKDRAW</h2>
+<p>
+Before delving into custom color search procedures, let's pause for a quick review of<br>
+how QuickDraw converts between colors and pixel values. If you're already familiar<br>
+with this, feel free to skip ahead to the section "Drawbacks of Inverse Tables."
+</p>
+<p>
+<b>&nbsp;How QuickDraw converts colors to pixel values </b> and vice versa is discussed<br>
+in <i>Inside Macintosh: Imaging With QuickDraw</i> , and in the Color Manager chapter of <br>
+<i>Inside Macintosh: Advanced Color Imaging</i>(available on this issue's CD in draft form).<br>
+Only a brief overview of this complex topic is provided here.*
+</p>
+<p>
+<b>&nbsp;DIRECT AND INDEXED COLOR</b><br>
+When an application does any drawing with Color QuickDraw, the ultimate result is to<br>
+change some pixel values in a pixel map somewhere. Color QuickDraw in System 7<br>
+(and 32-Bit QuickDraw in earlier systems) supports two distinct types of color pixel<br>
+maps:<i>direct</i> and<i> indexed</i> .&nbsp;&nbsp;&nbsp;&nbsp;In direct pixel maps (those with pixel depths of 16 or 32<br>
+bits) the pixel values in memory specify RGB color information for the pixel directly.<br>
+For example, the 32-bit direct pixel value $00AABBCC specifies a red component of<br>
+$AA, a green component of $BB, and a blue component of $CC -- 8 bits of color<br>
+information each for the red, green, and blue components. (A 16-bit pixel value<br>
+contains 5 bits of color information for each component.)
+</p>
+<p>
+<img src="img/161.gif" width="389 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>Indexed color
+</p>
+<p>
+&nbsp;In indexed pixel maps (those with pixel depths up to 8 bits) the pixel values in<br>
+memory don't directly specify the colors at all; instead they specify positions in a<br>
+table of the available colors, called the<i>color lookup table</i> or just<i> color table</i><br>
+(sometimes called a<i>CLU T</i>&nbsp;&nbsp;). Figure 2 shows an example; in this case, the 8-bit pixel<br>
+value $1C in memory actually represents the RGB color $AAAA BBBB CCCC, found at<br>
+position $1C in the color table. 
+</p>
+<p>
+&nbsp;Typically, when an application wants to draw in a particular color, it specifies the<br>
+desired color directly using an RGBColor record, and never deals with pixel values at<br>
+all. Color QuickDraw and the Color Manager convert between RGBColors and pixel<br>
+values as needed. If the application is drawing to a direct pixel map, the color<br>
+information itself is used to build the pixel value, and no color table is involved. On the<br>
+other hand, if the application is drawing to an indexed pixel map, Color QuickDraw<br>
+uses the index of the closest-matching color in the color table as the pixel value (this<br>
+process is called<i>color mapping</i> ). But searching the entire color table for a match<br>
+every time a pixel value is needed would be far too time-consuming, so the Color<br>
+Manager uses something called an<i> inverse table</i> to speed up the lookup process. 
+</p>
+<p>
+<b>&nbsp;INVERSE TABLES</b><br>
+An inverse table is something like a "reverse" color table: whereas a color table is<br>
+used to convert an index to a color, an inverse table is used to convert a given color to<br>
+an index into a color table. The conversion operation goes like this: You take some of<br>
+the most significant bits of each color component and concatenate them, then use the<br>
+resulting number as an index into the inverse table.&nbsp;&nbsp;&nbsp;The entry at that location in the<br>
+inverse table holds, in turn, the index of the closest-matching available color in the<br>
+corresponding color table. Figure 3 illustrates the process. Note that the<br>
+closest-matching color returned by this process need not match the original color<br>
+exactly, since only a few of the most significant bits were used (the default is 4 bits). 
+</p>
+<p>
+<img src="img/162.gif" width="545 px"></img>
+</p>
+<p>
+<b>Figure 3. </b>Inverse table with 4-bit resolution
+</p>
+<p>
+<b>&nbsp;Inverse tables are described </b> in the Color Manager chapter of <i>Inside Macintosh:</i><br>
+<i>Advanced Color Imaging.</i> *
+</p>
+<p>
+The number of bits each color component contributes to the inverse-table index is<br>
+called the<i>resolution</i> of the inverse table. Higher resolutions would give you greater<br>
+accuracy in color mapping, but also greatly increase the memory needed to hold the<br>
+inverse table, so a maximum of 5-bit resolution is allowed. (Since there are three<br>
+color components, each additional bit of resolution multiplies the size of the table<br>
+eightfold.) You can use the Color Manager routine MakeITable to create inverse tables<br>
+with resolutions of 3, 4, or 5 bits per component. 
+</p>
+<p>
+As an aside, Listing 1 shows how to temporarily change the resolution of the current<br>
+graphics device's inverse table to 5 bits. (To permanently change the inverse table<br>
+resolution, set the gdResPref field of the GDevice record, set the iTabSeed field of<br>
+gdITable to the result of GetCTabSeed, and call GDeviceChanged.)
+</p>
+<p>
+<b>Listing 1. </b>Temporarily changing the resolution of the inverse table
+</p>
+<pre>VAR
+    gdh:            GDHandle;
+    oldITabRes:     INTEGER;
+
+{ Get current graphics device. }
+gdh := GetGDevice;
+
+{ Get resolution of current inverse table. }
+oldITabRes := gdh^^.gdITable^^.iTabRes;
+
+{ Create a new inverse table at 5-bit resolution. }
+MakeITable(NIL, NIL, 5);
+
+{ Draw into a port on this device. }
+...
+
+{ Reconstruct inverse table at original resolution. }
+MakeITable(NIL, NIL, oldITabRes);</pre>
+<p>
+Note that inverse tables aren't found in pixel maps or color graphics ports. They're<br>
+instead associated with<i>graphics devices</i> (astute readers may have noticed that the color<br>
+table in Figure 3 was labeled "Graphics device color table" -- this is why). So when<br>
+converting RGBColors to indexed pixel values, the Color Manager uses the inverse<br>
+table in the<i>current graphics device</i> . The implications of this are discussed in "The<br>
+Importance of the Current Graphics Device."
+</p>
+<h2>DRAWBACKS OF INVERSE TABLES</h2>
+<p>
+The main problem with using inverse tables for color mapping is that because of their<br>
+limited resolution, different colors can map to the same inverse table index. Inverse<br>
+tables actually include some extra, undocumented information to allow the Color<br>
+Manager to resolve such "hidden colors" -- but examining this extra information is<br>
+time-consuming, so some speed-sensitive QuickDraw routines don't always use it. One<br>
+of these routines happens to be CopyBits, which is what accounts for our "100 shades<br>
+of red" problem. 
+</p>
+<p>
+Let's look at the problem in more detail. The offscreen GWorld holding our image is 32<br>
+bits deep, allowing the pixel values to specify RGB colors directly, with a precision of<br>
+8 bits per component.&nbsp;&nbsp;&nbsp;When we copy the image to a window on an indexed graphics<br>
+device, CopyBits uses an inverse table to convert these pixel values from direct to<br>
+indexed. If our inverse table has a resolution of 4 bits (the default), it can only<br>
+distinguish 24 = 16 shades of red! (For example, all shades of red from RGB $0000<br>
+0000 0000 to $0FFF 0000 0000 will map to the same inverse-table index.) So<i>even</i><br>
+<i>if all 100 shades are available in the destination device's color table,</i> only 16 of them<br>
+will actually be found and get drawn on the screen. This is why the actual result in<br>
+Figure 1 has 16 bands of red instead of a continuum of shades.
+</p>
+<p>
+<b>&nbsp;The various depth conversion cases </b> are discussed in the book <i> Programming</i><br>
+<i>QuickDraw</i>&nbsp;&nbsp;(see "Related Reading" at the end of this article) beginning on page 338. *
+</p>
+<p>
+One way to deal with this problem would be to increase the resolution of the inverse<br>
+table to 5 bits, which would give us 32 bands of red instead 16. Another approach<br>
+would be to use the ditherCopy transfer mode in CopyBits. Both of these methods give<br>
+better results but don't really solve the problem. After all, since we<i>do</i> have all the<br>
+shades of red available, shouldn't there be some way to match the colors exactly?
+</p>
+<h2>INTRODUCING COLOR SEARCH PROCEDURES</h2>
+<p>
+Knowing that inverse tables might not be adequate for some applications, the<br>
+QuickDraw engineers designed in a "hook" to allow developers to provide their own<br>
+color-mapping code. Each GDevice record has its own linked list of custom<i>color search</i><br>
+<i>procedures;</i> there can be any number of such procedures installed for a given graphics<br>
+device. As defined in the Color Manager chapter of<i>Inside Macintosh: Advanced Color</i><br>
+<i>Imaging</i> , a search procedure has the following interface:
+</p>
+<pre>FUNCTION SearchProc
+         (VAR rgb: RGBColor; VAR position: LONGINT): BOOLEAN;</pre>
+<p>
+<b>&nbsp;The rgb parameter </b>is now always a VAR parameter. This was not true for<br>
+direct-color destinations in 32- Bit QuickDraw prior to System 7. Also, note that <br>
+<i>Inside Macintosh</i>&nbsp;&nbsp;Volume V incorrectly declared <b>rgb</b> as a value parameter.*
+</p>
+<p>
+The Color Manager calls the search procedure with the RGB color it's trying to match,<br>
+and expects the search procedure to do one of three things:
+</p>
+<ul>
+<li>Match the color -- In this case, the search procedure returns the<i>pixel</i><br>
+<i>value</i>&nbsp;&nbsp;for the color in the <b>position</b> parameter, and a result of TRUE. On an<br>
+indexed graphics device, the <b>position</b> parameter should contain the index of<br>
+the appropriate color in the graphics device's color table. On a direct graphics<br>
+device, this parameter should be set to the appropriate direct-color value. </li>
+<li>Modify the color -- In this case, the search procedure modifies the <b>rgb</b><br>
+parameter and returns a result of FALSE. Color QuickDraw ignores the<br>
+<b>position</b> parameter.&nbsp;&nbsp;&nbsp;See the next section for examples of using this<br>
+technique. </li>
+<li>Do nothing -- In this case, the search procedure simply returns a result<br>
+of FALSE, leaving its parameters untouched. </li>
+</ul>
+<p>
+The Color Manager runs through the list of search procedures for the current graphics<br>
+device, calling each procedure in turn until one of them returns TRUE. If no search<br>
+procedure returns TRUE, it uses the default color-mapping method on the original (or<br>
+possibly modified) color. For indexed graphics devices, this means using the inverse<br>
+table. For direct graphics devices, "color mapping" simply involves truncating the<br>
+RGBColor components to the appropriate size. 
+</p>
+<p>
+<b>&nbsp;When called with an arithmetic transfer mode, </b>CopyBits calls custom color<br>
+search procedures <i>before</i>&nbsp;&nbsp;the arithmetic operation is performed. You can get around<br>
+this by doing the desired operation first and then installing the search procedure and<br>
+using CopyBits with srcCopy mode to display the result. *
+</p>
+<p>
+The search procedure mechanism provides a solution to our "100 shades of red"<br>
+problem. If we know where all the shades are located in the current graphics device's<br>
+color table, we can write a search procedure that returns the correct index for any<br>
+shade of red we pass to it. This will avoid the bands shown in the actual result in<br>
+Figure 1 and instead produce the expected result, with the exact colors intended. Of<br>
+course, this technique can be applied to<i>any</i> image if we know where to find all the<br>
+colors we need in the color table; we'll examine the technique in more detail later.
+</p>
+<p>
+<b>MODIFYING SEARCH COLORS</b><br>
+The fact that the desired color is passed to the search procedure through a variable<br>
+parameter is significant: it means that the procedure can actually modify the color<br>
+value it receives. In this case, the search procedure should return FALSE, telling<br>
+QuickDraw to perform the default color mapping on the<i>modified</i> color. This technique<br>
+opens up several possible uses for search procedures.
+</p>
+<p>
+One such application is color separation for three-color printing. The snippet called<br>
+SearchProcs &amp; Color Separation on this issue's CD shows how to do this. To separate all<br>
+the greens from an image, for instance, you could install a search procedure that sets<br>
+the red and blue RGB components to 0.&nbsp;&nbsp;&nbsp;Listing 2 shows a simple example.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 2. </b>Search procedure to separate green colors
+</p>
+<pre>FUNCTION GreenSepProc (VAR rgb: RGBColor; VAR position: LONGINT):
+        BOOLEAN;
+BEGIN
+    WITH rgb DO
+        BEGIN
+            red := 0;   { Set red and blue RGB components to 0, }
+            blue := 0   { keeping only the green component. }
+        END;
+    GreenSepProc := FALSE
+END;</pre>
+<p>
+A similar search procedure could be used to darken or lighten an image. For example,<br>
+you could use the code in Listing 3 to darken the blue component of an image by a factor<br>
+of 2.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 3. </b>Search procedure to darken the blue component
+</p>
+<pre>FUNCTION DarkenBluesProc (VAR rgb: RGBColor; VAR position: LONGINT):
+             BOOLEAN;
+BEGIN
+    rgb.blue := BSR(rgb.blue, 1);     { Shift right to divide by 2. }
+    DarkenBluesProc := FALSE
+END;</pre>
+<p>
+<b>WHAT'S THE CATCH?</b><br>
+As usual, you do pay a price for all this functionality: search procedures definitely<br>
+slow down the drawing process. Just how badly depends on several factors. In the case<br>
+of CopyBits, the speed is most directly affected by the depth of the source and<br>
+destination pixel&nbsp;&nbsp;maps. If the source pixel map uses indexed color, the search<br>
+procedure needs to be called only once for each color in the source map's color table.<br>
+For direct color, it must be called for<i>every pixel! </i>
+</p>
+<p>
+Consider the very simplest search procedure -- one that just returns FALSE without<br>
+doing anything:
+</p>
+<pre>FUNCTION NothingSearchProc (VAR rgb: RGBColor;
+        VAR position: LONGINT): BOOLEAN;
+BEGIN
+    NothingSearchProc := FALSE
+END;</pre>
+<p>
+(A search procedure that did nothing but return TRUE would actually be faster, but<br>
+would be useless, since the value in the <b>position</b> parameter would be garbage;<br>
+returning FALSE ensures that at least normal color mapping will take place.) Table 1<br>
+compares the speed of a CopyBits operation with and without this search procedure,<br>
+along with the speed of using the ditherCopy transfer mode in place of srcCopy. The<br>
+source image is the one shown in Figure 1. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Table 1. </b>Influence of search procedure on CopyBits speed
+</p>
+<p><table border="0"><tr><td></td><td></td><td></td><td><b>srcCopy With</b></td></tr>
+<tr><td><b>Machine Type</b></td><td><b></b><b>srcCopy</b></td><td><b></b><b>ditherCopy</b></td><td><b></b><b>Search</b></td></tr>
+<tr><td></td><td></td><td></td><td><b>Procedure</b></td></tr>
+<tr><td><span style="font-size:80%;">Macintosh IIci, Apple 8*24 card</span></td><td><span style="font-size:80%;">21</span></td><td><span style="font-size:80%;">57</span></td><td><span style="font-size:80%;">83</span></td></tr>
+<tr><td><span style="font-size:80%;">Macintosh Quadra 800, built-in video</span></td><td><span style="font-size:80%;">8</span></td><td><span style="font-size:80%;">21</span></td><td><span style="font-size:80%;">23</span></td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Note:</b> Speeds are given in ticks, and are for ten successive calls to CopyBits, copying a<br>
+100-by-100-pixel, 32-bit-deep image to an 8-bit screen.
+</p>
+<p>
+As you can see, CopyBits with an installed search procedure runs just a little slower<br>
+than a dithered CopyBits. Note that the figures in the table are very rough. Several<br>
+other factors contribute significantly to the speed difference when a search procedure<br>
+is installed, such as the size of the source image and the number of colors it contains.<br>
+You'll also get different results depending on what drawing routines you call with the<br>
+search procedure installed. But the "dithered CopyBits" rule of thumb seems to work<br>
+quite well as a general guide.
+</p>
+<p>
+It's up to you to decide whether the speed penalty for using a custom color search<br>
+procedure is worth the improved display quality. For image-processing applications,<br>
+where color accuracy is probably more important than speed, search procedures can<br>
+be very useful; for applications such as arcade- style video games, which depend on<br>
+real-time graphics, they're probably not the way to go.
+</p>
+<h2>SOLVING THE "SHADES OF RED" PROBLEM</h2>
+<p>
+It's very common these days for applications to prepare an image offscreen, using a<br>
+32-bit GWorld, before transferring it to the screen for display. Despite the<br>
+decreasing cost of 24-bit graphics cards, indexed 8-bit color is still a very common<br>
+configuration, and even users with direct color capability spend a lot of time in 8-bit<br>
+mode, which can lead to anomalies like the "100 shades of red" problem.&nbsp;&nbsp;&nbsp;As mentioned<br>
+earlier, we can use a custom color search procedure to draw direct pixel images into<br>
+indexed graphics devices with exact color reproduction, provided that all of the colors<br>
+are actually available in the destination device's color table. 
+</p>
+<p>
+The way to make the colors available on the device is of course to use the Palette<br>
+Manager, attaching a palette of the needed colors to the window you're drawing in.<br>
+(This works only if other applications aren't "hogging" too many colors.) Getting the<br>
+right colors from a picture or pixel map won't be discussed in any detail here, but the<br>
+sample code uses the octree method described in the article "In Search of the Optimal<br>
+Palette" in<i>develop</i> Issue 10. It's probably easier to use the built-in popularand median<br>
+color-sampling methods, but they truncate colors to 5 bits per component,meaning<br>
+that they won't return separate palette entries for colors that differ only in the lower<br>
+bits, as our shades of red do. The octree method doesn't truncate the colors, so it can be<br>
+used to find<i>all</i>&nbsp;&nbsp;the colors in the image (assuming the image contains fewer than 256<br>
+colors). Another approach is demonstrated in the snippet CollectPictColors on the CD. <br>
+Once the colors are available, we can write a search procedure that simply searches<br>
+the graphics device's color table and returns the index of the requested color. (If the<br>
+color table doesn't contain all the needed colors, the search procedure may have to<br>
+return FALSE; QuickDraw will then use the inverse table to map these colors, which<br>
+can lead to unexpected results. See the section "Evaluating the Results," later in this<br>
+article, for more on this.)
+</p>
+<p>
+<b>THE BRUTE-FORCE APPROACH</b><br>
+In true hacker fashion, let's try the brute-force approach first: we can simply scan<br>
+straight through the current graphics device's color table and stop when we find a<br>
+match. Listing 4 shows the code.
+</p>
+<p>
+<b>Listing 4. </b>Brute-force search procedure
+</p>
+<pre>FUNCTION BruteSearchProc (VAR theRGB: RGBColor;
+        VAR position: LONGINT): BOOLEAN;
+    VAR
+        i:          INTEGER;
+        gdh:        GDHandle;
+        colorTab:   CTabHandle;
+BEGIN
+    { Get handle to current device. }
+    gdh := GetGDevice;
+
+    { Get color lookup table from current device. }
+    colorTab := gdh^^.gdPMap^^.pmTable;
+
+    { If the color table exists, loop through all its entries until }
+    { we find a match. }
+    IF colorTab &lt;&gt; NIL THEN
+        WITH colorTab^^ DO
+            FOR i := 0 TO ctSize DO
+                WITH ctTable[i] DO
+                    IF (theRGB.red = rgb.red) &amp;
+                            (theRGB.green = rgb.green) &amp;
+                            (theRGB.blue = rgb.blue) THEN
+                        BEGIN
+                            { We found the color, so pass back its }
+                            { index and return TRUE. }
+                            position := i;
+                            BruteSearchProc := TRUE;
+                            EXIT(BruteSearchProc)
+                        END;
+
+    { We didn't find the color in the table, so return FALSE to }
+    { tell QuickDraw to use the default mapping method. }
+    BruteSearchProc := FALSE
+END;</pre>
+<p>
+If we install this search procedure and draw the "100 shades of red" image, it will find<br>
+all 100 shades and produce the expected image. Unfortunately, it's<i>very</i> slow: a<br>
+CopyBits with srcCopy mode using this search procedure takes 30 to 40 times as long<br>
+as a dithered CopyBits. 
+</p>
+<p>
+<b>HASH TABLES: A BETTER WAY</b><br>
+We can speed up our search procedure by using a hash table instead of a brute-force<br>
+linear search.&nbsp;&nbsp;&nbsp;(Hash tables are familiar to most of you from basic computer science<br>
+classes, and are described in any good book on algorithms, such as<i>Algorithms</i>&nbsp;&nbsp;by<br>
+Robert Sedgewick.) In our case, we'll use the RGB color value as a hash key to find the<br>
+corresponding color table index. For our hash function, we'll use the MOD operator to<br>
+find the remainder of the hash key relative to some suitably chosen prime number. The<br>
+bigger we make this prime number, the better the performance of the hash function<br>
+will be. Assuming that the target device uses 8-bit indexed colors (for most images,<br>
+any lower color depth will yield a color table too small to hold all thecolors we need),<br>
+we'll be working with a color table of 256 colors. We'll choose 251, a prime number<br>
+near 256, as the divisor for our hash function.&nbsp;&nbsp;&nbsp;The MODoperator can't operate<br>
+directly on 48-bit RGBColor records, so we'll use the high-order 8 bits of each color<br>
+component to form a 32-bit integer of the form $00rrggbb (the same as a 32-bit<br>
+pixel value) and use that for our key into the hash table. 
+</p>
+<p>
+&nbsp;Figure 4 shows the data structure containing our hash table. RGBHashArray is a<br>
+zero-based array of records of type RGBHashNode. Each node holds a 32-bit color<br>
+value (rgbComp), along with the index at which that color is stored in the color table.<br>
+Nodes whose colors map to the same hash value are chained together in a linked list,<br>
+with each node's<b>next</b>field holding the array index of the next node in the chain (this<br>
+collision resolution method is called<i>separate chaining</i> ). The first kPrimeRecords<br>
+(251) entries in the hash array hold header nodes for all possible hash values; these<br>
+point into the rest of the array, which holds the data nodes themselves.
+</p>
+<p>
+<img src="img/163.gif" width="416 px"></img>
+</p>
+<p>
+<b>Figure 4. </b>Hash table data structure
+</p>
+<p>
+&nbsp;The data structure definitions for our hash table are shown in Listing 5. In addition to<br>
+the array holding the table's contents, there's a short header containing the index of<br>
+the next available data node along with the color table's<i>seed value</i> at the time the hash<br>
+table was built. We can use the latter to keep our hash table synchronized with the<br>
+color table. Any time QuickDraw changes the contents of the graphics device's color<br>
+table, it also changes its seed value. Thus if the seed values in the hash table and color<br>
+table don't match (as checked by the routine in Listing 6), we know the color table has<br>
+been changed and we need to rebuild our hash table before using it.
+</p>
+<p>
+<b>&nbsp;Listing 5. </b>Hash table data structures
+</p>
+<pre>CONST
+    kNumRecords = 256;     { Number of colors in color table }
+    kPrimeRecords = 251;   { Number of hash entries }
+    kTableSize = kPrimeRecords + kNumRecords - 1;
+                            { Total size of (zero-based) hash array }
+
+TYPE
+    RGBCompressedColor = LONGINT;{ Color in 32-bit form ($00rrggbb) }
+
+    { Data structure for hash table nodes }
+    RGBHashNode = RECORD
+        rgbComp:    RGBCompressedColor;
+                                     { RGB color in compressed form }
+        index:      INTEGER;         { Index of matching color in }
+                                     { color table }
+        next:       INTEGER      { Array index of next node in list }
+    END;
+
+    { Data structure for array to store hash table data }
+    RGBHashArray = ARRAY[0..kTableSize] OF RGBHashNode;
+
+    { Data structure for hash table itself }
+    RGBHashTable = RECORD
+       nextEntry:   INTEGER; { Array index of next unused data node }
+       curCTabSeed: LONGINT; { Value of color table seed when hash }
+                             { table was created (indicates when }
+                             { hash table must be updated) }
+        table:      RGBHashArray        { Hash table contents }
+    END;
+    RGBHashTablePtr = ^RGBHashTable;
+
+VAR
+    gRGBHash: RGBHashTablePtr;      { Global hash table pointer }</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 6. </b>Checking the validity of the hash table
+</p>
+<pre>FUNCTION HashTableNeedsUpdate (ctab: CTabHandle;
+       rgbHash: RGBHashTablePtr): BOOLEAN;
+BEGIN
+    HashTableNeedsUpdate := ctab^^.ctSeed  rgbHash^.curCTabSeed
+END;</pre>
+<p>
+There are two straightforward procedures, not shown here, for initializing the hash<br>
+table and for clearing it out before building or rebuilding its contents (see the code on<br>
+the CD for details). RGBHashInit zeroes out the entire hash table, while RGBHashClear<br>
+clears only the list headers, making the table appear empty; there's no need to zero the<br>
+data nodes themselves. 
+</p>
+<p>
+The procedure for inserting a color into the hash table is shown in Listing 7. It starts<br>
+by doing some bit manipulation to convert the RGBColor to 32-bit form. It then uses<br>
+the result to compute the hash-table index for the given color by finding its remainder<br>
+modulo 251. Next, it fills in the fields of the next available hash node and inserts it at<br>
+the head of the linked list starting at the computed index. Finally, it increments the<br>
+hash table's nextEntry field to point to the next hash node in the array.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 7. </b>Inserting a color in the hash table
+</p>
+<pre>PROCEDURE RGBHashInsert (rgbHash: RGBHashTablePtr; rgb: RGBColor;
+       cTabIndex: INTEGER);
+    VAR
+        compressedRGB:  RGBCompressedColor;
+        hashIndex:      INTEGER;
+BEGIN
+    { Reduce 48-bit RGB value to 32-bit compressed form. }
+    WITH rgb DO
+        compressedRGB := BSL(BAND(red, $0000FF00), 8) +
+            BAND(green, $0000FF00) + BSR(BAND(blue, $0000FF00), 8);
+
+    { Compute hash-table index. }
+    hashIndex := compressedRGB MOD kPrimeRecords;
+
+    WITH rgbHash^ DO
+        BEGIN
+            { Store color data in next available node. }
+            WITH table[nextEntry] DO
+                BEGIN
+                    rgbComp := compressedRGB;{ Actual RGB color }
+                    index := cTabIndex;      { Index in color table }
+
+                    { Insert this node at front of linked list. }
+                    next := table[hashIndex].next;
+                    table[hashIndex].next := nextEntry
+                END;
+
+            { Update to next available node. }
+            nextEntry := nextEntry + 1
+        END
+END;</pre>
+<p>
+Building a hash table from the current graphics device's color table is relatively<br>
+straightforward (Listing 8). First we save the state of the color table handle and lock<br>
+it in case we do something that moves memory while the handle is dereferenced. (Our<br>
+code doesn't currently do anything to move memory, but if we should change it in the<br>
+future so that it does, this precaution ensures that it will still work.) Next we call our<br>
+RGBHashClear procedure to clear the hash table's list headers to empty, and save<br>
+thecolor table's seed value so that we can tell when the hash table needs updating.<br>
+Finally, we step through the contents of the color table, inserting each color into the<br>
+hash table with RGBHashInsert (Listing 7). Then all that's left is to restore the color<br>
+tablehandle to its original state, and the hash table is ready for use by our search<br>
+procedure. 
+</p>
+<p>
+Finally, we get to the real heart of the hash-table search procedure, RGBHashSearch<br>
+(Listing 9).&nbsp;&nbsp;&nbsp;First we pack the 48-bit RGBColor value into 32 bits. Next, we<br>
+computethe hash-table index for the given color and retrieve the list header for that<br>
+hash value.&nbsp;&nbsp;If the list is nonempty, we step through it, comparing the RGB color<br>
+stored in each node with the color we're looking for. If the colors match, we get the<br>
+index of the corresponding color table entry from the data node and return TRUE. If we<br>
+don't find the desired color, we return FALSE to indicate that the color was not in the<br>
+hash table.&nbsp;&nbsp;&nbsp;Note that this will happen only if the source image contains colors that<br>
+didn't fit in the color table (an example of this is given in the next section). 
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 8. </b>Building the hash table
+</p>
+<pre>PROCEDURE CTab2Hash (ctab: CTabHandle; rgbHash: RGBHashTablePtr);
+    VAR
+        state:      SignedByte;
+        i:          INTEGER;
+BEGIN
+    { Save state of color table handle and lock it. }
+    state := HGetState(Handle(ctab));
+    HLock(Handle(ctab));
+
+    { Clear hash table to empty. }
+    RGBHashClear(rgbHash);
+
+    WITH ctab^^ DO
+        BEGIN
+            { Save current seed value. }
+            rgbHash^.curCTabSeed := ctSeed;
+
+            { Step through contents of color table. }
+            FOR i := 0 TO ctSize DO
+                { Insert each color into hash table with its index. }
+                WITH ctTable[i] DO
+                    RGBHashInsert(rgbHash, rgb, i)
+        END;
+
+    { Restore original state of color table handle. }
+    HSetState(Handle(ctab), state)
+END;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 9. </b>Searching the hash table
+</p>
+<pre>FUNCTION RGBHashSearch (rgbHash: RGBHashTablePtr; rgb: RGBColor;
+      VAR index: LONGINT): BOOLEAN;
+    VAR
+        compressedRGB:  RGBCompressedColor;
+        hashIndex:      INTEGER;
+        chainIndex:     INTEGER;
+        nextIndex:      INTEGER;
+BEGIN
+    WITH rgb DO
+        { Reduce 48-bit RGB value to compressed form. }
+        compressedRGB := BSL(BAND(red, $0000FF00), 8) +
+            BAND(green, $0000FF00) + BSR(BAND(blue, $0000FF00), 8);
+
+    { Compute hash-table index. }
+    hashIndex := compressedRGB MOD kPrimeRecords;
+
+    WITH rgbHash^ DO
+        BEGIN
+        { Get array index of first node in list. }
+        chainIndex := table[hashIndex].next;
+        WHILE chainIndex &lt;&gt; 0 DO     { Loop till end of list. }
+            { Is this the color we want? }
+            IF table[chainIndex].rgbComp = compressedRGB THEN  
+                BEGIN
+                  { If so, pass back its CLUT index and return TRUE }
+                    index := table[chainIndex].index;
+                    RGBHashSearch := TRUE;
+                    EXIT(RGBHashSearch)
+                END
+            ELSE            { Otherwise go to the next node. }
+                chainIndex := table[chainIndex].next;
+        { If we got here, either there were no links at this }
+        { hash-table address, or we reached the end of the }
+        { list. Both cases indicate that the color is not in the }
+        { CLUT, so return FALSE. }
+        RGBHashSearch := FALSE 
+    END
+END;</pre>
+<p>
+Listing 10 shows how to install our search procedure for use in a drawing operation<br>
+(gSearchProcUPP is a universal procedure pointer that points to our search<br>
+procedure,which is simply a wrapper that calls RGBHashSearch). The Color Manager<br>
+routines AddSearch and DelSearch, respectively, install and remove a search<br>
+procedure for the current graphics device. Note that we install our search procedure<br>
+just before the drawing operations that use it, and remove it immediately afterward.<br>
+This is because the search procedure will be called for<i>any</i> drawing that occurs on the<br>
+device it's attached to, and can significantly affect performance. Before installing and<br>
+using our search procedure, we call our HashTableNeedsUpdate function (Listing 6) to<br>
+compare the hash table's seedvalue with that in the current color table. The function<br>
+returns TRUE if the seed values don't agree; this tells us torebuild the hash table with<br>
+CTab2Hash (Listing 8) before using our search procedure. 
+</p>
+<p>
+Astute readers may wonder what happens if the drawing area spans more than one<br>
+screen in a multiple-monitor configuration, since search procedures "belong"<br>
+toparticular devices. Our sample code deals with multiple devices simply by calling<br>
+DeviceLoopto do its drawing, installing the search procedure only on 8-bit color<br>
+devices; on any other devices, CopyBits is called with ditherCopy mode. 
+</p>
+<h2>EVALUATING THE RESULTS</h2>
+<p>
+Has all this optimization been worth it? Table 2 compares the speeds of the various<br>
+search procedures, again using CopyBits in srcCopy mode to copy the image shown in<br>
+Figure 1 from a 32- bit offscreen GWorld to an 8-bit device. For comparison, the<br>
+speed of a "nothing" search procedure is also shown. Clearly, the work has paid off --<br>
+the hash-table search procedure is over 15 times as fast as the brute-force approach,<br>
+and is certainly comparable to a dithered CopyBits. In some cases (for example, when<br>
+drawing an image in a zoomed-in state), our hash table technique is actually as fast as<br>
+(or faster than) a dithered CopyBits.
+</p>
+<p>
+Although our hash-table search procedure gives impressive results, there are<br>
+certainly cases where its performance is less than optimal. The hash table method<br>
+assumes that all of the colors in the source image can be loaded into the current<br>
+graphics device's color table. If this condition doesn't hold, the search procedure will<br>
+still work, but it won't be able to find colors that aren't in the color table, so<br>
+QuickDraw will use the default inverse-table mapping method for those colors. This<br>
+can give unexpected results. For example, Figure 5 (on the inside back cover of this<br>
+issue) shows a version of the "Better Bull's eye" image from<i>develop</i> Issue 1 (from the<br>
+article "Realistic Color for Real-World Applications"), drawn using the hash-table<br>
+search procedure. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 10. </b>Installing and removing a search procedure
+</p>
+<pre>{ Get color table from current graphics device. }
+gdh := GetGDevice;
+ctab := gdh^^.gdPMap^^.pmTable;
+
+{ Update hash table if necessary. }
+IF HashTableNeedsUpdate(ctab, gRGBHash) THEN
+    CTab2Hash(ctab, gRGBHash);
+
+{ Install search procedure right before drawing. }
+AddSearch(gSearchProcUPP);
+
+{ Example drawing code }
+CopyBits(BitMapPtr(thePixMap^)^, myWindow^.portBits, srcRect,
+            destRect, srcCopy, NIL);
+
+{ Remove search procedure right after drawing. }
+DelSearch(gSearchProcUPP);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Table 2. </b>Comparison of search procedure speeds
+</p>
+<p><table border="0"><tr><td></td><td><b>Nothing</b></td><td><b></b><b>Brute-Force</b></td><td><b></b><b>Hash</b></td></tr>
+<tr><td><b>Machine Type</b></td><td><b></b><b>Procedure</b></td><td><b></b><b>Procedure</b></td><td><b></b><b>Procedure</b></td></tr>
+<tr><td><span style="font-size:80%;">Macintosh IIci, Apple 8*24 card</span></td><td><span style="font-size:80%;">83</span></td><td><span style="font-size:80%;">2234</span></td><td><span style="font-size:80%;">175</span></td></tr>
+<tr><td><span style="font-size:80%;">Macintosh Quadra 800, built-in video</span></td><td><span style="font-size:80%;">23</span></td><td><span style="font-size:80%;">691</span></td><td><span style="font-size:80%;">48</span></td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Note:</b> Speeds are given in ticks, and are for ten successive calls to CopyBits, copying a<br>
+100-by-100-pixel, 32-bit-deep image to an 8-bit screen.
+</p>
+<p>
+The image in Figure 5 has more than 256 distinct colors. The results may look all<br>
+right at first glance, but if we zoom in on the top right corner of the image (Figure 6,<br>
+also on the inside back cover), we can see unwanted bands of gray. Some of the actual<br>
+grays that were supposed to appear at these locations were not available in the<br>
+graphics device's color table. As a result, they were color- mapped to the closest<br>
+available gray at a 4-bit resolution, resulting in banding. 
+</p>
+<p>
+A similar problem can result if you have several windows displaying different images<br>
+at once. The frontmost window will display correctly, but the others may not have the<br>
+correct colors available.&nbsp;&nbsp;&nbsp;Usually this isn't important, since the frontmost window is<br>
+generally the one you're concerned with.&nbsp;&nbsp;&nbsp;Typically, you should install the search<br>
+procedure only when drawing in the frontmost window.
+</p>
+<p>
+Another, more subtle case where our search procedure can give unexpected results is<br>
+when the destination rectangle passed to CopyBits is smaller than the source rectangle.<br>
+If the source image uses direct color, CopyBits will average the color values of<br>
+adjacent pixels to produce the reduced image.&nbsp;&nbsp;&nbsp;This usually gives more visually<br>
+appealing results than just dropping whole rows of pixels; but in this case, since<br>
+averaging can produce colors that aren't in the color table, we run into the same kind<br>
+of problem we've been discussing. (There's no problem when the destination rectangle<br>
+is<i>bigger</i>&nbsp;&nbsp;than the source rectangle, since CopyBits will simply replicate existing<br>
+pixels without introducing any new colors into the image.)
+</p>
+<p>
+<b>MAKING IT BETTER</b><br>
+Our hash-table search procedure is certainly much more efficient than the<br>
+brute-force approach, but it can be improved still further. The most obvious idea<br>
+would be to reimplement the code in assembly language for maximum efficiency,<br>
+although this hampers portability and may not result in much of a speed improvement,<br>
+depending on how good your compiler is. Another area for improvement might be the<br>
+hashing algorithm itself: wecould try a different hash function or another method of<br>
+collision resolution. However,since the hash table in this application is so small, this<br>
+may not be worth the effort.
+</p>
+<p>
+A useful extension would be to find the closest match for colors that are<i>not</i>&nbsp;&nbsp;in the color<br>
+table. This would alleviate the problems that occur when the image has too many colors<br>
+to fit in the color table.&nbsp;&nbsp;&nbsp;Abandoning the hash table in favor of a tree-based algorithm<br>
+might work, but it would be hard to make it as fast as the hash table method. Another<br>
+approach might be to use some color-quantization algorithm to reduce the total<br>
+number of colors in the image to 256 -- but of course that would mean changing the<br>
+actual image data. 
+</p>
+<h2>NOW IT'S UP TO YOU</h2>
+<p>
+Custom color search procedures are one of the least-used methods for customizing<br>
+Color QuickDraw. In this article, we've seen several practical uses for them -- now<br>
+it's up to your creativity to find others. (Let us know if you do!)
+</p>
+<p>
+<b>THE IMPORTANCE OF THE CURRENT GRAPHICS DEVICE</b><br>
+An often misunderstood fact about Color QuickDraw is this: Color QuickDraw uses the <br>
+<i>current graphics device's color table</i>&nbsp;&nbsp;when converting colors into indexed pixel<br>
+values, ignoring the color table of the destination pixel map.
+</p>
+<p>
+The inverse table is built from the color table in the graphics device's pixel map, not<br>
+the one in the destination pixel map. When you're drawing to the screen, this is not a<br>
+problem, since the destination pixel map and the current graphics device's pixel map<br>
+match (the destination pixel map <i> is</i>&nbsp;&nbsp;the device's pixel map). However, it can be a<br>
+problem when you're drawing offscreen (for example, when using CopyBits to copy<br>
+one offscreen pixel map to another). If the color table of the destination pixel map<br>
+doesn't match that of the current graphics device, you won't get the results you expect.<br>
+The destination pixel map's color table is used only when converting the other way,<br>
+from a pixel value to a color (for example, when the pixel map is actually displayed on<br>
+the screen).
+</p>
+<p>
+One of the nice things about using GWorlds for offscreen graphics is that you don't have<br>
+to worry about this -- GWorlds always have a graphics device associated with them,<br>
+and routines such as SetGWorld ensurethat the GWorld's pixel map and the graphics<br>
+device's pixel map are synchronized for correct color mapping.
+</p>
+<p><b>RELATED READING</b></p>
+<ul>
+<li><i> Inside Macintosh: Advanced Color Imaging,</i>  on this issue's CD in draft<br>
+form and forthcoming in print from Addison-Wesley. See the Color Manager<br>
+chapter.&nbsp;&nbsp;This is the most thorough documentation in <i>Inside Macintosh</i>&nbsp;&nbsp;for<br>
+color search procedures and color mapping with inverse tables. You'll also<br>
+find some useful information in the Palette Manager chapter.</li>
+<li><i>Inside Macintosh: Imaging With QuickDraw</i>  (Addison-Wesley, 1994),<br>
+Chapter 1, "Introduction to QuickDraw," Chapter 4, "Color QuickDraw,"<br>
+Chapter 5, "Graphics&nbsp;&nbsp;Devices," and Chapter 6, "Offscreen Graphics Worlds."</li>
+<li><i>Programming QuickDraw</i>  by David Surovell, Frederick Hall, and<br>
+Konstantin Othmer (Addison-Wesley, 1992). Everything you ever wanted to<br>
+know about QuickDraw. In particular, see "Graphics Devices" in Chapter 3,<br>
+"Drawing in Color," and see "Pixel Processing Traps" and "Depth Conversion<br>
+and Dithering" in Chapter 7, "Image Processing with QuickDraw."</li>
+<li>"In Search of the Optimal Palette" by Dave Good and Konstantin Othmer, <br>
+<i>develop</i>&nbsp;&nbsp;Issue 10. How to use the Picture Utilities Package to obtain a palette<br>
+with the best colors for displaying an image on an indexed device.</li>
+<li>Macintosh Technical Notes "Principia Off-Screen Graphics<br>
+Environments" (QD 13) and "Of Time and Space and _CopyBits" (QD 21).</li>
+</ul>
+<p>
+<b>JIM WINTERMYRE </b>(Internet winter@ai.rl.af.mil) is in the Air Force but doesn't<br>
+get to fly a plane; instead, he gets to fly a Macintosh (he thinks he still deserves hazard<br>
+pay, though). Officially, he's a Signals Intelligence Systems Engineer, but he always<br>
+seems to find himself doing Macintosh programming in one form or another. When he's<br>
+not busy solving the world's problems or coming up with another useless hack (the<br>
+boundaries between the two have become fuzzy lately), he likes to engage in sports that<br>
+let him pretend he really does have wheels on his feet. He was recently spotted playing<br>
+jazz guitar in a smoky little bar in upstate New York. *
+</p>
+<p>
+<b>Thanks </b>to our technical reviewers Joseph Maurer, Don Moccia, Guillermo Ortiz, and<br>
+Nick Thompson. *
+</p>
+</body>
+</html>

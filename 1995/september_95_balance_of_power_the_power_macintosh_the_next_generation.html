@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 34 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 95 - Balance of Power: The Power Macintosh: The Next Generation</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Balance of Power:<br>
+&nbsp;The Power Macintosh: The Next Generation</h1>
+<h2>Dave Evans</h2>
+<p>
+<img src="img/200.gif" width="216 px"></img>
+</p>
+<p>
+<i>The Power Macintosh computer just keeps moving forward. The latest generation</i><br>
+<i>brings greatly improved performance and adds the PCI expansion bus and the PowerPC</i><br>
+<i>603 and 604 processors. Software changes that improve performance include the</i><br>
+<i>following:</i>
+</p>
+<ul>
+<li>an improved 680x0 emulator</li>
+<li>a native Resource Manager</li>
+<li>native networking (Open Transport)</li>
+<li>native device drivers</li>
+<li>an improved Memory Manager</li>
+</ul>
+<p>
+<i>I'll describe these new features and discuss how you can maintain compatibility with</i><br>
+<i>the new Power Macintosh computers and with future changes to the Mac OS.</i>
+</p>
+<h2>THE IMPROVED EMULATOR</h2>
+<p>
+First delivered with the Power Macintosh 9500 computer, the new emulator improves<br>
+on the original in one key way: it actually recompiles 680x0 code into native PowerPC<br>
+code. Since large portions of the Mac OS are still in 680x0 code, this new emulator<br>
+speeds up most common operations and offers significant improvements for 680x0<br>
+code with tight loops.
+</p>
+<p>
+Recompiling doesn't mean converting 680x0 instructions one for one into PowerPC<br>
+instructions. Fully emulating a 680x0 instruction still takes a few PowerPC<br>
+instructions. But recompiled code is more efficient and optimized. The original<br>
+emulator had to decipher each instruction every time it was executed, but recompiled<br>
+code from the new emulator is analyzed once and then executed many times.
+</p>
+<p>
+Because it takes extra time to recompile code, the emulator doesn't immediately<br>
+translate all 680x0 code. It operates just like its predecessor until it encounters a<br>
+loop or similar repetition. Then, instead of emulating the same code repeatedly, it<br>
+translates the instructions into native code and caches the result. Subsequent calls to<br>
+that code simply execute the native translation, greatly improving performance.
+</p>
+<p>
+The cache of translated 680x0 code must stay coherent with memory, much like the<br>
+caches on the Motorola 68040 processor. Therefore, whenever your software modifies<br>
+code or changes application jump tables, you should flush the instruction cache. (See<br>
+the Macintosh Technical Note "Cache as Cache Can" (HW 6) for a more detailed<br>
+description of cases where flushing the instruction cache is necessary.) In the past you<br>
+could call Gestalt and check the processor type to flush only on a 68040. Since the new<br>
+emulator supports only the 68020 instruction set -- and Gestalt will indicate that a<br>
+68020 is installed -- you should now flush any time you modify code or change jump<br>
+tables.
+</p>
+<p>
+The best way to flush 680x0 code in the cache is with FlushCodeCacheRange, which<br>
+flushes only the invalid portion of the emulator's cache. FlushInstructionCache also<br>
+works but can degrade performance by wastefully purging recompiled code that's still<br>
+valid. These routines are documented in<i>Inside Macintosh: Memory. </i>The C prototype for<br>
+FlushCodeCacheRange is as follows:
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>OSErr FlushCodeCacheRange(void *address,
+   unsigned long count);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+In 680x0 assembly, you would use
+</p>
+<pre>MyFlushCodeCacheRange Proc
+   ; On entry A0 = address, D0 = # of bytes
+   ; Trashes A0, A1, D0. Result in D0, Z bit set.
+   ;
+   movea.l      D0,A1      ; # bytes in A1
+   moveq         #$9,D0      ; selector
+   _HWPriv               ; A098
+   tst.w         D0         ; result == noErr
+   rts</pre>
+<p class="spacer">&nbsp;</p>
+<h2>OTHER SOFTWARE CHANGES</h2>
+<p>
+The first Power Macintosh computer ported critical portions of the Macintosh Toolbox<br>
+to native PowerPC code. Ultimately we'll take all of the Mac OS native, but for now<br>
+we've focused on areas that most increase overall performance. So, starting with the<br>
+Power Macintosh 9500, we've added a native Resource Manager, the native Open<br>
+Transport networking stack, and native device drivers. I'll discuss each of these in<br>
+turn and then mention improvements to the Modern Memory Manager.
+</p>
+<p>
+Even though many calls to the Resource Manager are bound by I/O bottlenecks, porting<br>
+the Resource Manager to native PowerPC code still substantially improves<br>
+performance. Often to complete a request the Resource Manager need only look up<br>
+existing information and return it, and even if file I/O is required the data is often in<br>
+the system disk cache. For these reasons, many Resource Manager calls will execute<br>
+much faster on the new machines.
+</p>
+<p>
+Native Open Transport networking provides a stream-based interface for networking<br>
+that's independent of the network protocol. You can now implement a variety of<br>
+network solutions without concerning yourself with protocol details. Documentation on<br>
+Open Transport is provided on this issue's CD.
+</p>
+<p>
+Native device drivers provide both a performance improvement and an improved<br>
+system programming interface (SPI). This SPI is available with all PCI-based<br>
+Macintosh computers, starting with the Power Macintosh 9500. For more information<br>
+on these drivers, see the article "Creating PCI Device Drivers" in<i>develop </i>Issue 22 and<br>
+<i>Designing PCI Cards and Drivers for Power Macintosh Computers, </i>available from<br>
+Apple Developer Catalog.
+</p>
+<p>
+Although not new, the native Modern Memory Manager has been improved in two<br>
+important ways:
+</p>
+<ul>
+<li>Many of the routines are now implemented as "fat" binaries instead of all<br>
+native code. When your 680x0 code calls the Memory Manager, it will now<br>
+execute 680x0-based routines, eliminating the Mixed Mode environment<br>
+switch once needed to call the native routines. Reducing the number of these<br>
+switches can measurably improve performance.</li>
+<li>The bus error handlers have been removed, significantly increasing the<br>
+performance of many of the simple Memory Manager calls and allowing a<br>
+number of the calls to be made into fat traps. Bugs discovered during the<br>
+process of removing the handlers have been fixed.</li>
+</ul>
+<p>
+Handles passed to the Memory Manager now go through a rigorous check before they<br>
+can affect other Memory Manager data structures; however, without the nearly<br>
+foolproof bus error handling, it's a little more likely that you'll pass an invalid<br>
+address and crash. If you crash in the MemoryMgr code fragment while testing on the<br>
+new Power Macintosh computers, you probably passed an invalid pointer or handle.<br>
+You can use the Debugging Modern Memory Manager to aggressively catch these<br>
+application errors.
+</p>
+<p>
+Note also that the bus error handlers would allow system (and even application) heaps<br>
+to become corrupted, deteriorating the overall user experience without causing the<br>
+machine to crash. This is much less likely to happen now, but if structures do get<br>
+corrupted other than by the Memory Manager, a system crash will result.
+</p>
+<p>
+Also available starting with the latest Power Macintosh machines is support for very<br>
+large hard disk volumes. In the past, only 2-gigabyte volumes were allowed; then with<br>
+System 7.5 we relaxed that restriction to 4-gigabyte volumes. But many of you were<br>
+still hungry for more, so now we allow up to 2 terabytes (that's 2000 gigabytes) of<br>
+file system address space per volume. Unless you're developing utilities and drivers<br>
+compatible with the new volume sizes, though, you really don't need to pay attention to<br>
+the new large-volume support, because the API remains unchanged. The only time an<br>
+application might want to take advantage of the new support is when it wants to know<br>
+before attempting to save to disk whether there's enough free space on the volume.<br>
+Even in this case, the application won't be able to save a file bigger than the existing<br>
+limit of 2 GB, and the old version of GetVInfo will return values that are "high-water<br>
+marked" at 2 GB for compatibility reasons, even if more space is available.
+</p>
+<p>
+If you really do want to know how much space is available, you can do so through an<br>
+extension to the File Manager API. We extended the API because the existing 32-bit<br>
+size information was too small to address volumes and files larger than 4 GB. You'll<br>
+use the following new routine to get 64-bit sizes:
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr PBXGetVolInfo(XVolumeParam
+               paramBlock, Boolean async);</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+This routine takes an extended VolumeParam structure, named XVolumeParam, which<br>
+you'll find declared in an updated Files.h interface file on the CD. Before using this<br>
+routine, be sure to call Gestalt with the gestaltFSAttr selector; if the response<br>
+parameter has the gestaltFSSupports2TBVolumes bit set, the new routine is available.<br>
+Note that there are also extended Read and Write calls for drivers that want to support<br>
+volumes larger than 4 GB.
+</p>
+<h2>PCI AND NUBUS</h2>
+<p>
+Starting with the PCI-based Power Macintosh computers, support for the<br>
+NuBus(TM)-specific Slot Manager goes away. Some applications used to call the Slot<br>
+Manager directly to get video and other device information. This will no longer work,<br>
+so we've provided better methods: the Display Manager API has been extended for all<br>
+the video device information you'll need, and the new Name Registry API will give you<br>
+device information independent of the specific expansion bus implementation.
+</p>
+<p>
+One example of the improved Display Manager API is the way you get display modes for<br>
+video devices. With the Slot Manager this took a lot of code, but the Display Manager<br>
+gives you one encompassing routine:
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>pascal OSErr DMNewDisplayModeList(
+               GDHandle theGDevice,
+               unsigned long reserved,
+               unsigned long *modeCount,
+               DMListType *theDisplayModeList,
+               unsigned long modeListFlags);</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+With this and other new Display Manager routines, you can avoid the Slot Manager<br>
+altogether when gathering display information. But if you must access other device<br>
+information, you can use the bus-neutral Name Registry, which manages a tree of<br>
+device objects that you can access as a linked list. Look for the new header files<br>
+(Displays.h and NameRegistry.h) on this issue's CD.
+</p>
+<h2>MAINTAINING COMPATIBILITY</h2>
+<p>
+As Apple improves the Mac OS, compatibility with the documented APIs and SPIs is<br>
+ensured -- but don't assume that if your application runs fine on existing machines, it<br>
+will continue to do so in the future. We can't ensure complete compatibility if<br>
+application code makes invalid assumptions or uses unsupported parts of the Mac OS.<br>
+There are some things you can do to help ensure that your applications will run on<br>
+future versions of the Mac OS.&nbsp;&nbsp;First, use only the officially documented APIs. For<br>
+example, don't assume that the Z status bit will be set correctly on exit from a trap<br>
+unless it's documented. As we take more traps native, the 680x0 status register<br>
+becomes irrelevant and such checks break. Here's an example of 680x0 code that now<br>
+breaks because it assumes the Z status bit will be set by Get1Resource:
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>move.l      #'DAVE',-(sp)
+clr.w      -(sp)
+_Get1Resource
+beq.s      error         ; BAD!</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+You also shouldn't expect results in registers if the trap isn't documented to return<br>
+them there. It's true that some traps used to accidentally exit with useful data in<br>
+register D0 or A0, but if that's not documented as part of the API it won't be supported<br>
+in the future.
+</p>
+<p>
+Second, test your software using EvenBetterBusError, the Debugging Modern Memory<br>
+Manager, and any other debugging tools that are appropriate (look in the Testing &amp;<br>
+Debugging folder on the CD). Stress-testing your software with these tools will catch<br>
+many errors that otherwise would go unnoticed. EvenBetterBusError catches most<br>
+stray references to nil, such as writing to location 0 or using nil pointers and handles.<br>
+The Debugging Modern Memory Manager catches those occasions when you damage a<br>
+heap or pass invalid addresses.
+</p>
+<p>
+Finally, as I've said in previous columns, don't use RS/6000 POWER instructions in<br>
+your native code. Although the PowerPC 601 processor supports many of them, the<br>
+new 603 and 604 processors do not. We've made an attempt to emulate the POWER<br>
+instructions in software for these new processors, but this emulation is very<br>
+expensive. When a 603 or 604 encounters one&nbsp;&nbsp;of these now-illegal instructions, it<br>
+stops everything and calls our new illegal-instruction handler, which recognizes the<br>
+instruction that was used and attempts to use a valid one instead. This operation is very<br>
+time consuming; if your performance-critical code includes POWER instructions,<br>
+you'll see a severe slowdown. As described in this column in <i>develop</i> Issue 21, you<br>
+should use the DumpXCOFF tool to check your code for any POWER instructions.
+</p>
+<h2>NEW DIRECTIONS</h2>
+<p>
+Apple will continue to take advantage of RISC technology and will both improve existing<br>
+performance and add new functionality. Make sure your code uses documented<br>
+interfaces so that it will stay compatible and run on future generations of the Power<br>
+Macintosh. And be sure to check out Open Transport and PCI device drivers -- they're<br>
+exciting new directions that will take you closer to the next generation of the Mac OS<br>
+today.
+</p>
+<p>
+<b>DAVE EVANS</b> and fellow Apple engineer Rus Maxham rode 2000 miles on their<br>
+motorcycles this summer. They journeyed through the lush Central Valley of<br>
+California, the blistering heat of the southern Arizona deserts, and the neon glitz of Las<br>
+Vegas. Along the way they enjoyed the camaraderie of fellow bikers and were rescued in<br>
+their hour of need by a sympathetic motorcycling couple who housed them as Rus<br>
+rebuilt his BMW's rear drive assembly.*
+</p>
+<p>
+Thanks to Bill Knott, Eric Traut, and Jack Valois for reviewing this column.*
+</p>
+<p>
+Special thanks to Randy and Peggy Marlatt of Flagstaff, Arizona, for road support.*
+</p>
+</body>
+</html>

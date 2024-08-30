@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 6 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 95 - An Object-Oriented Approach to Hierarchical Lists</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>An Object-Oriented Approach to Hierarchical Lists</h2>
+<h1>JAN BRUYNDONCKX</h1>
+<p>
+<img src="img/131.gif" width="270 px"></img>
+</p>
+<p>
+<i>The article "Displaying Hierarchical Lists" in </i> develop<i> Issue 18 showed how to use the</i><br>
+<i>List Manager to build and display lists of hierarchical data with triangular</i><br>
+<i>"twist-down" buttons for expanding and collapsing sublists (similar to the ones the</i><br>
+<i>Finder uses for displaying and hiding the contents of folders in a list view). In this</i><br>
+<i>article, we take an object-oriented approach to implementing these and other custom</i><br>
+<i>lists, using the PowerPlant application framework by Metrowerks. Using subclass</i><br>
+<i>inheritance to build small classes on top of each other makes incremental development</i><br>
+<i>easy and straightforward.</i>
+</p>
+<p>
+Recently, I found myself working on a project that needed hierarchical lists: a remote<br>
+debugger for a network-based software distribution application. The product,<br>
+FileWave, creates a "virtual disk" volume on the user's client machine and manages its<br>
+contents remotely from a central server. The debugger, called TheRaven, can retrieve<br>
+file and folder information from the client machine and display it in a Finder-like<br>
+hierarchical view (see Figure 1).
+</p>
+<p>
+Martin Minow's article "Displaying Hierarchical Lists" (<i>develop</i> Issue 18) was an<br>
+excellent starting point, but Martin's implementation had some features that made it<br>
+unsuitable for my particular application. Most important, Martin built his<br>
+hierarchical lists completely in memory before displaying them -- not very practical<br>
+when working over a network. I could have modified Martin's code to remove that<br>
+restriction, but the result wouldn't have been very clean. Since we were using the<br>
+object-oriented PowerPlant application framework by Metrowerks, I decided to try to<br>
+develop an object-oriented implementation for hierarchical lists.
+</p>
+<p>
+One of the advantages of object-oriented programming is that it enables you to build up<br>
+your implementation in incremental steps. PowerPlant's collection of small,<br>
+independent classes can be combined to build new classes with rich features, providing<br>
+a strong foundation for software development. And, of course, using PowerPlant gave<br>
+me an opportunity to try out the great Metrowerks CodeWarrior programming<br>
+environment.
+</p>
+<p>
+This issue's CD contains some of the results of my development efforts. On it, you'll<br>
+find a collection of general-purpose classes for implementing lists with icons,<br>
+hierarchical lists, and other useful possibilities. You can use these as a basis for<br>
+developing more specialized subclasses of your own; the CD includes some examples of<br>
+those, as well. 
+</p>
+<p>
+<img src="img/132.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>TheRaven
+</p>
+<p>
+<b>&nbsp;The CD contains </b>two project files: one for creating a 680x0 application and one for<br>
+the native PowerPC version. In both projects, only the main segment contains my own<br>
+code; all the other source files are taken from the PowerPlant development<br>
+framework.*
+</p>
+<p>
+&nbsp;This article assumes that you understand the List Manager and how to use it, and that<br>
+you have at least a casual acquaintance with object-oriented programming in general<br>
+and C++ in particular.
+</p>
+<h2>&nbsp;BASIC BUILDING BLOCKS</h2>
+<p>
+In PowerPlant, everything that appears on the screen is a<i>pane,</i> an instance of the<br>
+built-in class LPane. Like a view in MacApp, a pane can be anything from a plain<br>
+rectangle to a scroll bar, a picture, or a radio button. A control is a pane, as is an icon<br>
+button, a static text item, or a scrolling picture. Even LWindow, the class to which<br>
+windows themselves belong, is a subclass of LPane.
+</p>
+<p>
+&nbsp;Typically, a window consists of an instance of class LWindow with one or more<br>
+subpanes derived from LPane. In our examples, our windows will have only one pane,<br>
+an instance of PowerPlant's built-in class LListBox. This type of pane uses the<br>
+Macintosh List Manager to display a list of objects. Each of our examples will define a<br>
+new subclass of LListBox with additional or modified properties and behavior. All it<br>
+takes to define such a class is to select an existing class, override its drawing method<br>
+(and maybe a couple of others), and possibly create a new resource template.
+</p>
+<h2>&nbsp;EASY LISTS</h2>
+<p>
+Our first example implements a simple window showing the list of words "One"<br>
+through "Five" (see Figure 2). This may not seem like a big deal, but it's a good<br>
+illustration of the power of object- oriented programming.
+</p>
+<p>
+<img src="img/133.gif" width="338 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>An easy list
+</p>
+<p>
+&nbsp;If we started from scratch, how many lines of code would this application take? Well,<br>
+we'd have to set up a menu, create a window, and then write an event loop to handle<br>
+dragging, window resizing, and so on. Add in the List Manager calls, and we'd be lucky<br>
+to do it all in fewer than 100 lines. With PowerPlant, all those details are handled for<br>
+us by the predefined class LApplication. All we need to do is define a subclass,<br>
+CListApp, with a menu command for creating our list window. One line of code in our<br>
+subclass's ObeyCommand method suffices to create the window:
+</p>
+<pre>LWindow::CreateWindow(EasyList_PPob, this);</pre>
+<p>
+This invokes a static method of class LWindow to create the window from a template<br>
+resource.&nbsp;&nbsp;&nbsp;EasyList_PPob is the resource ID; the exact description of the window is<br>
+contained in the resource, isolated from the code itself.
+</p>
+<p>
+The resource definitions (Listing 1) give the details on the window's structure and<br>
+appearance. The familiar window template resource ('WIND') is accompanied by a<br>
+PowerPlant object resource ('PPob') giving extra information on the window and the<br>
+panes it encloses (see "'PPob' Resources").&nbsp;&nbsp;&nbsp;The 'PPob' is simply a list of views and<br>
+panes, each specified with the keyword ObjectData. Panes can be nested to any depth,<br>
+with each new level delimited by the keywords BeginSubs and EndSubs.&nbsp;&nbsp;&nbsp;In our case,<br>
+the window view encloses just one pane, representing the list box.
+</p>
+<p>
+An object-oriented application framework like PowerPlant is so powerful that these<br>
+two resources are all we need to describe our window and its list pane. With just one<br>
+line of code to create the window, we get all the standard behavior for free: dragging<br>
+and resizing the window, scrolling the list, and selecting items with the mouse. We can<br>
+have multiple windows with the same list, and can use the List Manager for<br>
+manipulations like adding or removing items.
+</p>
+<p>
+But, of course, we won't stop there. In the following examples, we'll override the<br>
+standard behavior by creating a series of subclasses. The resources in each case will<br>
+be minor variations on the ones in Listing 1; the main difference is that we'll use a<br>
+subclass instead of one of the standard classes.
+</p>
+<p>
+<b>Listing 1. </b>Resources for easy list
+</p>
+<pre>resource 'WIND' (EasyList_WIND, purgeable) {
+    {47, 17, 247, 317},
+    documentProc,                   // standard window with size box
+    visible, goAway,
+    0x0,                            // refCon
+    "Easy List",
+    noAutoCenter
+};
+
+resource 'PPob' (EasyList_PPob, purgeable) {{
+
+    ObjectData {Window {
+        EasyList_WIND,
+        regular, hasCloseBox, hasTitleBar, hasResize, hasSizeBox,
+        noZoom, hasShowNew, enabled, hasTarget, hasGetSelectClick,
+        noHideOnSuspend, noDelaySelect, hasEraseOnUpdate,
+        100, 100,                           // minimum width, height
+        screenSize, screenSize,             // maximum width, height
+        screenSize, screenSize,             // standard width, height
+        0                                   // userCon
+    }},
+
+    BeginSubs {},
+        ObjectData {ListBox {
+            1001,                           // paneID
+            {302, 202},                     // {width, height}
+            visible, enabled,
+            bound, bound, bound, bound,   // edges bound to superview
+            -1, -1, 0,                      // left, top, userRefCon
+            defaultSuperView,
+            hasHorizScroll, hasVertScroll, hasGrowBox, noFocusBox,
+            0, kGeneva10_Txtr,       // double-click msg, text traits
+            textList,                       // LDEF ID
+            {"One", "Two", "Three", "Four", "Five"}
+                                            // some sample data
+        }},
+    EndSubs {}</pre>
+<h2>CUSTOM LISTS</h2>
+<p>
+The previous example used the standard behavior of PowerPlant's built-in class<br>
+LListBox. We can make our list much more attractive by adding an icon in front of each<br>
+element. To do this, we'll define two new subclasses of LListBox.
+</p>
+<p>
+Actually, one subclass would have been enough to do the job. But the most important<br>
+thing I learned in my university software engineering courses was, "Be a toolsmith."<br>
+Following this advice, I've chosen to define two subclasses instead of just one. The<br>
+first, CCustomListBox, is a versatile, general-purpose tool that allows a list to hold<br>
+any kind of data instead of just text. The items in the list can be structures of<br>
+arbitrary size holding any kind of information we want. The CCustomListBox class<br>
+includes methods for displaying this information easily and conveniently.
+</p>
+<p>
+The second subclass, CMyCustomListBox, is just a demo class to show off the<br>
+capabilities of the first.&nbsp;&nbsp;&nbsp;It inherits the general behavior of CCustomListBox and<br>
+specializes it to hold two pieces of information for each list item: an icon (actually,<br>
+just the icon's resource ID) and a piece of text (see Figure 3).
+</p>
+<p>
+<img src="img/134.gif" width="342 px"></img>
+</p>
+<p>
+<b>Figure 3. </b>A custom list
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>'PPOB' RESOURCES BY AVI RAPPAPORT</b>
+</p>
+<p>
+Resources of type 'PPob' (PowerPlant object) represent objects that belong to<br>
+PowerPlant's predefined class LPane and its derived subclasses. Their structure is<br>
+fully described in the section "Creating Panes" (Chapter 9 in the August 1994<br>
+release) of the PowerPlant manual supplied on the CodeWarrior CD. Each 'PPob'<br>
+resource describes an entire containment hierarchy -- for example, an enclosing<br>
+pane, then a scrollable "view," scrollers, and the window's buttons, list boxes, text<br>
+fields, and radio button groups. You can also add new types to represent your own<br>
+custom subclasses of LPane.
+</p>
+<p>
+Object layering makes 'PPob' resources too complex for ResEdit's template<br>
+mechanism, so you have to use Apple's Rez, Metrowerks' PowerPlant Constructor<br>
+(provided on the CodeWarrior CD), or Mathemaesthetics' Resorcerer&nbsp;&nbsp;to edit them. The<br>
+listings in this article are in Rez format. Note that Rez files must be compiled<br>
+separately to be included in a CodeWarrior project, as the current version of<br>
+CodeWarrior cannot compile them automatically.
+</p>
+<p>
+Resorcerer provides a forms-based interface. To use it, copy the file PowerPlant<br>
+Resorcerer TMPLs from the PowerPlant Resources folder to Resorcerer's Private<br>
+Templates folder. The 'PPob' editor will be available the next time you start<br>
+Resorcerer.
+</p>
+<p>
+PowerPlant Constructor uses more of a point-and-click interface to display the user<br>
+view for each object in a 'PPob' resource. You can edit the values in the Attributes<br>
+palette and Field windows and view the results on the screen. For instructions on the<br>
+specific menu items involved, see the <i> Constructor User's Guide</i>&nbsp;&nbsp;on the CodeWarrior<br>
+CD. Using PowerPlant and the 'PPob' resources together, you can create clean,<br>
+standard interfaces for your programs, using the best of Apple's new technologies. This<br>
+allows you to be more creative about the design of your programs and concentrate on<br>
+adding new features to make the best possible applications.
+</p>
+<p>
+<b>CREATING A LIST</b><br>
+The template ('PPob') resource for our list pane has the same format as the standard<br>
+one shown in Listing 1, but without the sample data (the strings "One" through<br>
+"Five"), since we're now allowing the list to contain any kind of data instead of just<br>
+text. This time, though, we want the window's list pane to be an instance of ourcustom<br>
+class, CMyCustomListBox, instead of PowerPlant's predefined class LListBox. 
+</p>
+<p>
+The job of creating a new window at run time from a template resource is handled by a<br>
+part of the PowerPlant system called the<i>reanimator.&nbsp;&nbsp;</i> We need to tell the reanimator<br>
+to use our own creator method when creating the window's list pane from the template,<br>
+in place of the standard one for class LListBox.
+</p>
+<p>
+We establish the connection between our template resource and the creator method that<br>
+will use it by assigning the template a unique<i>tag.&nbsp;&nbsp;</i> We then register the tag with the<br>
+PowerPlant<i>registrar,</i>&nbsp;&nbsp;telling it to associate that tag with a particular creator method.<br>
+We create the tag by adding the line
+</p>
+<pre>ClassAlias {'mlst'},</pre>
+<p>
+to our 'PPob' resource, before the definition of the list pane. (All we need is an alias,<br>
+because the resource defining our custom class has the same structure as that of the<br>
+standard LListBox class.) We then define a constant to represent this tag in our<br>
+CMyCustomListBox class:
+</p>
+<pre>public:
+    enum {
+        classID = 'mlst'
+};</pre>
+<p>
+Now we can register the tag with the PowerPlant registrar as part of our application's<br>
+initialization code:
+</p>
+<pre>URegistrar::RegisterClass(CMyCustomListBox::classID,
+        (ClassCreatorFunc) CMyCustomListBox::CreateFromStream);</pre>
+<p>
+(A convenient place to do this is in our application object's constructor method,<br>
+CListApp::CListApp.) Later, when we use our template to create a new object --
+</p>
+<pre>LWindow::CreateWindow(CustomList_PPob, this);</pre>
+<p>
+-- PowerPlant's reanimator will recognize the tag and will call the specified creator<br>
+method, CMyCustomListBox::CreateFromStream, to create an instance of our class. We<br>
+define the creator method as follows:
+</p>
+<pre>CMyCustomListBox* CMyCustomListBox::CreateFromStream (LStream
+*inStream)
+    {
+        return (new CMyCustomListBox(inStream));
+    }</pre>
+<p>
+This simply passes along the parameter it receives, inStream, to the class constructor<br>
+method, CMyCustomListBox::CMyCustomListBox. This method in turn calls the<br>
+superclass constructor method, CCustomListBox::CCustomListBox, and then adds some<br>
+further initialization of its own:
+</p>
+<pre>CMyCustomListBox::CMyCustomListBox(LStream *inStream) :
+        CCustomListBox(inStream)
+{
+     // Additional initialization for class CMyCustomListBox
+    ...
+}</pre>
+<p>
+The extra initialization code calls the Macintosh List Manager to add cells to the list<br>
+and initializes the contents of each cell. In some cases (though not in this example), it<br>
+might need to read in additional resource data. This is also the ideal place to initialize<br>
+the new object's member variables.
+</p>
+<p>
+<b>CUSTOMIZING THE LIST DEFINITION PROCEDURE</b><br>
+The List Manager calls a<i>list definition procedure</i> to display each cell of a list on the<br>
+screen (see<i>Inside Macintosh: More Macintosh Toolbox,</i> Chapter 4). The procedure is<br>
+supplied as a code resource of type 'LDEF'. In our case, we want to keep the display code<br>
+inside the application, so that we can define it as a method of our custom subclass.<br>
+Figure 4 illustrates our scheme for accomplishing this.
+</p>
+<p>
+<img src="img/135.gif" width="357 px"></img>
+</p>
+<p>
+<b>Figure 4. </b>Customizing the list definition procedure
+</p>
+<p>
+The LDEF that we supply to the List Manager is just a stub that calls the real one<br>
+defined in our application. We use the refCon field of the list record to hold a "callback<br>
+pointer" to the real definition procedure; the userHandle field holds a pointer back to<br>
+the list object. The initialization method CCustomListBox::init sets all this up:
+</p>
+<pre>if (callerLDEFUPP == NULL)
+    // Create UPP for LDEF callback.
+    callerLDEFUPP = NewListDefProc(LDefProc);
+
+// Put callback address in refCon.
+(*mMacListH)-&gt;refCon = (long) callerLDEFUPP;
+
+// Keep a pointer to self.
+(*mMacListH)-&gt;userHandle = (Handle) this;</pre>
+<p>
+mMacListH is a member variable of LListBox containing a handle to the list record.<br>
+First we create a universal procedure pointer (UPP) to our callback function,<br>
+LDefProc, and store it in the list record's refCon field; then we save a pointer to the<br>
+list object itself ("this") in the userHandle field.&nbsp;&nbsp;&nbsp;Finally, we load the stub LDEF from<br>
+the resource file, save its handle in the listDefProc field of the list record, and make it<br>
+unpurgeable from the heap.
+</p>
+<p>
+Listing 2 shows the code of our callback function and the subsidiary methods it calls.<br>
+The callback function, LDefProc, sets up the A5 world, looks in the list's data for the<br>
+contents of the cell to be drawn, and calls the list object's member function<br>
+DrawElement to draw it. DrawElement clears the cell's rectangle to prepare for<br>
+drawing, makes sure that the cell's contents aren't empty, and calls another member<br>
+function, DrawElementSelf, to do the actual drawing. Then DrawElement checks its<br>
+lSelect parameter to see whether to highlight the cell and, if so, inverts the cell's<br>
+rectangle.
+</p>
+<p>
+<b>Listing 2. </b>Custom list definition procedure for CCustomListBox
+</p>
+<pre>static pascal void LDefProc (short lMessage, Boolean lSelect,
+                             Rect *lRect, Cell lCell,
+                             unsigned short lDataOffset,
+                             unsigned short lDataLen,
+                             ListHandle lHandle)
+// Custom list definition procedure for CCustomListBox.
+// Called by the LDEF stub; returns control back to class method
+// DrawElement to do the actual drawing.
+{
+    // Ignore init and dispose messages.
+    if ((lMessage == lInitMsg) || (lMessage == lCloseMsg))
+        return;
+
+    // Set up application's A5 so that we can access global
+    // variables.
+    long savedA5 = ::SetCurrentA5();
+
+    // Get pointer to list object from userHandle field of list
+    // record.
+    CCustomListBox *self =
+        (CCustomListBox*) (*lHandle)-&gt;userHandle;
+
+    // Get handle to cell data.
+    Handle h = (*self-&gt;mMacListH)-&gt;cells;
+    char saveState = ::HGetState(h);
+    ::HLock(h);
+
+    // Find and draw cell contents.
+    void *lElement = (void*) (*h + lDataOffset);
+    self-&gt;DrawElement(lMessage, lSelect, lRect, lElement, lDataLen);
+
+    // Restore previous handle state and A5.
+    ::HSetState(h, saveState);
+    ::SetA5(savedA5);
+}
+
+void CCustomListBox::DrawElement (const short lMessage,
+                                  const Boolean lSelect,
+                                  const Rect *lRect,
+                                  const short lDataLen)
+// Member function for responding to LDEF calls.
+// Calls DrawElementSelf to draw a list element.
+{
+    switch (lMessage) {
+
+        case lDrawMsg:
+            ::EraseRect(lRect);
+            if (lDataLen == 0)
+                break;
+            DrawElementSelf(lRect, lElement, lDataLen);
+            if (!lSelect)
+                break;
+        case lHiliteMsg:
+            ::InvertRect(lRect);
+            break;
+    }
+}
+
+void CCustomListBox::DrawElementSelf (const Rect *lRect,
+                                      const void *lElement,
+                                      const short lDataLen)
+// Draw contents of a single list element on the screen.
+// Default version just draws text; override for other types of data.
+{
+    ::MoveTo(lRect-&gt;left + 2, lRect-&gt;top + 9);
+    ::DrawText(lElement, 0, lDataLen);
+}</pre>
+<p>
+The default version of DrawElementSelf, defined in our CCustomListBox class, just<br>
+draws a simple piece of text for the contents of a cell. More specialized subclasses,<br>
+such as CMyCustomListBox, can override this method to draw other types of cell<br>
+contents or to display them in different ways. (In unusual cases, a subclass might want<br>
+to override the calling method, DrawElement -- to redefine the way highlighting is<br>
+done, for example.) Both DrawElement and DrawElementSelf are defined as virtual<br>
+methods, ensuring that all calls are directed to the proper version for a particular<br>
+class of list.&nbsp;&nbsp;&nbsp;This allows our application to support list boxes of many different kinds<br>
+simultaneously, with each going through the same general LDEF, but ultimately calling<br>
+its own specialized version of the drawing method.
+</p>
+<p>
+As an example, Listing 3 shows the DrawElementSelf method for our class<br>
+CMyCustomListBox.&nbsp;&nbsp;&nbsp;Each cell of the list displays both a small icon and a text label, as<br>
+we saw earlier in Figure 3. The cell data in the List Manager's list record structure<br>
+consists of the icon's resource ID (resource type 'SICN') and a Pascal-format string<br>
+specifying the text:
+</p>
+<pre>typedef struct {
+    short   iconID;
+    Str255  name;
+} MyCustomDataRec, *MyCustomDataRecPtr;</pre>
+<p>
+The DrawElementSelf method calculates a 16-by-16-pixel rectangle for the icon,<br>
+plots it with CopyBits, and then draws the text. There's no need to override the<br>
+DrawElement method, since the standard form of highlighting is all we need.
+</p>
+<h2>HIERARCHICAL LISTS</h2>
+<p>
+Our next example is a hierarchical "twist-down" list like those in Martin Minow's<br>
+Issue 18 article.&nbsp;&nbsp;&nbsp;Our version lacks a few of the more advanced features of Martin's<br>
+-- for instance, it can't accommodate script systems like Hebrew and Arabic by<br>
+displaying its twist-down buttons on the right instead of the left -- but it's essentially<br>
+similar. The important implementation difference is that a sublist doesn't have to be<br>
+present in memory before it's displayed: the contents are fetched when the sublist is<br>
+expanded.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 3. </b>Drawing method for CMyCustomListBox
+</p>
+<pre>void CMyCustomListBox::DrawElementSelf (const Rect *lRect,
+                                        const void *lElement,
+                                        const short lDataLen)
+{
+    Rect                sicnBox;
+    MyCustomDataRecPtr  cellData = (MyCustomDataRecPtr) lElement;
+
+    sicnBox.left = lRect-&gt;left + 3;
+    sicnBox.top  = lRect-&gt;top - 1;
+    sicnBox.right  = sicnBox.left + 16;
+    sicnBox.bottom = sicnBox.top + 16;
+
+    Handle h = ::GetResource('SICN', cellData-&gt;iconID);
+    if (h != NULL) {
+        char saveState = ::HGetState(h);
+        ::HLock(h);
+
+        BitMap srcBits = { *h, 2,             // baseAddr, rowBytes
+                           {0, 0, 16, 16} };  // bounds
+        GrafPtr port;
+        ::GetPort(&amp;port);
+        ::CopyBits(&amp;srcBits, &amp;(*port).portBits, &amp;srcBits.bounds,
+                   &amp;sicnBox, srcCopy, NULL);
+
+        ::HSetState(h, saveState);
+    }
+    ::MoveTo(lRect-&gt;left + 24, lRect-&gt;top + 10);
+    ::DrawString(cellData-&gt;name);
+}</pre>
+<p>
+Figure 5 shows the basic data structure representing a twist-down list. Each cell has<br>
+an indentation level and a flag byte, followed by a variable-length field holding the<br>
+cell's data. The kHasSubList flag in the flag byte tells whether the cell has a sublist<br>
+associated with it; if so, the kIsOpened flag indicates whether the sublist is currently<br>
+open (expanded) or closed (collapsed). Cells with a sublist will be drawn with a<br>
+triangular twist-down button pointing to the right if the sublist is currently closed,<br>
+or down if it's open.
+</p>
+<p>
+To expand or collapse a cell's sublist when the user clicks the triangular button, we<br>
+override the list's ClickSelf method (inherited from the built-in PowerPlant class<br>
+LListBox). Expanding a cell adds new cells to the list following it, with an indentation<br>
+level that's 1 greater than its own. Collapsing a cell scans forward through the list and<br>
+removes all immediately succeeding cells with higher indentation levels. The detailed<br>
+code is too involved to show here, but if you're interested, you can find it on the CD in<br>
+the file CTwistDownListBox.cp.
+</p>
+<p>
+<img src="img/136.gif" width="420 px"></img>
+</p>
+<p>
+<b>Figure 5. </b>Structure of a hierarchical list
+</p>
+<p>
+Listing 4 shows the redefined version of the DrawElementSelf method, inherited from<br>
+CCustomListBox. First we check the cell's flags to see if it has a sublist; if so, we draw<br>
+the triangular button in the appropriate form, depending on whether the sublist is<br>
+open, closed, or in transition.&nbsp;&nbsp;&nbsp;The actual drawing of the cell's contents is factored out<br>
+into a separate method, DrawTwistedElement: this allows subclasses to override just<br>
+the drawing routine itself, without having to duplicate the logic for drawing the<br>
+triangle as well.
+</p>
+<p>
+<b>A SIMPLE EXAMPLE</b><br>
+The class CMyHierListBox is a subclass of CTwistDownListBox, strictly for<br>
+demonstration purposes. It isn't a particularly realistic example, but it does show how<br>
+to specialize CTwistDownListBox to implement a simple hierarchical list. Each level of<br>
+the hierarchy just consists of the words "One" through "Five" (see Figure 6). Every<br>
+cell automatically has a sublist; you can keep opening sublists as long as you like, to<br>
+unlimited depth (or until you run out of memory, anyway!).
+</p>
+<p>
+<img src="img/137.gif" width="291 px"></img>
+</p>
+<p>
+<b>Figure 6. </b>A hierarchical list
+</p>
+<p>
+<b>Listing 4. </b>Drawing method for CTwistDownListBox
+</p>
+<pre>void CTwistDownListBox::DrawElementSelf (const Rect *lRect,
+                                         const void *lElement,
+                                         const short lDataLen)
+// Draw a single list cell on the screen.
+// Checks flags and draws triangular button if needed;
+// calls DrawTwistedElement to draw cell contents.
+{
+    TwistDownRecPtr twistElement = (TwistDownRecPtr) lElement;
+
+    if (TestTDFlag(twistElement-&gt;flags, kHasSubList)) {
+        PolyHandle aPoly = NULL;
+        aPoly = TestTDFlag(twistElement-&gt;flags, kIsOpened) ?
+                        sOpenedPoly : sClosedPoly;
+        if (TestTDFlag(twistElement-&gt;flags, kDrawIntermediate))
+            aPoly = sIntermediatePoly;
+        if (aPoly)
+            DrawTriangle(aPoly, TestTDFlag(twistElement-&gt;flags,
+                            kDrawFilled), lRect-&gt;top + 1,
+                            lRect-&gt;left + kTriangleOutsideGap);
+    }
+
+    // Adjust pen position for triangle and indent.
+    ::MoveTo(lRect-&gt;left + triangleWidth + 2 +
+             twistElement-&gt;indent * kIndentOffset, lRect-&gt;top + 10);
+    DrawTwistedElement(lRect, twistElement, lDataLen);
+}
+
+void CTwistDownListBox::DrawTwistedElement
+      (const Rect *lRect, const TwistDownRecPtr twistElement,
+       const short lDataLen)
+// Draw contents of a single list element.
+// Default version just draws text; override for other types of data.
+{
+    ::DrawText(twistElement-&gt;data, 0, lDataLen - TwistDownRecSize);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The only method CMyHierListBox needs to redefine is ExpandElement (see Listing 5).<br>
+The new version simply adds five new rows of dummy data following the cell being<br>
+expanded. We don't have to override any other methods, since the superclass,<br>
+CTwistDownListBox, already implements text elements by default. (For simplicity and<br>
+clarity, we've simply hard-coded the words "One" through "Five" directly into the<br>
+program itself; in real life, we would want to define them as resources to make<br>
+modification and localization easier.)
+</p>
+<p>
+<b>A MORE INTERESTING EXAMPLE</b><br>
+This example is borrowed directly from Martin Minow's article. CMyDiskListBox is a<br>
+subclass of CTwistDownListBox that displays the folder and file hierarchy on all<br>
+currently mounted disk volumes, with each line preceded by a small icon as in our<br>
+earlier CMyCustomListBox example (see Figure 7).
+</p>
+<p>
+<b>Listing 5. </b>Cell expansion method for CMyHierListBox
+</p>
+<pre>static StringPtr myElements[] = {
+                     "\pOne", "\pTwo", "\pThree", "\pFour", "\pFive"
+                 };
+
+void CMyHierListBox::ExpandElement (const Cell theCell)
+{
+    short             num = sizeof(myElements) / sizeof(StringPtr),
+                      i,
+                      indent = 0;
+    Cell              cell = {0, 0};
+    Byte              buffer[100];
+   
+    TwistDownRecPtr thisTwist =
+       (TwistDownRecPtr) GetCellPtr(theCell);
+    TwistDownRecPtr anElement = (TwistDownRecPtr) buffer;
+
+    if (thisTwist)
+        indent = thisTwist-&gt;indent + 1;
+
+    ::LAddRow(num, theCell.v + 1, mMacListH);
+
+    for (cell.v = theCell.v + 1, i = 0; i &lt; num; i++, cell.v++) {
+        anElement-&gt;indent = indent;
+        anElement-&gt;flags = 0x01; // has sublist
+        ::memcpy(anElement-&gt;data, myElements[i] + 1,
+             *myElements[i]);
+        ::LSetCell(anElement,
+             sizeof(TwistDownRec) - 2 + *myElements[i], cell,
+             mMacListH);
+    }
+}</pre>
+<p>
+<img src="img/138.gif" width="324 px"></img>
+</p>
+<p>
+<b>Figure 7. </b>A disk list
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The following structure contains the data for each cell of the list:
+</p>
+<pre>typedef struct {
+    TwistDownHeader hd;
+    long            refNum;
+    char            vRefNum;
+    Byte            tag;
+    char            name[2];
+} DiskListRec, *DiskListPtr;</pre>
+<p>
+The data structure in the first field, TwistDownHeader, is inherited from the<br>
+superclass (CTwistDownListBox) and contains the indentation level and the flag byte.<br>
+Next come the file and volume reference numbers. The tag byte identifies this item as<br>
+either a file, a folder, or a volume.&nbsp;&nbsp;&nbsp;The name field actually has variable length: when<br>
+drawing the cell's contents, we know the total length of the cell data, so we can deduce<br>
+the true length of the name.
+</p>
+<p>
+<b>&nbsp;Space is at a premium </b>when dealing with the List Manager, because of its 32K<br>
+limit on the total size of a list record and its associated cell data. That's why we've<br>
+saved a little space in the definition of the DiskListRec structure by making the<br>
+vRefNum field a character instead of a short integer. This sacrifices a bit of speed<br>
+when retrieving or storing the volume reference number, but avoids wasting an extra<br>
+byte for word alignment. For the same reason, we also specify 68000 alignment in our<br>
+Power Macintosh implementation.*
+</p>
+<p>
+Because CMyDiskListBox draws more than just text in each cell of the list, it must<br>
+override the DrawTwistedElement method inherited from CTwistDownListBox. Listing<br>
+6 shows the new version, which reads in the appropriate small icon from the system<br>
+resource file, calls a subsidiary function, PlotSICN, to draw it, and then draws the text<br>
+to go with it.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+We also need to override the ExpandElement operation to look up the contents of a<br>
+folder, using the file system calls PBHGetVInfo and PBGetCatInfo, and insert them in<br>
+the list. (Our constructor method calls this same function to initialize a newly created<br>
+list to the set of currently mounted volumes.) You'll find the code for this operation in<br>
+the file CMyDiskListBox.cp on the CD. The new ExpandElement method doesn't allocate<br>
+memory or do anything else that needs to be cleaned up later, so there's no need to<br>
+override its companion method, CollapseElement.
+</p>
+<p>
+There's a change in the resource file, too: instead of just using a class alias, as we did<br>
+for our other example classes, we define our own resource template for<br>
+CMyDiskListBox.
+</p>
+<pre>case DiskListBox:
+    key literal longint = 'dlst';
+    PP_ListBoxData;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+This definition is placed in a separate<i>template file,</i> which must be defined in the tool<br>
+server script and exported, so that it will be included with PowerPlant's own<br>
+templates. We can then refer to our template by name when defining the 'PPob'<br>
+resource in our main resource description (.r) file:
+</p>
+<pre>ObjectData {DiskListBox {
+    ...
+}}</pre>
+<p>
+In this case, defining our own template yields the same results as using a class alias,<br>
+so it's just a matter of taste. But if you want flexibility, defining your own templates<br>
+is the way to go: you can add or change existing resource definitions to suit your own<br>
+classes. Just look at the various LPane subclass implementations in PowerPlant to see<br>
+how easy it is!
+</p>
+<p>
+<b>Listing 6. </b>Drawing method for CMyDiskListBox
+</p>
+<pre>const short sicnID[] = {        // system icon IDs
+    -3995,  //  tag_disk
+    -3999,  //  tag_folder
+    -4000       //  tag_file
+};
+
+const Size DiskListRecSize = sizeof(DiskListRec) - 2;
+                               // don't count the name field
+
+void CMyDiskListBox::DrawTwistedElement
+         (const Rect *lRect, const TwistDownRecPtr lElement,
+          const short lDataLen)
+// Draw contents of a single list element, including icon.
+{
+    Point   pen;
+
+    ::GetPen(&amp;pen);
+
+    Handle h =
+        ::GetResource('SICN', sicnID[DiskListPtr(lElement)-&gt;tag]);
+    if (h != NULL) {
+        Rect box = {lRect-&gt;top - 2, pen.h, lRect-&gt;top + 16 - 2,
+                    pen.h + 16};
+        ::PlotSICN(&amp;box, h);
+    }
+    ::Move(21, 0);
+    ::DrawText(DisListPtr(lElement)-&gt;name, 0,
+                    lDataLen - DiskListRecSize);
+}
+
+static void PlotSICN (Rect *rect, Handle sicnList)
+// Draw the icon for a list element.
+{
+    GrafPtr port;
+    char saveState = ::HGetState(sicnList);
+    ::HLock(sicnList);
+
+    BitMap srcBits = { *sicnList, 2,          // baseAddr, rowBytes
+                       {0, 0, 16, 16} };      // bounds
+    ::GetPort(&amp;port);
+    ::CopyBits(&amp;srcBits, &amp;(*port).portBits, &amp;srcBits.bounds, rect,
+                    srcCopy, NULL);
+
+    ::HSetState(sicnList, saveState);
+}</pre>
+<h2>YOU TAKE IT FROM HERE</h2>
+<p>
+I hope you can see by now that the object-oriented approach makes it easy to define<br>
+new kinds of hierarchical lists for your applications. The examples in this article are<br>
+just a starting point: the rest is up to you. 
+</p>
+<p>
+If you're a true object aficionado, you'll want to make your list elements full-fledged<br>
+objects instead of just simple data structures. You could modify our disk list example<br>
+to display its icons in color instead of black and white, or to use each application or<br>
+document's actual icon instead of the generic ones from the system resource file. Or<br>
+how about letting the user drag and drop files from one folder to another within the list<br>
+box? (PowerPlant provides predefined classes to support drag and drop, so building it<br>
+into your application is easier than you might think. I know, because I've done it.)
+</p>
+<p>
+The possibilities are limited only by your imagination. So get to work and see what<i>you</i><br>
+can dream up!
+</p>
+<p>
+<b>JAN BRUYNDONCKX </b>(AppleLink WAVE.BEL) works at Wave Research in Belgium,<br>
+trying to create the killer application that will revolutionize software distribution<br>
+across networks. When not peering at TMON windows and telling everyone how<br>
+"interesting" they look, Jan can be found jumping off cliffs with a parasail. (If<br>
+parasails had a real operating system, they wouldn't crash into trees -- but they'd<br>
+also be less fun!) Jan's idea of a holiday is hiking through the Sahara Desert or<br>
+climbing mountains in Nepal. His favorite conversation topic at parties is the<br>
+similarities between classical opera and hard rock.*
+</p>
+<p>
+<b>Thanks </b>to our technical reviewers Nitin Ganatra, Martin Minow, Avi Rappaport, and<br>
+Jeroen Schalk. *
+</p>
+</body>
+</html>

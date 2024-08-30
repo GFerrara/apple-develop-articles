@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 42 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 95 - Implementing Shared Internet Preferences With Internet Config</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Implementing Shared Internet Preferences With<br>
+Internet Config</h1>
+<h2>Quinn "the Eskimo !"</h2>
+<p>
+<img src="img/210.gif" width="216 px"></img>
+</p>
+<p>
+<i>Having to enter the same Internet preferences, such as e-mail address and news</i><br>
+<i>server, into multiple applications is bothersome not just for users, but also for</i><br>
+<i>developers who must create the user interface associated with them. The Internet</i><br>
+<i>Configuration System (IC) provides a simple user application for setting preferences,</i><br>
+<i>and an API for getting the preferences from a database that's shared by all applications.</i><br>
+<i>It's easy to add IC support to your application and take advantage of the flexibility</i><br>
+<i>gained by IC's use of the Component Manager -- a valuable technique in itself.</i>
+</p>
+<p>
+Preferences, like nuclear weapons, proliferate. At times it seems that the major<br>
+developers are engaged in a "preferences race," where each one tries to gain the upper<br>
+hand by adding a dozen new preferences in each new release. Like the arms race, the<br>
+preferences race is obviously counterproductive, even dangerous, and yet no one<br>
+knows how to stop it.
+</p>
+<p>
+Some of the worst offenders are Internet-related applications. How many times have<br>
+you had to enter your e-mail address into a configuration window? And what about<br>
+your preferred type and creator for JPEG files? Doesn't this just seem like a waste of<br>
+your time? The Internet Configuration System, or Internet Config for short, spares<br>
+everyone this trouble. And it spares developers the complexities of implementing these<br>
+preferences in each application.
+</p>
+<p>
+This article takes you inside Internet Config. Take a good look at the design: IC<br>
+implements its shared library as a component, and uses switch glue to provide a<br>
+default implementation if the component is absent. Using the Component Manager to<br>
+implement shared libraries is a helpful technique not just for IC, but for other APIs as<br>
+well. Note too that Internet Config is useful for more than its name implies. For<br>
+example, the extension-to-file-type mapping database is useful for any program that<br>
+deals with "foreign" file systems. Indeed, IC is a perfectly valid mechanism for storing<br>
+private preferences that have nothing to do with the Internet.
+</p>
+<p>
+Although IC is intended as an abstract API, all its source code is placed in the public<br>
+domain -- a condition of its development. This lets me illustrate the text with snippets<br>
+from the actual implementation and gives you full access to the source code. Both the IC<br>
+user's kit and the IC developer's kit, which contain code and documentation, are<br>
+included on this issue's CD. Note that Internet Config was developed independently and<br>
+is not supported by Apple.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>The latest versions of the kits</b> are always available from the ftp sites<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ftp://ftp.share.com/pub/internet-configuration/ and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ftp://redback.cs.uwa.edu.au/Others/Quinn/Config/. In addition, the user kit is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;available from UMich and Info-Mac mirrors around the world.*
+</p>
+<p>
+As with any new piece of software intended to be widely adopted, Internet Config needs<br>
+developer support in order to be successful. I hope this article raises the awareness of<br>
+IC in the developer community and prompts some of you to support it.
+</p>
+<h2>INTERNET CONFIG FROM THE OUTSIDE</h2>
+<p>
+Before going inside Internet Config, it's important to know how the system works as a<br>
+whole. The best way to do this is to get a copy of the Internet Config application and run<br>
+it (there's a copy on this issue's CD), but if you're too relaxed to do that right now,<br>
+keep reading for a description of the basics. We'll look at IC first from the user's<br>
+perspective and then from the programmer's point of view.
+</p>
+<p>
+<b>THE USER'S PERSPECTIVE</b>
+</p>
+<p>
+To the user, Internet Config is a proper Macintosh application. It supports the standard<br>
+menu commands New, Open, Save, Save As, and so on. The only difference is that the<br>
+files it operates on are preferences files. Figure 1 shows Internet Config and its<br>
+related files.
+</p>
+<p>
+<img src="img/211.gif" width="288 px"></img>
+</p>
+<p>
+<b>Figure 1. Internet Config and its related files -- what the user sees</b>
+</p>
+<p>
+The first time the Internet Config application is run, it installs the Internet Config<br>
+Extension into the Extensions folder and creates a new, blank Internet Preferences file<br>
+in the Preferences folder. It then displays the main window, shown in Figure 2, which<br>
+allows the user to edit the preferences.
+</p>
+<p>
+<img src="img/212.gif" width="405 px"></img>
+</p>
+<p>
+<b>Figure 2. The Internet Config application's main window</b>
+</p>
+<p>
+Each of the buttons in the main window displays another window containing a group of<br>
+related preferences. For example, the Personal button brings up the window shown in<br>
+Figure 3. The user enters preferences into each of these windows and then quits and<br>
+saves the preferences.
+</p>
+<p>
+<img src="img/213.gif" width="540 px"></img>
+</p>
+<p>
+<b>Figure 3. The Personal preferences window</b>
+</p>
+<p>
+From this point on, the user never has to enter those preferences again. Any IC-aware<br>
+program the user runs simply accesses the preferred settings without requiring them<br>
+to be reentered. This makes the user very happy (we presume).
+</p>
+<p>
+Users can even run IC-aware applications "out of the box" -- they don't have to run<br>
+Internet Config first. If the Internet Config Extension isn't installed, IC-aware client<br>
+applications access the Internet Preferences file directly instead of through the<br>
+extension (as shown by the black arrows in Figure 1). The way this is done is<br>
+described later in the section "The Inner Workings of an API Routine."
+</p>
+<p>
+<b>THE PROGRAMMER'S PERSPECTIVE</b>
+</p>
+<p>
+To programmers, Internet Config consists of a set of interface files that define the API,<br>
+and a library to be statically linked to their programs. IC can be used from all of the<br>
+common Macintosh development environments: MPW, THINK, and Metrowerks; Pascal<br>
+and C; and 680x0 and PowerPC. The examples in this article, like IC itself, were<br>
+written in THINK Pascal.
+</p>
+<p>
+<b>What's in an IC preference. </b>Before getting to the details of the API, you need to<br>
+know more about IC preferences. In IC, a preference is an item of information that's<br>
+useful to the client application program. Each preference has three components: its<br>
+key, its data, and its attributes.
+</p>
+<ul>
+<li>The key is a Str255 that identifies the preference. You can use the key to<br>
+fetch the data and attributes.</li>
+<li>The data is an untyped sequence of bytes that represents the value of the<br>
+preference. The data's structure is determined by the client program. The<br>
+structures of the common preferences are defined in the IC programming<br>
+documentation.</li>
+<li>The attributes represent information about the preference that's<br>
+supplementary to the preference data, such as whether the preference is<br>
+read/write or read-only.</li>
+</ul>
+<p>
+In the e-mail address preference, for example, the key is the string "Email". If you<br>
+pass this string into IC, it returns the preference's data and attributes. By convention,<br>
+the data for the key "Email" is interpreted as a Pascal string containing the user's<br>
+preferred e-mail address.
+</p>
+<p>
+<b>IC's core API routines.</b> Internet Config has the following core API routines.<br>
+Although the API has a lot more depth, these four routines are all you need to program<br>
+with IC.
+</p>
+<pre>FUNCTION ICStart (VAR inst: ICInstance; creator: OSType): ICError;
+FUNCTION ICStop (inst: ICInstance): ICError;
+FUNCTION ICFindConfigFile (inst: ICInstance; count: Integer;
+    folders: ICDirSpecArrayPtr): ICError;
+FUNCTION ICGetPref (inst: ICInstance; key: Str255; VAR attr: ICAttr; 
+buf: Ptr; VAR size: LongInt): ICError;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The ICStart routine is always called first. Here you pass in your application's creator<br>
+code so that future versions of IC can support application-dependent preferences.<br>
+ICStart returns a value of type ICInstance; this is an opaque type that must be passed to<br>
+every other API call. ICStop is called at the termination of your application to dispose<br>
+of the ICInstance you obtained with ICStart.
+</p>
+<p>
+ICFindConfigFile is called immediately after ICStart. IC uses this routine to support<br>
+applications with double-clickable user configuration files, a common phenomenon<br>
+among Internet applications. If you need to support these files, see the IC programming<br>
+documentation; otherwise, just pass in 0 for the count parameter and nil for the<br>
+folders parameter.
+</p>
+<p>
+The ICGetPref routine takes a preference key and returns the preference's attributes<br>
+in attr and its data in the buffer pointed to by buf. The maximum size of the buffer is<br>
+passed in as size, which is adjusted to the actual number of bytes of preference data.
+</p>
+<p>
+<b>The simplest example.</b> The program in Listing 1 demonstrates the simplest<br>
+possible use of IC technology. All it does is write the user's e-mail address to the<br>
+standard output. This program calls the four core API routines: it begins by calling<br>
+ICStart and terminates with an ICStop call; it calls ICFindConfigFile with the default<br>
+parameters and uses ICGetPref to fetch the value of a specific preference -- in this<br>
+case the user's e-mail address.
+</p>
+<p>
+<b>Listing 1. </b>The simplest IC-aware program
+</p>
+<pre>PROGRAM ICEmailAddress;
+   { The simplest IC-aware program. It simply outputs the user's }
+   { preferred e-mail address. }
+
+   USES
+      ICTypes, ICAPI, ICKeys; { standard IC interfaces }
+
+   VAR
+      instance:   ICInstance; { opaque reference to IC session }
+      str:         Str255;    { buffer to read e-mail address into }
+      str_size:   LongInt;    { size of above buffer }
+      junk:         ICError;  { place to throw away error results }
+      junk_attr:   ICAttr;    { place to throw away attributes }
+BEGIN
+   { Start IC. }
+   IF ICStart(instance, '????') = noErr THEN BEGIN
+      { Specify a database, in this case the default one. }
+      IF ICFindConfigFile(instance, 0, NIL) = noErr THEN BEGIN
+         { Read the real name preferences. }
+         str_size := sizeof(str);{ 256 bytes -- a similar construct }
+                                 { wouldn't work in C }
+         IF ICGetPref(instance, kICEmail, junk_attr, @str, str_size)
+                  = noErr THEN BEGIN
+            writeln(str);
+         END;   { IF }
+      END;   { IF }
+      { Shut down IC. }
+      junk := ICStop(instance);
+   END;   { IF }
+END.   { ICEmailAddress }</pre>
+<p class="spacer">&nbsp;</p>
+<h2>INSIDE INTERNET CONFIG</h2>
+<p>
+The IC API just described is really all you need to know to make your program<br>
+IC-aware; now we'll get into the guts of Internet Config to see how it achieves its<br>
+magic. We'll look first at its underlying design and then at how its internal structures<br>
+work together.
+</p>
+<p>
+<b>THE IC DESIGN: A SIMPLE, EXPANDABLE SYSTEM</b>
+</p>
+<p>
+The design requirements for Internet Config evolved during early discussions of what<br>
+an Internet configuration system might look like (see "How Internet Config Came to<br>
+Be"). These requirements guided the development process and form the basic structure<br>
+of Internet Config -- an efficient, expandable system that's easy to use and easy to<br>
+support.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HOW INTERNET CONFIG CAME TO BE</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Designing Internet Config was a complicated business. The process began in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;March 1994 with a discussion on the Usenet newsgroup comp.sys.mac.comm.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Many people thought simplifying Internet configuration was a good idea, but<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;few agreed how best to achieve the goal, or indeed what the goal was.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;We set up a mailing list to swap ideas, and discussion continued apace for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;weeks. One of the biggest issues was the disparity between the problems we<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wanted to solve and the ones we could solve given our limited resources.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;After a week or two of thrashing out the requirements, Peter N. Lewis, Marcus<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Jager, and I proposed the first API. A few weeks later we shipped the first<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;implementation of the Internet Config Extension.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The problem IC solves is actually quite simple, so it didn't take long to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;implement the design. As usual, however, it took some time to go from a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;working implementation to a final product -- we shipped Internet Config 1.0<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;in December 1994. Though we've made minor additions and changes, the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;initial design survives to this day.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+Internet Config can accept sweeping changes while maintaining API compatibility, and<br>
+it allows for patches to support future extensions and bug fixes. We couldn't achieve<br>
+such expandability with a simple shared preferences implementation, and the<br>
+consequent loss of simplicity caused a lot of debate during the development process.
+</p>
+<p>
+The need for simplicity was implicit from the beginning. To add support for Internet<br>
+Config, application developers have to revise their code. Developers tend to be lazy --<br>
+hey, I mean that as a compliment -- and generally prefer simple systems to<br>
+complicated ones. Developer support is critical for success, so we kept the system<br>
+simple. Still, it isn't so simple as to compromise the need for expandability.
+</p>
+<p>
+As we've already seen, IC has several other interesting design features. The API<br>
+supports applications with double-clickable user configuration files. The Internet<br>
+Config user application accesses all the Internet preferences through the API, and is<br>
+thereby isolated from the implementation details. IC-aware applications work even if<br>
+the Internet Config Extension isn't installed. We even included support for System 6<br>
+(much as we resented it).
+</p>
+<p>
+<b>IC'S INTERNAL STRUCTURES</b>
+</p>
+<p>
+As you can see in Figure 4, the Internet Config application and IC-aware client<br>
+programs have very similar internal structures. In fact, except for a few artifacts<br>
+caused by implementing "safe saving," the Internet Config application uses the<br>
+standard API to modify the Internet Preferences file. The Internet Config component,<br>
+which the user sees as the Internet Config Extension, is basically a shared library of<br>
+routines implemented as a component (see "The IC Component and Shared Libraries on<br>
+the Macintosh").
+</p>
+<p>
+<img src="img/214.gif" width="543 px"></img>
+</p>
+<p>
+<b>Figure 4. Inside the Internet Config entities -- what the programmer</b><br>
+<b>sees</b><br>
+<b></b>
+</p>
+<p>
+<b>THE IC COMPONENT AND SHARED LIBRARIES ON THE MACINTOSH</b>
+</p>
+<p>
+The Internet Config component is essentially a shared library of routines. So why<br>
+implement it as a component? The answer lies in the confused state of shared libraries<br>
+on the Macintosh. 
+</p>
+<p>
+When we started writing IC we knew we'd need a shared library. The problem was not<br>
+that the system didn't have a shared library mechanism, but that it had too many. At<br>
+the time there were four Apple shared library solutions, each with its unique<br>
+drawbacks: the Component Manager&nbsp;&nbsp;wasn't a "real" shared library system; the Apple<br>
+Shared Library Manager (ASLM) had limited availability and lacked PowerPC support<br>
+and developer tools; the Code Fragment Manager (CFM) lacked 680x0 support; and the<br>
+System Object Model (SOM) lacked any availability. 
+</p>
+<p>
+These days life is a little better. ASLM now works on the PowerPC platform, CFM is<br>
+being ported to the 680x0 platform, SOM is imminent, and Apple has issued a clear<br>
+statement of direction on shared libraries, centered on CFM. 
+</p>
+<p>
+But statements of direction don't solve problems -- they just clear up confusion. The<br>
+shared library problem persists. When I was writing this article someone asked me<br>
+for advice about which shared library mechanism to use. My recommendation today is<br>
+the same as at the start of the IC project: use the Component Manager. It's still the only<br>
+solution that has the developer tools, has 680x0 and PowerPC support, and is already<br>
+installed on most users' machines.&nbsp;&nbsp;&nbsp;The switch glue is a common interface that<br>
+applications use to call IC. This glue decides whether the Internet Config component is<br>
+available and, if it is, routes all calls through to it. If the component isn't present, the<br>
+calls are routed through to the link-in implementation, which then does the work.
+</p>
+<p>
+This switching mechanism satisfies two design requirements. It allows the API to be<br>
+patched by replacing or overriding the Internet Config component. It also allows<br>
+IC-aware programs to work even if the component isn't installed; they simply fall<br>
+back to using the link-in implementation.
+</p>
+<h2>THE INNER WORKINGS OF AN API ROUTINE</h2>
+<p>
+Now we'll look more closely at how the Start and GetPref routines are implemented in<br>
+each part of the Internet Config system. We'll trace these two calls from the top level,<br>
+where they're called by the client program, all the way down to the link-in<br>
+implementation, where the real action takes place.
+</p>
+<p>
+&nbsp;&nbsp;This section is quite technical; if you're not interested in the implementation details,<br>
+you might want to just skim through it. Many of the details are provided for<br>
+illustrative purposes only. Take heed!<i> If you write client programs that rely on these</i><br>
+<i>details, they will break in future revisions of IC.</i>The public interface to IC is defined<br>
+in the IC programming documentation.
+</p>
+<p>
+We'll start with the switch glue and proceed through the standard call path. On the way<br>
+we'll examine the component glue, wrapper, and "smarts," and finally, the link-in<br>
+implementation. The path is convoluted but rewards you with both data and code<br>
+abstraction.
+</p>
+<p>
+Start and GetPref appear in each part of the system, and each appearance has a specific<br>
+purpose, as we'll see in a moment. To keep things straight, various instances of the<br>
+same routine are prefixed to denote which part of the system they're in. The prefixes<br>
+are listed in Table 1, which shows the various specifications for the GetPref routine as<br>
+an example. (Note that these specifications vary only in the name's prefix and the type<br>
+of the first parameter. The "R" in the ICR prefix indicates that these routines actually<br>
+use the Resource Manager to modify the preferences; all the other routines are glue.)
+</p>
+<p>
+<img src="img/215.gif" width="600 px"></img>
+</p>
+<p>
+<b>THE SWITCH GLUE</b>
+</p>
+<p>
+The switch glue relies on ICRRecord, the central data structure of IC, shown in Listing<br>
+2. The first field of ICRRecord, instance, is a ComponentInstance, which normally<br>
+holds the connection to the Internet Config component. If the component is installed, the<br>
+instance field holds the connection to it; the rest of the fields are ignored because the<br>
+component has a separate ICRRecord in its global variables. If the component isn't<br>
+installed, the instance field is nil, and the link-in implementation uses the rest of the<br>
+fields to hold the necessary state (as we'll see later).
+</p>
+<p>
+<b>Listing 2. </b>ICRRecord
+</p>
+<pre>TYPE
+   ICRRecord = RECORD
+      { This entire record is completely private to the }
+      { implementation!!! Your code will break if you depend }
+      { on the details here. You have been warned. }
+      instance: ComponentInstance;
+               { nil if no component available; if not nil, }
+               { then rest of record is junk }
+      ...   { other fields to be discussed later }
+      END;
+   ICRRecordPtr = ^ICRRecord;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The switch glue for the application's Start routine, ICStart, is shown in Listing 3. The<br>
+first thing ICStart does is attempt to allocate an ICRRecord; if it succeeds, it then tries<br>
+to open a connection to the component with the component glue routine ICCStart.<br>
+ICCStart either succeeds, setting the internal instance field to the connection to the<br>
+component, or fails and returns an error. If ICCStart returns an error, ICStart falls<br>
+back to using the link-in implementation by calling ICRStart. If ICRStart fails,<br>
+Internet Config fails to start up; ICStart sets inst to nil and&nbsp;&nbsp;returns an error.
+</p>
+<p>
+<b>Listing 3.</b> The switch glue for Start
+</p>
+<pre>FUNCTION ICStart (VAR inst: ICInstance; creator: OSType): ICError;
+   VAR
+      err:   ICError;
+BEGIN
+   inst := NewPtr(sizeof(ICRRecord));
+   err := MemError;
+   IF err = noErr THEN BEGIN
+      err := ICCStart(ICRRecordPtr(inst)^.instance, creator);
+      IF err &lt;&gt; noErr THEN BEGIN
+         err := ICRStart(ICRRecordPtr(inst)^, creator);
+      END;   { IF }
+      IF err &lt;&gt; noErr THEN BEGIN
+         DisposePtr(inst);
+         inst := NIL;
+      END;   { IF }
+   END;   { IF }
+   ICStart := err;
+END;   { ICStart }</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The switch glue for GetPref, and all the other API routines for that matter, is very<br>
+simple. All it does is consult the internal instance field to determine whether ICStart<br>
+successfully connected to the component. If so, it calls through to the component glue<br>
+routine ICCGetPref; otherwise, it calls through to the link-in implementation routine<br>
+ICRGetPref. This is shown in Listing 4.
+</p>
+<p>
+<b>Listing 4. </b>The switch glue for GetPref
+</p>
+<pre>FUNCTION ICGetPref (inst: ICInstance; key: Str255; VAR attr: ICAttr;
+                           buf: Ptr; VAR size: LongInt): ICError;
+BEGIN
+   IF ICRRecordPtr(inst)^.instance &lt;&gt; NIL THEN BEGIN
+      ICGetPref := ICCGetPref(ICRRecordPtr(inst)^.instance,
+                                 key, attr, buf, size);
+   END
+   ELSE BEGIN
+      ICGetPref := ICRGetPref(ICRRecordPtr(inst)^, key, attr, buf,
+                              size);
+   END;   { IF }
+END;   { ICGetPref }</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The switch glue implementations of both Start and GetPref do a lot of casting between<br>
+ICInstance and ICRRecordPtr, because the ICRRecordPtr type describes details of the<br>
+implementation that shouldn't "leak out" to the client's view of IC. The client programs<br>
+know only of ICInstance, which is an opaque type. The explicit casts could have been<br>
+avoided with some preprocessor tricks, but we decided to include them longhand for<br>
+clarity.
+</p>
+<p>
+<b>THE COMPONENT GLUE</b>
+</p>
+<p>
+The component glue calls the Internet Config component. In the component glue for the<br>
+Start routine, shown in Listing 5, Internet Config attempts to connect to the IC<br>
+component by calling the Component Manager routine OpenDefaultComponent.
+</p>
+<p>
+<b>Listing 5. </b>The component glue for Start
+</p>
+<pre>FUNCTION ICCStartComponent (inst: ComponentInstance; creator: OSType):
+
+                           ICError;
+INLINE               { standard Component Manager glue }
+   $2F3C, $04, $0,   { move.l      #$0004_0000,-(sp) }
+   $7000,            { moveq.l   #0,d0 }
+   $A82A;             { _ComponentDispatch }
+
+FUNCTION ICCStart (VAR inst: ComponentInstance; creator: OSType):
+                           ICError;
+   VAR
+      err, junk:   ICError;
+      response:   LongInt;
+BEGIN
+   inst := NIL;
+   IF Gestalt(gestaltComponentMgr, response) = noErr THEN BEGIN
+      inst := OpenDefaultComponent(internetConfigurationComponentType,
+                   internetConfigurationComponentSubType);
+   END;   { IF }
+   IF inst = NIL THEN BEGIN
+      err := badComponentInstance;
+   END
+   ELSE BEGIN
+      err := ICCStartComponent(inst, creator);
+      IF err &lt;&gt; noErr THEN BEGIN
+         junk := CloseComponent(inst);
+         inst := NIL;
+      END;   { IF }
+   END;   { IF }
+   ICCStart := err;
+END;   { ICCStart }</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+If the Internet Config component isn't installed or can't be opened for any other reason,<br>
+the routine sets inst to nil and fails with a badComponentInstance error. Remember<br>
+that the calling code, ICStart, will notice this error code and fall back to the link-in<br>
+implementation, as shown in Listing 4.
+</p>
+<p>
+If the routine successfully opens a connection to the Internet Config component, it calls<br>
+the ICCStartComponent routine, which is standard Component Manager glue that calls<br>
+the component's initialization routine.
+</p>
+<p>
+The component glue version of GetPref is a lot simpler. It's just a standard piece of<br>
+Component Manager glue, as shown in Listing 6. The inline instructions of the<br>
+component glue for GetPref translate into the piece of assembly code shown in Listing<br>
+7.
+</p>
+<p>
+<b>Listing 6. </b>The component glue for GetPref
+</p>
+<pre>FUNCTION ICCGetPref (inst: ComponentInstance; key: Str255;
+                           VAR attr: ICAttr; buf: Ptr;
+                           VAR size: LongInt): ICError;
+INLINE               { standard Component Manager glue }
+   $2F3C, $10, $6,   { move.l      #$0010_0006,-(sp) }
+   $7000,            { moveq.l   #0,d0 }
+   $A82A;             { _ComponentDispatch }</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 7. </b>Disassembling the component glue
+</p>
+<pre>move.l   #$0010_0006,-(sp); push the routine selector (6) and the
+                           ; number of bytes of parameters (16)
+moveq.l   #0,d0            ; _ComponentDispatch routine selector to
+                           ; call a component function
+_ComponentDispatch         ; call the component through the Component
+                           ; Manager</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+You can read more about the Component Manager and its dispatch mechanism in <i>Inside</i><br>
+<i>Macintosh: More Macintosh Toolbox</i>.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Calling components from PowerPC code</b> is not described in this article<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;or in<i>Inside Macintosh: More Macintosh Toolbox. </i>You can find out how to do this<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;by reading the Macintosh Technical Note "Component Manager Version 3.0"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(QT 5).*
+</p>
+<p>
+<b>THE COMPONENT WRAPPER</b>
+</p>
+<p>
+Now let's look inside the Internet Config component at the component wrapper (Listing<br>
+8). The component wrapper's basic function is to dispatch all of the IC component's<br>
+routines based on the selector in params.what; it uses a big CASE statement to<br>
+determine the routine's address and then calls the routine with the Component Manager<br>
+function CallComponentFunctionWithStorage. The Component Manager is smart enough<br>
+to sort out the parameters at this stage.
+</p>
+<p>
+<b>Listing 8. </b>Sections of IC's component wrapper
+</p>
+<pre>FUNCTION Main (VAR params: ComponentParameters; storage: Handle):
+                           ComponentResult;
+{ Inside Macintosh has params as a value parameter when it should be }
+{ a VAR parameter. Don't make this mistake. }
+   VAR
+      proc:   ProcPtr;
+      s:      SignedByte;
+BEGIN
+   proc := NIL;
+   CASE params.what OF
+      { Dispatch the routines required by the Component Manager. }
+      ...   { routines omitted for brevity }
+      { Dispatch the routines that make up the IC API. }
+      kICCStart:
+         proc := @ICCIStart;
+      kICCGetPref:
+         proc := @ICCIGetPref;
+      ...   { remaining IC API routines omitted for brevity }
+      OTHERWISE
+         Main := badComponentSelector;
+   END;   { case }
+   IF proc &lt;&gt; NIL THEN BEGIN
+      IF storage &lt;&gt; NIL THEN BEGIN
+         s := HGetState(storage);
+         HLock(storage);
+      END;   { IF }
+      Main := CallComponentFunctionWithStorage(storage, params, proc);
+      IF (storage &lt;&gt; NIL) AND
+            (params.what &lt;&gt; kComponentCloseSelect) THEN BEGIN
+         HSetState(storage, s);
+      END;   { IF }
+   END;   { IF }
+END;   { Main }</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Most of the API routines are immediately dispatched by the component wrapper to an<br>
+internal routine that simply calls the link-in implementation to do the work. For<br>
+example, the ICCIGetPref routine, shown in Listing 9, calls through to ICRGetPref,<br>
+changing only the first parameter.
+</p>
+<p>
+<b>Listing 9.</b> The component wrapper for GetPref
+</p>
+<pre>FUNCTION ICCIGetPref (globals: globalsHandle; key: Str255; VAR attr:
+                     ICAttr; buf: Ptr; VAR size: LongInt): ICError;
+BEGIN
+   ICCIGetPref := ICRGetPref(globals^^.inst, key, attr, buf, size);
+END;   { ICCIGetPref }</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+So you can see that there are two ways to call ICRGetPref, either from the component's<br>
+internal routine ICCIGetPref or from the switch glue's ICGetPref. This is consistent<br>
+with the design outlined in Figure 4. Of course, these routines call two different copies<br>
+of the code, one linked into the program and one linked into the component.
+</p>
+<p>
+<b>THE COMPONENT "SMARTS"</b>
+</p>
+<p>
+The component "smarts" are wedged between the component wrapper and the link-in<br>
+implementation. Most component wrapper routines don't have smarts; they call<br>
+straight through to the link-in implementation. Adding smarts to a routine allows it to<br>
+work better than its link-in cousin without the need to maintain two versions of the<br>
+routine.
+</p>
+<p>
+A good example of a smart routine is the component wrapper version of the Start<br>
+routine, ICCIStart (Listing 10). This fixes a potential localization problem associated<br>
+with the link-in implementation with a clever sleight of hand. ICCIStart is basically<br>
+the same as ICCIGetPref in that it immediately calls through to its link-in<br>
+implementation equivalent. But then it does something tricky: the component calls<br>
+itself to get the default filename for the Internet Preferences file. For the gory details<br>
+of why this is "smart," see "Smart Components for Smart People."
+</p>
+<p>
+<b>Listing 10. </b>A smart component wrapper
+</p>
+<pre>FUNCTION ICCIStart (globals: globalsHandle; creator: OSType): ICError;
+{ Handle the start request, which is basically a replacement for the }
+{ open because we need another parameter, the calling application's }
+{ creator code. }
+   VAR
+      err:   OSErr;
+BEGIN
+   err := ICRStart(globals^^.inst, creator);
+   IF err = noErr THEN BEGIN
+      err := ICCDefaultFileName(globals^^.current_target,
+                           globals^^.inst.default_filename);
+   END;   { IF }
+   ICCIStart := err;
+END;   { ICCIStart }</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SMART COMPONENTS FOR SMART PEOPLE</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Because Internet Config needs to know the default filename of the Internet<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Preferences file when it creates a new preferences file, and because all<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;filenames should be stored in resources so that they can be localized, the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default filename should be stored in a resource. This approach is fine for the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;component, which can get at its resource file with OpenComponentResFile, but<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;doesn't work for the link-in implementation since it can be linked in to a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;variety of applications.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;We considered working around this by requiring all applications to add a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;resource specifying the name, but this would force all of our developers to add<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;resources to their applications, and the resource ID might clash with their<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;existing resources. The biggest disadvantage, however, is that IC clients are<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;not necessarily applications and may not even have resource files associated<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;with them.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;So we solved this problem by making the component version of IC smarter<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;than the link-in version. The link-in version sets default_filename to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"Internet Preferences" and leaves it at that, while the component version calls<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;itself to get the correct filename from the resource file.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+One thing to note is that when ICCIStart calls the component to get the default filename,<br>
+it doesn't do so directly, but instead uses the component glue to call its current_target<br>
+global variable. Targeting is cool Component Manager technology that allows you to<br>
+write override components (more on this later in "Override Components").
+</p>
+<p>
+With each new version of Internet Config, the component implementation gets smarter<br>
+than the link-in implementation. Component smarts are used in IC 1.0 to improve ease<br>
+of localization; in IC 1.1, they're also used to improve targetability. In a future<br>
+version of IC, component smarts may be used to implement a preference cache.
+</p>
+<p>
+<b>THE LINK-IN IMPLEMENTATION</b>
+</p>
+<p>
+It may be hard to imagine, but everything you've seen so far is glue. The code that does<br>
+the real work in IC is the link-in implementation. The link-in implementation sees a<br>
+different view of the ICRRecord, one that contains enough fields to store all the data<br>
+that the implementation requires. This extended view of the ICRRecord is shown in<br>
+Listing 11.
+</p>
+<p>
+<b>Listing 11. </b>The full ICRRecord in the link-in implementation
+</p>
+<pre>TYPE
+   ICRRecord = RECORD
+      { This entire record is completely private to the }
+      { implementation!!! Your code will break if you depend }
+      { on the details here. You have been warned. }
+      instance: ComponentInstance;
+          { nil if no component available; if not nil, then rest }
+          {  of record is junk }
+      have_config_file: Boolean;
+          { determines whether any file specification calls, that }
+          { is, ICFindConfigFile or ICSpecifyConfigFile, have been }
+          { made yet; determines whether the next field is valid }
+      config_file: FSSpec;
+          { our chosen database file }
+      config_refnum: Integer;
+          { a place to store the resource refnum }
+      perm: ICPerm;
+          { the permissions the user opened the file with }
+      inside_begin: Boolean;
+          { determines if config_refnum is valid }
+      default_filename: Str63;
+          { the default IC filename }
+      END;
+   ICRRecordPtr = ^ICRRecord;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The instance field is still there but the link-in implementation ignores it. It's the<br>
+subsequent fields that are of interest. Most of them are easy to understand with the<br>
+help of their comments.
+</p>
+<p>
+The link-in implementation for the Start routine initializes the remaining ICRRecord<br>
+fields, as shown in Listing 12.
+</p>
+<p>
+<b>Listing 12.</b> The link-in implementation for Start
+</p>
+<pre>FUNCTION ICRStart (VAR inst: ICRRecord; creator: OSType): ICError;
+   VAR
+      junk:   ICError;
+BEGIN
+   inst.have_config_file := false;
+   inst.config_file.vRefNum := 0;
+   inst.config_file.parID := 0;
+   inst.config_file.name := '';
+   inst.config_refnum := 0;
+   inst.perm := icNoPerm;
+   junk := ICRDefaultFileName(inst, inst.default_filename);
+   ICRStart := noErr;
+END;   { ICRStart }
+
+FUNCTION ICRDefaultFileName (VAR inst: ICRRecord; VAR name: Str63):
+                           ICError;
+BEGIN
+   name := ICdefault_file_name;
+   ICRDefaultFileName := noErr;
+END;   { ICRDefaultFileName }</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Finally, there's the link-in implementation for GetPref, portions of which are shown<br>
+in Listing 13. The actual implementation is a bit long, so the listing leaves out a lot of<br>
+messing around with resources, bytes, pointers, attributes, and so on. The basic<br>
+operation of the routine is simple, however: it checks its parameters, opens the<br>
+preferences file (by calling ICRForceInside), gets the preference, closes the<br>
+preferences file, and returns.
+</p>
+<p>
+<b>Listing 13.</b> The link-in implementation for GetPref
+</p>
+<pre>FUNCTION ICRGetPref (VAR inst: ICRRecord; key: Str255;
+                    VAR attr: ICAttr; buf: Ptr; VAR size: LongInt)
+                    :ICError;
+   VAR
+      err, err2:               ICError;
+      max_size, true_size:      LongInt;
+      old_refnum:             Integer;
+      prefh:                   Handle;
+      force_info:             Boolean;
+BEGIN
+   max_size := size;
+   size := 0;
+   attr := ICattr_no_change;
+   prefh := NIL;
+   err := ICRForceInside(inst, icReadOnlyPerm, force_info);
+   IF (err = noErr) AND (inst.config_refnum = 0) THEN BEGIN
+      err := icPrefNotFoundErr;
+   END;   { IF }
+   IF (err = noErr) AND ((key = '') OR
+         ((max_size &lt; 0) AND (buf &lt;&gt; nil))) THEN BEGIN
+      err := paramErr;
+   END;   { IF }
+   IF err = noErr THEN BEGIN
+      old_refnum := CurResFile;
+      UseResFile(inst.config_refnum);
+      err := ResError;
+      IF err = noErr THEN BEGIN
+         ...   { lots of resource hacking here }
+         UseResFile(old_refnum);
+      END;   { IF }
+   END;   { IF }
+   IF prefh &lt;&gt; NIL THEN BEGIN
+      ReleaseResource(prefh);
+   END;   { IF }
+   err2 := ICRReleaseInside(inst, force_info);
+   IF err = noErr THEN BEGIN
+      err := err2;
+   END;   { IF }
+   ICRGetPref := err;
+END;   { ICRGetPref }</pre>
+<p class="spacer">&nbsp;</p>
+<h2>TOWARD THE FUTURE</h2>
+<p>
+The future . . . where Macintosh applications glide along the information<br>
+superhighway, seamlessly perceiving the user's every preference. You'd better hope<br>
+your applications are IC aware!
+</p>
+<p>
+Internet Config is a very flexible system that can expand in several dimensions.<br>
+Indeed, some are already being explored -- in particular, the use of components to<br>
+maintain and extend the system. And we're looking forward to seeing IC extended in<br>
+ways we never anticipated.
+</p>
+<p>
+<b>OVERRIDE COMPONENTS</b>
+</p>
+<p>
+One of the coolest features of the Component Manager is targeting -- one component<br>
+can capture another and override it. This effectively prevents external programs from<br>
+using the captured component, while still allowing it to be called by the override<br>
+component. Very much like inheritance in object-oriented design, this technology lets<br>
+you write a very simple component that captures the Internet Config component so that<br>
+you can patch just one routine. For example, the Internet Config RandomSignature<br>
+extension overrides the ICGetPref routine. If an IC client requests the signature<br>
+preference, the extension randomly chooses one from a collection of signatures.
+</p>
+<p>
+The possibilities for override components are endless. Let's say your organization<br>
+wants to preconfigure all news clients to access a central news server. You can do this<br>
+by writing a simple override component that watches for programs getting the<br>
+NNTPHost preference and returns a fixed read-only preference value. This way, all<br>
+IC-aware news readers use the correct host but can't change it. As we say in the<br>
+system software business, it's a wonderful third-party developer opportunity.
+</p>
+<p>
+<b>TOTAL BODY SWAP</b>
+</p>
+<p>
+Because all client programs call Internet Config through a well-defined API, it's<br>
+possible to write a replacement for IC and gain complete control of the system. Imagine<br>
+that you're tired of having the same preferences in all your IC-aware applications. You<br>
+can change them by writing a replacement that conforms to the existing API. First,<br>
+replace the Internet Config component with a smarter one that's capable of storing a<br>
+set of preferences for each application and returning the right preferences to the right<br>
+application. Then replace the Internet Config application with a much more<br>
+sophisticated application that can manage multiple sets of preferences, and your job is<br>
+done. All IC-aware programs will automatically benefit without recompilation.
+</p>
+<p>
+Or suppose you want to store your user preferences on a central server and access<br>
+them through some network protocol. Again, IC lets you do it. You could replace the<br>
+Internet Config component with a network-aware one, and establish the user's identity<br>
+in some way, perhaps by requiring the user to log on before using any IC-aware<br>
+programs. You could then choose to use either a Macintosh application to administer<br>
+the server or tools from the server's native environment.
+</p>
+<h2>STAYING CURRENT</h2>
+<p>
+No program is ever finished, nor is any program ever 100% bug free. Internet Config<br>
+is getting better all the time, and you can update to the newest, improved version with<br>
+a minimum of fuss. When the application detects that its version of the Internet Config<br>
+Extension is out of date, it simply installs the new one. Because all IC-aware programs<br>
+are dynamically linked to the component contained within this extension, they<br>
+automatically receive the update without having to be recompiled.
+</p>
+<p>
+By the time you read this article, IC 1.1 should be released and busily updating old<br>
+versions of the Internet Config Extension around the globe. IC 1.1 offers many<br>
+improvements and bug fixes, including an extended API and a shell for writing<br>
+override components easily. Share and enjoy!
+</p>
+<p>
+
+
+
+<b>RECOMMENDED READING</b>
+</p>
+<p>
+If you want to find out more about Internet Config itself, the following documents may<br>
+be of interest:
+</p>
+<ul>
+<li>"Using the Internet Configuration System" by Quinn, <i>MacTech</i><br>
+<i>Magazine,</i>April 1995.</li>
+<li><i>Internet Configuration System: User Documentation and Internet</i><br>
+<i>Configuration System: Programming Documentation</i> by Quinn, in the IC User's<br>
+Kit and IC Developer's Kit, respectively (1994). These kits are provided on<br>
+this issue's CD.</li>
+<li>"Internet Config FAQ" by Quinn (1994-1995). Available from the ftp<br>
+site ftp://redback.cs.uwa.edu.au/Others/Quinn/Config/IC_FAQ.txt.</li>
+</ul>
+<p>
+Here's where you can find out more about components, the technology Internet Config<br>
+is based on:
+</p>
+<ul>
+<li><i>Inside Macintosh: More Macintosh Toolbox</i> (Addison-Wesley, 1993).</li>
+<li>Macintosh Technical Note "Component Manager Version 3.0" (QT 5).</li>
+<li>"Be Our Guest: Components and C++ Classes Compared" by David Van<br>
+Brink,<i>develop</i> Issue 12.</li>
+<li>"Inside QuickTime and Component-Based Managers" by Bill<br>
+Guschwan,<i>develop</i> Issue 13.</li>
+<li>"Somewhere in QuickTime: Derived Media Handlers" by John Wang,<br>
+<i>develop</i>Issue 14.</li>
+<li>"Managing Component Registration" by Gary Woodcock, <i>develop</i> Issue 15.</li>
+</ul>
+<p>
+Finally, if you're interested in the mindset of Internet Config's authors, you can do no<br>
+better than to read the following:
+</p>
+<ul>
+<li><i>He Died With a Felafel in His Hand</i> by John Birmingham (The Yellow<br>
+Press, 1994).</li>
+<li><i>The UNIX-HATERS Handbook</i> by Simson Garfinkel, Daniel Weise, and<br>
+Steven Strassmann (IDG Books, 1994).</li>
+<li>http://www.cm.cf.ac.uk/Movies/</li>
+</ul>
+
+
+
+<p>
+<b>QUINN "THE ESKIMO!" </b>(quinn@cs.uwa.edu.au) has a first name but, when asked<br>
+about it, his usual response is "I could tell you but then I'd have to kill you!" He<br>
+programs for a living with the Department of Computer Science at the University of<br>
+Western Australia, but on weekends he gets together with Peter N. Lewis and programs<br>
+for fun. The Internet Configuration System is a product of these misspent recreational<br>
+hours. Quinn writes in Pascal using a Dvorak keyboard on a Macintosh Duo that he<br>
+carries around on his bicycle, and he's still trying to figure out how to use this<br>
+minority status to his economic advantage.*
+</p>
+<p>
+Thanks to our technical reviewers Peter Hoddie, Peter N. Lewis, Jim Reekes, and Greg<br>
+Robbins. Internet Config is a joint development by Peter N. Lewis and Quinn, with<br>
+design input from Marcus Jager. We'd like to thank all of those on the Internet Config<br>
+mailing list and the developers who are supporting the system.*
+</p>
+<p>
+The Internet Config mailing list is dedicated to discussing the technical details of<br>
+Internet Config. You can subscribe by sending mail to listserv@list.peter.com.au with<br>
+the body of the message containing "subscribe config Your Real Name."*
+</p>
+</body>
+</html>

@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 4 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 95 - MPW TIPS AND TRICKS</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>MPW TIPS AND TRICKS</h2>
+<h2>Launching MPW Faster Than a Speeding Turtle</h2>
+<h1>TIM MARONEY</h1>
+<p>
+<img src="img/129.gif" width="284 px"></img>
+</p>
+<p>
+One myth about MPW is that it's slow, but that's an unfair description. Personally, I<br>
+think "glacial" would be a more appropriate word, or perhaps "executionally<br>
+challenged." However, it's possible to speed it up in a variety of ways, such as<br>
+simulating the 68020 instruction set on a fully loaded Cray. On a tighter budget, you<br>
+can improve MPW's launch time just by making some minor changes to your<br>
+configuration. 
+</p>
+<p>
+Perhaps some of you are asking, "Who cares about launch time? Compile speed is the<br>
+important thing! God built the whole world in less time than it takes me to compile my<br>
+project with PPCC, and he only had a slide rule!" It's a valid objection, and I'm glad<br>
+you brought it up, but many people launch MPW more often than they compile. Quite a<br>
+few projects use MPW as a development workhorse because of its scripting and source<br>
+control capabilities, but compile and link using language systems that aren't laboring<br>
+under the delusion that they're getting paid by the hour. 
+</p>
+<p>
+<b>&nbsp;I didn't invent this technique,</b> but I've tuned it up and eliminated some trouble<br>
+spots. The original was distributed on&nbsp;&nbsp;a Developer CD so old that I can't find it now. *
+</p>
+<p>
+<b>STATES' RITES</b><br>
+The trick is simple and capitalizes on an important fact about MPW tools. Because of<br>
+the innovative approach MPW takes to the traditional TTY interface, it's easy to<br>
+execute the output of tools by selecting the output with the mouse and pressing the<br>
+Enter key. Tool writers are strongly encouraged to write executable commands as their<br>
+output. Since some of the tool writers didn't get the message, there are umpty-million<br>
+exceptions, but when the tool does the right thing it's very useful. 
+</p>
+<p>
+<b>&nbsp;There's an even better way</b> to select the output, which is to press Command-Z<br>
+twice after running the tool, but don't say I told you so. On the Macintosh, Undo<br>
+followed by Redo is supposed to return you to your original state. *
+</p>
+<p>
+The nice people responsible for the Set, Export, Alias, AddMenu, SetKey, CheckOutDir,<br>
+and MountProject commands followed MPW policy and made them reversible: giving<br>
+these commands without parameters dumps a list of commands that you can execute<br>
+later to return to your current state. 
+</p>
+<p>
+As it happens, in a standard MPW configuration there's not much to your state beyond<br>
+the output of these seven commands. You're in a current directory and some file<br>
+windows might be open, and that's about all that matters. You can save the directory<br>
+and the open files with four lines of script. 
+</p>
+<p>
+You can probably see where all this is leading. MPW lets you install scripts that get<br>
+run when it quits and when it starts up. Is it really faster to save your state when you<br>
+quit and restore it on your next launch than it is to iterate over your startup files?<br>
+The answer is an emphatic yes, at least with the usual baroque MPW configuration.<br>
+You'll see much less improvement if you're already using a lightweight MPW without<br>
+many startup files. 
+</p>
+<p>
+Now if you're clever, you've probably written all kinds of things that need to get loaded<br>
+each time you start up. I can understand that -- I often feel like I need to get loaded<br>
+every time I launch the MPW Shell myself! Maybe you've written a tool that lets you<br>
+add hierarchical menus to the MPW Shell so that you can keep your wrist muscles<br>
+toned, or a floating utility window with buttons for your frequently used commands.<br>
+These clever hacks are going to hurt your startup time, but if&nbsp;&nbsp;you<i> must</i>&nbsp;&nbsp;do something<br>
+every time you start up the Shell, you can move these commands into separate files<br>
+that still get executed on each launch. 
+</p>
+<p>
+<b>THAT DOES IT - I QUIT!</b><br>
+Saving the state is the easiest part of the trick. Just put a file named Quit in your MPW<br>
+folder. You can overwrite the default Quit script if you have one, but if you need to<br>
+keep it, you can name this script Quit*SaveState instead; the default Quit script will<br>
+run it, as well as any other scripts named Quit*Whatever. The script should read like<br>
+this, more or less:
+</p>
+<pre># Quit and save state for fast startup
+
+# We need to set Exit to 0 so that errors won't
+# cause Quit or Startup to bomb, but we also want
+# to maintain the user's setting of the Exit
+# variable. Save and restore it.
+Set SaveExit {Exit}
+Export SaveExit
+Set Exit 0
+
+# State saving is turned off by creating a file
+# named DontSaveState in the MPW folder.
+If "`Exists "{ShellDirectory}"DontSaveState`"
+    Delete -i "{ShellDirectory}"DontSaveState &#8706;
+        "{ShellDirectory}"MPW.SuspendState &#8706;
+        &#8805; Dev:Null
+       
+Else
+
+    # Write the state to a temporary file.
+    Begin
+
+        # Tell the restoration not to bomb.
+        Echo Set Exit 0
+
+        # Save the custom menus.
+        AddMenu
+
+        # Save the current directory.
+        Echo Directory "`Directory`"
+       
+        # Save the open windows.
+        Echo For window In "`Windows`"
+        Echo '  Open "{window}" || Set Status 0'
+        Echo 'End &#8805; Dev:Null'
+   
+        # Save the aliases.
+        Alias
+
+        # Save the variables.
+        Set
+
+        # Save the exports. This runs much faster
+        # with all the exports on one line, so we
+        # use -s to get all the names at once.
+        Echo Export "`Export -s`"
+               
+        # Save the key assignments.
+        SetKey
+        # Save lines that will execute the UserMount
+        # script if any. The script doesn't have to
+        # exist, and it's harmless to throw it away
+        # between saving and restoring state.
+        If "`Exists "{ShellDirectory}"UserMount`"
+            Echo Execute &#8706;
+                "{ShellDirectory}"UserMount &#8706;
+                "&#8805; Dev:Null"
+        End
+
+        # Save the mounted Projector databases and
+        # their checkout directories.
+        MountProject
+        CheckOutDir -r
+
+        # After the rest of the state is restored
+        # with Exit set to 0 to prevent bombing,
+        # save lines to restore the user's setting
+        # of Exit.
+        Echo Set Exit '{SaveExit}'
+
+    End &gt; "{ShellDirectory}"MPW.SuspendState &#8706;
+         &#8805; Dev:Null
+
+End
+
+# Sometimes anomalies prevent the Worksheet from
+# auto-saving at Quit time; make sure it does.
+Save "{Worksheet}"</pre>
+<p>
+Every time you quit the MPW Shell normally, this Quit script will save your complete<br>
+state to a file named MPW.SuspendState in your MPW folder. You probablynoticed that<br>
+this can be turned off by creating a file named DontSaveState. You don't have to do this<br>
+by hand; if you'll just wait a gosh- darn minute, I'll give you a menu command for it. 
+</p>
+<p>
+Unfortunately, the Choose command, which lets you mount a file server, isn't<br>
+reversible; that is, it doesn't put out a list of Choose commands that you could run<br>
+later to remount your servers. Using this Quit script, though, you can create a file<br>
+named UserMount in your MPW folder that will be executed every time you launch,<br>
+before any attempt is made to remount your saved projects. This file should contain<br>
+Choose commands that mount the servers on which your Projector databases are<br>
+located. If you're not using Projector or other remote services, there's no reason to<br>
+create this file.&nbsp;&nbsp;&nbsp;Here's an example, assuming I have a Projector database on the<br>
+volume "Rendezvous" on the server "Development" in the zone "Engineering Heck":
+</p>
+<pre>if !"`Exists Rendezvous:`"
+    choose -u 'Tim Maroney' -askpw &#8706;
+        "Engineering Heck:Development:Rendezvous"
+end</pre>
+<p>
+The Quit script isn't especially tricky, but if you're new to MPW scripting, you may<br>
+be interested to note a few features. 
+</p>
+<p>
+First, observe the use of the back quote ( `), that otherwise useless key at the top left<br>
+of your keyboard. MPW uses it the same way as<b>csh</b> (pronounced "sea-shell"), the<br>
+seminal UNIX shell from Berkeley: a command inside back quotes is executed and its<br>
+output is inserted into the command line containing it. In this case, the Directory,<br>
+Windows, and Export commands are backquoted, capturing their output so that it can<br>
+be combined with other text using the Echo command. The Exists command is<br>
+backquoted so that its output can be treated as a conditional expression. 
+</p>
+<p>
+Another handy fact is that compound statements, like Begin...End blocks, conditionals,<br>
+and loops, are treated as single commands that can be redirected in their entirety. This<br>
+saves a lot of needless repetition: you don't have to redirect each statement inside the<br>
+block. Note the use of the error redirection operator "&gt;=", typed as Option-period.<br>
+Like UNIX, MPW Shell has separate output and error channels that can be redirected<br>
+independently. In this Quit script, errors are redirected to yet another UNIXism, the<br>
+faux file "Dev:Null," which is another way of saying send them to oblivion. 
+</p>
+<p>
+<b>&nbsp;You can find out more</b> about the various redirection options in MPW by starting<br>
+up the MPW Shell and giving the command Help Characters. For clarity, the help text<br>
+refers to the error channel as the "diagnostic file specification." *
+</p>
+<p>
+One very important feature of MPW is its set of built-in variables. You can set up any<br>
+variables you want by using the Set command, and expand them by putting them in<br>
+curly brackets; there are also quite a few built-in variables that tell you things about<br>
+the state of the MPW Shell and let you modify its behavior. The ShellDirectory<br>
+variable is used extensively in the script; when expanded (<b>"{ShellDirectory}"</b>) it<br>
+yields the path name of the folder containing the MPW Shell, where many useful things<br>
+are stored. The old name for this variable is "MPW," which you can still use as a<br>
+synonym. 
+</p>
+<p>
+Another built-in variable is Exit. If Exit isn't 0, script commands that fail will bring<br>
+the execution of their script to a screeching halt; if it is 0, subsequent script<br>
+commands will go on regardless of earlier failures, much like some people's<br>
+conversational gambits at trade-show parties. These fast-launch scripts set Exit to 0,<br>
+because if there's a failure at some point, the rest of the state should still be saved and<br>
+restored. In normal MPW setups, Exit is set to 1 most of the time, but since<br>
+idiosyncratic MPW configurations set it to 0 as the default, some special work is<br>
+needed to save and restore the user's Exit setting. This is done by saving Exit in a<br>
+custom variable named SaveExit, which records Exit at the beginning of the Quit script<br>
+and restores it at the conclusion of the MPW.SuspendState script. 
+</p>
+<p>
+<b>HAPPINESS IS A WARM BOOT</b><br>
+The startup sequence is slightly more complicated. After all, you've got to iterate over<br>
+all those startup files sometime. The approach I'm using distinguishes between a cold<br>
+boot, which does a pretty normal startup, and a warm boot, which starts up quickly<br>
+from MPW.SuspendState. 
+</p>
+<p>
+<b>&nbsp;"Cold boot" and "warm boot"</b> are terms that old-time programmers will<br>
+remember from the manual kick-starters on the original Model T computers.*
+</p>
+<p>
+There's a menu item you can use to force the next launch to be a cold boot, or you can<br>
+throw away the MPW.SuspendState file before launching for the same effect. The cold<br>
+boot mechanism exists mostly for the sake of paranoia, so programmers tend to use it<br>
+frequently. Generally speaking, you don't need to do a cold boot after you change your<br>
+startup files; you can just select the change and press Enter. The modifications will get<br>
+stored in the saved state the next time you quit. 
+</p>
+<p>
+MPW comes with a file named Startup that gets executed each time the Shell is<br>
+launched. Rename Startup to ColdStartup and put the following in a new Startup file:
+</p>
+<pre># Restore the state if possible; else cold boot.
+# &#8721;&#8721; means redirect to end of file.
+If "`Exists "{ShellDirectory}MPW.SuspendState"`"
+    Execute "{ShellDirectory}MPW.SuspendState"
+       &#8721;&#8721; "{Worksheet}"
+    Set ColdBoot 0
+Else
+    Beep 2g,3 2f,3 2a,3     # Hum a merry tune
+    Begin
+        Echo "MPW.SuspendState was not found."
+        Echo "Here's your Cold Boot..."
+    End &#8721;&#8721; "{Worksheet}"
+    Execute "{ShellDirectory}ColdStartup"
+    Set ColdBoot 1
+End
+
+Export ColdBoot
+
+# Do anything that needs doing each launch
+# (UserStartup*X files in EachBoot folder).
+If "`Exists -d "{ShellDirectory}EachBoot"`"
+    For fileName in `(Files &#8706;
+                "{ShellDirectory}"EachBoot:UserStartup*&#8776; &#8706;
+                || Set Status 0) &gt;= Dev:Null`
+        Execute "{fileName}"
+    End
+    Unset fileName
+End
+Unset ColdBoot</pre>
+<p>
+The default Startup script runs all the files whose names start with "UserStartup*" in<br>
+the MPW folder: UserStartup*Utilities, UserStartup*EraseBootBlocks,<br>
+UserStartup*AlterPersonnelRecords, and so forth. You just moved the default Startup<br>
+script to ColdStartup, so these files will get reexecuted whenever you do a cold boot.<br>
+Also, in case you need to do something every time you launch regardless of whether it's<br>
+a cold or a warm boot, you can put it in a UserStartup*Whatever file in a folder named<br>
+EachBoot in the MPW folder. 
+</p>
+<p>
+Sometimes you need to do something different at startup depending on whether it's a<br>
+cold or a warm boot. The Startup script above sets a variable named ColdBoot so that<br>
+you can distinguish between cold and warm startups. In one of your startup scripts,<br>
+you can use the ColdBoot variable in a conditional construct. For instance, suppose<br>
+you're part of a large project with a centrally maintained MPW configuration that uses<br>
+a custom tool named HierMenu to create a hierarchical menu. HierMenu is called from<br>
+the central UserStartup*Project script at cold boot, but because it's not a standard<br>
+part of MPW, it also needs to get called from an EachBoot script at warm boot -- the<br>
+state isn't automatically saved by the Quit script. You don't want to edit the shared file<br>
+UserStartup*Project because you'll have to laboriously reapply your change every<br>
+time the build engineers improve the central copy, but you can't run HierMenu more<br>
+than once without bringing the system to its knees. The solution is to create a<br>
+UserStartup*DoHierMenu file in your EachBoot folder which only runs HierMenu in<br>
+the case of a warm boot, like so:
+</p>
+<pre>If &amp;not; "{ColdBoot}"
+HierMenu HierItem MainMenu 'Title for Item'
+End</pre>
+<p>
+I promised you a menu command to do a cold boot. Here it is (in the immortal words of<br>
+Heidi Fleiss, don't say I never gave you anything). Put this in a file named<br>
+UserStartup*ColdBootItem in your MPW folder:
+</p>
+<pre>AddMenu File '(-' '' # menu separator
+AddMenu File "Quit with Cold Boot..." &#8706;
+    'confirm "Quit with cold boot?" &amp;&amp; &#8706; (Set Exit 0; &#8706;
+    Echo &gt; "{ShellDirectory}"DontSaveState; &#8706;
+    Quit)'</pre>
+<p>
+<b>MEASURING PERFORMANCE WISELY</b><br>
+If you measure performance by elapsed time, MPW can be slow. However, real-world<br>
+performance has more to do with usefulness than with theoretical throughput. I don't<br>
+use my computer to run Dhrystone benchmarks: I use it to accomplish tasks. MPW<br>
+gives me the power to accomplish the complex and bizarre tasks of programming<br>
+automatically. 
+</p>
+<p>
+Real-world friendliness is always relative to a particular set of users and a particular<br>
+set of tasks. The very things that make UNIX and MPW unfriendly to novice users make<br>
+them friendly to programmers, who have the unusual skill of memorizing arcane<br>
+commands and connecting them in useful ways. Don't get me wrong; MPW is not the<br>
+final frontier of development environments. A true next-generation software<br>
+authoring system would make command shells and project files seem equally<br>
+ridiculous, but command-line interfaces for programmers are a sound approach, at<br>
+least for now. And with a little tuning, they can begreatly improved. In future columns<br>
+I'll be sharing more tips on making the worksheet a pleasant place to live. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>TIM MARONEY </b>is a leather-wearing vegetarian from Berkeley,&nbsp;&nbsp;California. He's<br>
+been published in MacTutor and Gnosis magazines and in the&nbsp;&nbsp;San Francisco Chronicle.<br>
+Tim is currently working as a contractor at Apple on the next release of the Macintosh<br>
+operating system. When he's not standing on his head, he's usually peering at eldritch<br>
+tomes such as the&nbsp;&nbsp;R'lyeh Text and the SOM User's Guide. No, that's not what we<br>
+expected him to look like either. *
+</p>
+<p>
+<b>Thanks </b>to Dave Evans, Greg Robbins, and Jeroen Schalk for reviewing this column.<br>
+Thanks also to beta testers Arnaud Gourdol, Jon Kalb, and Ron Reynolds.*
+</p>
+</body>
+</html>

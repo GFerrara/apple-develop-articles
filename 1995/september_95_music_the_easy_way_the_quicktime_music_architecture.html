@@ -1,0 +1,1904 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 44 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 95 - Music the Easy Way: The QuickTime Music Architecture</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Music the Easy Way: The QuickTime Music<br>
+Architecture</h1>
+<h2>by David Van Brink</h2>
+<p>
+<img src="img/227.gif" width="216 px"></img>
+</p>
+<p>
+<i>Music has become cheap and plentiful on the Macintosh, and many applications are now</i><br>
+<i>making "casual" use of music. With the QuickTime Music Architecture, or QTMA,</i><br>
+<i>including music in your application has never been simpler. Its API is straightforward</i><br>
+<i>and easy to use, and you don't need intimate knowledge of MIDI protocols or channel and</i><br>
+<i>voice numberings. Nor do you need an external MIDI device; QTMA can play music</i><br>
+<i>directly out of the Macintosh's built-in speakers. And QTMA is widely available -- it's</i><br>
+<i>on every Macintosh that has QuickTime 2.0 (or later) installed.</i>
+</p>
+<p>
+The QuickTime Music Architecture is perfect for adding a little bit of music to your<br>
+application. It has a set of well-supported high-level calls for playing musical notes<br>
+and sequences, it deals with MIDI protocols so that your application doesn't have to, and<br>
+it handles timing for entire tunes. With QTMA, you can specify musical instruments<br>
+independent of device, and play music either directly out of built-in speakers or<br>
+through a MIDI synthesizer.
+</p>
+<p>
+QTMA first became available with QuickTime 2.0 and offers some new features in<br>
+QuickTime 2.1, which should be available through APDA by the time you read this. The<br>
+code in this article is written for version 2.1; minor changes will be required for 2.0.<br>
+(Before making use of the QuickTime 2.1 features, your code should call Gestalt with<br>
+the gestaltQuickTimeVersion selector and check the version number returned.)
+</p>
+<p>
+This article shows how your application can use QTMA to play individual notes,<br>
+sequences of notes composed on the fly, or prescored sequences, and how to read input<br>
+from external MIDI devices. This issue's CD contains all the sample code and a THINK C<br>
+project to build and run it. We'll start with a look at QTMA in relation to other ways of<br>
+supporting music on the Macintosh; then we'll get down to business and play some<br>
+music with QTMA.
+</p>
+<h2>QTMA IN CONTEXT -- A LOOK AT MUSIC AND MIDI SUPPORT<br>
+ON THE MACINTOSH</h2>
+<p>
+Support for MIDI and musical applications on the Macintosh platform has a somewhat<br>
+checkered history. Developers have been faced with such options as writing their own<br>
+serial drivers, using the MIDI Manager, or using third-party operating system<br>
+extensions such as the Open Music System (OMS, formerly Opcode MIDI System) and<br>
+the Free MIDI System (FMS) from Mark of the Unicorn. None of these are practical for<br>
+adding just a little music to your application.
+</p>
+<p>
+&nbsp;&nbsp;Writing a serial driver to send MIDI output to an Apple MIDI adapter or to any<br>
+third-party MIDI adapter isn't that complicated if you enjoy writing low-level code to<br>
+access hardware registers on the SCC serial chip. I say this in all seriousness: that<br>
+kind of code really is fun to write! But it's not the best way to do things, because<br>
+changes in the OS and hardware can render your work useless. And writing the<br>
+low-level serial code for MIDI input has additional complexities, primarily because of<br>
+the interrupt timings in many parts of the Mac OS.
+</p>
+<p>
+The MIDI Manager is a slightly better tool to use for MIDI input and output.<br>
+Unfortunately, Apple's support for this product has been less than consistent, and the<br>
+MIDI Manager itself has some inherent performance limitations, though these are less<br>
+critical on faster hardware (68030 processor or better).
+</p>
+<p>
+Both OMS and FMS are quite appropriate for professional music scoring and editing<br>
+products. Among the facilities that these extensions provide is a "studio configuration";<br>
+this lets the user describe to the system the various MIDI devices attached to the<br>
+computer so that different applications can access them.
+</p>
+<p>
+All of these options have drawbacks for making casual use of music: you have to access<br>
+an external MIDI device, which most users don't have, and you have to use MIDI<br>
+protocols to talk to that device. QTMA frees you from both of these constraints. It also<br>
+frees you from needing to know a lot about MIDI itself; if you want to know anyway,<br>
+check out the information in "A MIDI Primer."
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A MIDI PRIMER</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MIDI, or Musical Instrument Digital Interface, uses a serial protocol and a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;standard 5-pin connector that you'll find on professional electronic music<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gear made after 1985 or so. The connector's relatively large size, about half<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;an inch in diameter, was chosen so that it could withstand the rigors of the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;road -- in other words, so that even drummers could plug it in.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Because MIDI cables can carry signals in only one direction, synthesizers have<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;separate connectors for MIDI input and MIDI output. (This differs from modem<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cables, which carry signals in both directions.)
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MIDI is a serial protocol running at 31250 baud, 8 data bits, 1 stop bit, no<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;parity. The command structure for a MIDI stream is simple: each byte is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;either a <i>status byte</i> or a <i>data byte.</i>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A status byte establishes a mode for interpreting the data bytes that follow it.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The high bit is set, and the next three bits indicate the type of status byte. The<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;low four bits are typically used to specify a <i>MIDI channel. </i>Thus MIDI can<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;address up to 16 unique channels, each of which may play a different musical<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;instrument sound. Later extensions to MIDI let you address more channels<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;through the use of escape codes and bank switching.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The most common status message is the Play Note message, which has a value<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;of 0x90 plus the MIDI channel number. Each note is defined by a pitch and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;velocity. The pitch is an integer from 0 to 127, where 60 is musical middle C<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(61 is C sharp, 59 is B, 72 is the C above middle C, and so on). The velocity is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;an integer from 0 to 127 that describes how loud to play the note; 64 is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;average loudness, 127 is very loud, 1 is nearly inaudible, and 0 means to stop<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;playing the note.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;So, to play a C-major chord on MIDI channel 0, you send the seven bytes 0x90<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x3C 0x40 0x40 0x40 0x43 0x40 to begin the sound. After a suitable<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;interval, you send 0x90 0x3C 0x00 0x40 0x00 0x43 0x00 to silence it.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;All of this is exactly the sort of stuff you don't need to know if you use the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;QuickTime Music Architecture for your music-playing needs. But you just<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;can't know too many useless facts, right?
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>QTMA'S BASIC COMPONENTS</h2>
+<p>
+QTMA is implemented in three easy pieces, as QuickTime components for playing<br>
+individual notes, playing tunes (sequences of notes), and driving MIDI devices.
+</p>
+<ul>
+<li>The <i>note allocator component </i>is used to play individual notes. The calling<br>
+application can specify which musical instrument sound to use and exactly<br>
+which musical synthesizer to play the notes on. The note allocator component<br>
+also includes a utility that allows the user to pick the instrument.</li>
+<li>The <i>tune player component </i>can accept entire sequences of musical notes<br>
+and play them from start to finish, asynchronously, with no further need for<br>
+application intervention. This is handy if you'd like to play some infernally<br>
+irritating little melody, or perhaps threnody, during each game level of Boom<br>
+Three Dee or whenever.</li>
+<li>Individual <i>music components </i>act as device drivers for each type of<br>
+synthesizer attached to a particular computer. Two music components are<br>
+provided with QuickTime 2.0: the software synthesizer component, to play<br>
+music out of the built-in speaker, and the General MIDI component, to play<br>
+music on a General MIDI device attached to a serial port. QuickTime 2.1<br>
+supports a small number of other popular synthesizers as well.</li>
+</ul>
+<h2>PLAYING NOTES WITH THE NOTE ALLOCATOR</h2>
+<p>
+Playing a few notes with the note allocator component is simple. To play notes that<br>
+have a piano-like sound, you need to open up the note allocator component, allocate a<br>
+note channel with a request for piano, and play. That's it! If you're feeling like a<br>
+particularly well-behaved software engineer, you might dispose of the note channel<br>
+and close the note allocator component when you're done. We'll get to the code in a<br>
+moment; first we'll look at some important related data structures.
+</p>
+<p>
+<b>NOTE-RELATED DATA STRUCTURES</b>
+</p>
+<p>
+A note channel is analogous to a sound channel in that you allocate it, issue commands to<br>
+it to produce sound, and close it when you're done. To specify details about the note<br>
+channel, you use a data structure called a NoteRequest (see Listing 1). The<br>
+NoteRequestInfo structure in the NoteRequest is new in QuickTime 2.1; it simply<br>
+encapsulates the first few fields of the old NoteRequest structure and splits the first of<br>
+those fields into two, <b>flags </b>and<b>reserved </b>(which are decribed in the documentation<br>
+accompanying the QuickTime 2.1 release).
+</p>
+<p>
+<b>Listing 1. </b>Note-related data structures
+</p>
+<pre>struct NoteRequest {
+   NoteRequestInfo   info;      // * in post-QuickTime 2.0 only
+   ToneDescription   tone;
+};
+
+struct NoteRequestInfo {
+   UInt8      flags;
+   UInt8      reserved;
+   short      polyphony;
+   Fixed      typicalPolyphony;
+};
+
+struct ToneDescription {
+   OSType   synthesizerType;
+   Str31      synthesizerName;
+   Str31      instrumentName;
+   long      instrumentNumber;
+   long      gmNumber;
+};</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The next two fields specify the probable polyphony that the note channel will be used<br>
+for. Polyphony means, literally, many sounds. A polyphony of 5 means that five notes<br>
+can be playing simultaneously. The polyphony field enables QTMA to make sure that the<br>
+allocated note channel can play all the notes you'll need. The typicalPolyphony field is a<br>
+fixed-point number that should be set to the average number of voices the note channel<br>
+will play; it may be whole or fractional. Some music components use this field to<br>
+adjust the mixing level for a good volume.
+</p>
+<p>
+The ToneDescription structure is used throughout QTMA to specify a musical<br>
+instrument sound in a device-independent fashion. This structure's synthesizerType<br>
+and synthesizerName fields can request a particular synthesizer to play notes on.<br>
+Usually, they're set to 0, meaning "choose the best General MIDI synthesizer." The<br>
+gmNumber field indicates the General MIDI (GM) instrument or drum kit sound,<br>
+which may be any of 135 such sounds that are supported by many synthesizer<br>
+manufacturers. (All these sounds are available on a General MIDI Sound Module.) The<br>
+GM instruments are numbered 1 through 128, and the seven drum kits are numbered<br>
+16385 and higher. A complete list of instrument and drum kit numbers is provided in<br>
+Table 1. For synthesizers that accept sounds outside the GM library, you can use the<br>
+instrumentName and instrumentNumber fields to specify some other sound.<p class="spacer">&nbsp;</p>
+</p>
+<p>
+
+        <style>
+            td {
+                padding-right: 1px;
+            }
+        </style>
+        <p>
+            <b>Table 1.</b> The General MIDI instruments and drum kits
+        </p>
+        <table style="font-size: smaller">
+            <tr>
+                <td>
+                    <table style="margin-right: 20px;">
+                        <tr>
+                            <td colspan="3"><b>Piano</b></td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right" style="width: 20px;">1</td>
+                            <td>Acoustic Grand Piano</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">2</td>
+                            <td>Bright Acoustic Piano</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">3</td>
+                            <td>Electric Grand Piano</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">4</td>
+                            <td>Honky-tonk Piano</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">5</td>
+                            <td>Rhodes Piano</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">6</td>
+                            <td>Chorused Piano</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">7</td>
+                            <td>Harpsichord</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">8</td>
+                            <td>Clavinet</td>
+                        </tr>
+                    </table>
+                </td>
+                <td>
+                    <table style="margin-right: 20px;">
+                        <tr>
+                            <td colspan="3"><b>Bass</b></td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right" style="width: 20px;">33</td>
+                            <td>Acoustic Fretless Bass</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">34</td>
+                            <td>Electric Bass Fingered</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">35</td>
+                            <td>Electric Bass Picked</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">36</td>
+                            <td>Fretless Bass</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">37</td>
+                            <td>Slap Bass 1</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">38</td>
+                            <td>Slap Bass 2</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">39</td>
+                            <td>Synth Bass 1</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">40</td>
+                            <td>Synth Bass 2</td>
+                        </tr>
+                    </table>
+                </td>
+                <td>
+                    <table style="margin-right: 20px;">
+                        <tr>
+                            <td colspan="3"><b>Reed</b></td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right" style="width: 20px;">65</td>
+                            <td>Soprano Sax</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">66</td>
+                            <td>Alto Sax</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">67</td>
+                            <td>Tenor Sax</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">68</td>
+                            <td>Baritone Sax</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">69</td>
+                            <td>Oboe</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">70</td>
+                            <td>English Horn</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">71</td>
+                            <td>Bassoon</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">72</td>
+                            <td>Clarinet</td>
+                        </tr>
+                    </table>
+                </td>
+                <td>
+                    <table>
+                        <tr>
+                            <td colspan="3"><b>Synth Effect</b></td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right" style="width: 30px;">97</td>
+                            <td>Ice Rain</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">98</td>
+                            <td>Sound Tracks</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">99</td>
+                            <td>Crystal</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">100</td>
+                            <td>Atmosphere</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">101</td>
+                            <td>Brightness</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">102</td>
+                            <td>Goblins</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">103</td>
+                            <td>Echoes</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">104</td>
+                            <td>Space</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="4">&nbsp;</td>
+            </tr>
+            <tr>
+                <td>
+                    <table style="margin-right: 20px;">
+                        <tr>
+                            <td colspan="3"><b>Chromatic Percussion</b></td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right" style="width: 20px;">9</td>
+                            <td>Celesta</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">10</td>
+                            <td>Glockenspiel</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">11</td>
+                            <td>Music Box</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">12</td>
+                            <td>Vibraphone</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">13</td>
+                            <td>Marimba</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">14</td>
+                            <td>Xylophone</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">15</td>
+                            <td>Tubular bells</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">16</td>
+                            <td>Dulcimer</td>
+                        </tr>
+                    </table>
+                </td>
+                <td>
+                    <table style="margin-right: 20px;">
+                        <tr>
+                            <td colspan="3"><b>Strings and Orchestra</b></td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right" style="width: 20px;">41</td>
+                            <td>Violin</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">42</td>
+                            <td>Viola</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">43</td>
+                            <td>Cello</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">44</td>
+                            <td>Contrabass</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">45</td>
+                            <td>Tremolo Strings</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">46</td>
+                            <td>Pizzicato Strings</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">47</td>
+                            <td>Orchestral Harp</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">48</td>
+                            <td>Timpani</td>
+                        </tr>
+                    </table>
+                </td>
+                <td>
+                    <table style="margin-right: 20px;">
+                        <tr>
+                            <td colspan="3"><b>Pipe</b></td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right" style="width: 20px;">73</td>
+                            <td>Piccolo</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">74</td>
+                            <td>Flute</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">75</td>
+                            <td>Recorder</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">76</td>
+                            <td>Pan Flute</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">77</td>
+                            <td>Bottle Blow</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">78</td>
+                            <td>Shakuhachi</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">79</td>
+                            <td>Whistle</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">80</td>
+                            <td>Ocarina</td>
+                        </tr>
+                    </table>
+                </td>
+                <td>
+                    <table>
+                        <tr>
+                            <td colspan="3"><b>Ethnic</b></td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right" style="width: 30px;">105</td>
+                            <td>Sitar</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">106</td>
+                            <td>Banjo</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">107</td>
+                            <td>Shamisen</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">108</td>
+                            <td>Koto</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">109</td>
+                            <td>Kalimba</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">110</td>
+                            <td>Bagpipe</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">111</td>
+                            <td>Fiddle</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">112</td>
+                            <td>Shanai</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="4">&nbsp;</td>
+            </tr>
+            <tr>
+                <td>
+                    <table style="margin-right: 20px;">
+                        <tr>
+                            <td colspan="3"><b>Organ</b></td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right" style="width: 20px;">17</td>
+                            <td>Hammond Organ</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">18</td>
+                            <td>Percussive Organ</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">19</td>
+                            <td>Rock Organ</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">20</td>
+                            <td>Church Organ</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">21</td>
+                            <td>Reed Organ</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">22</td>
+                            <td>Accordion</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">23</td>
+                            <td>Harmonica</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">24</td>
+                            <td>Tango Accordion</td>
+                        </tr>
+                    </table>
+                </td>
+                <td>
+                    <table style="margin-right: 20px;">
+                        <tr>
+                            <td colspan="3"><b>Ensemble</b></td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right" style="width: 20px;">49</td>
+                            <td>Acoustic String Ensemble 1</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">50</td>
+                            <td>Acoustic String Ensemble 2</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">51</td>
+                            <td>SynthStrings 1</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">52</td>
+                            <td>SynthStrings 2</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">53</td>
+                            <td>Aah Choir</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">54</td>
+                            <td>Ooh Choir</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">55</td>
+                            <td>Synth Vox</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">56</td>
+                            <td>Orchestra Hit</td>
+                        </tr>
+                    </table>
+                </td>
+                <td>
+                    <table style="margin-right: 20px;">
+                        <tr>
+                            <td colspan="3"><b>Synth Lead</b></td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right" style="width: 20px;">81</td>
+                            <td>Square Wave</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">82</td>
+                            <td>Saw Wave</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">83</td>
+                            <td>Calliope</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">84</td>
+                            <td>Chiffer</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">85</td>
+                            <td>Charang</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">86</td>
+                            <td>Solo Vox</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">87</td>
+                            <td>5th Saw Wave</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">88</td>
+                            <td>Bass and Lead</td>
+                        </tr>
+                    </table>
+                </td>
+                <td>
+                    <table>
+                        <tr>
+                            <td colspan="3"><b>Percussive</b></td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right" style="width: 30px;">113</td>
+                            <td>Tinkle Bell</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">114</td>
+                            <td>Agogo</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">115</td>
+                            <td>Steel Drums</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">116</td>
+                            <td>Woodblock</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">117</td>
+                            <td>Taiko Drum</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">118</td>
+                            <td>Melodic Tom</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">119</td>
+                            <td>Synth Drum</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">120</td>
+                            <td>Reverse Cymbal</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="4">&nbsp;</td>
+            </tr>
+            <tr>
+                <td>
+                    <table style="margin-right: 20px;">
+                        <tr>
+                            <td colspan="3"><b>Guitar</b></td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right" style="width: 20px;">25</td>
+                            <td>Acoustic Nylon Guitar</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">26</td>
+                            <td>Acoustic Steel Guitar</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">27</td>
+                            <td>Electric Jazz Guitar</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">28</td>
+                            <td>Electric Clean Guitar</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">29</td>
+                            <td>Electric Muted Guitar</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">30</td>
+                            <td>Overdriven Guitar</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">31</td>
+                            <td>Distortion Guitar</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">32</td>
+                            <td>Guitar Harmonics</td>
+                        </tr>
+                    </table>
+                </td>
+                <td>
+                    <table style="margin-right: 20px;">
+                        <tr>
+                            <td colspan="3"><b>Brass</b></td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right" style="width: 20px;">57</td>
+                            <td>Trumpet</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">58</td>
+                            <td>Trombone</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">59</td>
+                            <td>Tuba</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">60</td>
+                            <td>Muted Trumpet</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">61</td>
+                            <td>French Horn</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">62</td>
+                            <td>Brass Section</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">63</td>
+                            <td>Synth Brass 1</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">64</td>
+                            <td>Synth Brass 2</td>
+                        </tr>
+                    </table>
+                </td>
+                <td>
+                    <table style="margin-right: 20px;">
+                        <tr>
+                            <td colspan="3"><b>Synth Pad</b></td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right" style="width: 20px;">89</td>
+                            <td>Fantasy</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">90</td>
+                            <td>Warm</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">91</td>
+                            <td>Polysynth</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">92</td>
+                            <td>Choir</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">93</td>
+                            <td>Bowed</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">94</td>
+                            <td>Metal</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">95</td>
+                            <td>Halo</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">96</td>
+                            <td>Sweep</td>
+                        </tr>
+                    </table>
+                </td>
+                <td>
+                    <table>
+                        <tr>
+                            <td colspan="3"><b>Sound Effects</b></td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right" style="width: 30px;">121</td>
+                            <td>Guitar Fret Noise</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">122</td>
+                            <td>Breath Noise</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">123</td>
+                            <td>Seashore</td>
+                        </tr>
+                        <tr>
+                            <td>°</td>
+                            <td align="right">124</td>
+                            <td>Bird Tweet</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">125</td>
+                            <td>Telephone Ring</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">126</td>
+                            <td>Helicopter</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">127</td>
+                            <td>Applause</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">128</td>
+                            <td>Gunshot</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="4">&nbsp;</td>
+            </tr>
+            <tr>
+                <td colspan="4">
+                    <table>
+                        <tr>
+                            <td colspan="3"><b>GM Drum Kits</b></td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">16385</td>
+                            <td>Standard Kit</td>
+                        </tr>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">16386</td>
+                            <td>Room Kit (a memory-reduced version of the Standard Kit)</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">16401</td>
+                            <td>Power Kit</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">16409</td>
+                            <td>Electronic Kit</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">16410</td>
+                            <td>Analog Kit</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">16425</td>
+                            <td>Brush Kit</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;</td>
+                            <td align="right">16433</td>
+                            <td>Orchestra Kit</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="4">&nbsp;</td>
+            </tr>
+            <tr>
+                <td colspan="4">
+                    <table>
+                        <tr>
+                            <td>&#8226;</td>
+                            <td align="right">Bullets indicate the instruments and drum kits that are available for playing on the built-in synthesizer.</td>
+                            <td></td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+        
+
+
+
+</p><p class="spacer">&nbsp;</p>
+<p>
+<b>THE NOTE-PLAYING CODE</b>
+</p>
+<p>
+The routine in Listing 2 plays notes in a piano-like sound with the note allocator<br>
+component. We start by calling OpenDefaultComponent to open up the component. If<br>
+this routine returns 0, the component wasn't opened, most likely because QTMA wasn't<br>
+present.
+</p>
+<p>
+<b>Listing 2. </b>Playing notes with the note allocator component
+</p>
+<pre>void PlaySomeNotes(void)
+{
+   NoteAllocator      na;
+   NoteChannel         nc;
+   NoteRequest         nr;
+   ComponentResult   thisError;
+   long               t, i;
+
+   na = 0;
+   nc = 0;
+
+   // * Open up the note allocator.
+   na = OpenDefaultComponent(kNoteAllocatorType, 0);
+   if (!na)
+      goto goHome;
+
+   // * Fill out a NoteRequest using NAStuffToneDescription to help,
+   // * and allocate a NoteChannel.
+   nr.info.flags = 0;
+   nr.info.reserved = 0;
+   nr.info.polyphony = 2;      // simultaneous tones
+   nr.info.typicalPolyphony = 0x00010000;  // usually just one note
+   thisError = NAStuffToneDescription(na, 1, &amp;nr.tone); // 1 is piano
+   thisError = NANewNoteChannel(na, &amp;nr, &amp;nc);
+   if (thisError || !nc)
+      goto goHome;
+
+   // If we've gotten this far, OK to play some musical notes.
+   // Lovely.
+   NAPlayNote(na, nc, 60, 80);   // middle C at velocity 80
+   Delay(40, &amp;t);            // delay 2/3 of a second
+   NAPlayNote(na, nc, 60, 0);    // middle C at velocity 0: end note
+   Delay(40, &amp;t);            // delay 2/3 of a second
+
+   // * Obligatory do-loop of rising tones
+   for (i = 60; i &lt;= 84; i++) {
+      NAPlayNote(na, nc, i, 80);   // pitch i at velocity 80
+      NAPlayNote(na, nc, i+7, 80); // pitch i+7 (musical fifth) at
+                                   // velocity 80
+      Delay(10, &amp;t);           // delay 1/6 of a second
+      NAPlayNote(na, nc, i, 0);    // pitch i at velocity 0: end note
+      NAPlayNote(na, nc, i+7, 0);  // pitch i+7 at velocity 0:
+                                   // end note
+   }
+
+goHome:
+   if (nc)
+      NADisposeNoteChannel(na, nc);
+   if (na)
+      CloseComponent(na);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ROGER SHEPARD'S MELODY</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;In Listing 2, if you replace the code in the section labeled "Obligatory do-loop<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;of rising tones" with the following code, you'll receive a secret treat.
+</p>
+<pre>      i = 0;
+      while (!Button()) {
+         long   j, v;
+         for (j = i % 13; j &lt; 128; j+=13) {
+            v = j &lt; 64 ? j * 2 : (127 - j) * 2;
+            NAPlayNote(na, nc, j, v);
+         }
+         Delay(13, &amp;t);
+         for (j = i % 13; j &lt; 128; j+=13)
+            NAPlayNote(na, nc, j, 0);
+         i++;
+      }</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;This snappy little melody was discovered by psychologist Roger Shepard in the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1960s.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+Next we fill in the NoteRequestInfo and ToneDescription structures, calling the note<br>
+allocator's NAStuffToneDescription routine and passing it the GM instrument number<br>
+for piano. This routine fills in the gmNumber field and also fills in the other<br>
+ToneDescription fields with sensible values, such as the instrument's name in text<br>
+form in the instrumentName field. (The routine can be useful for converting a GM<br>
+instrument number to its text equivalent.)
+</p>
+<p>
+After allocating the note channel with NANewNoteChannel, we call NAPlayNote to play<br>
+each note. Notice the last two parameters to NAPlayNote:
+</p>
+<pre>ComponentResult NAPlayNote(NoteAllocator na, NoteChannel nc,
+   long pitch, long velocity);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The value of the pitch parameter is an integer from 1 to 127, where 60 is middle C,<br>
+61 is C sharp, and 59 is C flat, or B. Similarly, 69 is concert A, and is played at a<br>
+nominal audio frequency of 440 Hz. The velocity parameter's value is also an integer<br>
+from 1 to 127, or 0. A velocity of 1 corresponds to just barely touching the musical<br>
+keyboard, and 127 indicates that the key was struck as hard as possible. Different<br>
+velocities produce tones of different volumes from the synthesizer. A velocity of 0<br>
+means the key was released; the note stops or fades out, as appropriate to the kind of<br>
+sound being played. Here we stop the notes after delaying an appropriate amount of<br>
+time with a call to the Delay routine.
+</p>
+<p>
+Finally, being well behaved, we dispose of the note channel and close the note allocator<br>
+component.
+</p>
+<p>
+<b>LETTING THE USER PICK THE INSTRUMENT</b>
+</p>
+<p>
+Rather than specify the instrument sound itself, your application may want to let the<br>
+user pick it. For this purpose, a nifty instrument picker utility is provided in the note<br>
+allocator component. The instrument picker dialog, shown in Figure 1, enables users<br>
+to choose musical instruments from the available synthesizers and sounds.
+</p>
+<p>
+<img src="img/230.gif" width="416 px"></img>
+</p>
+<p>
+<b>Figure 1. The instrument picker dialog</b>
+</p>
+<p>
+The routine in Listing 3 shows one way that your application can use the instrument<br>
+picker. It's nearly identical to the code in Listing 2, except that the NAPickInstrument<br>
+routine is called right after the call to NAStuffToneDescription. As in Listing 1,<br>
+NAStuffToneDescription fills out a ToneDescription record for a particular GM<br>
+instrument number; NAPickInstrument then invokes the instrument picker dialog and<br>
+alters the passed ToneDescription to whatever instrument the user selects.
+</p>
+<p>
+<b>Listing 3. </b>Using the instrument picker
+</p>
+<pre>void PickThenPlaySomeNotes(void)
+{
+   ...   // * declarations and initialization
+
+   // * Open up the note allocator.
+   ...
+
+   // * Fill out a NoteRequest using NAStuffToneDescription to help,
+   // * call NAPickInstrument, and allocate a NoteChannel.
+   nr.info.flags = 0;
+   nr.info.reserved = 0;
+   nr.info.polyphony = 2;      // * simultaneous tones
+   nr.info.typicalPolyphony = 0x00010000;
+   thisError = NAStuffToneDescription(na, 1, &amp;nr.tone); // 1 is piano
+   thisError = NAPickInstrument(na, nil, "\pPick An Instrument:",
+                     &amp;nr.tone, 0, 0, nil, nil);
+   if (thisError)
+      goto goHome;
+   thisError = NANewNoteChannel(na, &amp;nr, &amp;nc);
+   if (thisError || !nc)
+      goto goHome;
+
+   // Play some musical notes.
+   ...
+
+   // Obligatory do-loop of rising tones
+   ...
+
+goHome:
+   ...      // Dispose of the NoteChannel and close the component.
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>ADDING EXPRESSIVENESS WITH CONTROLLERS</b>
+</p>
+<p>
+There's much more to music than simply playing the right notes at the right times.<br>
+Although your code can simulate only a scant fraction of the expressiveness of a<br>
+skillfully played acoustic instrument, there are certain things the note allocator<br>
+component lets you do that help make your computer-synthesized music sound more<br>
+interesting.
+</p>
+<p>
+As we've already seen, the NAPlayNote routine has parameters for specifying pitch and<br>
+velocity, the latter determining the volume of the note; changes in these parameter<br>
+values can affect the expressiveness of your music. You can also add expressiveness to<br>
+whatever notes are being played by using QTMA's controllers. A controller is a<br>
+parameter that's set independently of the notes being played, with a call to the<br>
+NASetController routine:
+</p>
+<pre>ComponentResult NASetController(NoteAllocator na, NoteChannel nc,
+   long controllerNumber, long controllerValue);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Two simple controllers are the pitch bend controller and the volume controller. The<br>
+pitch bend controller alters the frequency of any notes being played. It's like the<br>
+whammy-bar on an electric guitar, which tightens or loosens all the strings<br>
+simultaneously. The volume controller affects the sound of all notes similarly to the<br>
+way key velocity affects the sound of individual notes.
+</p>
+<p>
+Let's look at some source code that uses the pitch bend controller (Listing 4). This<br>
+routine plays a major-fifth interval for a half second, "bends" it up by three<br>
+semitones, holds it a half second, and then bends it back down to its original pitch.
+</p>
+<p>
+<b>Listing 4. </b>Using the pitch bend controller
+</p>
+<pre>void PlaySomeBentNotes(void)
+{
+   ...   // declarations and initialization
+
+   // Open up the note allocator.
+   ...
+
+   // Fill out a NoteRequest using NAStuffToneDescription to help, and
+   // allocate a NoteChannel.
+   ...
+
+   // If we've gotten this far, OK to play some musical notes. Lovely.
+   NAPlayNote(na, nc, 60, 80);   // middle C at velocity 80
+   NAPlayNote(na, nc, 67, 60);   // G at velocity 60
+   Delay(30, &amp;t);
+
+   // Loop through differing pitch bendings.
+   for (i = 0; i &lt;= 0x0300; i+=10) {      // bend 3 semitones
+      NASetController(na, nc, kControllerPitchBend, i);
+      Delay(1, &amp;t);
+   }
+   Delay(30, &amp;t);
+   for (i = 0x0300; i &gt;= 0; i-=10) {      // bend back to normal
+      NASetController(na, nc, kControllerPitchBend, i);
+      Delay(1, &amp;t);
+   }
+   Delay(30, &amp;t);
+   NAPlayNote(na, nc, 60, 0);      // middle C off
+   NAPlayNote(na, nc, 67, 0);      // G off
+
+goHome:
+   ...      // Dispose of the NoteChannel and close the component.
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Most QuickTime controller values are 16-bit signed fixed-point numbers (where the<br>
+lower eight bits are fractional) and have a range of 0 to 127, with a default value of 0.<br>
+However, the pitch bend controller has a range of -127 to 127, and the volume<br>
+controller has a default value of 127, or maximum volume.
+</p>
+<p>
+The pan controller has a slightly different definition from the other controllers. "Pan"<br>
+refers to the position of the sound in the stereo field. Most synthesizers have audio<br>
+output for left and right; on such synthesizers, the pan value is interpreted as follows:<br>
+The default pan position (usually centered) is specified by a value of 0 to the pan<br>
+controller. To position the sound arbitrarily, values between 1 (0x0100) and 2<br>
+(0x0200) are used to range between left and right, respectively. For synthesizers<br>
+with n outputs, values between 1 and n are used to pan between each adjacent pair of<br>
+outputs. Note that the built-in synthesizer doesn't currently support panning.
+</p>
+<h2>BUILDING A TUNE</h2>
+<p>
+As mentioned earlier, an application can use the tune player component to play entire<br>
+sequences of notes, or tunes. Applications often find it useful to play a tune that has<br>
+been precomposed and stored in the application; other times, it may be useful to<br>
+construct a tune at run time and then play it. In either case, the application must first<br>
+build the tune. Here we'll take a look at the format of a tune and the routines and<br>
+macros we use for building one.
+</p>
+<p>
+<b>THE FORMAT OF A TUNE</b>
+</p>
+<p>
+The format for tunes is a series of long words, subdivided into bitfields. Your<br>
+application needs to build a tune header and tune sequence made up of different types of<br>
+"events." The tune header contains one or more note request events, each a NoteRequest<br>
+data structure with some encapsulating long words. The tune sequence is made up of<br>
+note events that specify notes and durations, controller changes, and so on, as well as<br>
+rest events; it's the musical score.
+</p>
+<p>
+In the tune header, each note request event has the structure shown in Figure 2. (It's<br>
+actually a general event, of the note request subtype.) Thus the first word is<br>
+0xFnnn0017, where nnn is the part number, and the last word is 0xC0010017. The<br>
+part number is referred to later on by note events in the tune sequence. For example,<br>
+given a header than contains a note request event specifying part 3, subsequent note<br>
+events that specify part 3 will play in a note channel allocated according to that<br>
+NoteRequest.
+</p>
+<p>
+<img src="img/231.gif" width="537 px"></img>
+</p>
+<p>
+<b>Figure 2. A note request event</b>
+</p>
+<p>
+In the tune sequence, each note event includes the part, pitch, velocity, and duration of<br>
+the note; a rest event specifies only a duration (see Figure 3). A note event can have<br>
+either a short or an extended format. In a short note event, the pitch is limited to the<br>
+range 32 to 95 (which covers most musical notes) and the part number must be less<br>
+than 32. If either of these ranges is too small, or if you want to use a fixed-point pitch<br>
+value or a very long duration, the extended note format may be used. Much of the time<br>
+you can use the short format, to save space.
+</p>
+<p>
+<img src="img/232.gif" width="537 px"></img>
+</p>
+<p>
+<b>Figure 3. Note and rest events</b>
+</p>
+<p>
+Both headers and sequences end with a marker event containing all zeroes (equivalent<br>
+to 0x60000000), shown in Figure 4.
+</p>
+<p>
+<img src="img/233.gif" width="536 px"></img>
+</p>
+<p>
+<b>Figure 4. A marker event</b>
+</p>
+<p>
+<b>THE TUNE-BUILDING CODE</b>
+</p>
+<p>
+Our sample code includes routines for building the tune header and tune sequence.<br>
+These routines use some handy event-stuffing macros that are defined in the file<br>
+QuickTimeComponents.h, and all have the form _StuffSomething(arguments).<br>
+BuildTuneHeader (Listing 5) uses the following macro:
+</p>
+<pre>_StuffGeneralEvent(w1, w2, part, subtype, length);</pre><p class="spacer">&nbsp;</p>
+<p>
+The _StuffGeneralEvent macro fills in the head and tail long words of a particular type<br>
+of general event -- in our case, a note request event. Its arguments are, in order: the<br>
+head and tail long words; the part number; the event subtype<br>
+(kGeneralEventNoteRequest for a note request event); and the length in long words of<br>
+the entire event, counting the head and tail. Note that the first two arguments are the<br>
+head and tail themselves, not pointers -- the macro expands to a direct assignment of<br>
+these arguments.
+</p>
+<p>
+<b>Listing 5. </b>BuildTuneHeader
+</p>
+<pre>#define kNoteRequestHeaderEventLength \
+               (sizeof(NoteRequest) /sizeof(long) + 2)   // long words
+#define our_header_length \
+   ((2 * kNoteRequestHeaderEventLength + 1)) * sizeof(long)   // bytes
+unsigned long *BuildTuneHeader(void)
+{
+   unsigned long      *header, *w, *w2;
+   NoteRequest         *nr;
+   NoteAllocator      na;   // just for the NAStuffToneDescription
+call
+   ComponentResult   thisError;
+
+   header = 0;
+   na = 0;
+
+   // Open up the note allocator.
+   na = OpenDefaultComponent(kNoteAllocatorType, 0);
+   if (!na)
+      goto goHome;
+
+   // Allocate space for the tune header, rather inflexibly.
+   header = (unsigned long *) NewPtrClear(our_header_length);
+   if (!header)
+      goto goHome;
+   w = header;
+
+   // Stuff request for piano polyphony 4.
+   w2 = w + kNoteRequestHeaderEventLength - 1;   // last long word of
+                                                // note request event
+   _StuffGeneralEvent(*w, *w2, 1, kGeneralEventNoteRequest,
+                           kNoteRequestHeaderEventLength);
+   nr = (NoteRequest *)(w + 1);
+   nr-&gt;info.flags = 0;
+   nr-&gt;info.reserved = 0;
+   nr-&gt;info.polyphony = 4;      // simultaneous tones
+   nr-&gt;info.typicalPolyphony = 0x00010000;
+       // 1 is piano
+   thisError = NAStuffToneDescription(na, 1, &amp;nr-&gt;tone);
+   w += kNoteRequestHeaderEventLength;
+
+   // Stuff request for violin polyphony 3.  
+   w2 = w + kNoteRequestHeaderEventLength - 1;   // last long word of
+                                                // note request event
+   _StuffGeneralEvent(*w, *w2, 2, kGeneralEventNoteRequest,
+                           kNoteRequestHeaderEventLength);
+   nr = (NoteRequest *)(w + 1);
+   nr-&gt;info.flags = 0;
+   nr-&gt;info.reserved = 0;
+   nr-&gt;info.polyphony = 3;      // simultaneous tones
+   nr-&gt;info.typicalPolyphony = 0x00010000;
+   // violin
+   thisError = NAStuffToneDescription(na, 41, &amp;nr-&gt;tone);
+   w += kNoteRequestHeaderEventLength;
+   *w++ = 0x60000000;      // end-of-sequence marker
+goHome:
+   if (na)
+      CloseComponent(na);
+   return header;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+BuildTuneSequence (Listing 6) uses the _StuffNoteEvent and _StuffRestEvent macros.
+</p>
+<pre>_StuffNoteEvent(w, part, pitch, volume, duration);</pre>
+<p><p class="spacer">&nbsp;</p>
+The _StuffNoteEvent macro fills in a note event. Its arguments are, in order: the long<br>
+word to stuff; the part number; the pitch (where, as usual, 60 is middle C); the<br>
+volume (velocity); and the duration (usually specified in 600ths of a second). The<br>
+pitch must be between 32 and 95, and the part number must be less than 32. For<br>
+values outside these ranges, a fixed-point pitch value, or a very long duration, use<br>
+_StuffXNoteEvent.
+</p>
+<pre>_StuffXNoteEvent(w1, w2, part, pitch, volume, duration);</pre><p class="spacer">&nbsp;</p>
+<p>
+The _StuffXNoteEvent macro is for extended note events. It's identical to<br>
+_StuffNoteEvent except that it provides larger ranges for pitch, part, and duration,<br>
+and the event itself takes two long words.
+</p>
+<pre>_StuffRestEvent(w, restDuration);</pre><p class="spacer">&nbsp;</p>
+<p>
+The _StuffRestEvent macro fills in a rest event. It takes two arguments: the long word<br>
+to stuff and the duration of the rest.
+</p>
+<p>
+<b>Listing 6. </b>BuildTuneSequence
+</p>
+<pre>#define kNoteDuration 240      // in 600ths of a second
+#define kRestDuration 300      // in 600ths -- tempo will be 120 bpm
+
+#define our_sequence_length (22 * sizeof(long))      // bytes
+#define our_sequence_duration (9 * kRestDuration)      // 600ths
+
+unsigned long *BuildTuneSequence(void)
+{
+   unsigned long   *sequence, *w;
+
+   // Allocate space for the tune sequence, rather inflexibly.
+   sequence = (unsigned long *) NewPtrClear(our_sequence_length);
+   if (!sequence)
+      goto goHome;
+   w = sequence;
+   _StuffNoteEvent(*w++, 1, 60, 100, kNoteDuration);      // piano C
+   _StuffRestEvent(*w++, kRestDuration);
+   _StuffNoteEvent(*w++, 2, 60, 100, kNoteDuration);      // violin C
+   _StuffRestEvent(*w++, kRestDuration);
+   _StuffNoteEvent(*w++, 1, 63, 100, kNoteDuration);      // piano
+   _StuffRestEvent(*w++, kRestDuration);
+   _StuffNoteEvent(*w++, 2, 64, 100, kNoteDuration);      // violin
+   _StuffRestEvent(*w++, kRestDuration);
+
+   // Make the 5th and 6th notes much softer, just for fun.
+   _StuffNoteEvent(*w++, 1, 67, 60, kNoteDuration);       // piano
+   _StuffRestEvent(*w++, kRestDuration);
+   _StuffNoteEvent(*w++, 2, 66, 60, kNoteDuration);       // violin
+   _StuffRestEvent(*w++, kRestDuration);
+   _StuffNoteEvent(*w++, 1, 72, 100, kNoteDuration);      // piano
+   _StuffRestEvent(*w++, kRestDuration);
+   _StuffNoteEvent(*w++, 2, 73, 100, kNoteDuration);      // violin
+   _StuffRestEvent(*w++, kRestDuration);
+   _StuffNoteEvent(*w++, 1, 60, 100, kNoteDuration);      // piano
+   _StuffNoteEvent(*w++, 1, 67, 100, kNoteDuration);      // piano
+   _StuffNoteEvent(*w++, 2, 63, 100, kNoteDuration);      // violin
+   _StuffNoteEvent(*w++, 2, 72, 100, kNoteDuration);      // violin
+   _StuffRestEvent(*w++, kRestDuration);
+   *w++ = 0x60000000;   // end-of-sequence marker
+
+goHome:
+   return sequence;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+It's important to understand that the duration of a sequence equals the total durations of<br>
+all the rest events. The durations within the note events don't contribute to the<br>
+duration of the sequence! If two note events occur in a row, each with a duration of say<br>
+100, they'll both start at the same time, not 100 time units apart. If the next event is<br>
+an end-of-sequence marker, the notes will immediately be stopped, having played for<br>
+zero time units. If, however, a rest event is placed between the note events and the end<br>
+marker, both notes will sound for the duration of the rest event, up to 100 time units.
+</p>
+<h2>PLAYING A TUNE WITH THE TUNE PLAYER</h2>
+<p>
+Playing a tune with the tune player component is ideal if for some reason your<br>
+application will be constructing a tune at run time and then playing it. For prescored<br>
+music, however, the best solution is to create a QuickTime movie containing only a<br>
+music track and play it as a regular movie with the Movie Toolbox, as described below.
+</p>
+<p>
+Using the tune player to play a tune without application intervention is<br>
+straightforward, as illustrated in Listing 7. After building the tune with<br>
+BuildTuneHeader and BuildTuneSequence, this routine opens up a connection to the tune<br>
+player component, calls TuneSetHeader with a pointer to the header information, and<br>
+then calls TuneQueue with a pointer to the sequence data. All the details of playback are<br>
+taken care of by the tune player. The tune will stop playing when it reaches the end or<br>
+when the tune player component is closed.
+</p>
+<p>
+<b>Listing 7. </b>Playing a tune with the tune player component
+</p>
+<pre>void BuildSequenceAndPlay(void)
+{
+   unsigned long      *header, *sequence;
+   TunePlayer         tp;
+   TuneStatus         ts;
+   ComponentResult   thisError;
+
+   tp = 0;
+   header = BuildTuneHeader();
+   sequence = BuildTuneSequence();
+   if (!header || !sequence)
+      goto goHome;
+   tp = OpenDefaultComponent(kTunePlayerType, 0);
+   if (!tp)
+      goto goHome;
+   thisError = TuneSetHeader(tp, header);
+   thisError = TuneQueue(tp, sequence, 0x00010000, 0, 0x7FFFFFFF,
+                           0, 0, 0);
+
+   // Wait until the sequence finishes playing or the user clicks
+   // the mouse.
+spin:
+   thisError = TuneGetStatus(tp, &amp;ts);
+   if (ts.queueTime &amp;&amp; !Button())
+      goto spin;      // I use gotos primarily to shock the children.
+
+goHome:
+   if (tp)
+      CloseComponent(tp);
+   if (header)
+      DisposePtr((Ptr) header);
+   if (sequence)
+      DisposePtr((Ptr) sequence);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<h2>PLAYING PRESCORED MUSIC IN A QUICKTIME MOVIE</h2>
+<p>
+The best way to play prescored music is to create a QuickTime movie with just a music<br>
+track and play it with the Movie Toolbox, which takes care of details like spooling<br>
+multiple segments of sequence data from disk. This is currently the only way to create<br>
+QuickTime music that will also play under QuickTime for Windows. There are many<br>
+tools for authoring music into Standard MIDI Files, which are then easily imported as<br>
+QuickTime movies -- but first let's look at the more hard-core method of creating<br>
+your own sequence and header data and saving it as a QuickTime movie.
+</p>
+<p>
+<b>CREATING A QUICKTIME MUSIC TRACK</b>
+</p>
+<p>
+Creating a QuickTime music track is exactly the same as creating any other kind of<br>
+track. You create or open the movie you're adding the track to, and then add a new track<br>
+and a new media followed by a sample description and the sample data. For a music<br>
+track, the sample description is the tune header information, and the data is one or<br>
+more tune sequences. The routine in Listing 8 constructs a QuickTime movie with a<br>
+music track and saves it to disk.
+</p>
+<p>
+<b>Listing 8. </b>Creating a QuickTime music track
+</p>
+<pre>void BuildMusicMovie(void)
+{
+   ComponentResult      result;
+   StandardFileReply      reply;
+   short                resRefNum;
+   Movie                mo;
+   Track                tr;
+   Media                me;
+   unsigned long          *tune, *header;
+   MusicDescription       **mdH, *md;
+
+   StandardPutFile("\pMusic movie file name:", "\pMovie File",
+                   &amp;reply);
+   if (!reply.sfGood)
+      goto goHome;
+   EnterMovies();
+
+   // Create the movie, track, and media.
+   result = CreateMovieFile(&amp;reply.sfFile, 'TVOD', smCurrentScript,
+      createMovieFileDeleteCurFile, &amp;resRefNum, &amp;mo);
+   if (result)
+      goto goHome;
+   tr = NewMovieTrack(mo, 0, 0, 256);
+   me = NewTrackMedia(tr, MusicMediaType, 600, nil, 0);
+
+   // Create a music sample description.
+   header = BuildTuneHeader();
+   mdH = (MusicDescription **)
+      NewHandleClear(sizeof(MusicDescription) - 4 +
+         our_header_length);
+   if (!mdH)
+      goto goHome;
+   md = *mdH;
+   md-&gt;descSize = GetHandleSize((Handle) mdH);
+   md-&gt;dataFormat = kMusicComponentType;
+   BlockMove(header, md-&gt;headerData, our_header_length);
+   DisposePtr((Ptr) header);
+
+   // Get a tune, add it to the media, and then finish up.
+   tune = BuildTuneSequence();
+   result = BeginMediaEdits(me);
+   result = AddMediaSample(me, (Handle) &amp;tune, 0,
+      our_sequence_length, our_sequence_duration,
+      (SampleDescriptionHandle) mdH, 1, 0, nil);
+   result = EndMediaEdits(me);
+   result = InsertMediaIntoTrack(tr, 0, 0, our_sequence_duration,
+      (1L<<16));
+   result = OpenMovieFile(&amp;reply.sfFile, &amp;resRefNum, fsRdWrPerm);
+   result = AddMovieResource(mo, resRefNum, 0, 0);
+   result = CloseMovieFile(resRefNum);
+   DisposePtr((Ptr) tune);
+   DisposeMovie(mo);
+
+goHome:
+   ExitMovies();
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>IMPORTING A STANDARD MIDI FILE AS A MOVIE</b>
+</p>
+<p>
+Most music content exists in a format called Standard MIDI File (SMF). All sequencing<br>
+and composition programs have an option to Save As or Export files to this format.<br>
+QuickTime has facilities for reading an SMF file and easily converting it into a<br>
+QuickTime movie. (QuickTime 2.1 corrects some critical bugs in the 2.0 converter.)<br>
+During any kind of conversion, the SMF file is assumed to be scored for a General MIDI<br>
+device, and MIDI channel 10 is assumed to be a drum track.
+</p>
+<p>
+The conversion to a QuickTime movie can happen in several ways. Because the<br>
+conversion is implemented in a QuickTime 'eat ' component, it very often will happen<br>
+automatically. Any application that uses the StandardGetFile routine to open a movie<br>
+can also open 'Midi' files transparently, and can transparently paste Clipboard<br>
+contents of type 'Midi' into a movie that's shown with the standard movie controller. To<br>
+explicitly convert a file or handle into a movie, an application can use the Movie<br>
+Toolbox routines ConvertFileToMovieFile and PasteHandleIntoMovie, respectively.
+</p>
+<p>
+For those of you who are hard-core MIDI heads, the following two MIDI<br>
+system-exclusive messages, new in QuickTime 2.1, may be useful for more precise<br>
+control of the MIDI import process. (Note that QuickTime data is divided into media<br>
+samples. Within video tracks, each video frame is considered one sample; in music<br>
+tracks, each sample may contain several seconds worth of musical information.)
+</p>
+<ul>
+<li>F0 11 00 01 xx yy zz F7 sets the maximum size of each media sample to<br>
+the 21-bit number xxyyzz. (MIDI data bytes have the high bit clear, so they<br>
+have only seven bits of number.) This message can occur anywhere in an SMF<br>
+file.</li>
+<li>F0 11 00 02 F7 marks an immediate sample break; it ends the current<br>
+sample and starts a new one. All messages after a sample break message will<br>
+be placed in a new media sample.
+
+<p>
+Applications can define their own system-exclusive messages of the form F0<br>
+11 7F ww xx yy zz ... application-defined data ... F7, where ww xx yy zz is the<br>
+application's unique signature with the high bits cleared. This is guaranteed<br>
+not to interfere with Apple's or any other manufacturer's use of<br>
+system-exclusive codes.*
+</p></li></ul>
+<h2>READING INPUT FROM A MIDI DEVICE</h2>
+<p>
+If the user has a MIDI keyboard attached to the computer, your application can use it as<br>
+an input device by calling QTMA routines that capture each event as the user triggers<br>
+it.
+</p>
+<p>
+The default MIDI input is whichever MIDI port the user has chosen for a General MIDI<br>
+device from the QuickTime Music control panel, shown in Figure 5. (The default MIDI<br>
+input can also be specified with the NASetDefaultMIDIInput call in the note allocator,<br>
+but this call should be made only by music-configuration software, such as the control<br>
+panel.)
+</p>
+<p>
+<img src="img/234.gif" width="302 px"></img>
+</p>
+<p>
+<b>Figure 5. The QuickTime Music control panel</b>
+</p>
+<p>
+An application can receive MIDI events from the default MIDI input by installing a<br>
+readHook routine. This routine is called at interrupt level whenever MIDI data<br>
+arrives. It's installed with the NAUseDefaultMIDIInput call (and later deinstalled with<br>
+NALoseDefaultMIDIInput).
+</p>
+<pre>pascal ComponentResult NAUseDefaultMIDIInput(NoteAllocator na,
+   MusicMIDIReadHookUPP readHook, long refCon, unsigned long flags);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The readHook routine is defined as follows:
+</p>
+<pre>typedef pascal ComponentResult (*MusicMIDIReadHookProcPtr)
+   (MusicMIDIPacket *mp, long myRefCon);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+When the readHook routine is called, it's passed its refCon (installed with the routine)<br>
+and a pointer to the MIDI packet. The MIDI packet structure is simply a list of bytes of<br>
+a MIDI message, preceded by a length:
+</p>
+<pre>struct MusicMIDIPacket {
+   unsigned short   length;
+   unsigned long   reserved;
+   UInt8            data[249];
+};</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The length field is the number of bytes in the MIDI message. (If you're familiar with<br>
+the MIDI Manager definition of a MIDI packet or with OMS's packet, note that their<br>
+length field is different from this one: Theirs is the length of both the header and the<br>
+packet data, so the minimum length would be 6; but in QuickTime's packets, the length<br>
+field is only the number of bytes of MIDI data actually in the data array.)
+</p>
+<p>
+In QuickTime 2.0, the reserved field must be set to 0, but in QuickTime 2.1, this field<br>
+takes on some additional meanings (as reserved fields occasionally do). When an<br>
+application is using the default MIDI input, it may occasionally lose the use of that<br>
+input, such as when another application tries to use it, or if the instrument picker<br>
+dialog box comes to the front. If the use of the input is lost, the reserved field will have<br>
+the value kMusicPacketPortLost = 1, and the length field will be 0: no MIDI data. When<br>
+the port is once again available, the readHook routine will receive a packet with the<br>
+reserved field set to kMusicPacketPortFound = 2, also with no data.
+</p>
+<p>
+The data array in the MIDI packet contains a raw MIDI message that your readHook<br>
+routine will have to parse. Our example code parses only the MIDI messages for<br>
+note-on events and note-off events; other messages, such as pitch-bend controls, are<br>
+simply ignored.
+</p>
+<p>
+The note-on event message has three bytes, 9c pp vv (in hexadecimal), where c is the<br>
+MIDI channel that the musical keyboard is transmitting on, pp is a MIDI pitch from 0<br>
+to 127 (60 is middle C), and vv is the velocity with which the key was struck, from 1<br>
+to 127. If the velocity is 0, the message signifies a note-off event. Some devices,<br>
+however, use a separate message type for note-off events; it has the form 8c pp vv,<br>
+where c and pp are the channel and pitch, and vv is the velocity with which the key was<br>
+released. Nobody in the world pays attention to the release velocity, so in our example<br>
+we won't either. When an 8c message is received, we'll just set the velocity to 0 and<br>
+pretend it was a 9c message.
+</p>
+<p>
+Listing 9 shows a readHook routine and the routine that installs it. The main routine,<br>
+UseMIDIInput, allocates a note channel and then calls NAUseDefaultMIDIInput,<br>
+specifying a readHook routine that parses note-on or note-off event messages. These<br>
+messages are expanded into a chord that's played on the note channel. Any packet that<br>
+isn't of that type -- that is, doesn't contain three bytes or start with 0x8n or 0x9n --<br>
+is ignored.
+</p>
+<p>
+<b>Listing 9. </b>Parsing MIDI messages in the readHook routine
+</p>
+<pre>pascal ComponentResult AReadHook(MusicMIDIPacket *mp, long refCon)
+{
+   MIDIInputExample   *mie;
+   Boolean            major;
+   short               status, pitch, vel;
+
+   mie = (MIDIInputExample *)refCon;
+   if (mp-&gt;reserved == kMusicPacketPortLost)  // port gone? make
+                                                 // channel quiet
+      NASetNoteChannelVolume(mie-&gt;na, mie-&gt;nc, 0);
+   else if (mp-&gt;reserved == kMusicPacketPortFound) // port back?
+                                                      // raise volume
+      NASetNoteChannelVolume(mie-&gt;na, mie-&gt;nc, 0x00010000);
+   else if (mp-&gt;length == 3) {
+      status = mp-&gt;data[0] &amp; 0xF0;
+      pitch = mp-&gt;data[1];
+      vel = mp-&gt;data[2];
+      switch (status) {
+         case 0x80:
+            vel = 0;
+         // Falls into case 0x90.
+         case 0x90:
+            major = pitch % 5 == 0;
+            NAPlayNote(mie-&gt;na, mie-&gt;nc, pitch, vel);
+            NAPlayNote(mie-&gt;na, mie-&gt;nc, pitch+3+major, vel);
+            NAPlayNote(mie-&gt;na, mie-&gt;nc, pitch+7, vel);
+            break;
+      }
+   }
+   return noErr;
+}
+
+void UseMIDIInput(void)
+{
+   ComponentResult    result;
+   MIDIInputExample   mie;
+   NoteRequest        nr;
+
+   mie.na = OpenDefaultComponent(kNoteAllocatorType, 0);
+   if (!mie.na)
+      goto goHome;
+   nr.polyphony = 2;
+   nr.typicalPolyphony = 0x00010000;
+   result = NAStuffToneDescription(mie.na, 1, &amp;nr.tone);// piano
+   result = NANewNoteChannel(mie.na, &amp;nr, &amp;mie.nc);
+   result = NAUseDefaultMIDIInput(mie.na, AReadHookUPP,
+      (long) &amp;mie, 0)
+   while (!Button());
+   result = NALoseDefaultMIDIInput(mie.na);
+
+goHome:
+   if (mie.na)
+      CloseComponent(mie.na);      // disposes of NoteChannel, too
+}</pre>
+<p class="spacer">&nbsp;</p>
+<h2>GIVE QTMA A TRY</h2>
+<p>
+Sometimes a little music can make your application easier and more fun to use. Adding<br>
+music doesn't have to be a complex task; QTMA takes care of all the hard parts, like<br>
+using MIDI protocols, so you can concentrate more on the music itself. So go ahead,<br>
+play some tunes and enjoy the music!
+</p>
+<p>
+<b>DAVID VAN BRINK </b>lives in a tiny experimental habitat overlooking the Denny's<br>
+parking lot in Santa Cruz, California. He experiences life at 14,400 bits per second.<br>
+See http://www.srm.com for more information.*
+</p>
+<p>
+Thanks to our technical reviewers Peter Hoddie, Duncan Kennedy, Jim Nitchals, Jim<br>
+Reekes, and Kent Sandvik.*
+</p>
+</body>
+</html>

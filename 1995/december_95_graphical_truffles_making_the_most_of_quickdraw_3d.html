@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 61 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 95 - Graphical Truffles: Making the Most of QuickDraw 3D</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Graphical Truffles: Making the Most of QuickDraw<br>
+3D</h1>
+<h2>Nick Thompson and Pablo Fernicola</h2>
+<p>
+<img src="img/269.gif" width="188 px"></img>
+</p>
+<p>
+For those of us on Apple's QuickDraw 3D team, the highlight of SIGGRAPH '95 (the<br>
+annual conference of the ACM's computer graphics interest group) was having the<br>
+chance to work with developers who were showing QuickDraw 3D products.<br>
+Considering that we only started working with developers in December 1994, the<br>
+number of applications already up and running is inspiring. By the time you read this<br>
+column, 10 or 15 QuickDraw 3D products will be shipping, including modeling and<br>
+animation software, 3D hardware accelerators, 3D model clip art, and games. More<br>
+than 50 developers are actively working on products based on QuickDraw 3D, and<br>
+those will ship in 1996.
+</p>
+<p>
+If you're not yet a QuickDraw 3D developer and don't want to be left out, take a look at<br>
+the <i>develop</i> articles "QuickDraw 3D: A New Dimension for Macintosh Graphics" in<br>
+Issue 22 and "The Basics of QuickDraw 3D Geometries" in Issue 23. This column gives<br>
+a hodgepodge of additional information.
+</p>
+<p>
+<b>IMPROVING ACCELERATOR PERFORMANCE</b>
+</p>
+<p>
+One of the things that has attracted developers to QuickDraw 3D is seamless access to<br>
+hardware acceleration. In addition to Apple's PCI accelerator card, hardware<br>
+acceleration cards have been announced by Matrox, Yarc, Radius, and Newer<br>
+Technology. If you really want your application to fly, you need to make sure that<br>
+you're using the fastest renderer possible and that if a hardware acceleration card is<br>
+installed, you're using the card. If you use the QuickDraw 3D API, QuickDraw 3D will<br>
+take care of this for you, but there's something else you can do that might improve<br>
+your application's performance.
+</p>
+<p>
+Certain cards, including Apple's accelerator card, will yield better frame rates in<br>
+some situations if you use what we call <i>double buffer bypass</i>, an option enabled by a<br>
+flag. Double buffering causes all objects to be drawn first into a back buffer; this<br>
+entire buffer is then copied to the front buffer (the window). If the scene you're<br>
+rendering is simple and thus takes very little time to redraw --&nbsp;&nbsp;say, less than 1/10<br>
+of a second -- enabling double buffer bypass is faster because it avoids having to copy<br>
+memory from the back buffer to the front buffer. On the other hand, if you use this<br>
+option with a complex scene, tearing may occur. Therefore, you may want to time a<br>
+frame (and take into account the complexity of your models) before using double<br>
+buffer bypass. To time a frame, call the Toolbox routine Microseconds, draw the<br>
+frame, call Q3Renderer_Sync to make sure the frame has been fully drawn, and then<br>
+call Microseconds again and subtract the start time from the end time.
+</p>
+<p>
+If you're using QuickDraw 3D's interactive software renderer, all the code you need to<br>
+turn on double buffer bypass is shown in Listing 1.
+</p>
+<p>
+<b>Listing 1.</b> Turning on double buffer bypass
+</p>
+<pre>// Create the renderer.
+if ((myRenderer = Q3Renderer_NewFromType(kQ3RendererTypeInteractive))
+       != nil) {
+   if ((myStatus = Q3View_SetRenderer(myView, myRenderer))
+          == kQ3Failure) {  // Handle the error.
+      ...
+   }   // Set bypass.
+   Q3InteractiveRenderer_SetDoubleBufferBypass(myRenderer, kQ3True);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The interactive renderer can render using software only or using hardware<br>
+acceleration. The interactive renderer is set by default to look for the best device<br>
+possible, so if a hardware accelerator is installed, the accelerator will always be used.<br>
+On occasion, though, you may want to switch from using hardware to using software<br>
+(for demos or testing, for example). In this case you must explicitly request the<br>
+software rasterizer, as follows:
+</p>
+<pre>Q3InteractiveRenderer_SetPreferences(myRenderer,
+   kQAVendor_Apple, kQAEngine_AppleSW);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>INTERACTING WITH INPUT DEVICES</b>
+</p>
+<p>
+QuickDraw 3D provides an input device abstraction layer that allows you to interact<br>
+with different input devices without having to write special code for each of them. The<br>
+sample application NewEra demonstrates interaction with tablets and other input<br>
+devices; this application is available on the CD that comes with the book <i>3D Graphics</i><br>
+<i>Programming With QuickDraw 3D</i>, and a newer version can be found on this issue's<br>
+CD.
+</p>
+<p>
+To take advantage of QuickDraw 3D's input device layer, you need to create a tracker<br>
+object and associate it with a controller object (created by an input device driver), as<br>
+Listing 2 does. Once you've set up your tracker, you can poll it to get its new position<br>
+and orientation, as shown in Listing 3. To reflect the change in your scene, you apply<br>
+the values returned by the tracker to a transform object, affecting either a particular<br>
+geometry or group (if an object was selected and being manipulated) or the camera,<br>
+depending on the interaction model for your application.
+</p>
+<p>
+<b>Listing 2. </b>Creating a tracker object and attaching it to a controller object
+</p>
+<pre>theDocument-&gt;fPositionSN = 0;
+theDocument-&gt;fRotationSN = 0;
+theDocument-&gt;fTracker = Q3Tracker_New(NULL);
+myStatus = Q3Controller_Next(NULL, &amp;controllerRef);
+while (controllerRef != NULL &amp;&amp; myStatus == kQ3Success) {
+   Q3Controller_SetTracker(controllerRef, theDocument-&gt;fTracker);
+   myStatus = Q3Controller_Next(controllerRef, &amp;controllerRef);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 3. </b>Updating position and orientation
+</p>
+<pre>// We received a null event; grab a new position and orientation
+// for the model.
+TQ3Boolean      positionChanged;
+TQ3Boolean      rotationChanged;
+
+Q3Tracker_GetPosition(doc.fTracker, &amp;doc.fPosition, NULL,
+    &amp;positionChanged, &amp;doc.fPositionSN);
+Q3Tracker_GetOrientation(doc.fTracker, &amp;doc.fRotation, NULL,
+    &amp;rotationChanged, &amp;doc.fRotationSN);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+QuickDraw 3D's input device abstraction layer also makes writing input device<br>
+drivers easier. For example, it took us about three days to write a driver for the<br>
+Magellan device from Logitech, Inc., a 3D input device with six degrees of freedom. As<br>
+illustrated in Figure 1, this device enables movement along the x, y, and z axes, as<br>
+well as rotation about the three axes.
+</p>
+<p>
+<img src="img/270.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>Magellan: a six-degrees-of-freedom input device (courtesy of Logitech)
+</p>
+<p>
+<b>SETTING THE CORRECT FILE TYPE</b>
+</p>
+<p>
+When saving QuickDraw 3D metafiles, you should set the file type as '3DMF',<br>
+regardless of how the contents of the file are formatted (as plain-text or binary, or<br>
+any combination of the different types of organization, such as database or stream).<br>
+This will enable the file to be read or opened by other QuickDraw 3D applications. If<br>
+you'd like your end users to read a file as text, add an Export As Text option to your<br>
+application and then set the file type to 'TEXT'. This is helpful for debugging (and for<br>
+sending questions or bugs to Developer Technical Support).
+</p>
+<p>
+<b>HAVING FUN WITH CUSTOM ATTRIBUTES</b>
+</p>
+<p>
+By taking advantage of QuickDraw 3D's custom attributes and extensible metafile<br>
+format, you can have objects that encapsulate specialized data relevant to your<br>
+application. For instance, to navigate through the World Wide Web in 3D, you can<br>
+attach Web data (like URLs) to QuickDraw 3D objects as custom attributes. When<br>
+those objects or scenes are read into one of the many viewers supporting the URL<br>
+custom attribute, the viewer can communicate through Apple events with applications<br>
+like Netscape (or your favorite Web browser) to produce 3D navigation. You'll find a<br>
+sample application that shows how to do this on this issue's CD.
+</p>
+<p>
+Custom attributes also enable you to associate sound and other data with objects in<br>
+your 3D scene.
+</p>
+<p>
+<b>DEBUGGING</b>
+</p>
+<p>
+There are two really handy techniques that you can use to diagnose problems you may<br>
+be having with your QuickDraw 3D application. For both of these approaches to<br>
+debugging your software, you'll want to make sure that you have MacsBug installed on<br>
+your machine and that you're using the debugging version of the QuickDraw 3D<br>
+extension supplied with the QuickDraw 3D development software.
+</p>
+<p>
+&nbsp;&nbsp;The first technique is to install error and warning handlers, described in our article<br>
+in develop Issue 22. Error and warning handlers are particularly useful for telling<br>
+you of potential problems with your use of the QuickDraw 3D library. If you don't<br>
+install error and warning handlers, you won't know if you're doing something that the<br>
+library identifies as erroneous. Although we stated this in our original article, many<br>
+developers missed its significance and thus have experienced longer debugging times<br>
+than necessary and a great deal of frustration.
+</p>
+<p>
+The second technique is to use a software tool, the 3D debugger, included on this issue's<br>
+CD. This application enables you to examine the QuickDraw 3D heap and look at the<br>
+different objects, their attributes, and their reference count. Please note that you're<br>
+looking under the hood, so you may encounter untyped blocks, and the reference count<br>
+for objects may reflect references internal to the QuickDraw 3D system.
+</p>
+<p>
+<b>LOOKING AHEAD</b>
+</p>
+<p>
+We'll continue to release great new QuickDraw 3D features, so bring your applications<br>
+along for the ride. By early 1996 we expect to have all major existing 3D applications<br>
+on the Macintosh using QuickDraw 3D, along with applications that developers port<br>
+from other platforms. Many 2D applications will be making use of the 3D Viewer as<br>
+well.
+</p>
+<p>
+Watch <i>develop</i> for further articles about other aspects of QuickDraw 3D. Meanwhile,<br>
+you may want to check out the Addison-Wesley book <i>3D Graphics Programming With</i><br>
+<i>QuickDraw 3D </i>(which includes the QuickDraw 3D development software) and see this<br>
+issue's CD for the development software and the latest versions of the sample code and<br>
+utility applications. And for the latest news on QuickDraw 3D, see our Web page at<br>
+http://www.info.apple.com/qd3d.
+</p>
+<p>
+<b>NICK THOMPSON </b>(eWorld NICKT), transplanted English soccer fan and member of<br>
+Apple's Developer Technical Support team, thinks that this could be the year for the<br>
+Arsenal Football Club. With the acquisition of Dutch star Dennis Bergkamp and England<br>
+striker David Platt, things are looking up at Highbury. By the time you read this, the<br>
+Premier League standings will tell if this is the dawning of a new era or more of the<br>
+same "boring, boring, Arsenal," as those charming Spurs fans like to chant.
+</p>
+<p>
+<b>PABLO FERNICOLA</b> (eWorld EscherDude), of Apple's Interactive Multimedia Group,<br>
+is much more relaxed since shipping QuickDraw 3D 1.0. He now has time to eat his<br>
+dad's great barbecue, dally with his lovely wife, and sleep -- although the latter<br>
+entails the challenge of trying to get his golden retriever, aptly named Mac, to give up<br>
+some of the space he takes up in the bed. Pablo's latest research project is to find out<br>
+exactly what the purpose is for those orange balls that one finds on high power<br>
+transmission lines.
+</p>
+<p>
+<b>For more information</b> on making your application work with Magellan, contact<br>
+Stephan Ilberg at Logitech by sending a message to stephan_ilberg@logitech.com.
+</p>
+<p>
+Thanks to Robert Dierkes and F&aacute;bio Pettinati for reviewing this column, and a<br>
+special thanks to Dan Venolia and David Vasquez for supplying some of the code and<br>
+applications discussed.
+</p>
+</body>
+</html>

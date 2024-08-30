@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 50 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 95 - Speeding Up whose Clause Resolution In Your Scriptable Application</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Speeding Up whose Clause Resolution In Your<br>
+Scriptable Application</h1>
+<h2>Greg Anderson</h2>
+<p>
+<img src="img/238.gif" width="188 px"></img>
+</p>
+<p>
+<i>The Object Support Library provides convenient mechanisms for scriptable</i><br>
+<i>applications to support complex expressions that may return multiple results (such</i><br>
+<i>as every item of container "b" whose name contains "a"). However, the performance of</i><br>
+<i>applications that rely on the default behavior is nowhere near what it could be if the</i><br>
+<i>application took on some of the work itself. This article shows you how to gain ten- to a</i><br>
+<i>hundred-fold increases in the performance of whose clause resolution in your</i><br>
+<i>scriptable application. If your application is not yet scriptable, you'll find that the</i><br>
+<i>foundation classes presented in this article do most of the work required to support</i><br>
+<i>scripting.</i>
+</p>
+<p>
+One of the greatest strengths of AppleScript is its built-in ability to do complex<br>
+operations on groups of objects in a single line of script. For example, suppose you<br>
+have a set of shapes in a scriptable drawing program, and you'd like to change the color<br>
+of all the red shapes to green. In conventional programming languages, you'd need to<br>
+write a loop that iterates over each object in the set, tests to see if its color is red, and<br>
+then does a "set color to green" command for each red object that was found. Using<br>
+AppleScript, you can do the same operation with the single statement <b>set color of</b><br>
+<b>every shape whose color is red to green</b>. In that statement, <b>every shape</b><br>
+<b>whose color is red</b>is called a <i>whose clause</i>, and it's the inclusion of <b>whose</b> clauses<br>
+that makes AppleScript the powerful language it is.
+</p>
+<p>
+You may at first doubt that using a <b>whose</b> clause is much better than writing the<br>
+equivalent script with a loop. After all, the direction of modern processor design has<br>
+been toward simplicity of the instruction set; RISC chips are able to gain incredible<br>
+performance improvements by doing optimizations that aren't possible in CISC chips.<br>
+Also, when all is said and done, the <b>whose</b> clause must finally execute the same<br>
+loop-and-compare algorithm that you'd be forced to use if you wrote the script with<br>
+the basic flow-of-control script commands, such as<b>do-while</b> and <b>if-then</b>.
+</p>
+<p>
+Using a <b>whose</b> clause is, however, much more efficient than the alternative.<br>
+AppleScript is based on the client/server paradigm: typically your script, the client,<br>
+will be running in one application (usually the Script Editor or a script saved as a<br>
+miniapplication), with the application being scripted acting as a server. In this<br>
+situation, each script command that's directed at the scriptable application needs to be<br>
+transferred between the two applications. A<b>whose</b> clause is a single script command,<br>
+but with the loop approach many commands would need to be sent. Furthermore,<br>
+AppleScript allows the scriptable application to reside on a different machine than the<br>
+application running the script; if your script is running on a machine in Cupertino,<br>
+California, and the server is on, say, Mars, reducing the number of round-trip<br>
+messages would have a profound impact on the performance of the script. Remember,<br>
+you can currently get only about 30 round-trip Apple events per second, so even if<br>
+you aren't sending data to Mars, you'll still do a lot better with fewer events than with<br>
+many.
+</p>
+<p>
+There's another, similar reason that using <b>whose</b> clauses is superior to the equivalent<br>
+loop-based script: AppleScript compiles scripts into byte codes that are interpreted<br>
+during execution, whereas the individual script commands (once interpreted) are<br>
+processed by a scriptable application typically written in a language that's compiled<br>
+into machine code (be it 680x0 or PowerPC(TM)). The loop-and-compare script will<br>
+execute several lines of script for every item that's compared, whereas the <b>whose</b><br>
+clause is but a single line of script that triggers processing in a compiled application.<br>
+It should be quite clear which will take less time to execute.
+</p>
+<p>
+The Object Support Library (OSL) -- the library that provides the API you use to<br>
+make your application scriptable -- enables your application to support<b>whose</b><br>
+clauses without requiring you to write a lot of additional code. You only need to provide<br>
+an object-counting function and an object comparison function, and the OSL can<br>
+resolve <b>whose</b> clauses for you. Since supporting <b>whose</b> clauses allows script writers<br>
+to write more efficient scripts, you should always do at least this much. However,<br>
+there are two other features of the OSL that can vastly increase the performance of<br>
+scriptable applications but are often ignored by application writers: <b><i>whose</i></b><i> clause</i><br>
+<i>resolution</i> (a way for your application to find the objects that match a <b>whose</b> test<br>
+without using the OSL) and <i>marking</i> (a mechanism for efficiently handling collections<br>
+of objects, such as those satisfying a <b>whose</b> clause). Using <b>whose</b> clause resolution,<br>
+with the help of marking, will enable you to get the most out of your scriptable<br>
+application. Resolving <b>whose</b> clauses can be a bit tricky, but with a little help from<br>
+this article, you'll be on your way in no time.
+</p>
+<p>
+If your application is not yet scriptable, you'll find the sample code included with this<br>
+article (and on this issue's CD) to be invaluable in getting you up and running --<br>
+particularly since it contains a lot of reusable code.
+</p>
+<h2>AN OVERVIEW OF THE OSL</h2>
+<p>
+Good descriptions of the OSL can be found in the <i>develop</i> articles "Apple Event Objects<br>
+and You" in Issue 10 and "Better Apple Event Coding Through Objects" in Issue 12. If<br>
+you need a quick review of the OSL and you don't feel like putting down this issue of<br>
+<i>develop</i> to dig through your back issues, read on. If you can already generate tokens and<br>
+resolve object specifiers in your sleep, by all means skip ahead to the next section.
+</p>
+<p>
+When AppleScript is processing a script command such as <b>delete paragraph 2 of</b><br>
+<b>document "sample",</b> it converts the command into an Apple event which it sends to<br>
+the scriptable application that's referenced by the script. The Apple event's event class<br>
+and message ID together specify the verb of the operation being performed -- in this<br>
+case <b>delete</b>. The object being operated on is passed in the keyDirectObject parameter<br>
+of the Apple event, which is called, naturally enough, the <i>direct parameter</i> of the<br>
+event.
+</p>
+<p>
+The direct parameter is almost always an <i>object specifier</i> -- a descriptor of type<br>
+typeObjectSpecifier -- although in some cases it may be something else. For example,<br>
+in addition to object specifiers, the Scriptable Finder accepts alias records and file<br>
+specifications in the direct parameter of events sent to it. If the direct parameter of an<br>
+event is not of type typeObjectSpecifier, you're on your own to convert it into some<br>
+format that's understood by your event handler. For descriptors that are of this type,<br>
+though, all you need to do is call the function AEResolve, and the OSL will step in and<br>
+help your application resolve the object specifier -- that is, locate the Apple event<br>
+objects it describes.
+</p>
+<p>
+Object specifiers are resolved through <i>object accessor callbacks</i> that your application<br>
+installs to allow the OSL to communicate with your application during object<br>
+resolution. The accessor callbacks must take the description of the object requested by<br>
+the OSL (for example, <b>document "sample"</b>) and return a<i>token</i> that describes the<br>
+object in terms that the application can understand (for example, a pointer to a<br>
+TDocument object). Tokens are passed back to the OSL in an AEDesc, a structure that<br>
+contains a 32-bit descriptor type and a handle. Your application has complete control<br>
+over what it stores in the token, as long as the AEDesc is valid (that is, it was created<br>
+with AECreateDesc).
+</p>
+<p>
+When the OSL calls your application's object accessor callbacks, it always passes<br>
+either a token that represents the containing object (which it got from an earlier call<br>
+to one of your object accessors) or a representation of the default container of the<br>
+application, which is also called the null container of the application. So, to resolve the<br>
+object specifier <b>paragraph 2 of document "sample",</b> the OSL first asks for<br>
+<b>document "sample"</b> from the null container. Then it asks the application to provide<br>
+a token for <b>paragraph 2</b> from the token the application provided in response to the<br>
+request for<b>document "sample"</b>. The token that the application provides for<br>
+<b>paragraph 2</b> is returned as the result of the AEResolve call; the application will<br>
+presumably use this token to process the Delete event.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Resolving object specifiers</b> is explained in Chapter 6 of Inside<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Macintosh: Interapplication Communication. A figure illustrating the process<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;of resolving object specifiers is on page 6-6.*
+</p>
+<h2>MARKING</h2>
+<p>
+<i>Inside Macintosh: Interapplication Communication</i> describes marking as a mechanism<br>
+whereby items to be operated on are marked with some flag during resolution (that is,<br>
+from the callbacks made by the AEResolve function); then, during execution, each<br>
+marked item is processed and the mark is cleared. As described, marking doesn't sound<br>
+very interesting and appears to be useful only in fringe cases.
+</p>
+<p>
+&nbsp;&nbsp;Marking is actually very well suited for use as a general-purpose collection<br>
+mechanism whenever the OSL needs to group tokens together to process an object<br>
+resolution. For example, if the OSL is resolving the <b>whose</b> clause <b>every shape</b><br>
+<b>whose color is red</b> and there are multiple red shapes, the result of the call to<br>
+AEResolve must be a collection of all the tokens that represent red objects. If your<br>
+application supports marking, the OSL asks your application to create a special <i>mark</i><br>
+<i>token</i> to represent this collection. After your application provides the OSL with a mark<br>
+token, the OSL will ask your application to add the tokens it provided for the red shapes<br>
+to the mark token's collection. When AEResolve completes, the mark token is returned<br>
+as the result of the resolution.
+</p>
+<p>
+If your application doesn't support marking, the OSL will create collections of tokens<br>
+for you by copying the data from your tokens into a descriptor list (an AEDescList). It<br>
+calls the standard Apple Event Manager routines for creating descriptor lists, which<br>
+copy the data out of the data handle of the AEDesc and then store the token data<br>
+somewhere inside the data handle of the descriptor list; the descriptor type of the<br>
+AEDesc is similarly encapsulated.
+</p>
+<p>
+Dealing with descriptor lists of tokens can be inconvenient, particularly if your<br>
+application already supports collections of objects in some other way. The OSL<br>
+marking mechanism gives you the flexibility to handle collections in any way that's<br>
+convenient for your application.
+</p>
+<p>
+To support marking, you must pass the flag kAEIDoMarking to AEResolve and<br>
+implement the three marking callbacks that are passed to AESetObjectCallbacks: the<br>
+create-mark-token callback (called just a "mark-token callback" in Inside<br>
+Macintosh), the object-marking callback, and the mark-adjusting callback. The<br>
+create-mark-token callback doesn't need to do anything more than create an empty<br>
+mark token. The OSL will dispose of this token as usual by calling your token disposal<br>
+callback when the token is no longer needed. Listing 1 shows an example<br>
+implementation of a create-mark-token callback.
+</p>
+<p>
+<b>Listing 1. </b>Create-mark-token callback
+</p>
+<pre>pascal OSErr CreateMark(AEDesc containerToken, DescType desiredClass,
+      AEDesc* markTokenDesc)
+{
+   TMarkToken* markToken;
+  
+   markToken = new TMarkToken;
+   markToken-&gt;IMarkToken();
+   markTokenDesc-&gt;descriptorType = typeTokenObject;
+   markTokenDesc-&gt;dataHandle = markToken;
+
+   return noErr;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The object-marking callback is passed a mark token created from the<br>
+create-mark-token callback and some other token created by one of your application's<br>
+object accessor callbacks. Your object-marking callback should add a copy of the other<br>
+token into the mark token (or apply a reference count to the token being added),<br>
+because the OSL will dispose of the token added to your collection shortly after calling<br>
+your object-marking callback. Listing 2 shows one implementation of an<br>
+object-marking callback.
+</p>
+<p>
+<b>Listing 2.</b> Object-marking callback
+</p>
+<pre>pascal OSErr TAccessor::AddToMark(AEDesc tokenToAdd, AEDesc
+      markTokenDesc, long markCount)
+{
+   AEDesc      copyOfToken;
+   TMarkToken*   markToken;
+
+   // We know that the OSL will only give us mark tokens created with
+   // our create-mark-token callback, but real code would do a test
+   // before typecasting.
+   markToken = (TMarkToken*) markTokenDesc.TokenObject();
+   // Add a copy of the token to the collection, because the OSL will
+   // dispose of tokenToAdd after passing it to you. A reference-
+   // counting scheme is good here.
+   copyOfToken = CloneToken(tokenToAdd);
+   markToken-&gt;AddToCollection(copyOfToken);
+
+   return noErr;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The mark-adjusting callback is called to remove ("unmark") tokens from the<br>
+collection. Oddly enough, its parameters specify which tokens in the range to keep; all<br>
+tokens outside the specified range should be discarded.
+</p>
+<p>
+Implementing the marking callbacks is trivial. The only real work involved in<br>
+supporting marking is handling collections of tokens when they're ultimately received<br>
+by one of your event handlers (handling Move events, for example). The amount of code<br>
+required to handle the marking callbacks and maintain your own collections is<br>
+minimal; in fact, the time you'll save by not having to hassle with descriptor lists of<br>
+tokens will more than make up for the implementation cost. You'll find more<br>
+information on handling collections of tokens later in this article. Don't put off<br>
+marking as an optimization to be done later; incorporate it into the design of your<br>
+application from the very beginning.
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;For more details on the marking callbacks</b>, see <i>Inside Macintosh:</i><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>Interapplication Communication</i>, pages 6-53 to 6-54.*
+</p>
+<h2>WHOSE CLAUSE RESOLUTION</h2>
+<p>
+The only thing that a scriptable application needs to do to support <b>whose</b>clauses is<br>
+provide an object-counting function and an object comparison function -- the OSL will<br>
+do the rest of the work. When the OSL does a <b>whose</b>clause resolution, however, it has<br>
+no choice but to iterate over every element in the search set, repeatedly calling your<br>
+application's object accessor, object comparison, and token disposal callbacks. Huge<br>
+performance gains can be realized if you resolve <b>whose</b> clauses yourself, because<br>
+you'll avoid the overhead the OSL requires to make these callbacks.
+</p>
+<p>
+Passing the flag kAEIDoWhose to AEResolve tells the OSL that you'll resolve the<b>whose</b><br>
+clause yourself. The OSL calls your object accessor with the key form formWhose (see<br>
+Listing 3). The key data is a <b>whose</b> descriptor -- that is, an AERecord that describes<br>
+the comparison to be performed in the search. Your application should interpret the<br>
+<b>whose</b> descriptor and test every element of the container token to see if it matches the<br>
+specified criteria. If the <b>whose</b>descriptor is too complex for your application, you can<br>
+return the error code errAEEventNotHandled from your object accessor, and the OSL<br>
+will do the resolution for you with the default techniques. This is very useful, as it<br>
+allows you to maximize the performance of the most common <b>whose</b> clauses, yet still<br>
+support complex <b>whose</b> descriptors that are likely to be encountered only rarely.
+</p>
+<p>
+<b>Listing 3. </b>Handling formWhose in the object accessor
+</p>
+<pre>pascal OSErr MyObjectAccessor(DescType desiredClass,
+      AEDesc container, DescType /*containerClass*/,
+      DescType keyForm, AEDesc keyData, AEDesc* resultToken,
+      long /*hRefCon*/)
+{
+   switch (keyForm) {
+      // case formAbsolutePosition, and so on
+      ...
+      case formWhose:
+         // TWhoseDescriptor is a class that knows how to interpret
+         // a whose descriptor and test tokens for membership in the
+         // search set defined by the desired class and the whose
+         // descriptor.
+         TWhoseDescriptor whoseDesc(desiredClass, keyData);
+         // TTokenIterator is a class that knows how to iterate
+         // over the elements of a token.
+         TTokenIterator iter(container);
+         for (iter.Reset(); iter.More(); iter.Next()) {
+            AEDesc token = iter.Current();
+            if (whoseDesc.Compare(token) == kTokenIsInSearchSet) {
+               // Add token to the collection stored in resultToken.
+               AddTokenToResult(token, resultToken);
+            }
+         }
+         break;
+   }
+   return noErr;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The astute reader will notice that the scheme presented in Listing 3 is very similar to<br>
+the process that the OSL goes through to resolve <b>whose</b> clauses. There are still<br>
+optimizations that could be made to speed up the resolution further, but we'll get to<br>
+those later. To resolve <b>whose</b> clauses as shown in Listing 3, your application must be<br>
+able to do the following:
+</p>
+<ul>
+<li>    Iterate over the elements of any token.</li>
+<li> Determine class membership of any token.</li>
+<li> Compare properties of the elements of any token.</li>
+<li> Convert a <b>whose</b> clause into some internal representation usable by<br>
+your application.</li>
+</ul>
+<p>
+The first two operations are required of any scriptable application, so yours probably<br>
+can already do them. Comparing properties is something your application probably<br>
+doesn't do yet, but in the worst case you could always write a few lines of code that call<br>
+your property object accessor function, retrieve the data from the resulting property<br>
+token, and then compare the descriptor that was returned. Obviously you can do better<br>
+than this in terms of performance, and later on we'll investigate how. First, though,<br>
+we'll look at how to interpret the contents of a <b>whose</b> descriptor.
+</p>
+<p>
+<b>THE CONTENTS OF A WHOSE DESCRIPTOR</b>
+</p>
+<p>
+Earlier I claimed that a <b>whose</b> descriptor was an AERecord, but I lied. A whose<br>
+descriptor is actually a descriptor of type typeWhoseDescriptor. Internally, a<b>whose</b><br>
+descriptor is stored just like an AERecord, but you can't extract its parameters unless<br>
+you first coerce it to type typeAERecord. In Apple events parlance, this type of<br>
+descriptor is called a <i>coerced record</i>; its basic type is typeAERecord, and its coerced<br>
+type is typeWhoseDescriptor.
+</p>
+<p>
+The advantage of coerced records is that they allow clients of the Apple Event Manager<br>
+(for example, the OSL) to define new descriptor types for AERecords that define the<br>
+context in which the record will be used and specify (by convention) what parameters<br>
+the client can expect to find inside it. The disadvantage is that it requires an extra<br>
+memory allocation to coerce the descriptor back to typeAERecord before the<br>
+parameters of the coerced record can be accessed. This is unfortunate, as one of the<br>
+primary goals of performance optimization is to remove extraneous memory<br>
+allocations; coercing the descriptor back to typeAERecord is part of the current design<br>
+of the Apple Event Manager, though, so there's nothing we can do about it.
+</p>
+<p>
+There are two parameters inside a descriptor of type typeWhoseDescriptor:<br>
+keyAEIndex and keyAETest.
+</p>
+<ul>
+<li>    The keyAEIndex parameter usually contains an enumeration whose<br>
+value is kAEAll; this corresponds to the word <b>every</b> in the <b>whose</b> descriptor<br>
+<b>every item whose name contains "e". </b>The other possible values are<br>
+kAEFirst, kAELast, kAEMiddle, and kAEAny for <b>whose</b> clauses that request the<br>
+first, last, middle, or any (random) item. The keyAEIndex parameter might<br>
+also be of type typeLongInteger or typeWhoseRange, to indicate a single item<br>
+or a range of items, respectively.</li>
+<li> The keyAETest parameter contains another coerced AERecord whose type<br>
+can be either typeCompDescriptor or typeLogicalDescriptor. In either case,<br>
+you must coerce the descriptor to type typeAERecord to access the parameters<br>
+inside it.</li>
+</ul>
+<p>
+A comparison descriptor (typeCompDescriptor) contains three parameters: two<br>
+objects to compare (keyAEObject1 and keyAEObject2) and a comparison operation to<br>
+be performed on them (keyAECompOperator). Usually the first object to compare is a<br>
+special type of object specifier that indicates a property to compare (for example,<br>
+pName), and the second is a literal constant to compare it against (for example, "e").<br>
+The comparison operators include <b>contains, begins with, ends with, equal, not</b><br>
+<b>equal, greater than,</b> and a bunch of other relational operators. Because comparison<br>
+descriptors can contain object specifiers (and usually do), they can become<br>
+arbitrarily complex. You won't be able to resolve them all unless you reimplement the<br>
+entire functionality of the OSL, at which point you might as well not call AEResolve<br>
+either (thank goodness for errAEEventNotHandled, which allows you to fall back on the<br>
+OSL if your application cannot parse a <b>whose</b> descriptor).
+</p>
+<p>
+Fortunately, logical descriptors are much simpler than comparison descriptors. A<br>
+logical descriptor contains two parameters: keyLogicalOperator and keyLogicalTerms.<br>
+The logical operator indicates the Boolean logic to apply on the contents of the logical<br>
+terms: <b>and, or, </b>or <b>not</b>. The logical terms descriptor is, as you may have guessed, a<br>
+list of descriptors whose type is either typeCompDescriptor or typeLogicalDescriptor.<br>
+Figure 1 shows the contents of a <b>whose</b> descriptor that corresponds to the script<br>
+<b>every item whose name contains "e" and size is 0.</b>
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The contents of whose descriptors</b> are described in <i>Inside Macintosh:</i><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>Interapplication Communication, </i>pages 6-42 to 6-45.*
+</p>
+<p>
+<img src="img/239.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>Contents of a whose descriptor
+</p>
+<p>
+<b>PARSING WHOSE DESCRIPTORS</b>
+</p>
+<p>
+It may look like there can be a lot of different cases to handle in a <b>whose</b>descriptor,<br>
+but it actually doesn't take too much code to convert a <b>whose</b>descriptor into a format<br>
+that your application can understand. The next few listings show how this might be<br>
+done. The code presented is somewhat simplified; it doesn't look at the keyAEIndex<br>
+parameter of the <b>whose</b> descriptor (kAEAll is assumed), and it recognizes only very<br>
+specific formats of comparison descriptors. Even this much of an effort is very useful,<br>
+because it will cover about 90% of the <b>whose</b> clauses that your application is likely<br>
+to encounter, and it's still possible to return errAEEventNotHandled and allow the OSL<br>
+to take over for the rest. If you're expecting me to fall back on every <i>develop</i>author's<br>
+favorite phrase, "This impossible task is left as an exercise for the reader," you're in<br>
+for a surprise. The sample code on the CD will parse any valid <b>whose</b> descriptor<br>
+passed to it and never falls back on the default handling provided in the OSL.
+</p>
+<p>
+The top-level routine, ParseWhoseDescriptor, simply extracts the keyAETest<br>
+parameter and passes it to ParseWhoseTest, returning the resulting search<br>
+specification. These two routines are shown in Listing 4. (A <i>search specification</i> is an<br>
+application-defined object that knows how to test tokens for membership in the search<br>
+set defined by the <b>whose</b> descriptor; see the sample code on the CD for the<br>
+implementation of the search specifications used in these listings.) ParseWhoseTest<br>
+examines the type of the descriptor (either logical or comparison) and then extracts<br>
+the appropriate parameters and passes them to either ParseLogicalDescriptor or<br>
+ParseComparisonOperator, whichever is appropriate.
+</p>
+<p>
+<b>Listing 4. </b>Interpreting the contents of a whose descriptor
+</p>
+<pre>TAbstractSearchSpec*
+      ParseWhoseDescriptor(TDescriptor whoseDescriptor)
+{
+   TAbstractSearchSpec*   searchSpec = nil;
+   TDescriptor            testDescriptor;
+
+   whoseDescriptor.CoerceInPlace(typeAERecord);
+   // Real code would call whoseDescriptor.GetDescriptor(keyAEIndex)
+   // and at the very least check to see that its value is kAEAll,
+   // and fail with errAEEventNotHandled if it isn't.
+   testDescriptor = whoseDescriptor.GetDescriptor(keyAETest);
+   searchSpec = ParseWhoseTest(testDescriptor);
+   testDescriptor.Dispose();
+   return searchSpec;
+}
+
+TAbstractSearchSpec* ParseWhoseTest(TDescriptor whoseDesc)
+{
+   TAbstractSearchSpec*   searchSpec = nil;
+
+   switch (whoseDesc.DescriptorType()) {
+      case typeLogicalDescriptor:
+         TDescriptor   logicalOpDesc, logicalTerms;
+         DescType      logicalOp;
+
+         whoseDesc.CoerceInPlace(typeAERecord);  
+         logicalOpDesc =
+             whoseDesc.GetDescriptor(keyAELogicalOperator);
+         logicalOp = logicalOpDesc.GetEnumeration();
+         logicalTerms = whoseDesc.GetDescriptor(keyAELogicalTerms);
+         searchSpec = this-&gt;ParseLogicalDescriptor(logicalOp,
+                                    logicalTerms);
+         logicalOpDesc.Dispose();
+         logicalTerms.Dispose();
+         break;
+     
+      case typeCompDescriptor:
+         TDescriptor   compOperatorDesc, obj1, obj2;
+         DescType      compOp;
+
+         whoseDesc.CoerceInPlace(typeAERecord);
+         compOperatorDesc =
+             whoseDesc.GetDescriptor(keyAECompOperator);
+         compOp = compOperatorDesc.GetEnumeration();
+         obj1 = whoseDesc.GetDescriptor(keyAEObject1);
+         obj2 = whoseDesc.GetDescriptor(keyAEObject2);
+         searchSpec =
+             this-&gt;ParseComparisonOperator(compOp, obj1, obj2);
+         compOperatorDesc.Dispose();
+         obj1.Dispose();
+         obj2.Dispose();
+         break;
+   }
+   return searchSpec;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Since logical descriptor records can contain one or more terms, each of which is either<br>
+a comparison or a logical descriptor record, ParseLogicalDescriptor calls back to<br>
+ParseWhoseTest for each term in the record, creating a search specification for each<br>
+(see Listing 5). If there's more than one term, ParseLogicalDescriptor compiles the<br>
+resulting search specifications into a list and returns that; otherwise, it returns a<br>
+single search specification for the single term.
+</p>
+<p>
+<b>Listing 5. </b>Resolving logical descriptors
+</p>
+<pre>TAbstractSearchSpec* ParseLogicalDescriptor(DescType logicalOperator,
+      TDescriptor logicalTerms)
+{
+   TAbstractSearchSpec*   searchSpec = nil,
+                        oneSpecification = nil;
+   TDescriptor            oneTerm;
+   TSearchSpecList*      specificationList = nil;
+
+   FOREACHDESCRIPTOR(&amp;logicalTerms, oneTerm) {
+      oneSpecification = ParseWhoseTest(oneTerm);
+      if (specificationList == nil) {
+         if ((searchSpec == nil) &amp;&amp; (logicalOperator != kAENot))
+            searchSpec = oneSpecification;
+         else {
+            specificationList = new TSearchSpecList;
+            if (searchSpec)
+               specificationList-&gt;Add(searchSpec);
+            specificationList-&gt;Add(oneSpecification);
+            searchSpec = nil;
+         }
+      }
+      else {
+         if (oneSpecification != nil)
+            specificationList-&gt;Add(oneSpecification);
+      }
+   }
+   if (specificationList != nil)
+      searchSpec =
+         new TLogicalSpec(logicalOperator, specificationList);
+   if (searchSpec == nil)
+      FailErr(errAEEventNotHandled);
+   return searchSpec;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+ParseComparisonOperator (Listing 6) first tests to make sure that the comparison<br>
+operator is of the correct format. (Again, the code in this listing recognizes only a<br>
+specific flavor of comparison operator; see the code on the CD for a more complete<br>
+example.) If the operator passes that test, a new search specification representing the<br>
+comparison is created and returned.
+</p>
+<p>
+<b>Listing 6. </b>Parsing comparison descriptors
+</p>
+<pre>TAbstractSearchSpec*
+      ParseComparisonOperator(DescType comparisonOperator,
+      TDescriptor&amp; object1, TDescriptor&amp; object2)
+{
+   TAbstractSearchSpec*   searchSpec = nil;
+   TDescriptor          desiredClassDesc, containerDesc,
+                        keyFormDesc, keyData;
+  
+   if ((object1.DescriptorType() != typeObjectSpecifier) ||
+        (object2.DescriptorType() == typeObjectSpecifier))
+      FailErr(errAEEventNotHandled);
+  
+   object1.CoerceInPlace(typeAERecord);
+   desiredClassDesc = object1.GetDescriptor(keyAEDesiredClass);
+   containerDesc = object1.GetDescriptor(keyAEContainer);
+   keyFormDesc = object1.GetDescriptor(keyAEKeyForm);
+   keyData = object1.GetDescriptor(keyAEKeyData);
+   if (containerDesc.DescriptorType() != typeObjectBeingExamined)
+      FailErr(errAEEventNotHandled);
+   if (keyFormDesc.GetEnumeration() == formPropertyID)
+      searchSpec = new TGenericSearchSpec(keyData.GetDescType(),
+                           comparisonOperator, object2);
+   desiredClassDesc.Dispose();
+   containerDesc.Dispose();
+   keyFormDesc.Dispose();
+   keyData.Dispose();  
+   return searchSpec;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<h2>ABOUT THE SAMPLE APPLICATION</h2>
+<p>
+The code presented up to this point is the easy part: implementing the marking and<br>
+whose callbacks, parsing whose descriptors, and creating search specifications can all<br>
+be done with a small amount of isolated code. Doing a search on a set of elements or<br>
+performing a complex operation on a collection of tokens is a bit more involved,<br>
+though, and requires a well-integrated framework that supports these concepts<br>
+uniformly. You're in luck -- the sample application included on this issue's CD has<br>
+such a framework.
+</p>
+<p>
+The sample application is called Scriptable Database. As its name implies, it's a<br>
+database that's fully scriptable; in fact, it's usable only through AppleScript -- it has<br>
+no user interface whatsoever. It's no coincidence that the model the database uses<br>
+follows AppleScript's element containment model very closely. The Scriptable<br>
+Database has documents that can be created, saved, and opened. Documents contain<br>
+elements; elements have properties and data and may contain more elements. The<br>
+database itself is completely generic; it doesn't care what the classes of the elements<br>
+are or what properties they contain. To use it for a specific application, you'll have to<br>
+edit Scriptable Database's dictionary, also called its <i>AppleScript terminology</i><br>
+<i>extension</i>('aete' resource), to add the terms you'll need for your database.
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AppleScript terminology extensions</b> are described in <i>Inside Macintosh:</i><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>Interapplication Communication</i>, pages 7-15 to 7-20 and Chapter 8.*
+</p>
+<p>
+All the techniques described in this article are implemented in the source code of the<br>
+Scriptable Database application -- in particular, the application supports marking,<br>
+and it resolves <b>whose</b> clauses itself (very quickly, I might add). It's an<br>
+object-oriented application written in C++ based on a set of reusable foundation class<br>
+libraries that you might find useful as a starting point in your own scriptable<br>
+application. The source code is divided into the following subprojects:
+</p>
+<ul>
+<li>    The Database subproject contains a standalone C++ object database. The<br>
+code in this project is not discussed in this article, but you might find it<br>
+interesting to peruse.</li>
+<li> The Base subproject contains pure C++ code that has no dependencies on<br>
+any Mac OS or Toolbox routines, or any code from any other subproject in<br>
+Scriptable Database.</li>
+<li> The Blue subproject contains C++ wrapper classes for Macintosh<br>
+managers used by Scriptable Database.</li>
+<li> The Foundation subproject contains the foundation classes that Scriptable<br>
+Database uses to implement scripting, and as such is the focal point of this<br>
+article.</li>
+<li> The Scripting subproject contains the object accessors and event<br>
+handlers needed to respond to the messages sent by AppleScript and the OSL.</li>
+<li> The Application subproject contains all the code that defines the<br>
+Scriptable Database application; in fact, all the code specific to Scriptable<br>
+Database is in this subproject. Every other subproject is also used in some<br>
+other application that I've worked on.</li>
+</ul>
+<p>
+Note that these subprojects are layered such that each one uses code found only within<br>
+that subproject or in a more primitive subproject. The Database subproject is used<br>
+only by the Scripting and Application subprojects; all other subprojects are used<br>
+freely by any subproject listed below it. The foundation classes will be discussed in<br>
+depth in this article; comprehension of the rest of the sample code is left as an<br>
+exercise for the reader. (You didn't think I could write an entire article and not say<br>
+that at least once, did you?)
+</p>
+<h2>ABOUT THE FOUNDATION CLASSES</h2>
+<p>
+The focal point of the foundation classes is the class TAbstractScriptableObject. This<br>
+class was designed to serve as a base class, but it may also be mixed into an existing<br>
+class hierarchy with multiple inheritance, as was done in the sample application (see<br>
+the class TScriptableDocument). Any object derived from TAbstractScriptableObject<br>
+can be used as a token for the OSL. Memory management of tokens must be done<br>
+carefully; note that in most instances, tokens passed to the OSL are temporary and<br>
+must be deleted when the token disposal callback is called. In other instances, though,<br>
+it may be more convenient to use an existing object that the application has already<br>
+created -- for example, a document object.
+</p>
+<p>
+Because of this, the token disposal callback must be able to unambiguously determine<br>
+the difference between the temporary objects and those objects it should not delete, or<br>
+disaster will result. Designators -- objects that represent some portion of another<br>
+object -- are used for the temporary objects. The class TAbstractScriptableObject<br>
+defines the methods CloneDesignator and DisposeDesignator, which do nothing in the<br>
+abstract case. Designators override these methods to copy and dispose of themselves --<br>
+sometimes in conjunction with a reference-counting scheme.
+</p>
+<p>
+As you might expect, the methods of TAbstractScriptableObject are designed to provide<br>
+functionality that closely matches the features of the OSL. All objects derived from this<br>
+class have elements and properties and can be sent events generated from an Apple<br>
+event that the application receives. There are virtual methods in<br>
+TAbstractScriptableObject that you can override to provide each of these types of<br>
+behavior in your objects.
+</p>
+<p>
+<b>ELEMENTS OF A SCRIPTABLE OBJECT</b>
+</p>
+<p>
+A scriptable object exports its elements by providing an iterator object that knows<br>
+how to iterate over the appropriate set of objects. There are two methods that return<br>
+iterators, ElementIterator and DirectObjectIterator.
+</p>
+<pre>virtual TAbstractScriptableObject* ParentObject();
+virtual TAbstractObjectIterator* ElementIterator();
+virtual TAbstractObjectIterator* DirectObjectIterator();</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The ParentObject method returns the object that this object is an element of. The<br>
+element iterator iterates over the elements of the object, as was previously<br>
+mentioned; the direct object iterator usually returns an iterator that knows about a<br>
+single object -- the TAbstractScriptableObject that created it. If the object is actually<br>
+a collection, however, its direct object iterator will iterate over every element in the<br>
+collection. Once your application provides an iterator for the elements of its objects,<br>
+the code in the foundation classes can handle most of the standard access methods for<br>
+you. The access methods supported include formAbsolutePosition and formName, the<br>
+default ordinals (all, first, last, and so on), and ranges of items (for example, items 1<br>
+through 10).
+</p>
+<p>
+Your application's scriptable classes can support more specialized access methods by<br>
+overriding the appropriate method:
+</p>
+<pre>virtual TAbstractScriptableObject* Access(DescType desiredClass,
+      DescType keyForm, TDescriptor keyData);
+virtual TAbstractScriptableObject*
+      AccessByUniqueID(DescType desiredClass, TDescriptor uniqueID);
+virtual TAbstractScriptableObject*
+      AccessByOrdinal(DescType desiredClass, DescType ordinal);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The first method, Access, is the general object-accessor dispatch method that calls the<br>
+more specific access method appropriate for the keyForm parameter. You can override<br>
+this method to define custom access forms -- for example, the Scriptable Finder<br>
+defined the forms formCreator (to access an application by its creator type) and<br>
+formAlias (to access a file or folder through an alias record). The method<br>
+AccessByUniqueID provides a mapping from a unique ID to an object; override this<br>
+method if your objects have unique IDs that scripts can use to access them. The method<br>
+AccessByOrdinal handles ordinal access. All ordinals defined in the Apple Event<br>
+Registry are supported by the implementation in the base class, so your application<br>
+will probably never need to override AccessByOrdinal.
+</p>
+<p>
+<b>PROPERTIES OF A SCRIPTABLE OBJECT</b>
+</p>
+<p>
+Every scriptable object has at least a few properties that it must support. Almost all<br>
+classes will have these five properties:
+</p>
+<ul>
+<li>    pName, since most objects have names</li>
+<li>pClass, pBestType, and pDefaultType, since the Apple Event Registry<br>
+requires that all objects support these properties</li>
+<li>    pContents, since the foundation classes handle Get Data and Set Data<br>
+events by using this property</li>
+</ul>
+<p>
+To advertise the existence of a property, your scriptable classes can override the<br>
+methods BestType, DefaultType, and CanReturnDataOfType; these methods are used by<br>
+the Get Data event handler to determine what data type it should ask for when it<br>
+requests the property data from the object through GetProperty.
+</p>
+<pre>virtual DescType BestType(DescType propertyName);
+virtual DescType DefaultType(DescType propertyName);
+virtual Boolean CanReturnDataOfType(DescType propertyName,
+      DescType desiredType);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+However, your application doesn't have to override these methods to provide<br>
+information about every property of an object, since it's also possible (and more<br>
+convenient) to describe the properties of an object in a property description table. For<br>
+example, the properties defined in TAbstractScriptableObject are shown in the<br>
+following property description table:
+</p>
+<pre>TPropertyDescription
+   TAbstractScriptableObject::fPropertiesOfClass[] = {
+     { pName,        kReserved,  typeChar,        typeChar },
+     { pClass,       kReserved,  typeType,        typeType },
+     { pDefaultType, kReserved,  typeType,        typeType },
+     { pBestType,    kReserved,  typeType,        typeType },
+     { pID,          kReserved,  typeLongInteger, typeLongInteger },
+     { pIndex,       kReserved,  typeLongInteger, typeLongInteger }
+};</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Each entry in this table consists of four long words: the property identifier, a long<br>
+word reserved for use by the class that defines the property, the property's best type,<br>
+and the property's default type. The property description table is referenced through<br>
+the class data table, so properties defined in one class are automatically inherited by<br>
+any class that derives from it. The methods BestType and DefaultType return<br>
+information from the property description table if an entry for the requested property<br>
+can be found, and the method CanReturnDataOfType returns true if the desired type is<br>
+the best type or the default type for a property.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>See the files Object.cp and Object.h</b> in the sample code for information<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;on the class data tables. The macros DeclareMinClassData and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ImplementMinClassData are used for classes that have no class properties;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;classes that do have class properties use the macros DeclareClassData and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ImplementClassData.*
+</p>
+<p>
+The reserved long word from the property description table is always passed to the<br>
+GetProperty and SetProperty methods; it can be used to provide information to assist<br>
+in obtaining the data for the requested property.
+</p>
+<pre>virtual TDescriptor GetProperty(DescType propertyName,
+      DescType desiredType, unsigned long additionalInfo);
+virtual void SetProperty(TTransaction* transaction,
+      DescType propertyName, TDescriptor&amp; data,
+      unsigned long additionalInfo);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The reserved long word can have nearly any value, but should not be greater than or<br>
+equal to the constant kReservedRangeForPropertyInfo (see<br>
+AbstractScriptableObject.h).
+</p>
+<p>
+In addition to making the application's properties easier to implement, the property<br>
+description table is key in supporting the "properties" property (which returns the<br>
+current value of all the properties of an object, as specified by the property<br>
+description table). It's also very useful for accessing properties of collections of<br>
+tokens, as described later.
+</p>
+<p>
+The transaction parameter in the SetProperty method must be provided by the caller<br>
+but is not used by the foundation classes. It's provided as a mechanism whereby<br>
+transaction-based applications (such as Scriptable Database) can make all changes<br>
+under the auspices of a transaction object. Once all changes are made successfully, the<br>
+transaction changes are committed back into the database. If anything goes wrong, the<br>
+transaction is aborted and all changes are backed out. To the foundation class,<br>
+TTransaction is just a named object that has no methods. The event handlers in the<br>
+Scripting subproject use code from the Database subproject to create a transaction to<br>
+pass to SetProperty (and other methods that can change the contents of the database),<br>
+and commit or back out of the changes as appropriate after the event completes<br>
+successfully or fails.
+</p>
+<p>
+In some rare cases, it may be undesirable to include a property in the property<br>
+description table, or it may be inconvenient to implement all of the functionality of a<br>
+property strictly through the GetProperty and SetProperty methods. For example,<br>
+Scriptable Finder has a trash property that returns a reference to the Trash object on<br>
+the desktop. In such cases, your application should override the method<br>
+AccessByProperty to return an appropriate scriptable object that represents the<br>
+property:
+</p>
+<pre>virtual TAbstractScriptableObject* AccessByProperty(DescType
+      propertyIdentifier);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The object returned by AccessByProperty can be any sort of scriptable object; unlike<br>
+properties described solely by the property description table, it can have properties<br>
+above and beyond the minimum (for example, pClass, pBestType, and pDefaultType),<br>
+and it can receive events (such as Empty Trash). Properties that are returned through<br>
+AccessByProperty can also appear in the property description table, but if they do, the<br>
+reserved long word should contain the magic constant kNeverCreateGenericProperty.
+</p>
+<p>
+<b>SENDING EVENTS TO A SCRIPTABLE OBJECT</b>
+</p>
+<p>
+Most scriptable applications use one of two dispatch techniques for handling Apple<br>
+events: event-first or object-first dispatching. In event-first dispatching, an event is<br>
+first dispatched to an event handler, which resolves the direct parameter and passes it<br>
+a message appropriate to the Apple event being received. The advantage of event-first<br>
+dispatching is that the parameters of the event are well known and can be extracted and<br>
+passed to the object from the event handler, reducing the amount of duplicate code<br>
+scattered through the various object event handlers. The disadvantage is that<br>
+event-first dispatching requires a large number of very similar event handlers, and<br>
+the message-passing API is often large (one method per event).
+</p>
+<p>
+Object-first dispatching attempts to solve this problem by providing a single event<br>
+handler that blindly resolves the direct parameter of the received Apple event and<br>
+passes the event to the resulting object. This technique is much simpler than<br>
+event-first dispatching, requires a smaller API, and usually does exactly the right<br>
+thing. But object-first dispatching doesn't always do exactly the right thing. For<br>
+example, an Apple event that copies a set of objects to some destination container would<br>
+send a different Copy event to every item in the source; what you might prefer is to<br>
+have a single Copy event sent to the destination object, with the list of items to copy<br>
+included as a parameter to the event. You'd never get the latter with object-first<br>
+dispatching.
+</p>
+<p>
+The Scriptable Database application uses a combination of event-first and object-first<br>
+dispatching. Most Apple events are processed by a common event handler that resolves<br>
+the direct parameter and passes the message along, in object-first dispatching style.<br>
+Certain special events, however, such as Move, Copy, and Create Element, are<br>
+processed in their own event handler, which can send a message to some object other<br>
+than the direct parameter of the Apple event. The two primary methods that events are<br>
+sent to are AECommand and CreateNewElement.
+</p>
+<p>
+AECommand is defined as follows:
+</p>
+<pre>virtual TDescriptor AECommand(TTransaction* transaction, TAEvent ae,
+      TAEvent reply, long aeCommandID, TAbstractScriptableObject*
+      auxObjects = nil, long auxInfo = 0);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Both the Apple event message and the reply are passed to the event handler, just in<br>
+case they need to be accessed directly. The AECommand method should not put the<br>
+command result into the reply directly, though, as it might not be the only object<br>
+that's receiving this message. Instead, it should return the result as the return value<br>
+of the method, and allow the event handler to collect all the results into a descriptor<br>
+list and package them in the reply.
+</p>
+<p>
+The meaning of the parameters auxObjects and auxInfo depends on the event handler<br>
+that's processing the message; the aeCommandID parameter implicitly defines what the<br>
+AECommand method should expect to find in these parameters. For example, in the<br>
+Move and Copy events, the auxObjects parameter contains the set of objects that should<br>
+be moved or copied. Providing a single method with general-purpose,<br>
+multiple-definition parameters allows different scriptable applications that use the<br>
+same foundation classes to define new events that have custom parameters without<br>
+requiring them to change or expand the API of the foundation classes. This is one of the<br>
+advantages of object-first dispatching that we definitely want to keep in our design.
+</p>
+<p>
+The Create Element event is special enough to warrant giving it its own dispatch<br>
+message:
+</p>
+<pre>virtual TAbstractScriptableObject* CreateNewElement(TTransaction*
+    transaction, TAEvent ae, TAEvent reply, DescType newObjectClass,
+    TDescriptor initialData, TDescriptor initialProperties, Boolean&amp;
+    usedInitialData, Boolean&amp; usedInitialProperties);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+In most cases, classes that override CreateNewElement only need to look at the<br>
+newObjectClass parameter, create a new object of that class, and return a reference to<br>
+the newly created object. The event handler calls the SetData method of the new object<br>
+by using the with <b>data parameter</b> from the Create event, and then calls the<br>
+SetProperty method of the new object with each of the properties specified in the <b>with</b><br>
+<b>properties</b> parameter from the Create event. The initial data and initial properties<br>
+for the new element are also provided as parameters to CreateNewElement in case<br>
+they're needed at create time. If the usedInitialData or usedInitialProperties<br>
+parameter is set to true, the event handler is inhibited from calling SetData or<br>
+SetProperty, respectively, on the new object.
+</p>
+<p>
+<b>TOKEN COLLECTIONS</b>
+</p>
+<p>
+As previously mentioned, objects derived from TAbstractScriptableObject can be<br>
+grouped into collections of tokens that can be passed around as a single object. The class<br>
+that implements most of this functionality is TProxyToken, which is publicly derived<br>
+from TAbstractDesignator. (A <i>collection object</i> is a temporary object created only to<br>
+manage the collection of tokens and must be disposed of when the collection is no longer<br>
+needed; therefore, a proxy must be a designator.) There are a number of different<br>
+types of collections, each derived from the class TProxyToken.The classes of proxies<br>
+provided in the foundation classes include the following:
+</p>
+<ul>
+<li>    TEveryItemProxy -- every element of an object</li>
+<li> TEntireContents -- every item in the entire deep hierarchy</li>
+<li> TMarkToken -- a collection of tokens accumulated from the marking<br>
+callbacks or from resolving a <b>whose</b> clause</li>
+</ul>
+<p>
+Other types of collections are also possible. For example, the selection token is a proxy<br>
+for the set of items that are currently selected, so the token for the selection would<br>
+also derive from TProxyToken (however, since the Scriptable Database has no user<br>
+interface, it has no selection object).
+</p>
+<p>
+Sending a message to a proxy token usually does nothing more than pass the message on<br>
+to each of its delegates; for example, the <b>open selection</b> script would pass an Open<br>
+event to every selected item. In other cases, however, the proxy token handles the<br>
+event itself. For instance, <b>set selection to item 1</b>doesn't send a Set Data event to<br>
+the selected items; instead, it deselects the currently selected items and selects the<br>
+items in the direct parameter (such as<b>item 1</b> in the previous example). The exact<br>
+behavior of the proxy is determined by the concrete class (for example,<br>
+TEveryItemProxy) that derives from the abstract class TProxyToken, but the proxy<br>
+token does provide some mechanisms that can be used by its descendants to control the<br>
+meaning of certain messages.
+</p>
+<p>
+Properties in particular are handled in a special way by proxies. Some properties will<br>
+apply to the proxy object itself, whereas other properties will refer to the delegates of<br>
+the proxy token. For example, the script <b>default type of selection</b> should return<br>
+the default data type for the selection object (which would be of type typeAEList),<br>
+whereas <b>default type of every item whose name contains "e"</b> should return a<br>
+list of default types, one for each item that matches the query <b>every item whose</b><br>
+<b>name contains "e"</b>. There is no heuristic that can be used to determine which<br>
+properties should apply to the proxy and which should apply to the proxy's delegates;<br>
+the only solution is to list all the properties that should be sent to the proxy object in<br>
+some way. In the foundation classes, this is done with the method<br>
+PropertyAppliesToProxy:
+</p>
+<pre>Boolean PropertyAppliesToProxy(DescType propertyName);</pre><p class="spacer">&nbsp;</p>
+<p>
+Each class that derives from TProxyToken should override PropertyAppliesToProxy<br>
+and return true for those properties that should be processed by the proxy object and<br>
+false for those that should be sent to the proxy's delegates.
+</p>
+<p>
+<b>MORE ON SEARCH SPECIFICATIONS</b>
+</p>
+<p>
+Previous sections of this article described how a whose clause was received by the<br>
+object accessors of an application, converted into a search specification, and then<br>
+resolved with a simple element iterator. Now that you're familiar with the capabilities<br>
+of the foundation classes, we can go into the workings of the search specifications in a<br>
+little more detail.
+</p>
+<p>
+As you may recall, there are two types of search specification: logical and comparative.<br>
+The primary operation of a search specification is to take a token and return whether<br>
+or not that item is a member of the set specified by the comparator. A logical<br>
+specification contains a list of other specifications; it does nothing more than call the<br>
+comparator method of each, and either logically AND or logically OR the results<br>
+together. A comparative search specification needs to perform some test on a property<br>
+of an object that was passed to it; it does so by calling the CompareProperty method of<br>
+the object being tested.
+</p>
+<pre>virtual Boolean CompareProperty(DescType propertyIdentifier,
+      DescType comparisonOperator, TDescriptor compareWith);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The property identifier, the comparison operator, and the literal data to compare with<br>
+were all extracted from the <b>whose</b> descriptor, as described previously. The default<br>
+implementation of CompareProperty calls the object's GetProperty method and<br>
+compares the result with the literal data by using the specified comparison operator.<br>
+(You'll find a routine that compares two descriptors in the file MoreAEM in the Blue<br>
+subproject of the sample application.) Note, however, that calling GetProperty<br>
+involves a memory allocation to create a descriptor for holding the property data.<br>
+Memory allocations are something best avoided in the inner loop of an operation that's<br>
+supposed to progress quickly, so the performance of a <b>whose</b> clause resolution can be<br>
+improved if you override CompareProperty and do common property comparisons<br>
+without a memory allocation.
+</p>
+<h2>FURTHER OPTIMIZATIONS</h2>
+<p>
+Using the techniques described up to this point, your application can resolve<b>whose</b><br>
+clauses, and do so much faster than the OSL would. However, there are other<br>
+optimizations that you can make to further improve performance. The techniques<br>
+described so far perform better than the OSL for two primary reasons:
+</p>
+<ul>
+<li>    They limit the number of memory allocations needed, as much as<br>
+possible.</li>
+<li> They reduce the number of callbacks that need to be made between the OSL<br>
+and your application. This is particularly important if your application is<br>
+PowerPC native but uses the emulated 680x0 OSL.</li>
+</ul>
+<p>
+Also, note that if your implementation of access by index is O(N) rather than constant<br>
+time, the OSL's<b>whose</b> clause resolution will be O(N2), since it will have to call your<br>
+O(N) access by index callback N times. Even if you ignore this article completely and<br>
+don't resolve <b>whose</b> clauses yourself, you should as an absolute minimum cache the<br>
+last token returned by your formAbsolutePosition accessor and ensure that the next<br>
+call to the accessor can be done in constant time if the container token and desired class<br>
+are the same and the index is 1 greater. This will speed up your <b>whose</b> clause<br>
+resolution considerably.
+</p>
+<p>
+However, even for all of the performance gains that these techniques provide,<b>whose</b><br>
+clauses are still resolved according to the same basic algorithm used by the OSL. As<br>
+anyone who has dabbled in computer information-science theory knows, it's often<br>
+more advantageous to switch algorithms completely and put off fine-tuning until after<br>
+the correct algorithm has been found.
+</p>
+<p>
+Unfortunately, it's not possible to do any better than what we've already done in the<br>
+general case (a direct linear search of the search space, comparing every item to the<br>
+search specification in order). Doing a binary search isn't possible unless your search<br>
+space happens to be sorted by your search key -- not very likely, and in any event it's<br>
+impossible to know whether it is or not<i>unless you have specific knowledge about the</i><br>
+<i>search space</i>. Searching the entire contents of a deep hierarchy -- such as all the<br>
+folders on a disk -- is one type of search space that can often be optimized.
+</p>
+<p>
+In cases where the search space is well known, it's often possible to abandon the idea of<br>
+direct iteration and use some other algorithm to search. For example, if you're writing<br>
+code to search the entire contents of a disk, you would be much better off calling<br>
+PBCatSearch, which walks through the entries in the catalog record in the order they<br>
+happen to appear on the disk, ignoring the disk's hierarchy. This technique is so much<br>
+faster than doing a deep traversal of the disk's catalog that doing a deep search of some<br>
+subfolder on a disk is usually much better accomplished by searching the entire disk<br>
+and weeding out the matches that aren't somewhere inside the search's root container.<br>
+In cases where you have access to a search engine with characteristics similar to<br>
+PBCatSearch, you should go out of your way to try to use it. Of course, this may well<br>
+require yet another conversion of the search specification, but the performance gains<br>
+will outweigh the initial cost. The foundation classes presented in this article have<br>
+hooks that allow the incorporation of existing search engines to be incorporated into<br>
+the process of resolving <b>whose</b> clauses.
+</p>
+<p>
+When a <b>whose</b> clause is being resolved, the task of doing the search is delegated to the<br>
+iterator object returned by the root of the search. Putting the method in the iterator<br>
+rather than in the object allows different types of iterators to provide different search<br>
+algorithms, each optimized to its own search space. The iterator returned by the<br>
+TEntireContents proxy has a special implementation of AccessBySearchSpec; instead of<br>
+using the implementation it inherits from TAbstractIterator, it uses a method called<br>
+SearchDeep in the element iterator of the root object. The default implementation of<br>
+SearchDeep does nothing more than compare every item in the deep hierarchy below<br>
+each of its elements, and add those that match to the collection. This is really no<br>
+different from what would happen if TEntireContents::AccessBySearchSpec just called<br>
+through to Inherited::AccessBySearchSpec, but it does provide a hook enabling special<br>
+iterators to insert their own search engines if they have a technique that will do deep<br>
+searches faster than a straightforward deep iteration.
+</p>
+<p>
+Listing 7 shows the default implementation of SearchDeep; note that it does a deep<br>
+search on each of the elements of the iterator rather than simply a single deep search.<br>
+The reason for this is that iterators aren't required to have a single root object that<br>
+one could conceivably search deep from; once you have an iterator, the only knowledge<br>
+at your disposal is the set of objects that the iterator "contains." The information as to<br>
+where the iterator came from isn't available to every iterator, although some (such as<br>
+TDeepIterator) do save a reference to it.
+</p>
+<p>
+<b>Listing 7. </b>Doing a deep search
+</p>
+<pre>TAbstractScriptableObject* TDeepIterator::AccessBySearchSpec(
+      DescType desiredClass, TAbstractSearchSpec* searchSpec)
+{
+   TObjectCollector   collector;
+
+   TAbstractObjectIterator* iter = fRootItem-&gt;ElementIterator();
+   iter-&gt;SearchDeep(&amp;collector, desiredClass, searchSpec);
+   iter-&gt;Release();
+   collector.CollectorRequest(kWaitForAsyncSearchesToComplete);
+   return collector.CollectionResult();
+}
+
+void TAbstractObjectIterator::SearchDeep(TAbstractCollector*
+      collector, DescType desiredClass,
+      TAbstractSearchSpec* searchSpec)
+{
+   TDeepIterator deepIter(nil);
+   for (this-&gt;Reset(); this-&gt;More(); this-&gt;Next()) {
+      TAbstractScriptableObject* elementToDeepSearch =
+         this-&gt;Current();
+      deepIter.FocusOnNewRoot(elementToDeepSearch);
+      for (deepIter.Reset(); deepIter.More();
+           deepIter.Next()) {
+         TAbstractScriptableObject* token = deepIter.Current();
+         if (token-&gt;DerivedFromOSLClass(desiredClass) &amp;&amp;
+               searchSpec-&gt;Compare(token))
+            collector-&gt;AddToCollection(token);
+         else
+            token-&gt;DisposeDesignator();
+         token = nil;
+      }
+      if (elementToDeepSearch-&gt;DerivedFromOSLClass(desiredClass) &amp;&amp;
+            searchSpec-&gt;Compare(elementToDeepSearch))
+         collector-&gt;AddToCollection(elementToDeepSearch);
+      else
+         elementToDeepSearch-&gt;DisposeDesignator();
+   }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+In Listing 7, rather than having the deep search iterator create and return a collection<br>
+of tokens, a collector object is passed in and given the responsibility of making a<br>
+collection from the results of the search, which it's passed one item at a time. This is<br>
+done so that other parts of your scriptable application can call SearchDeep to do deep<br>
+searches if they need to, and providing a collector object allows this code the<br>
+flexibility to process the search results one item at a time, as they are found, rather<br>
+than waiting for the entire search to complete.
+</p>
+<p>
+Note the following line in Listing 7:
+</p>
+<pre>collector.CollectorRequest(kWaitForAsyncSearchesToComplete);</pre><p class="spacer">&nbsp;</p>
+<p>
+A search engine that's hooked into this code path might, in a multithreaded application,<br>
+execute asynchronously under its own thread. In these instances, the search engine<br>
+needs a way to tell the collector that it's still running, and might call<br>
+collector-&gt;AddToCollection with more search results at any time. The search engine<br>
+does this by attaching a dynamic behavior object to the collection that understands the<br>
+kWaitForAsyncSearchesToComplete message (see "What Is a Dynamic Behavior?").<br>
+When this message is received, the search engine's collector behavior must block the<br>
+current thread of execution until the search engine completes its search.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WHAT IS A DYNAMIC BEHAVIOR?</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A dynamic behavior is an object that can be attached to some other object to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;change its behavior dynamically at run time. Only objects that are specially<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;written to accept behaviors can have behaviors attached to them, and
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;only certain methods of that object can be dynamically changed by the behavior<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;object.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Methods that support dynamic behaviors contain additional code that first<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dispatches to any behavior attached to the object and then does the default<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;action for that method. But the actual flow of control is somewhat different<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;from that.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Suppose you have an abstract class TObject that supports behaviors, and an<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;abstract class TBehavior that provides an interface for an object that can<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dynamically change the behavior of any TObject-derived object. If TObject has<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;a method called Command that the behavior could modify, the implementation<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;of TObject::Command would look like this:
+</p>
+<pre>      TObject::Command()
+      {
+         TBehavior*   behavior;
+         behavior = this-&gt;FirstBehavior();
+         if (behavior)
+            behavior-&gt;CommandDynamicBehavior();
+         else
+            this-&gt;CommandDefaultBehavior();
+      }
+      
+      TBehavior::CommandDynamicBehavior()
+      {
+         TBehavior*   behavior;
+         behavior = this-&gt;NextBehavior();
+         if (behavior)
+            behavior-&gt;CommandDynamicBehavior();
+         else
+            this-&gt;Owner()-&gt;CommandDefaultBehavior();
+      }</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Given this definition for the Command method, some class derived from<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TBehavior could override the virtual method<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TBehavior::CommandDynamicBehavior, and call Inherited to execute the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default action of the method it's overriding. This allows behaviors to do both<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pre- and post-processing. The cost to supporting behaviors is additional<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dispatch time, but the advantage is the powerful, dynamic extensibility of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;your objects.
+</p><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________</p>
+<p>
+The use of a collector object and a dynamic behavior object allows the searching code to<br>
+be flexible, optimized independently of other search engines, and reusable, even to<br>
+other code that might not have exactly the same needs as the scripting code.
+</p>
+<p>
+Also note the implementation of the functions TEveryItem::SearchDeep and<br>
+TMarkToken::SearchDeep. Both of these call the function RecursiveSearchDeep, which<br>
+calls SearchDeep on each of the elements of the iterator in turn. Without this special<br>
+code path, a script such as <b>(entire contents of every disk) whose name</b><br>
+<b>contains "mac" </b>would end up using the slow deep-iteration search, and miss out on<br>
+the optimized SearchDeep method of each disk. Calling the SearchDeep method of each<br>
+disk independently enables different types of disks to have different types of search<br>
+engines; for example, searches of remote disks might be optimized differently than<br>
+searches of local disks, and not every type of volume supports PBCatSearch. In a<br>
+framework that has provisions for optimizations, flexibility of design is extremely<br>
+important.
+</p>
+<h2>WHAT WAS THIS ARTICLE ABOUT, ANYWAY?</h2>
+<p>
+It doesn't take too much work to vastly improve the performance of your scriptable<br>
+application, and the techniques presented in this article will help you do just that.<br>
+Resolving <b>whose</b> clauses yourself can speed up the execution of your event processing<br>
+by a factor of ten to a hundred; a chance to gain that level of improvement is hard to<br>
+ignore.
+</p>
+<p>
+&nbsp;&nbsp;AppleScript is one of the most compelling technologies that Apple offers -- the<br>
+ability to record scripts, modify them, and play them back later puts powerful<br>
+automation into the hands of programming novices. However, AppleScript is only as<br>
+cool as the scriptable applications available in the marketplace. If you've written a<br>
+scriptable application, thank you. If you haven't yet taken the OSL plunge, by all means<br>
+read some of the material referred to in this article and dive in. (You might also want<br>
+to take a look at the "According to Script" column that follows this article.) In either<br>
+case, you should find the sample code on this issue's CD to be a very useful aid in<br>
+implementing fast and complete scripting support in your Macintosh application.
+</p>
+
+
+
+<p>
+<b>RELATED READING</b>
+</p>
+<ul>
+<li><i>Inside Macintosh: Interapplication Communication</i><br>
+(Addison-Wesley, 1993).</li>
+<li>"Apple Event Objects and You" by Richard Clark, <i>develop</i> Issue 10,<br>
+and "Better Apple Event Coding Through Objects" by Eric M. Berdahl,<br>
+<i>develop</i> Issue 12. These articles provide good descriptions of the OSL.</li>
+</ul>
+<p>
+<b>Greg Anderson</b>is enjoying the hot days of late summer as he writes this, but<br>
+by the time this issue is in your hands, he should be back on the ski slopes<br>
+earning his nickname, "Air Bear." Greg spends most of his skiing time looking<br>
+for some protrusion to jump or fall off of while wearing his favorite polar<br>
+bear hat. He sometimes works, too; he recently moved to Japan to work on<br>
+international software for Apple Technologies in Tokyo.
+</p>
+<p>
+Thanks to our technical reviewers Dan Clifford, Eric House, Arnoldo Miranda,<br>
+and Jon Pugh.
+</p>
+</body>
+</html>

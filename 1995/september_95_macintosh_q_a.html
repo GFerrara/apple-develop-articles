@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 37 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 95 - Macintosh Q & A</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Macintosh Q &amp; A</h1>
+<b>Q</b>&nbsp;<i>How do I create a menu with an icon as its title?</i><br>
+<p>
+<b>A</b>&nbsp;Set the menu title to 0x0501handle, where handle is the result of calling<br>
+GetIconSuite. An example snippet of code follows; this code assumes that the menu title<br>
+is already five bytes long.
+</p>
+<pre>void ChangeToIconMenu()
+{
+   Handle       theIconSuite = nil;
+   MenuHandle   menuHandle;
+  
+   GetIconSuite(&amp;theIconSuite, cIcon, svAllSmallData);
+   if (theIconSuite) {
+      menuHandle = GetMenuHandle(mIcon);
+      if (menuHandle) {
+         // Second byte must be 1, followed by the icon suite handle.
+         (**menuHandle).menuData[1] = 0x01;
+         *((long *)&amp;((**menuHandle).menuData[2]))
+           = (long)theIconSuite;
+         // Update display (typically you do this on startup).
+         DeleteMenu(mIcon);
+         InsertMenu(menuHandle, 0);
+         InvalMenuBar();
+      }
+   }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Q</b>&nbsp;<i>We're drawing palette icons with a loop that consists basically of the following:</i>
+</p>
+<pre>GetIcon...
+HLock...
+CopyBits...
+ReleaseResource...</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<i>Our native PowerPC version seems to draw these icons a lot more slowly than even our</i><br>
+<i>680x0 version running under emulation, which suggests a Mixed Mode Manager</i><br>
+<i>slowdown. Which of these routines are currently native on the PowerPC? GetIcon and</i><br>
+<i>ReleaseResource together seem to take over 90% of the time.</i>
+</p>
+<p>
+<b>A</b>&nbsp;As you suspected, the Resource Manager calls you're using aren't native, and<br>
+they generally call File Manager routines, which aren't native either. But be careful:<br>
+what's native and what isn't is changing over time, and you shouldn't design your<br>
+application based on today's assumptions.
+</p>
+<p>
+That said, relying on the Resource Manager to be fast is generally not a good idea,<br>
+native or not. One approach is to "cache" the icons, making sure they're in RAM at all<br>
+times. (In general, you should do this for any user interface element that will be<br>
+redrawn repeatedly while your application is open.) You can load your icons as one of<br>
+the first few operations in your initialization code, just after calling MaxApplZone<br>
+(possibly moving them high and locking them, since you don't want them to move<br>
+during a CopyBits operation). This technique yields very good performance on the<br>
+redraws that the palette needs, in exchange for a few kilobytes of memory. Don't forget<br>
+to mark the resources as nonpurgeable.
+</p>
+<p>
+Even better, if it will suit your purposes, would be to use the Icon Utilities to retrieve<br>
+and draw your icons (as documented in Inside Macintosh: More Macintosh Toolbox) and<br>
+to build an icon cache. Using the Icon Utilities helps your application do the right thing<br>
+for different screen depths. Also, the icon-drawing routines have been optimized to<br>
+perform well under a variety of conditions.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>How can we detect that our application is already running and bring it to the</i><br>
+<i>front?</i>
+</p>
+<p>
+<b>A</b>&nbsp;Simply iterate through the currently running processes with GetNextProcess,<br>
+calling GetProcessInformation for each one and comparing its process signature with<br>
+your application's (for an example, see the article "Scripting the Finder From Your<br>
+Application" in develop Issue 20, page 67, Listing 1). If your application is running,<br>
+call SetFrontProcess to bring it to the front.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>WindowShade is causing a problem for our application, which saves the window</i><br>
+<i>position and size when it saves a document to disk. If our application's windows are</i><br>
+<i>"rolled up" with WindowShade, its windows appear to have zero height. Is there any</i><br>
+<i>way to determine whether a window is rolled up? If so, can we determine its true size</i><br>
+<i>and the global coordinates of the top left corner of the content region, so that we can</i><br>
+<i>restore and reposition the window when the document is reloaded from disk?</i>
+</p>
+<p>
+<b>A</b>&nbsp;When WindowShade "rolls up" a window, it hides the content region of the<br>
+window. You can tell a window is rolled up when its content region is set to an empty<br>
+region and its structure region is modified to equal the new "shaded" window outline.<br>
+WindowShade doesn't do anything with the graphics port, though, so if you need to store<br>
+the window's dimensions before closing it, use the window's portRect.
+</p>
+<p>
+With regard to the window's position, WindowShade modifies the bottom coordinates of<br>
+the structure and content regions of the window, but the top, left, and right coordinates<br>
+are not changed. These are global coordinates, so you can use the top and left<br>
+coordinates to track and save the global position of the window on the screen regardless<br>
+of whether the window is rolled up.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Sometimes balloons won't show up when I call HMShowBalloon; I get a paramErr</i><br>
+<i>(-50) instead. The hmmHelpType is khmmTEHandle. HMShowBalloon calls TextWidth</i><br>
+<i>on the hText of my TEHandle (the result of which is 1511, the width of 338</i><br>
+<i>characters), then multiplies that by the lineHeight (12), yielding 18132. It then</i><br>
+<i>compares this to 17000, doesn't like the result, puts -50 into a register, and backs</i><br>
+<i>out of everything it has done previously. What's the Help Manager doing?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The Help Manager checks against 17000 to ensure that the Balloon Help window<br>
+will always be smaller than a previously determined maximum size. Currently, you're<br>
+limited to roughly the same number of characters with a styled TEHandle as you are<br>
+with a Pascal string: 255 characters.
+</p>
+<p>
+Keep your help messages small by using clear, concise phrases. If you absolutely need<br>
+more text in a balloon, you can create a picture of it and use khmmPict or<br>
+khmmPictHandle to specify it for your help message. This is not recommended,<br>
+however; "picture text" has the disadvantage of being difficult to edit or translate to<br>
+other languages.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Is there any way I can stop LClick from highlighting more cells when the user</i><br>
+<i>drags the cursor outside the list's rView area? My program allows users to select</i><br>
+<i>more than one item from a list and then drag and drop these selected items into another</i><br>
+<i>list. But I run into a problem with the LClick function: when I drag these items outside</i><br>
+<i>the list's rView area, it still highlights other cells. What can I do?</i>
+</p>
+<p>
+<b>A</b>&nbsp;If you want to use LClick and not change the highlighting of cells when the<br>
+cursor leaves the rView of the list, you should install a click-loop procedure that<br>
+tracks the mouse. When the mouse is outside your list's rectangle, return false to tell<br>
+the List Manager that the current click should be aborted. It turns out that this is a<br>
+nice way to start a drag as well, since you know that the mouse has left the rectangle. It<br>
+might look like this:
+</p>
+<pre>GetMouse(&amp;localPt);  
+if (PtInRect(localPt, &amp;(*list)-&gt;rView) == false)
+   return false;      // We're out of the list.
+else
+   return true;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Q</b>&nbsp;<i>I'm developing a Color QuickDraw printer driver and want to match colors using</i><br>
+<i>ColorSync 1.0.5 with a custom CMM. I was told that for efficiency I should manually</i><br>
+<i>match colors inside my Stdxxx bottlenecks, instead of calling DrawMatchedPicture. Is</i><br>
+<i>this really more efficient? Why?</i>
+</p>
+<p>
+<b>A</b>&nbsp;Surprising as it may be, it is more efficient for printer drivers to manually<br>
+match colors inside Stdxxx bottlenecks than to call DrawMatchedPicture. This is<br>
+because ColorSync 1.0's DrawMatchedPicture doesn't use bottlenecks as you expected.<br>
+It does install a bottleneck routine that intercepts picture comments (so that it can<br>
+watch the embedded profiles go by), but it doesn't do the actual matching in bottleneck<br>
+routines. Instead, it installs a color search procedure in the current GDevice. Inside<br>
+the search procedure, each color is matched one at a time.
+</p>
+<p>
+While this implementation has some advantages, it's painfully slow on PixMaps,<br>
+because even if the PixMap contains only 16 colors, each pixel is matched<br>
+individually. This has been changed in ColorSync 2.0. To boost performance, PixMaps<br>
+(which are, after all, quite common) are now matched in the bottlenecks instead of<br>
+with a color search procedure. (See the Print Hints column in this issue of develop for<br>
+more on ColorSync 2.0.)
+</p>
+<p>
+<b>Q</b>&nbsp;<i>I need to add some PostScript comments to the beginning of the PostScript files</i><br>
+<i>generated by the LaserWriter GX driver. On page 4-119 of Inside Macintosh:</i><br>
+<i>QuickDraw GX Printing Extensions and Drivers, it says that you can override the</i><br>
+<i>GXPostScriptDoDocumentHeader message to do this. I wrote a QuickDraw GX printing</i><br>
+<i>extension to implement this, assuming that all I had to do was to override the</i><br>
+<i>GXPostScriptDoDocumentHeader message and buffer the desired data with</i><br>
+<i>Send_GXBufferData. Here's an example of my code:</i>
+</p>
+<pre>OSErr NewPostScriptDoDocumentHeader
+        (gxPostScriptImageDataHdl hImageData)
+{
+   OSErr      theStatus = noErr;
+   char      dataBuffer[256];
+   long      bufferLen;
+
+   strcpy(dataBuffer, "%%DAVE'S TEST DATA");
+   bufferLen = strlen(dataBuffer);
+   theStatus = Send_GXBufferData((Ptr) dataBuffer, bufferLen,
+                                  gxNoBufferOptions);
+   if (theStatus != noErr)
+      return theStatus;
+   theStatus = Forward_GXPostScriptDoDocumentHeader(hImageData);
+   return theStatus;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<i>Unfortunately, this causes a bus error when Send_GXBufferData is called, even if I put</i><br>
+<i>Send_GXBufferData after the call to Forward_GXPostScriptDoDocumentHeader. Why</i><br>
+<i>doesn't this work?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The override in your extension is basically correct, but the order of your code<br>
+needs to be slightly different:
+</p>
+<pre>// Note that the string is terminated with a return character:
+#define kTestStr "%%DAVE'S TEST DATA\n"
+
+OSErr NewPostScriptDoDocumentHeader
+        (gxPostScriptImageDataHdl hImageData)
+{
+   OSErr      theStatus = noErr;
+   char      dataBuffer[256];
+   long      bufferLen;
+
+   theStatus = Forward_GXPostScriptDoDocumentHeader(hImageData);
+   if (theStatus != noErr)
+      return theStatus;
+
+   // Note that we do (sizeof(...) - 1) below to strip off the
+   // C string null terminator for the string defined.
+   theStatus = Send_GXBufferData(kTestStr, (sizeof(kTestStr) - 1, 0);
+   return theStatus;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Make sure that the string is terminated with a return character. If you're using a<br>
+#define to allocate static space for the string (which is not recommended), remember<br>
+that it allocates the string plus a null terminator; sizeof then returns the size of the<br>
+string, so you need to subtract 1 from the total. This string should come from a<br>
+resource or a file.
+</p>
+<p>
+If you want to add to the header from an application (to avoid writing the extension),<br>
+you can add an item of type 'post' to the job collection, using the tag gxPrintingTagID. If<br>
+the first character of this item is a % character, it will appear in the job header.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Our application has multiple QuickDraw GX shapes layered on top of each other.</i><br>
+<i>The bottom object is a graphic, and the objects on top of it are text shapes. The text</i><br>
+<i>objects are transparent, permitting the underlying graphic to show through. Are there</i><br>
+<i>functions in QuickDraw GX to facilitate refreshing the background shapes when</i><br>
+<i>characters are deleted in the text layout shapes above it? We need to refresh the</i><br>
+<i>graphic with minimal flicker and want to avoid resorting to the standard CopyBits</i><br>
+<i>routing.</i>
+</p>
+<p>
+<b>A</b>&nbsp;QuickDraw GX doesn't have any direct functions to facilitate refreshing or<br>
+redrawing only a portion of a shape covered by another shape. However, there are a<br>
+few methods that can be used in conjunction with various QuickDraw GX and QuickDraw<br>
+calls to accomplish your goals. Here are three approaches that might work for you:
+</p>
+<ul>
+<li>As you know, you can have QuickDraw GX draw directly into a GWorld, and<br>
+use CopyBits to update the appropriate area. This approach is good if you need<br>
+to draw QuickDraw and QuickDraw GX objects in the same window.</li>
+<li>If you merge multiple shapes into a QuickDraw GX picture, you can use<br>
+the picture's clip shape to update the area in question. Make your graphic<br>
+shape the bottom shape in the picture's hierarchy. This forces QuickDraw GX<br>
+to draw the graphic as the first shape, with the other shapes drawn on top.<br>
+QuickDraw GX pictures are smart, in the sense that they respect the clip<br>
+shapes associated with the picture and all of the shapes contained within the<br>
+picture.</li>
+<li>To update the smallest possible area, convert the QuickDraw update region<br>
+to a QuickDraw GX path. Then get the current clip shape of the picture with<br>
+GXGetShapeClip, and save it for later restoring. Use the path as the "new" clip<br>
+shape of the picture and draw. Finally, restore the picture's clip shape.</li>
+<li>Create a QuickDraw GX offscreen bitmap to perform flicker-free updating<br>
+in a manner similar to using CopyBits. This method, though, is based<br>
+completely on QuickDraw GX. When updating the screen, clip your drawing to<br>
+the area you want to update. For an example, see the "3 circles - hit testing"<br>
+sample that ships with QuickDraw GX.</li>
+</ul>
+<p>
+<b>Q</b>&nbsp;<i>I'm using a layout shape to represent an area for editable text that will have a</i><br>
+<i>fixed position, style, font, size, and width. This layout shape has some default text that</i><br>
+<i>the user is prompted to change (text content only, no other attributes). Each time text</i><br>
+<i>is added (the new text replaces the previous text string), the user interface code</i><br>
+<i>checks whether the size of the new string goes beyond the defined width. I do this by</i><br>
+<i>comparing the width of the local bounds with the width given within the layout shape</i><br>
+<i>geometry. In all cases, the justification setting is 0, but the flush setting varies</i><br>
+<i>(left/0, center/0.5, right/1.0).</i>
+</p>
+<p>
+<i>Sometimes the width of the local bounds reaches a point where it's wider than the</i><br>
+<i>width defined by the shape; in other cases, it approaches the width but never reaches</i><br>
+<i>or surpasses it. In this situation, the text is updated and begins to compress itself</i><br>
+<i>within the defined width. How can I allow text to be entered till the width is reached,</i><br>
+<i>but not compressed?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The problem you describe was fixed in QuickDraw GX 1.1.1 with a new API call:
+</p>
+<pre>Fixed GXGetLayoutJustificationGap (gxShape layout);</pre><p class="spacer">&nbsp;</p>
+<p>
+This function returns information that was always generated during layout's<br>
+justification processing but was never made publicly visible before. It represents the<br>
+signed difference between the specified width for the layout and the measured<br>
+(unjustified) width.
+</p>
+<p>
+By setting a width in the layout options, but leaving the justification factor at 0, you<br>
+can keep adding text until the results of the GXGetLayoutJustificationGap call changes<br>
+sign from positive to negative. At that point, the text starts to compress, so you should<br>
+prohibit new text entry. It's a very fast call (since its result is cached as part of the<br>
+layout process anyway), so calling it on every typed character shouldn't slow things<br>
+down at all.
+</p>
+<p>
+Some examples may help clarify the use of this call: Suppose you create a layout with<br>
+the width field of the gxLayoutOptions set to 500 points and the justification factor set<br>
+to fract1 (full justification). If the unjustified width of the layout is only 450 points,<br>
+GXGetLayoutJustificationGap returns +50 points; if the unjustified width is 525<br>
+points, this function returns -25 points. A positive value means the line will be<br>
+typographically stretched to fill the specified width, while a negative value means the<br>
+line will be typographically condensed.
+</p>
+<p>
+Note that the justification factor in the gxLayoutOptions doesn't have to be fract1 in<br>
+order for this function to return useful results. For instance, if you set a width value<br>
+but leave the justification factor at 0, the line will not be justified unless its<br>
+unjustified width exceeds the specified width. In this case, layout will typographically<br>
+shrink the line. A client program that wants to determine when the end of a line is<br>
+reached (for line-breaking purposes) can call this function after every character is<br>
+added (as the user types, for example); as soon as the value becomes negative, the<br>
+client knows that the margin has been reached.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>There are three options on the General panel of the QuickDraw GX Print dialog --</i><br>
+<i>Collate Copies, Paper Feed, and Quality -- that we would like to move to one of our own</i><br>
+<i>panels. We have solutions that differ from the default ones, and we want to rename</i><br>
+<i>these solutions and associate them with our printer. How can I eliminate those options</i><br>
+<i>from the General panel?</i>
+</p>
+<p>
+<b>A</b>&nbsp;There's no mechanism in QuickDraw GX to remove panel items from the<br>
+standard Print panels, except for the Quality item. The Quality collection item<br>
+(gxQualityTag = 'qual'), whose structure is defined in PrintingManager.h, has a<br>
+Boolean field called disableQuality. To eliminate the Quality item from the panel,<br>
+specify true for the disableQuality field in your driver. Although you cannot remove<br>
+the other items, you can disable them (dim them in the panel) by getting the collection<br>
+item and setting the locked attribute with SetCollectionItemInfo.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Do I need to call GXCloneColorProfile before calling GXConvertColor? Since the</i><br>
+<i>color passed into GXConvertColor by ColorSync is destroyed, should the color profile</i><br>
+<i>passed in as part of the color be disposed of? If not, isn't that a memory leak?</i>
+</p>
+<p>
+<b>A</b>&nbsp;Calling GXCloneColorProfile isn't necessary, and it would require additional<br>
+work that doesn't need to be done. The gxColor structure is a public data structure, not<br>
+an object: the application, not QuickDraw GX, handles adding and maintaining<br>
+references to objects with respect to gxColors (and gxBitmaps). QuickDraw GX<br>
+maintains owner counts when the profile is attached to another QuickDraw GX object<br>
+(using GXNewBitmap, GXSetInkColor, and so on). This is not a memory leak.
+</p>
+<p>
+For example, consider this scenario: When an application gets a shape's color, the<br>
+ink's profile has two owners -- the shape and the application. Therefore, the<br>
+application can reference the profile in gxColor structures, even if the shape is<br>
+disposed of. Once the application calls GXDisposeColorProfile, the reference is no<br>
+longer valid. Cloning the color profile does nothing except to require that<br>
+GXDisposeColorProfile be called afterward. As a result, all that happens is that time is<br>
+wasted as the owner count goes from a positive number to that number plus 1, and then<br>
+back down.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Does QuickDraw GX send the GXDoesPaperFit message when I'm setting up input</i><br>
+<i>tray dialogs, or is the driver supposed to do this? If QuickDraw GX doesn't, it's</i><br>
+<i>possible for users to request completely invalid paper sizes, which can violently crash</i><br>
+<i>most raster drivers.</i>
+</p>
+<p>
+<b>A</b>&nbsp;QuickDraw GX sends the GXDoesPaperFit message in the default implementation<br>
+of the input trays dialog to constrain the configuration options, and drivers that<br>
+perform their own input trays dialog should do the same. A driver should override this<br>
+message if it needs other than the default logic, which responds that everything fits.
+</p>
+<p>
+The packing buffer size specified in the 'rpck' resource is set to the expected maximum<br>
+size needed. Unfortunately, this is far smaller than what's needed when handling larger<br>
+than expected paper sizes. To work around this, you can set the packing buffer size so<br>
+that it can accommodate the largest paper size the printer can use.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>I've been experimenting to see what happens when a print job is canceled part of</i><br>
+<i>the way through. If I cancel when GXOpenConnection and GXStartSendPage have both</i><br>
+<i>completed successfully, I get unexpected GXCleanupOpenConnection and</i><br>
+<i>GXCleanupStartSendPage messages. If I cancel at another point in the job (for example,</i><br>
+<i>during rendering via the Remove button in the desktop printer status window),</i><br>
+<i>GXCleanupStartSendPage and GXCleanupOpenConnection messages are passed through</i><br>
+<i>after ImageDocument exits. This behavior seems very odd, and it doesn't appear to be</i><br>
+<i>discussed anywhere in the documentation. Shouldn't GXCleanupOpenConnection and</i><br>
+<i>GXCleanupStartSendPage be called only if their respective routines return an error?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The unexpected GXCleanupOpenConnection and GXCleanupStartSendPage<br>
+messages are coming from the default implementations of ImageJob and ImagePage. The<br>
+ImageJob code calls Send_GXSetupImageData, and if an error occurs, it sends<br>
+GXCleanupOpenConnection. ImagePage calls Send_GXRenderPage and sends<br>
+GXCleanupStartSendPage if an error occurs. If GXStartSendPage or GXOpenConnection<br>
+doesn't complete successfully, the respective cleanup calls are not sent. Although the<br>
+documentation states otherwise, this behavior is correct.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Is the layout of the PostScript printer preferences ('pdip') resource documented</i><br>
+<i>correctly in Inside Macintosh: QuickDraw GX Printing Extensions and Drivers?</i>
+</p>
+<p>
+<b>A</b>&nbsp;No. There's a bug in the documentation for the 'pdip' resource on page 6-88 of<br>
+Inside Macintosh: QuickDraw GX Printing Extensions and Drivers. The render options<br>
+field is in fact a long word. The resource is defined correctly in the interfaces<br>
+(PrintingRezTypes.r) and in the MPW 411 files for QuickDraw GX.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Is there a simple way to detach a QuickTime movie from its original file? I'm</i><br>
+<i>trying to place a copy of a QuickTime movie in my application's resource fork.</i>
+</p>
+<p>
+<b>A</b>&nbsp;See John Wang's QuickTime column in develop Issue 17. You can use the<br>
+technique presented in that column to extract a movie and put it into the resource fork<br>
+of a different file. You'll find the column and the accompanying sample code,<br>
+MultipleMovies, on this issue's CD.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>How can I determine whether QuickTime 2.0's MIDI music function is available</i><br>
+<i>and whether the larger set of 41 instruments is available? If the MIDI function is</i><br>
+<i>available, we need to add code to enable the music portion of our game.</i>
+</p>
+<p>
+<b>A</b>&nbsp;The QuickTime Music Architecture became available in QuickTime 2.0 (as<br>
+described in David Van Brink's article in this issue of develop), so checking the<br>
+QuickTime version in a Gestalt call (selector gestaltQuickTimeVersion) will tell you if<br>
+the MIDI function is present.
+</p>
+<p>
+When the QuickTime Musical Instruments Extension is installed in your System<br>
+Folder, it gives you the musical instruments supported by Apple. This extension is<br>
+actually a component. If you need to know whether the instruments are present, call<br>
+FindNextComponent, searching for a component that has a type of 'inst' and a subtype of<br>
+'ss&nbsp;&nbsp;'. Here's a code snippet:
+</p>
+<pre>pascal Boolean AreQuickTimeMusicInstrumentsPresent(void)
+{
+   ComponentDescription    aCD;
+  
+   aCD.componentType = 'inst';
+   aCD.componentSubType = 'ss  ';
+   aCD.componentManufacturer = 'appl';
+  
+   if (FindNextComponent((Component)0, &amp;aCD) != NULL)
+      return true;
+   else
+      return false;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Q</b>&nbsp;<i>Are there any known compatibility problems between QuickTime 2.0 and</i><br>
+<i>QuickTime for Windows? I'm creating a dual-platform application and want to use</i><br>
+<i>QuickTime 2.0 for the video. Is there anything that I should avoid on either platform,</i><br>
+<i>or anything I should watch out for?</i>
+</p>
+<p>
+<b>A</b>&nbsp;In most cases, you don't have to be concerned about using the same movie for<br>
+playback on both platforms, as long as the movie is in a flattened format and in a<br>
+single-fork file. To be sure your movie files are single-fork files, select "Make<br>
+cross-platform" in the MoviePlayer application when saving your movies (or do<br>
+something analogous in other applications that produce cross-platform movies).
+</p>
+<p>
+QuickTime supports sound, video, text, music (MIDI), and MPEG tracks under both<br>
+Windows and the Mac OS. One difference between the two versions is that you can have<br>
+only one of each track open under Windows (except for the number of sound tracks;<br>
+starting with QuickTime for Windows 2.0.1, you can enable/disable multiple sound<br>
+tracks).
+</p>
+<p>
+The biggest difference between the two versions is the API: QuickTime for Windows 2.0<br>
+doesn't support all the API calls available under the Mac OS. Nearly all of the movie<br>
+controller APIs are supported, as well as many of the basic calls, but the calls to<br>
+create manipulable movie tracks are missing. You can't create specific media handlers<br>
+with QuickTime for Windows 2.0, but you can write data handlers and codecs for the<br>
+Windows environment.
+</p>
+<p>
+While working with QuickTime for Windows, you'll have to keep track of all the<br>
+possible configuration issues that users might encounter. We distribute README files<br>
+with the latest information about compatibility and configurations (video/sound cards,<br>
+drivers, and so on).
+</p>
+<p>
+For additional information, the Mac OS Software Developer's Kit includes detailed<br>
+documentation regarding API and architecture issues concerning QuickTime and<br>
+QuickTime for Windows. Also see How to Digitize Video by Weiskamp and Johnson<br>
+(Wiley Press) for another good source of information regarding the practical issues of<br>
+both QuickTime and AVI movie creation. Although this book is a bit out of date in the<br>
+details (it was written to cover QuickTime 1.6.1 and QuickTime for Windows 1.1.1),<br>
+much of it is still valid.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Can we use a different A5 world with QuickTime? Our plug-in architecture uses</i><br>
+<i>A5 for global access, but we allow the A5 world to move. QuickTime doesn't seem to be</i><br>
+<i>able to deal with this, and it doesn't realize that EnterMovies was called once the A5</i><br>
+<i>world moves. We currently work around this by locking down our A5 world, but we</i><br>
+<i>would rather not do this. If we need to keep doing this, is locking down the A5 world an</i><br>
+<i>adequate fix, and can you recommend another solution?</i>
+</p>
+<p>
+<b>A</b>&nbsp;You can use a different A5 world with QuickTime, but whatever A5 world you<br>
+use, you'll have to lock it down. QuickTime allocates a new set of state variables for<br>
+each A5 world that's active when EnterMovies is called. However, since QuickTime<br>
+uses A5 to identify each QuickTime client, if A5 changes (your A5 world moves),<br>
+QuickTime won't recognize that you've called EnterMovies for that client.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>How do I determine the correct time values to pass to GetMoviePict to get all the</i><br>
+<i>sequential frames of a QuickTime movie?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The best way to determine the correct time to pass to get movie frames is to call<br>
+the GetMovieNextInterestingTime routine repeatedly. The first time you call<br>
+GetMovieNextInterestingTime, its flags parameter should have a value of<br>
+nextTimeMediaSample + nextTimeEdgeOK to get the first frame. For subsequent calls,<br>
+the value of flags should be nextTimeMediaSample, and the whichMediaTypes<br>
+parameter should be VisualMediaCharacteristic ('eyes') to include only tracks with<br>
+visual information.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>I noticed that certain commercial candies have no taste when they initially hit my</i><br>
+<i>tongue. It's only after I start sucking them that the flavor appears. I think there's some</i><br>
+<i>sort of coating on them. What is it? Is it harmful?</i>
+</p>
+<p>
+<i>Also, what is it that creates that beautiful high gloss I get with my car wax and floor</i><br>
+<i>wax? I just love the way it shines after a good hard buffing.</i>
+</p>
+<p>
+<b>A</b>&nbsp;Carnauba wax is the answer, in both cases. It's a hard wax obtained from the<br>
+leaves of a Brazilian palm tree (Copernicia prunifera), and is used a lot in polishes of<br>
+all types. It really does buff up beautifully, doesn't it? It also is completely tasteless<br>
+and nontoxic, and makes a dandy confectioner's glaze, used to keep the candy from<br>
+sticking to itself.
+</p>
+<p>
+These answers are supplied by the technical gurus in Apple's Developer Support<br>
+Center.*
+</p>
+<p>
+Have more questions? See the new Macintosh Technical Q&amp;As on this issue's CD. (Older<br>
+Q&amp;As can be found in the Macintosh Q&amp;A Technical Notes on the CD.)*
+</p>
+</body>
+</html>

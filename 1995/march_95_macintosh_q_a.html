@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 12 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 95 - Macintosh Q & A</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Macintosh Q &amp; A</h2>
+<h1>Macintosh Developer Technical Support</h1>
+<p>
+<b>Q</b><i> I'm about to write my first QuickDraw GX printer driver (for a laser printer) and</i><br>
+<i>plan to base it on the sample code "Generic LaserWriter." Is there anything I need to</i><br>
+<i>know about that code?</i>
+</p>
+<p>
+<b>A</b> There are two bugs that you might need to know about, depending on which version of<br>
+the sample you're using. Both are very easy to fix.
+</p>
+<ul>
+<li>    In versions previous to those in the QuickDraw GX Developer's Kit<br>
+(which is now part of the Mac OS Software Developer's Kit), a device ID of<br>
+$88 is specified in the file ChooserSupport.a. For QuickDraw GX, the device ID<br>
+should always be $A9. (This bug also slipped through in the<br>
+"LaserWriter--custom dialogs" sample in the Developer's Kit.)</li>
+<li> For all the versions of the code in the Developer's Kit, we improved the<br>
+file ChooserSupport.c by adding better error handling, making everything<br>
+universal, and removing unnecessary code; however, we forgot to add ALRT<br>
+-4095 and DITL -4095 to the driver. If the Chooser code fails, it tries to put<br>
+up a "You're hosed" alert, which doesn't exist. You should still use this<br>
+improved version if you can; you can just copy the missing resources from<br>
+any of the other sample LaserWriter drivers in the Developer's Kit.</li>
+</ul>
+<p>
+<b>Q</b><i>&nbsp;I've just ported my application to the Power Macintosh and I want it to optionally</i><br>
+<i>use the Speech Manager. But if I try to launch the application when the Speech Manager</i><br>
+<i>isn't installed, the Finder puts up a dialog that says "The application `GonzoApp' could</i><br>
+<i>not be opened because `SpeechLib' could not be found." How can I get my application to</i><br>
+<i>launch in this case?</i>
+</p>
+<p>
+<b>A</b> The Finder refuses to launch your application because the Code Fragment Manager<br>
+(CFM) believes your application is "hard linked" to SpeechLib. The CFM assumes your<br>
+application can't run at all without SpeechLib and that all references to SpeechLib<br>
+must be resolved. Since it can't locate SpeechLib, it refuses to launch your application.
+</p>
+<p>
+To get around this, the CFM supports a concept called "weak linking." In this case, it<br>
+allows references to the library to be unresolved at run time, and it's up to the<br>
+application (that is, your code) to check that it's safe to make calls to the library. If<br>
+you don't check, your application will crash the first time it tries to call the library.
+</p>
+<p>
+The best way to check that a weak-linked library is installed is to check that the<br>
+address of a function in the library has been resolved. For example:
+</p>
+<pre>Boolean HasSpeechLib()
+{
+   /*
+    * Check the address of some function in the library.
+    * SpeechManagerVersion is convenient.
+    * kUnresolvedSymbolAddress is defined in FragLoad.h.
+    */
+   return (SpeechManagerVersion != kUnresolvedSymbolAddress);
+}</pre>
+<p>
+Note that this is not a replacement for using Gestalt to determine whether services are<br>
+available; you should still use Gestalt to determine whether the Speech Manager is<br>
+installed. The above code is an additional check for native applications, to ensure that<br>
+the necessary library functions are available.
+</p>
+<p>
+How you weak-link your application to a particular library depends on your<br>
+development environment. Using the PPCC tools, you would specify weak linking with<br>
+the following option to MakePEF:
+</p>
+<pre>-l SpeechLib.xcoff=SpeechLib~</pre>
+<p>
+Note the tilde (~) character at the end: this specifies a weak-linked library. In<br>
+Metrowerks CodeWarrior, when you add SpeechLib to the project, the little pop-up<br>
+menu on the right side of the project window will have an "Import weak" option that<br>
+you can use to enable weak linking. Other development environments may use different<br>
+methods for designating a weak-linked library.
+</p>
+<p>
+<b>Q</b><i> To make my application localizable, I want to use ExtendedToString and</i><br>
+<i>StringToExtended to convert floats to strings and strings to floats. These routines,</i><br>
+<i>though, use the SANE extended format, which is quite archaic. What's the best way to</i><br>
+<i>convert a float to an extended to pass to ExtendedToString? It should compile on both</i><br>
+<i>680x0 and PowerPC machines with MPW, Metrowerks, and THINK C.</i>
+</p>
+<p>
+<b>A</b> On PowerPC machines, <b>extended80 </b>and <b>extended96 </b>do not exist, except as<br>
+structures. There are a number of (PowerPC-only) conversion routines in fp.h, like<br>
+<b>x80told.</b> Your formatting code can be written as follows:
+</p>
+<pre>#include &lt;fp.h&gt;
+#include &lt;TextUtils.h&gt;
+
+void LongDoubleToString (long double ld,
+                         const NumFormatString *myCanonical,
+                         const NumberParts *partsTable,
+                         Str255 outString)
+{
+#if defined(powerc) || defined (__powerc)
+   extended80   x;
+
+   ldtox80(&amp;ld, &amp;x);
+   ExtendedToString(&amp;x, myCanonical, partsTable, outString);
+#else
+   #ifdef mc68881
+      extended80   x;
+
+      x96tox80(&amp;ld, &amp;x);
+      ExtendedToString(&amp;x, myCanonical, partsTable, outString)
+   #else
+      ExtendedToString(&amp;ld, myCanonical, partsTable, outString);
+   #endif
+#endif
+}</pre>
+<p>
+Note that<b> long double i</b>s equivalent to <b>extended80</b> or <b>extended96</b>on 680x0, and<br>
+128-bit <b>double-double </b>on PowerPC. If you want to format a double, just pass it in<br>
+and the compiler will take care of converting double to long double or double to<br>
+extended.
+</p>
+<p>
+SANE.h is being replaced by fp.h, for both 680x0 and PowerPC. This issue's CD<br>
+contains the libraries and interfaces for this new numerics package, which<br>
+implements the Floating-Point C Extensions (FPCE) proposed technical draft of the<br>
+Numerical C Extensions Group's requirements (NCEG/X3J11.1).
+</p>
+<p>
+For more information on how to convert a SANE program to PowerPC, see <i>Inside</i><br>
+<i>Macintosh: PowerPC Numerics, </i>Appendix A. In principle, you should replace all use of<br>
+<b>extended </b>with <b>double_t. </b>The <b>double_t </b>type maps back to <b>long double </b>for<br>
+680x0, which is the same as <b>extended;</b> for PowerPC, it maps to 64-bit <b>double,</b><br>
+which is the fastest floating-point format. Only when you read or write 80- or 96-bit<br>
+SANE numbers to files, or when you want to use any of the Toolbox routines that take<br>
+an 80-bit extended parameter, do you need to use conversion routines.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>I'd like to automatically configure printing in portrait or landscape mode without</i><br>
+<i>requiring the user to go through the Page Setup dialog. How do I go about doing this?</i>
+</p>
+<p>
+<b>A</b> The traditional Macintosh printing architecture provides no support for changing<br>
+the page orientation programmatically. At the time the Printing Manager was designed<br>
+(about ten years ago!), there was kind of an overreaction regarding the principle of<br>
+the user being in control, so we've had to live without a dependable way of changing a<br>
+print record without the user's help. The good news is the QuickDraw GX printing<br>
+architecture does support changing print dialogs programmatically, and QuickDraw GX<br>
+will eventually be replacing the old printing architecture.
+</p>
+<p>
+&nbsp;&nbsp;If you're interested in finding a workaround in the traditional printing environment,<br>
+the only one we can offer is to prepare a couple of print records with the desired<br>
+settings ahead of time and include them in your application. Then you can select the<br>
+appropriate one based on the high-order byte of the TPrStl.wDev field of a validated<br>
+print record. If the current printer driver has a value you don't know about, ask the<br>
+user to go through the Page Setup dialog once to set landscape mode. Your application<br>
+can then save the print record after it's filled out by PrStlDialog (again, indexed by<br>
+the high byte of the wDev field).
+</p>
+<p>
+The best method for saving the print record is to save it as a resource in your<br>
+document's resource fork. Make your resource type something different from those<br>
+used by the Printing Manager, to prevent the Printing Manager from getting confused<br>
+and grabbing the wrong resource.
+</p>
+<p>
+Remember, you need to be careful: watch the high byte of the wDev field, and call<br>
+PrValidate before passing a print record to PrOpenDoc. Also, take a look at <i>Inside</i><br>
+<i>Macintosh: Imaging With QuickDraw</i>; pages 9-17 and 9-18 provide some valuable<br>
+information.
+</p>
+<p>
+<b>Q</b><i> I want to create a mask for a picture, such that the mask is 0 wherever the picture's</i><br>
+<i>pixels are pure white, and 1 everywhere else. My first try was to simply use CopyBits</i><br>
+<i>to copy the rectangle enclosing the PICT onto a same-sized rect in a 1-bit-deep</i><br>
+<i>offscreen world. This didn't work, however, as the yellows get transformed to 0, which</i><br>
+<i>is not what I want. I tried various transfer modes with CopyBits (from 0 to 100) to no</i><br>
+<i>avail. The SeedCFill and the CalcCMask routines don't seem to be what I want either,</i><br>
+<i>because it appears that their masks have to be keyed off a certain point or side(s). I</i><br>
+<i>can take the brute force approach and go through the pixels of the PICT one by one,</i><br>
+<i>checking to see if they're white and setting the mask accordingly, but this seems</i><br>
+<i>insane. Is there a good method for doing this?</i>
+</p>
+<p>
+<b>A</b> The way to do this is to install a custom color search procedure, then call CopyBits to<br>
+copy into the 1-bit GWorld and let the search proc determine the color to use. The<br>
+search proc would simply look at the color asked for and return white if it's white or<br>
+black if it's nonwhite. See "Color Manager" in <i>Inside Macintosh: Advanced Color</i><br>
+<i>Imaging </i>(on this issue's CD and forthcoming in print from Addison-Wesley).
+</p>
+<p>
+<b>Q</b>&nbsp;<i>I heard that you can use LaserWriter 8.1.1 with QuickDraw GX with some patch. Is</i><br>
+<i>this true? If so, how?</i>
+</p>
+<p>
+<b>A</b>&nbsp;You can install an option called QuickDraw GX Helper. To do this, launch the<br>
+installer document for QuickDraw GX and choose Custom Install from the pop-up menu<br>
+in the top left of the window. A list appears with a bunch of options, with checkboxes<br>
+next to them. Click the small triangle next to the QuickDraw GX Utilities option; then<br>
+check the QuickDraw GX Helper option below that.
+</p>
+<p>
+After you install and reboot, Helper will be available to you. It works only with<br>
+old-style "classic" printing applications (though there's nothing classic about the old<br>
+Printing Manager :-); if you're using a QuickDraw GX-savvy application, Helper<br>
+won't help. When you're in a "classic" printing application, there's a new option, Turn<br>
+Desktop Printing On (or Off) in the Apple menu.
+</p>
+<p>
+Be aware that this is more than a patch. Literally, it's an unpatch! It removes some of<br>
+the QuickDraw GX patches and is really a bit of a hack, provided for convenience.<br>
+Because of this, there isn't much of an interface. For instance, when desktop printing<br>
+is turned off, the printer used is the one selected the last time that "classic" driver<br>
+was used. To change to a different printer, you need to reboot without QuickDraw GX,<br>
+choose a new printer in the Chooser, then reboot again with QuickDraw GX.
+</p>
+<p>
+Here are some additional things to note:
+</p>
+<ul>
+<li>    Helper will choose LaserWriter 7.x over LaserWriter 8 (because<br>
+LaserWriter 7.x was called "LaserWriter," whereas LaserWriter 8.x is called<br>
+"LaserWriter 8," and the former is ordinally before the latter). As you<br>
+probably know, QuickDraw GX can't tolerate multiple printer drivers with the<br>
+same creator codes, so it just picks the first one. Therefore, you should ensure<br>
+that you have only one driver of each type in your Extensions folder.</li>
+<li> Of course, before turning off desktop printing you need to ensure that you<br>
+have the appropriate desktop printer selected: if you want LaserWriter 8.1.1<br>
+selected when you turn off desktop printing, make sure a LaserWriter is the<br>
+selected desktop printer; if you want ImageWriter to be selected when you<br>
+turn off desktop printing, make sure an ImageWriter is the selected desktop<br>
+printer; and so on.</li>
+<li> Helper works only with Apple drivers. If you need to print with another<br>
+driver, rebooting without QuickDraw GX is the only option.</li>
+</ul>
+<p>
+<b>Q</b><i>&nbsp;I'm trying to get a gxFont ID based on a given font name (for example, "Times"), and</i><br>
+<i>I've run across a confusing situation using GXFindFonts. Below is the call I'm using,</i><br>
+<i>and it gives an "inconsistent parameters" error. Can you tell me why this error occurs</i><br>
+<i>and what I'm doing wrong? Using gxFullFontName doesn't work in finding the font in</i><br>
+<i>this case. Using gxNoFontName gives errors with or without the font family ID; when</i><br>
+<i>should this indicator be used?</i>
+</p>
+<pre>GXFindFonts(theFontFamilyID,       // font family
+            gxNoFontName,          // font name
+            gxMacintoshPlatform,   // font platform
+            1,                     // default -&gt; gxRomanScript,
+            1,                     // default -&gt; gxEnglishLanguage,
+            strlen(name),          // name length
+            (unsigned char*)name,  // the name
+            1,                     // matching font
+            1,                     // number of matches
+            &amp;fontID            // font reference);</pre>
+<p>
+<b>A</b>&nbsp;GXFindFonts is the Swiss Army knife of font-finding routines. You can use it to find<br>
+one font or a set of fonts. You can have it base the search on nearly any combination of<br>
+family name, style name, script type, or other font properties. Unfortunately, the<br>
+combination of arguments it expects in order to work in its myriad ways can be a bit<br>
+confusing -- it's easy to cut your finger on one of the blades and get an "inconsistent<br>
+parameters" error.
+</p>
+<p>
+The first argument passed (font family) is itself a gxFont structure. This argument, if<br>
+not nil, allows you to restrict the search to those fonts that have the same family as the<br>
+argument.
+</p>
+<p>
+Each gxFont has several types of name string associated with it. As documented on page<br>
+7-7 of <i>Inside Macintosh: QuickDraw GX Typography</i>, there's a font family string, style<br>
+string, unique name string, full font name string, and so on for each font. The second<br>
+argument passed to GXFindFonts (the meaning argument) is one of the gxFontNames<br>
+constants listed on page 7-79. This argument, if not gxNoFontName, specifies which of<br>
+the font's names to compare with the seventh argument to determine a match. If the<br>
+second argument is gxNoFontName, GXFindFonts ignores the seventh argument and<br>
+assumes that you're basing your search on other criteria, such as platform, script, or<br>
+language (arguments 3, 4, and 5, respectively).
+</p>
+<p>
+The seventh argument (name), if not nil, is the name string that you want to search<br>
+for, and the sixth argument (nameLength) is the length of that string.
+</p>
+<p>
+GXFindFonts may find more than one font that matches the criteria. The eighth<br>
+argument (index) is the index of the first of these fonts that you want GXFindFonts to<br>
+return. The ninth argument (count) is the maximum number of fonts that you want<br>
+GXFindFonts to return. So, for example, if you specify criteria that match ten different<br>
+fonts, but you want GXFindFonts to return only the fifth, sixth, and seventh of these<br>
+fonts, you'd pass 5 for the index and 3 for the count.
+</p>
+<p>
+The tenth argument (fonts) is a pointer to a buffer in which GXFindFonts will return<br>
+the matches it finds. This argument can be nil if you don't want the fonts returned --<br>
+for example, if you just want to find out the number of matches to your desired search<br>
+(the number of matches is returned as the function result).
+</p>
+<p>
+You got an error because you passed in a string to search for (in the sixth and seventh<br>
+arguments) and yet specified gxNoFontName in the second argument. These arguments<br>
+are inconsistent; fortunately you were using the debugging version of GX and received<br>
+an error.
+</p>
+<p>
+But, to return to my pocket knife analogy, sometimes it's simpler and safer to use a<br>
+Buck knife instead of a Swiss Army knife (only one blade, and it locks!). If getting a<br>
+font ID based on a font name is all you need to do, you should consider using the<br>
+FindCNameFont function in font library.c. With this routine you can simply call
+</p>
+<pre>fontID = FindCNameFont(gxFullFontName, name);</pre>
+<p>
+instead of the nasty, multiple-parameter GXFindFonts. There are several other useful<br>
+tools in font library.c which are also worth a look.
+</p>
+<p>
+<b>Q</b><i> Perhaps you can clear up a long-running dispute we've had in our office. Long ago I</i><br>
+<i>read that the "Mac" in MacsBug doesn't stand for Macintosh, but is an acronym for</i><br>
+<i>something that starts with "Motorola." Please put my mind to rest.</i>
+</p>
+<p>
+<b>A</b> MacsBug stands for <b>M</b>otorola <b>a</b>dvanced<b>c</b>omputer <b>s</b>ystems de<b>bug</b>ger.
+</p>
+<p>
+<b>Q</b><i> My application is going to support only the four "required" Apple events plus one</i><br>
+<i>custom event (the application will have an 'aete' resource). What's the desired</i><br>
+<i>behavior of the 'pdoc' event? The real question is, if the user selects a file type that</i><br>
+<i>this application created and chooses Print from the File menu, should a dialog box be</i><br>
+<i>presented to the user? Obviously, if the application receives the event from another</i><br>
+<i>application or a scripting system, we don't want to display the Print dialog (possibly</i><br>
+<i>on a remote machine). Should the behavior be different if the Finder sends the event?</i><br>
+<i>Should there be one or two ways of handling the event?</i>
+</p>
+<p>
+<b>A</b> Here's how your application should behave upon receiving a 'pdoc' event: If all you<br>
+get is a 'pdoc', you should just print without user interaction. The user, or whoever, is<br>
+just using you as a service to print a document. Start your printing without any<br>
+dialogs, using whatever default print record you get from PrDefault. You do not have to<br>
+quit; the Finder will send you a 'quit' Apple event as the next event you get.
+</p>
+<p>
+If you're already running (that is, you were started with an 'oapp' or 'odoc' event) and<br>
+you get a 'pdoc' event, you should treat that one in the same way as a user Print menu<br>
+selection. You might be required to put up a dialog. Always remember to call<br>
+AEInteractWithUser before putting up a print dialog (or any dialog) to be sure you<br>
+have the right to interact, and be prepared to use default actions if you can't interact.
+</p>
+<p>
+<b>Q</b><i> The Macintosh Quadra 630 Developer Note, page 68, says "You should be familiar</i><br>
+<i>with the ATA IDE specification, ANSI proposal X3T9.2/90-143, Revision 3.1." Where</i><br>
+<i>can I find this document?</i>
+</p>
+<p>
+<b>A</b> Apple's implementation of IDE is documented in the Developer Notes for the<br>
+Macintosh Quadra 630 and the PowerBook 150. The ANSI IDE standard has been<br>
+renumbered as X3.221 Revision 4A, April 93. You can order it (and other ANSI<br>
+documents) from Global Engineering Documents; call 1-800-854-7179 in the U.S.,<br>
+or (303)792-2181 elsewhere. The cost is $25 plus shipping.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>I'm trying to print a document with over 60 different fonts in it under QuickDraw</i><br>
+<i>GX, and I get an (unknown) error -27881. The document doesn't print. Is this a bug?</i><br>
+<i>This document will, however, print on non-QuickDraw GX systems to the LaserWriter</i><br>
+<i>8.1.1 driver and presumably other drivers as well. We haven't been able to find an</i><br>
+<i>equivalent to the non-QuickDraw GX&nbsp;&nbsp;"unlimited downloadable fonts" setting under</i><br>
+<i>QuickDraw GX. Is there a worka round to this problem? I realize that it's somewhat of</i><br>
+<i>a ridiculous case, but people do actually do this.</i>
+</p>
+<p>
+<b>A</b> This is not a QuickDraw GX bug. It seems likely, given the error you're seeing, that<br>
+this is a problem with one of the fonts you're using.
+</p>
+<p>
+If you use the <b>gerror </b>dcmd included with the QuickDraw GX Developer's Kit (or plow<br>
+through the file graphics errors.h), you'll see that the error is<br>
+font_scaler_streaming_aborted. This tells you that the streaming was aborted for<br>
+some reason; a common reason would be that the naming table in the font is bad. You<br>
+should be able to determine the exact cause of this using the PSMirrorFile extension<br>
+(which you can find in the Printing Extensions folder in the Developer's Kit). This<br>
+extension will log to a file the dialog with a PostScript printer; it really helps during<br>
+debugging.
+</p>
+<p>
+What all this implies is that one of the fonts you're trying to use is bogus. You need to<br>
+determine which one is causing your problem and remove it. You may be able to do this<br>
+by successively dividing your document into halves until you find the section of the<br>
+document that's causing the problem.
+</p>
+<p>
+<b>Q</b><i> I'd like to know how to do chroma keying in QuickTime. I'm under the impression</i><br>
+<i>that this is possible, but haven't been able to figure out how by digging through Inside</i><br>
+<i>Macintosh.</i>
+</p>
+<p>
+<b>A</b> All you need to do is call SetVideoMediaGraphicsMode, setting graphicsMode to<br>
+transparent and setting opColor to whatever color you want to be transparent.
+</p>
+<pre>Media            theMedia;
+MediaHandler     theHandler;
+RGBColor         theKeyColor;
+
+...      // Set up key color and get the track.
+
+theMedia = GetTrackMedia(theTrack);
+theHandler = GetMediaHandler(theMedia);
+MediaSetGraphicsMode(theHandler, transparent, &amp;theKeyColor);</pre>
+<p>
+Note that since QuickTime currently uses QuickDraw to do the compositing, this<br>
+approach can be rather slow.
+</p>
+<p>
+<b>Q</b><i> I'd like to add a volume control style slider to my dialogs. I don't really want to have</i><br>
+<i>to implement my own CDEF since this must have already been done by many others. Is</i><br>
+<i>there anywhere I can pick one up?</i>
+</p>
+<p>
+<b>A</b> In the Sample Code folder on this issue's CD, as part of AppsToGo, there's a sample<br>
+program called Kibitz that uses a slider CDEF. You can use that one as the basis for<br>
+writing your own control. You'll have the source as well as the object code. The code<br>
+should be adaptable to your needs; if you don't like the way the slider looks, you can<br>
+easily change it using a resource editor (the resource type of slider parts is 'cicn').
+</p>
+<p>
+<b>Q</b><i> I'm writing a real-time video application and would like to open file data forks for</i><br>
+<i>reading/writing at interrupt time (in a deferred task). What's the best call to do this?</i>
+</p>
+<p>
+<b>A</b> You can open files at interrupt time as long as you make the PBHOpen, PBHOpenDF,<br>
+or PBHOpenRF call asynchronously. These calls are always safe at interrupt time;<br>
+they'll get queued if the File Manager is busy with another call, letting the current<br>
+request complete before processing your request. See the article "Asynchronous<br>
+Routines on the Macintosh" in <i>develop</i>Issue 13 for complete information. The article<br>
+explains when, why, and how you should use functions asynchronously on the<br>
+Macintosh.
+</p>
+<p>
+<b>Q</b><i> I was relying on sample code from Inside Macintosh to spool shapes when printing</i><br>
+<i>under QuickDraw GX, but it seems to be causing my application to crash. The code I'm</i><br>
+<i>using is in Inside Macintosh: QuickDraw GX Environment and Utilities, on page 1-22,</i><br>
+<i>Listing 1-6. Is that code correct?</i>
+</p>
+<p>
+<b>A</b> The code is correct in the context in which it's given, but shouldn't be used for<br>
+printing. Calling GXDisposeShape from the spoolProc while printing is what causes<br>
+your crash: the QuickDraw GX printing mechanism disposes of the shapes for you.
+</p>
+<p>
+<b>Q</b><i> I'm trying to incorporate the minimal support for QuickDraw GX printing in my</i><br>
+<i>application, and I've run into a problem. For a start, I'm using Simple Sample GX, the</i><br>
+<i>sample code Dave Hersey wrote for his article "Adding QuickDraw GX Printing to</i><br>
+<i>QuickDraw Applications" in </i>develop <i>Issue 19. I made necessary modifications to this</i><br>
+<i>code for the printing method I'm using: our printing is basically 90% text output,</i><br>
+<i>which is paginated on the fly based on the size of the print page that's returned by the</i><br>
+<i>printing code. Crashes occurred, however, and I finally narrowed them down to</i><br>
+<i>DrawText or DrawString calls with only one character, or only one character followed</i><br>
+<i>by a space. Is this a bug?</i>
+</p>
+<p>
+<b>A</b> Yes, it's a bug in the glyph code. We expect to fix this in the 1.1 release of<br>
+QuickDraw GX (which should be available by the time you read this) but here's an easy<br>
+workaround for QuickDraw GX 1.0.1 and 1.0: convert any glyph shapes to path shapes.<br>
+In your spoolProc, after you get the shape type (as in Simple Sample GX), do this:
+</p>
+<pre>if (theShapeType == gxGlyphType)
+   GXSetShapeType(currentShape, (theShapeType = gxPathType));</pre>
+<p>
+This will convert any glyphs to paths, and will circumvent the problems in the glyph<br>
+code. I've verified that this works using Simple Sample GX and also in your test case.<br>
+Note also that you will lose any hinting information, so the text may appear slightly<br>
+different.
+</p>
+<p>
+<b>Q</b><i> What's the data that's passed when the Drag Manager sends a catalog directory, of</i><br>
+<i>type flavorTypeDirectory? The documentation says it's a DSSpec, but it's too small. Is</i><br>
+<i>it a packedDSSpec?</i>
+</p>
+<p>
+<b>A</b> The documentation is wrong. It's a packedDSSpec, as you thought.
+</p>
+<p>
+<b>Q</b><i> Our application needed a source of uniform random numbers to generate statistical</i><br>
+<i>distributions, and we used the built-in Random function for this. A number of our</i><br>
+<i>users need to know the algorithm of Random because statisticians (as any</i><br>
+<i>mathematician) need to produce a numerical audit trail to document their work. I</i><br>
+<i>looked at the assembly code of the Random function and couldn't recognize the method,</i><br>
+<i>although it looks similar to a linear-congruent generator. Could you tell me the source</i><br>
+<i>of the Random function? If you can cite a book, that would be great!</i>
+</p>
+<p>
+<b>A</b> The Random function in QuickDraw is based on the formula
+</p>
+<pre>randSeed := (randSeed * 16807) MOD 2147483647</pre>
+<p>
+It returns a signed 16-bit number, and updates the unsigned 32-bit low-memory<br>
+global randSeed. The reference used when implementing this random number generator<br>
+was Linus Schrage, "A More Portable FORTRAN Random Number Generator,"<i>ACM</i><br>
+<i>Transactions on Mathematical Software </i>Vol. 5, No. 2, June 1979, pages 132-138.
+</p>
+<p>
+The RandomX function in SANE uses the iteration formula
+</p>
+<pre>r = (7^5 * r) mod (2^31 - 1)</pre>
+<p>
+as documented on page 67 of the <i>Apple Numerics Manual, </i>Second Edition.
+</p>
+<p>
+<b>Q</b><i> I want the users of my application to be able to grow the window without changing</i><br>
+<i>the aspect ratio. Is there a way to call GrowWindow but somehow be able to monitor the</i><br>
+<i>mouse position and modify the size of the rectangle while it's being dragged?</i>
+</p>
+<p>
+<b>A</b> The best approach is to write your own custom replacement for GrowWindow that<br>
+does what you want (see the snippet called GridWindowGrow on this issue's CD for an<br>
+example of a replacement GrowWindow routine). Another option, easier but not really<br>
+what you're after, is to allow "free" dragging and then enforce the aspect ratio in your<br>
+subsequent call to SizeWindow.
+</p>
+<p>
+<b>Q</b><i> We're having a problem with MPW C++. We build our application requiring a</i><br>
+<i>68020 processor or better and an FPU. The problem is that the MPW C++ compiler</i><br>
+<i>seems to create a CODE segment called Static_Constructors. This segment contains</i><br>
+<i>FPU-specific code and causes our program to crash on launch (ID 16) for machines</i><br>
+<i>without an FPU. Looking through code, I notice that at launch __RTInit is called, which</i><br>
+<i>in turn calls __CPlusInit. __CPlusInit loads the Static_Constructors segment and</i><br>
+<i>executes it, before the main segment is ever called. Can we fix this? How?</i>
+</p>
+<p>
+<b>A</b> This is a known C++ problem and is mentioned in the Macintosh Technical Note<br>
+"MPW C++ Q&amp;As" (PT 555) under "C++ static constructors and checking for an<br>
+FPU." A workaround is mentioned in the note but not in much detail; a little more<br>
+information follows here.
+</p>
+<p>
+You need to rename __CPlusInit to something else, and write your own replacement<br>
+that calls the real one only if the FPU checks are passed. You can rename __CPlusInit<br>
+(from RunTime.o) by using the Lib tool with the "-rn" option. Write your own<br>
+version like this:
+</p>
+<pre>extern "C" void __CPlusInit(void)
+{
+   // Do the gestalt on FPU.
+   Renamed_CPlusInit();
+}</pre>
+<p>
+The<b>extern "C"</b> is relevant, since you don't want a C++ mangled name to link against.
+</p>
+<p>
+<b>Q</b><i> Under WorldScript, the itlbValidStyles field of the 'itlb' resource governs what</i><br>
+<i>styles can be applied to text, depending on the language of the font. I understand the</i><br>
+<i>reasoning -- underlining makes no sense for vertical scripts, extended text makes no</i><br>
+<i>sense for cursive scripts, and so on. However, we need to underline Kanji text. How</i><br>
+<i>should we do it?</i>
+</p>
+<p>
+<b>A</b> Underlining as implemented in QuickDraw was based on assumptions appropriate for<br>
+Roman text -- specifically, that the underline should be just below the baseline.<br>
+Unfortunately, the Asian scripts don't have the same definitions for baseline, ascent,<br>
+and descent, and this creates an irreconcilable problem. Excluding the Roman<br>
+characters and some punctuation, all the characters in the Kanji font descend below the<br>
+QuickDraw baseline, so when QuickDraw tries to draw the regular underline it gets<br>
+broken (in the same way it does with Roman descenders like g, j, and p -- only more<br>
+so). Because it looked so bad, underline was disabled for the two-byte script systems.<br>
+QuickDraw GX is the real solution to this complicated problem.
+</p>
+<p>
+Barring that, you should just draw your own underlines manually, using QuickDraw,<br>
+somewhere near the descent line. Exactly where is a matter of style. Because of that,<br>
+we recommend that you do plenty of user testing, and be sure to look at other<br>
+applications that do the same thing (MacWrite, PageMaker, QuarkXPress,<br>
+WordPerfect, TurboWriter, and so on).
+</p>
+<p>
+Two notes: First, Roman text that uses a Kanji font needs to follow this same<br>
+convention, so that the underlines are consistent. (There may still be a problem when<br>
+different fonts on the same line are underlined -- the lines won't necessarily match<br>
+up.) Also, if the text's style is set to underline, PostScript will still draw the<br>
+underline in the traditional location, even though it's not displayed on the screen! If<br>
+you're printing to a PostScript printer, be sure the text's style isn't underline or<br>
+you'll end up with two underlines. Good luck!
+</p>
+<p>
+<b>Q</b><i> Why does a quarter have ridges on the edge?</i>
+</p>
+<p>
+<b>A</b> Several hundred years ago, certain enterprising souls would shave the edges off of<br>
+coins. They would then spend the coins as usual and sell the shavings as bulk valuable<br>
+metal. In an effort to combat this, governments began decorating the sides of coins so<br>
+that it would be apparent if the currency had been tampered with. Any shaved coin<br>
+could be refused by a merchant. The U.S. mint followed suit and put edges on all silver<br>
+and gold coinage (dollar denominations, half dollar, quarter, and dime) to deter<br>
+shavers. Although currency became silver-copper clad in 1965, thereby making the<br>
+metal much less valuable, the decision was made to retain the edging for tradition's<br>
+sake.
+</p>
+<p>
+<b>These answers are supplied </b>by the technical gurus in Apple's Developer Support<br>
+Center. Special thanks to Brian Bechtel, Mark Harlan, David Hayward, Dave Hersey,<br>
+Larry Lai, Martin Minow, Dave Radcliffe, Jeroen Schalk, and Nick Thompson for the<br>
+material in this&nbsp;&nbsp;Q &amp; A column.*
+</p>
+<p>
+<b>Have more questions? </b>Need more answers? Take a look at the Macintosh Q &amp; A<br>
+Technical Notes on this issue's CD.*
+</p>
+</body>
+</html>

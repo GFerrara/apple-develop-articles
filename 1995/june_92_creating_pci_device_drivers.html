@@ -1,0 +1,1266 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 18 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 92 - Creating PCI Device Drivers</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Creating PCI Device Drivers</h2>
+<h1>MARTIN MINOW</h1>
+<p>
+<img src="img/158.gif" width="180 px"></img>
+</p>
+<p>
+<i>The new PCI-based Power Macintosh computers bring with them a subset of the</i><br>
+<i>functionality to be offered by the next generation of I/O architecture. New support for</i><br>
+<i>device drivers makes it possible to develop forward-compatible drivers for PCI</i><br>
+<i>devices, while at the same time making them much easier to write and eliminating</i><br>
+<i>their dependence on the Macintosh Toolbox. Key features of the new driver model are</i><br>
+<i>described in this article and illustrated by the accompanying sample PCI device driver.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Writing Macintosh device drivers has always been something of a black art. Details of<br>
+how to do it are hidden in obscure places in the documentation and often discovered only<br>
+by developers willing to disassemble Macintosh ROMs and system files. But this art<br>
+that's flourished for more than a decade is about to get a lot less arcane. 
+</p>
+<p>
+The PCI-based Power Macintosh computers are the first of a new generation of<br>
+computers with support for a driver model that's independent of the 68000 processor<br>
+family and the Macintosh Toolbox. Existing 680x0 drivers will continue to work on<br>
+the PCI machines (although this may not be true for future systems); a third-party<br>
+NuBusTM adapter enables the use of existing hardware devices and drivers without<br>
+change. But drivers for PCI hardware devices must be written in accordance with the<br>
+driver model supported in the new system software release, which makes them<br>
+simpler to develop and maintain. 
+</p>
+<p>
+This article will give you an overview of the new device driver model, without<br>
+attempting to cover everything (which would fill a book and already has). After<br>
+discussing key features, it suggests how you might go about converting an existing<br>
+driver to drive a PCI device. The remainder of the article looks at some of the<br>
+individual parts of a forward-compatible PCI device driver. The sample code excerpted<br>
+here and included in its entirety on this issue's CD offers a complete device driver that<br>
+illustrates most of the features of the new driver model. Of course, you won't be able to<br>
+use the driver without the hardware, and you'll need updated headers and libraries to<br>
+recompile it.
+</p>
+<p>
+<b>&nbsp;How to write device drivers </b>for PCI-based Macintosh computers is explained in<br>
+detail in <i> Designing PCI Cards and Drivers for Power Macintosh Computers</i> .*
+</p>
+<h2>KEY FEATURES OF THE NEW DRIVER MODEL</h2>
+<p>
+The following list of features will give you some idea of the rationale behind the move<br>
+away from a device driver architecture that's served the Macintosh operating system<br>
+for more than a decade.&nbsp;&nbsp;&nbsp;Some of these features address problems of the old<br>
+architecture, while some anticipate new requirements. 
+</p>
+<p>
+<b>A simplified set of driver services independent of the Macintosh Toolbox</b><br>
+&nbsp;The existing&nbsp;&nbsp;Device Manager design is closely tied to specific features of the<br>
+Macintosh Toolbox.&nbsp;&nbsp;&nbsp;The new system software release supports only a small set of<br>
+driver services, which are independent of the Toolbox and are limited to just those<br>
+things that drivers need to do; they don't let drivers display dialogs, open files, read<br>
+resources, or draw on the screen. This greatly simplifies both the driver's task (the<br>
+driver interacts only with the actual hardware) and the operating system's task (the<br>
+OS needn't have a file system or screen available when starting up drivers). 
+</p>
+<p>
+<b>Independence from the 68000 processor family</b><br>
+The old device driver architecture is&nbsp;&nbsp;highly dependent on specific features of the<br>
+680x0 processor architecture. For example, the way code segments are organized and<br>
+the conventions for passing parameters depend on the 680x0 architecture and make<br>
+the old driver code different from other code modules. This means that drivers can't be<br>
+written in native PowerPC code -- or must make use of computationally expensive<br>
+mixed-mode switches.
+</p>
+<p>
+Also, in the 680x0 architecture, critical sections and atomic operations use<br>
+assembly-language sequences to disable interrupts. The PowerPC processor has a<br>
+completely different interrupt structure, effectively making these techniques<br>
+impossible to transport directly to native PowerPC code. 
+</p>
+<p>
+In the new system software, support for the driver model is independent of any<br>
+particular processor, hiding processor-specific requirements in operating system<br>
+libraries. Drivers can be compiled into native PowerPC code and can be written in a<br>
+high-level language such as C. Because they're standard PowerPC code fragments, they<br>
+aren't bound by the segment size limitations of the 680x0 architecture; they can be<br>
+created with standard compilers and debugged with the Macintosh two- machine<br>
+debugger. 
+</p>
+<p>
+<b>A more flexible configuration facility</b><br>
+Driver configuration in the old architecture requires the ability to read resources<br>
+from a parameter file, or from a 6-byte nonvolatile RAM area indexed by NuBus slot.<br>
+These ad hoc configuration mechanisms based on the Resource Manager, File Manager,<br>
+and Slot Manager are replaced in the new system software by a more flexible<br>
+configuration facility that's used throughout the system. 
+</p>
+<p>
+Drivers use a systemwide name registry for configuration. Each device has an entry in<br>
+the Name Registry containing properties pertinent to that device. Device drivers can<br>
+also store and retrieve private properties. Device configuration programs (control<br>
+panels and utility applications) should use the registry to set and retrieve device<br>
+parameters.
+</p>
+<p>
+<b>System-independent device configuration</b><br>
+Devices can use Open Firmware to provide operating system configuration as well as<br>
+system- independent bootstrap device drivers. Open Firmware is an<br>
+architecture-independent IEEE standard for hardware devices based on the FORTH<br>
+language. When the system is started up, it executes functions stored in each device's<br>
+expansion ROM that provide parameters to the system. A device can also provide FORTH<br>
+code to allow the system to execute I/O operations on the device. This means a card can<br>
+be used to bootstrap an operating system without having operating system-specific<br>
+code in its expansion ROM.
+</p>
+<p>
+<b>&nbsp;Open Firmware and the bootstrap process </b> are described in detail in IEEE<br>
+document <i>1275 -- 1994 Standard for Boot (Initialization, Configuration) Firmware</i> <br>
+.*
+</p>
+<p>
+<b>Grouping by family</b><br>
+Drivers are grouped into general<i>families</i> , and family-specific libraries simplify<br>
+their common tasks.&nbsp;&nbsp;&nbsp;Currently, four families are defined: video, communications,<br>
+SCSI (through SCSI Manager 4.3), and NDRV (a catch-all for other devices, such as<br>
+data acquisition hardware). The sample code is for a device driver in the NDRV family.<br>
+<b>Direct support for important capabilities</b><br>
+The existing Device Manager doesn't directly support certain capabilities, such as<br>
+concurrent I/O (required by network devices) and driver replacement. Driver<br>
+writers who need these capabilities have had to implement them independently, which<br>
+is difficult, error-prone, and often dependent on a particular operating system<br>
+release. The new system software supports these capabilities in a consistent manner. 
+</p>
+<p>
+<b>A choice of storage</b><br>
+Drivers can be stored in the hardware expansion ROM or in a file of type 'ndrv' in the<br>
+Extensions folder. A later driver version stored in this folder can replace an earlier<br>
+version stored in the hardware expansion ROM.
+</p>
+<p>
+<b>Forward compatibility</b><br>
+Device drivers written for the new system software will run without modification<br>
+under Copland, the new generation of the Mac OS forthcoming from Apple, if they use<br>
+only the restricted system programming interface and follow the addressing guidelines<br>
+in<i>Designing PCI Cards and Drivers for Power Macintosh Computers</i> . 
+</p>
+<p>
+<b>&nbsp;For more on Copland, </b>see "Copland: The Mac OS Moves Into the Future" in this<br>
+issue of <i> develop</i> .*
+</p>
+<h2>CONVERTING AN EXISTING DRIVER</h2>
+<p>
+To illustrate how you'd go about converting an existing device driver to drive a PCI<br>
+device, let's suppose you've developed a document scanner with an optical character<br>
+recognition (OCR) facility.&nbsp;&nbsp;&nbsp;The document scanner is currently controlled by a NuBus<br>
+board that you designed, and you're building a PCI board to support the scanner on<br>
+future Macintosh machines.
+</p>
+<p>
+A useful way to approach the conversion effort is to conceptualize the device driver as<br>
+consisting of three generally independent layers:
+</p>
+<ul>
+<li>A high-level component that connects the device driver to the operating<br>
+system and processes requests. </li>
+<li>A mid-level component that has the device driver's task-specific<br>
+intelligence. For example, this might contain OCR algorithms. This part is<br>
+unique to each driver and generally hardware independent. </li>
+<li>The low-level bus interface "hardware abstraction layer" that directly<br>
+manipulates the external device and thus is always device dependent. </li>
+</ul>
+<p>
+At the same time, you might also organize the code in each of these three layers into the<br>
+following functional groups:
+</p>
+<ul>
+<li>data transfer operations (Read, Write)</li>
+<li>interrupt service routines</li>
+<li>initialization and termination</li>
+<li>configuration and control (power management, parameterization)</li>
+</ul>
+<p>
+Let's look at what you would do to each of these layers and groups. 
+</p>
+<p>
+First, you would throw out the high-level component in your driver that interacts<br>
+with the Device Manager and replace it with the considerably simpler request<br>
+processing of the new system software release. You would need to add support for the<br>
+Initialize, Finalize, Superseded, and Replace commands (discussed later), as they have<br>
+no direct counterpart in the existing Device Manager. You would also need to revise the<br>
+way you complete an I/O request: instead of storing values in 68000 registers and<br>
+jumping to jIODone, your driver would call IOCommandIsComplete. 
+</p>
+<p>
+The mid-level component in your driver would include scanner management and, in<br>
+particular, OCR algorithms. These algorithms comprise the intelligence that sets your<br>
+product apart from its competition. To convert your driver to a PCI device driver, you<br>
+would recompile (or rewrite) the algorithms for the PowerPC processor. If the<br>
+algorithms were in 68000 assembly language, you could get started by making<br>
+mixed-mode calls between the new driver and the existing functions; however, this<br>
+won't work with Copland, and I would recommend "going native" as soon as possible.
+</p>
+<p>
+You would replace the low-level bus interface that manipulates registers on a NuBus<br>
+card with code that manipulates PCI registers. Because this is specific to a particular<br>
+hardware device, it won't be discussed in this article, but the sample driver on the CD<br>
+shows you how to access PCI device registers.
+</p>
+<p>
+You would also create Open Firmware boot code to allow your card to be recognized<br>
+during system initialization. Because the new driver model doesn't use Macintosh<br>
+Toolbox services, you would have to redesign your driver to (1) use the Name<br>
+Registry for configuration instead of resources and parameter files, and (2) use the<br>
+new timer services, replacing any dependency on the accRun PBControl call (the<br>
+sample code shows how to call timer services, although it's not discussed here).
+</p>
+<p>
+How your new driver code would look will become clearer in the next sections, where<br>
+we examine key parts of the sample device driver. To get the whole picture, see the<br>
+sample driver in its entirety on the CD.
+</p>
+<p>
+The remainder of this article introduces a number of new operating system functions,<br>
+as well as a few new libraries, managers, and such. "A Glossary of New Operating<br>
+System Terms" will help you navigate through the new territory. 
+</p>
+<p>
+<b>A GLOSSARY OF NEW OPERATING SYSTEM TERMS</b><br>
+<b>CheckpointIO.</b> A function that releases memory that had been configured by<br>
+PrepareMemoryForIO.
+</p>
+<p>
+<b>DoDriverIO.</b> A function provided by the driver that carries out all device driver<br>
+tasks. When you build a driver, it must export this function to the Device Manager.
+</p>
+<p>
+<b>DriverDescription.</b> An information block named TheDriverDescription that the<br>
+Driver Loader Library uses to connect a device driver with its associated hardware.<br>
+When you build a driver, it must export this block to the Driver Loader Library.
+</p>
+<p>
+<b>Driver Loader Library.</b> A library of functions used by the Device Manager to<br>
+locate and initialize all drivers. It uses the DriverDescription structure to match a<br>
+driver with the hardware actually present on a machine.
+</p>
+<p>
+<b>Driver Services Library.</b> A family-independent library of driver services<br>
+limited to just those things that drivers need to do.
+</p>
+<p>
+<b>Expansion Bus Manager.</b> A library that provides access to PCI configuration<br>
+registers.
+</p>
+<p>
+<b>GetInterruptFunctions.</b> A function that retrieves the current interrupt service<br>
+functions established for this device.
+</p>
+<p>
+<b>GetLogicalPageSize.</b> A function that retrieves the size of the physical page.<br>
+Normally called once when the driver is initialized.
+</p>
+<p>
+<b>InstallInterruptFunctions.</b> A function that replaces the current interrupt<br>
+functions with functions specific to this device driver.<b>IOCommandIsComplete.</b> A<br>
+function that completes the current request by returning the final status to the caller,<br>
+calling an I/O completion routine if provided, and starting the next transfer if<br>
+necessary.
+</p>
+<p>
+<b>MemAllocatePhysicallyContiguous. </b>A function that allocates a contiguous block<br>
+of memory whose address can be passed, as a single unit, to a hardware device. This is<br>
+essential for frame buffers and similar memory areas that must be accessed by both<br>
+the CPU and an external device.
+</p>
+<p>
+<b>Name Registry.</b> A database that organizes all system configuration information. Each<br>
+device's entry in the registry contains a set of properties that can be accessed with<br>
+RegistryPropertyGet and RegistryPropertyGetSize.
+</p>
+<p>
+<b>PoolAllocateResident.</b> A function that allocates and optionally clears memory in the<br>
+system's resident pool. This replaces NewPtrSys, which isn't available to<br>
+forward-compatible PCI device drivers.
+</p>
+<p>
+<b>PoolDeallocate.</b> A function that frees memory allocated by PoolAllocateResident.
+</p>
+<p>
+<b>PrepareMemoryForIO.</b> A function that converts a logical address range to a set of<br>
+physical addresses and configures as much as possible of the corresponding physical<br>
+memory space for subsequent direct memory access.
+</p>
+<p>
+<b>QueueSecondaryInterrupt.</b> A function that runs a secondary interrupt service<br>
+routine at a noninterrupt level.
+</p>
+<p>
+<b>RegistryPropertyGet, RegistryPropertyGetSize.</b> Functions that retrieve,<br>
+respectively, the contents and the size of a property, given its name and a value that<br>
+identifies the current Name Registry entity.
+</p>
+<p>
+<b>Software task.</b> An independently scheduled software module that can call driver<br>
+services, including PrepareMemoryForIO. Software tasks can be used to replace<br>
+time-based processing that previously used the PBControl accRun service.
+</p>
+<p>
+<b>SynchronizeIO.</b> A function that executes the processor I/O synchronize (<b> eieio</b>)<br>
+instruction.
+</p>
+<h2>A LOOK AT THE SAMPLE DRIVER: CONFIGURATION AND<br>
+CONTROL</h2>
+<p>
+Now we'll look at key pieces of the sample driver, starting with the code for<br>
+configuration and control. As mentioned earlier, the sample driver is a member of the<br>
+NDRV family. To the operating system, an NDRV driver is a PowerPC code fragment<br>
+containing two exported symbols: TheDriverDescription and DoDriverIO. (Although all<br>
+drivers have a TheDriverDescription structure, the particular driver family they<br>
+belong to determines which other exported symbols are required.)
+</p>
+<p>
+TheDriverDescription is a static structure, shown in Listing 1, that provides<br>
+information to the operating system about the device that this driver controls. The<br>
+driver will be loaded only if the device is present. TheDriverDescription also indicates<br>
+whether the driver is controlled by a family interface (such as Open Transport for the<br>
+communications family) and specifies the driver name to be used by operating system<br>
+functions to refer to it. The Driver Loader extracts TheDriverDescription from the<br>
+code fragment before the driver executes; thus it must be statically initialized.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 1. </b>TheDriverDescription
+</p>
+<pre>DriverDescription TheDriverDescription = {
+    /* This section lets the Driver Loader identify the structure
+        version. */
+    kTheDescriptionSignature,
+    kInitialDriverDescriptor,
+    /* This section identifies the PCI hardware. It also ensures
+    that the correct revision is loaded. */
+    "\pMyPCIDevice",           /* Hardware name */
+    kMyPCIRevisionID, kMyVersionMinor,
+    kMyVersionStage, kMyVersionRevision,
+    /* These flags control when the driver is loaded and opened,
+        and control Device Manager operation. They also name the
+        driver to the operating system. */
+    ( (1 * kDriverIsLoadedUponDiscovery) /* Load at system startup */
+    | (1 * kDriverIsOpenedUponLoad)      /* Open when loaded */
+    | (0 * kDriverIsUnderExpertControl)/* No special family expert */
+    | (0 * kDriverIsConcurrent)         /* Driver isn't concurrent */
+    | (0 * kDriverQueuesIOPB)            /* No internal IOPB queue */
+    ),
+    "\pMyDriverName",          /* PBOpen name */
+    0, 0, 0, 0, 0, 0, 0, 0,              /* For future use */
+    /* This is a vector of operating system information, preceded by
+        an element count (here, only one service is provided). */
+    1,                                   /* Number of OS services */
+    kServiceTypeNdrvDriver,              /* This is an NDRV driver */
+    kNdrvTypeIsGeneric,                  /* Not a special type */
+    kVersionMajor, kVersionMinor,        /* NumVersion information */
+    kVersionStage, kVersionRevision
+};</pre>
+<p>
+DoDriverIO is a single function called with five parameters to perform all driver<br>
+services (see Table 1). The overall organization of the driver thus is very simple, as<br>
+shown in Listing 2.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Table 1. </b>DoDriverIO parameters
+</p>
+<p><table border="0"><tr><td><b>Parameter Type</b></td><td><b></b><b>Usage</b></td></tr>
+<tr><td>addressSpaceID</td><td>Used for operating system memory management.</td></tr>
+<tr><td></td><td>Currently, only one address space is supported;</td></tr>
+<tr><td></td><td>future systems will support multiple address spaces.</td></tr>
+<tr><td>ioCommandID</td><td>Uniquely identifies this I/O request. The driver</td></tr>
+<tr><td></td><td>passes it back to the operating system when the</td></tr>
+<tr><td></td><td>request completes.</td></tr>
+<tr><td>ioCommandContents</td><td>Varies depending on the ioCommandCode value. For</td></tr>
+<tr><td></td><td>example, for Read, Write, Control, Status, and KillIO</td></tr>
+<tr><td></td><td>commands, it's a pointer to a ParamBlockRec.</td></tr>
+<tr><td>ioCommandCode</td><td>Defines the type of I/O request.</td></tr>
+<tr><td>ioCommandKind</td><td>Specifies whether the command is synchronous or</td></tr>
+<tr><td></td><td>asynchronous, and whether it's immediate.</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 2. </b>DoDriverIO
+</p>
+<pre>OSErr DoDriverIO(AddressSpaceID        addressSpaceID,
+                 IOCommandID           ioCommandID,
+                 IOCommandContents     ioCommandContents,
+                 IOCommandCode         ioCommandCode,
+                 IOCommandKind         ioCommandKind)
+{
+    OSErr       status;
+
+    switch (ioCommandCode) {
+        case kInitializeCommand:
+            status = DriverInitialize(ioCommandContents.initialInfo);
+            break;
+        case kFinalizeCommand:
+            status = DriverFinalize(ioCommandContents.finalInfo);
+            break;
+        case kSupersededCommand:
+            status =
+                DriverSuperseded(ioCommandContents.supersededInfo);
+            break;
+        case kReplaceCommand:
+            status = DriverReplace(ioCommandContents.replaceInfo);
+            break;
+        case kOpenCommand:
+            status = DriverOpen(ioCommandContents.pb);
+            break;
+        case kCloseCommand:
+            status = DriverClose(ioCommandContents.pb);
+            break;
+        case kReadCommand:
+            status = DriverRead(addressSpaceID, ioCommandID,
+                ioCommandKind, ioCommandContents.pb);
+            break;
+        case kWriteCommand:
+            status = DriverWrite(addressSpaceID, ioCommandID,
+                ioCommandKind, ioCommandContents.pb);
+            break;
+        case kControlCommand:
+            status = DriverControl(addressSpaceID, ioCommandID,
+                ioCommandKind, (CntrlParam *) ioCommandContents.pb);
+            break;
+        case kStatusCommand:
+            status = DriverStatus(addressSpaceID, ioCommandID,
+                ioCommandKind,
+                (CntrlParam *) ioCommandContents.pb);
+            break;
+        case kKillIOCommand:
+            status = DriverKillIO();
+            break;
+    }
+
+    /* Force a valid result for immediate commands. Other commands */
+        return noErr if the operation completes asynchronously. */
+    if ((ioCommandKind &amp; kImmediateIOCommandKind) == 0) {
+        if (status == kIOBusyStatus)  /* Our "in progress" value */
+            status = noErr;           /* I/O will complete later */
+        else
+            /* To prevent a subtle race condition, the driver must
+                not store final status in the caller's parameter
+                block. This prevents a problem where the caller can
+                reuse the parameter block before the caller's
+                completion routine is called. */
+            status = IOCommandIsComplete(ioCommandID, status);
+    }
+    return (status);
+}</pre>
+<p>
+The driver must ensure that immediate operations (those that must complete without<br>
+delay) return directly to the caller and that completed synchronous and asynchronous<br>
+requests call IOCommandIsComplete. (The sample driver handler functions return the<br>
+final status if they handled the request, and a private value, kIOBusyStatus, if an<br>
+asynchronous interrupt will eventually complete the operation.)
+</p>
+<p>
+In the sample driver, individual subroutines carry out the functions. I'll describe the<br>
+administration routines first, then the process of carrying out an I/O operation.
+</p>
+<h2>INITIALIZATION AND TERMINATION</h2>
+<p>
+Currently, drivers perform all of their initialization when called with PBOpen and<br>
+generally ignore PBClose.&nbsp;&nbsp;The new system software provides six commands for<br>
+initialization and termination, as shown in Table 2. Since drivers are code fragments,<br>
+they can also use the Code Fragment Manager initialization and termination routines,<br>
+although this probably isn't necessary. 
+</p>
+<p>
+<b>&nbsp;For details on the Code Fragment Manager, </b>see <i>Inside Macintosh: PowerPC</i><br>
+<i>System Software</i> .*
+</p>
+<p>
+<b>Table 2. </b>Driver commands for initializing and terminating
+</p>
+<p><table border="0"><tr><td><b>ioCommandCode Value</b></td><td><b></b><b>Usage</b></td></tr>
+<tr><td>kInitializeCommand</td><td>Carries out normal initialization. Called once when</td></tr>
+<tr><td></td><td>the driver is first loaded.</td></tr>
+<tr><td>kReplaceCommand</td><td>Indicates that this driver is replacing a currently</td></tr>
+<tr><td></td><td>loaded driver for the device (for example, a ROM</td></tr>
+<tr><td></td><td>driver is being replaced by a driver loaded from the</td></tr>
+<tr><td></td><td>system disk).</td></tr>
+<tr><td>kOpenCommand</td><td>Begins servicing of device requests.</td></tr>
+<tr><td>kCloseCommand</td><td>Stops servicing of device requests.</td></tr>
+<tr><td>kSupersededCommand</td><td>Indicates that this driver will be replaced by</td></tr>
+<tr><td></td><td>another.</td></tr>
+<tr><td>kFinalizeCommand</td><td>Shuts down the device and releases all resources.</td></tr>
+<tr><td></td><td>Called once just before the driver is to be unloaded.</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+When you look at the sample driver, you'll see that most of the work is done by Replace<br>
+and Superseded, with Open and Close having no function there.
+</p>
+<p>
+Here are the tasks that a driver needs to perform when initialized, whether by<br>
+Initialize or Replace:
+</p>
+<ol>
+<li>Initialize its global variables and fetch systemwide parameters, such as<br>
+the memory management page size. </li>
+<li>Fetch the device's physical address range (either memory address or PCI<br>
+I/O addresses) from the Name Registry.</li>
+<li>Enable memory or I/O access and use the DeviceProbe function to verify<br>
+that the device is properly installed.</li>
+<li>Fetch the interrupt property information from the Name Registry and<br>
+initialize the interrupt service routine.</li>
+<li>If all initializations complete correctly, use device-specific operations to<br>
+reset the hardware. </li>
+</ol>
+<p>
+Listing 3 shows how to extract the physical addresses of your device and use the<br>
+"AAPL,address" property to get the corresponding logical addresses. Unlike address<br>
+space assignments on NuBus machines, where the slot number directly corresponds to<br>
+the device's 32-bit address range, PCI address space assignments are dynamic. Devices<br>
+define a set of registers, and the system initialization process (Open Firmware) uses<br>
+this information, together with information about buses and PCI bridges, to bind the<br>
+device to its 32-bit physical address range. (Actually, although addresses use 32 bits,<br>
+the low 23 bits select the physical address, while the high 9 bits select between main<br>
+memory and PCI bus address spaces. The device driver uses the logical address to<br>
+reference device registers.) Open Firmware code updates the Name Registry to show<br>
+the device's binding. Note that the driver must search for the required address register<br>
+and can't rely on any particular address being in a specific location within the<br>
+property.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 3. </b>Fetching the device's logical address range
+</p>
+<pre>typedef struct AssignedAddress {
+        UInt32      cellHi;     /* Address type */
+        UInt32      cellMid;
+        UInt32      cellLow;
+        UInt32      sizeHi;
+        UInt32      sizeLow;
+} AssignedAddress, *AssignedAddressPtr;
+
+#define kAssignedAddressProperty "assigned-addresses"
+#define kAAPLAddressProperty         "AAPL,address"
+#define kIOMemSelectorMask           0x03000000
+#define kIOSpaceSelector             0x01000000
+#define kMemSpaceSelector            0x02000000
+#define kDeviceRegisterMask          0x000000FF
+
+OSErr GetDeviceAddress(UInt32 selector, UInt32 deviceRegister,
+                       LogicalAddress *logicalAddress)
+{
+    OSErr                       status;
+    RegPropertyValueSize        size;
+    AssignedAddressPtr          addressPtr;
+    LogicalAddress              *logicalAddressVector;
+    int                         nAddresses, i;
+    UInt32                      cellHi;
+    addressPtr = NULL;
+    logicalAddressVector = NULL;
+    status = GetThisProperty(kAssignedAddressProperty,
+            (RegPropertyValue *) &amp;addressPtr, &amp;size);
+                                                /* See Listing 6. */
+    if (status == noErr) {
+        /* GetThisProperty returned a vector of assigned-address
+           records.  Search the vector for the desired address
+           type. */
+        status = paramErr;        /* Presume "no such address." */
+        nAddresses = size / sizeof (AssignedAddress);
+        for (i = 0; i &lt; nAddresses; i++) {
+            cellHi = addressPtr[i].cellHi;
+            if ((cellHi &amp; kIOMemSelectorMask) == selector
+             &amp;&amp; (cellHi &amp; kDeviceRegisterMask) == deviceRegister) {
+                if (addressPtr[i].sizeLow == 0)
+                    /* Open Firmware was unable to assign an address
+                       to this memory area. We must return an error
+                       to prevent the driver from starting up (status
+                       is still paramErr). */
+                    break;
+                /* This is the desired address space. Find the
+                    corresponding LogicalAddress by resolving the
+                    "AAPL,address" property. We want the i'th
+                    LogicalAddress in the vector. */
+                status = GetThisProperty(kAAPLAddressProperty,
+                    (LogicalAddress *) &amp;logicalAddressVector, &amp;size);
+                if (status == noErr) {
+                    nAddresses = size / sizeof (LogicalAddress);
+                    if (i &lt; nAddresses)
+                        *logicalAddress = logicalAddressVector[i];
+                    else status = paramErr;
+                }
+                break;  /* Exit the for loop. */
+            } /* Check for the requested register. */
+        } /* Loop over all address spaces. */
+        DisposeThisProperty((RegPropertyValue *) &amp;addressPtr);
+        DisposeThisProperty
+            ((RegPropertyValue *) &amp;logicalAddressVector);
+    } /* If we found our "assigned-addresses" property */
+    return (status);
+}</pre>
+<p>
+When the driver reads the "assigned-addresses" property, it looks at the address type<br>
+(I/O or memory) and may also need to examine other information to make sure the<br>
+address range is appropriate. For example, a device may have two memory address<br>
+ranges -- one for the device's registers and a separate range for its on-card<br>
+firmware. The GetDeviceAddress function in Listing 3 uses the register number to<br>
+determine which of several address ranges to use, but this may not work for all<br>
+hardware. This function also resolves the logical address range that corresponds to the<br>
+device's physical address range using an Apple-specific property that records device<br>
+logical addresses. This is important for devices that require I/O cycles: using the<br>
+logical address lets the driver treat thesedevices as if they used normal memory<br>
+addresses, eliminating the overhead of the Expansion Bus Manager routines.
+</p>
+<p>
+Listing 4 shows how a driver might use the Expansion Bus Manager to enable a device<br>
+to become bus-master and respond to either memory or I/O accesses. It also shows how<br>
+to read a device register with the DeviceProbe function. While the actual values are<br>
+specific to the NCR 53C825 chip, the technique is generally useful. Note that the<br>
+command word was changed using a read-modify-write sequence. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 4. </b>Checking for the correct hardware device
+</p>
+<pre>Listing 4. Checking for the correct hardware device
+OSErr InitializeMyHardware(void)
+{
+    OSErr               status;
+    UInt8               ctest3;
+    UInt16              commandWord;
+
+    status = ExpMgrConfigReadWord(
+                &amp;gDeviceEntry,     /* kInitializeCommand param */
+                (LogicalAddress) 0x04, /* Command register */
+                &amp;commandWord);     /* Current chip values */
+    if (status == noErr)
+        status = ExpMgrConfigWriteWord(
+                    &amp;gDeviceEntry, /* kInitializeCommand param */
+                    (LogicalAddress) 0x04,  /* Command register */
+                    commandWord | 0x0147);  /* New chip values */
+    if (status == noErr)
+        status = DeviceProbe(
+                    gDeviceBaseAddress + 0x9B, 
+                                           /* Chip Test 3 register */
+                    &amp;ctest3,           /* Store value here */
+                    k8BitAccess);
+    if (status == noErr &amp;&amp; (ctest3 &amp; 0xF0) != 0x20)
+        status = paramErr;                  /* Wrong chip revision */
+    return (status);
+}</pre>
+<p>
+The code for initializing the interrupt service routine, including connecting the<br>
+primary interrupt service routine to the operating system, is shown in Listing 5. This<br>
+code installs a single interrupt handler; if your device supports multiple interrupts<br>
+(for example, if it supports several serial lines), you may want to use the new<br>
+interrupt management routines in the Driver Services Library to build a hierarchy of<br>
+interrupt service routines.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 5. </b>Initializing the interrupt service routine
+</p>
+<pre>#define kInterruptSetProperty       "driver-ist"
+
+OSErr InitializeInterruptServiceRoutine(void)
+{
+    OSErr                           status;
+    OSStatus                        osStatus;
+    RegPropertyValueSize        size;
+    InterruptSetMember      *interruptSetMember;
+    status = GetThisProperty(kInterruptSetProperty,
+          (RegPropertyValue *) &amp;interruptSetMember, &amp;size);
+    if (status == noErr) {
+        if (size &lt; (sizeof (InterruptSetMember)) {
+            DisposeThisProperty
+                ((RegPropertyValue *) &amp;interruptSetMember);
+            status = paramErr;
+        }
+    }
+    if (status == noErr) {
+        /* We have the interrupt set ID and member number. Save the
+            current interrupt set and get the current functions for
+            this interrupt set. */
+        gInterruptSetMember = *interruptSetMember;/* Save globally */
+        DisposeThisProperty
+            ((RegPropertyValue *) &amp;interruptSetMember);
+        osStatus = GetInterruptFunctions(gInterruptSetMember.setID,
+                gInterruptSetMember.member, &amp;gOldInterruptSetRefCon,
+                &amp;gOldInterruptServiceFunction,
+                &amp;gOldInterruptEnableFunction,
+                &amp;gOldInterruptDisableFunction);
+        if (osStatus != noErr)
+            status = paramErr;
+    }
+    if (status == noErr) {
+        /* We have the information we need. Install our own interrupt
+           handler function. If successful, call the old enabler to
+           enable interrupts (we don't install a private enabler). */
+        osStatus = InstallInterruptFunctions(
+                    gInterruptSetMember.setID,
+                    gInterruptSetMember.member,
+                    NULL,                           /* No refCon */
+                    DriverInterruptServiceRoutine, 
+                                                /* See Listing 11. */
+                    NULL,                /* No new enable function */
+                    NULL);              /* No new disable function */
+        if (osStatus != noErr)
+            status = paramErr;
+    }
+    if (status == noErr)
+        (*gOldInterruptEnableFunction)(gInterruptSetMember,
+                    gOldInterruptSetRefCon);
+    return (status);
+}</pre>
+<p>
+<b>&nbsp;Interrupt management routines </b>are described in Chapter 9 of <i> Designing PCI</i><br>
+<i>Cards and Drivers for Power Macintosh Computers</i> .*
+</p>
+<p>
+GetThisProperty (Listing 6) is a generic utility function that retrieves a property<br>
+from the Name Registry, storing its contents in the system's resident memory pool.<br>
+This is useful for retrieving configuration information. The driver must, of<br>
+course,return the memory to the pool when it's no longer needed, using<br>
+DisposeThisProperty,also shown in Listing 6. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 6. </b>Retrieving properties from the Name Registry
+</p>
+<pre>OSErr GetThisProperty(RegPropertyNamePtr regPropertyName,
+                      RegPropertyValue   *resultPropertyValuePtr,
+                      RegPropertyValueSize *resultPropertySizePtr)
+{
+    OSErr                  status,
+    RegPropertyValueSize   size;
+
+    *resultPropertyValuePtr = NULL;
+    status = RegistryPropertyGetSize(
+                &amp;gDeviceEntry,  /* kInitializeCommand param */
+                regPropertyName,
+                &amp;size);
+    if (status == noErr) {
+        *resultPropertyValuePtr =
+             (RegPropertyValue *) PoolAllocateResident(size, FALSE);
+        if (*resultPropertyValuePtr == NULL)
+            status = memFullErr;
+    }
+    if (status == noErr)
+        status = RegistryPropertyGet(
+                    &amp;gDeviceEntry, /* kInitializeCommand param */
+                    regPropertyName,
+                    *regPropertyValuePtr,
+                    &amp;size);
+        if (status != noErr)
+            DisposeThisProperty(regPropertyValuePtr);
+    }
+    if (status == noErr)
+        *resultPropertySizePtr = size;  /* Success! */
+    return (status);
+}
+
+/* DisposeThisProperty disposes of a property that was obtained by
+    calling GetThisProperty. Note that applications would call
+DisposePtr
+    DisposePtr instead of PoolDeallocate. */
+void DisposeThisProperty(RegPropertyValue *regPropertyValuePtr)
+{
+    if (*regPropertyValuePtr != NULL) {
+        PoolDeallocate(*regPropertyValuePtr);
+        *regPropertyValuePtr = NULL;
+    }
+}</pre>
+<p>
+<b>&nbsp;Applications can use the functions in Listing 6 </b> but must replace calls to<br>
+PoolAllocateResident and PoolDeallocate with calls to NewPtr and DisposePtr. The<br>
+latter aren't available to PCI device drivers. *
+</p>
+<h2>CARRYING OUT AN I/O OPERATION</h2>
+<p>
+There are two parts to starting an asynchronous I/O operation: the driver must carry<br>
+out the operations unique to the particular hardware device and it must configure<br>
+memory so that hardware direct memory access (DMA) operations can take place.<br>
+Completing an operation requires responding to hardware interrupts, updating user<br>
+parameter block fields, selecting the proper status code, and calling<br>
+IOCommandIsComplete to inform the Device Manager that the driver has finished with<br>
+this I/O request. The sequence for a complete, but somewhat simplified, I/O<br>
+transaction might be as follows:
+</p>
+<ol>
+<li>Use parameter block information to configure device-specific<br>
+information. </li>
+<li>Compute the logical addresses that are needed and call<br>
+PrepareMemoryForIOto compute the corresponding physical addresses.<br>
+PrepareMemoryForIOreplaces the LockMemory and GetPhysical functions and<br>
+handles virtual memory considerations.</li>
+<li>With all memory ready for DMA, configure the hardware to start the<br>
+transfer. </li>
+<li>When the device completes its operation, it will interrupt the PowerPC<br>
+processor.&nbsp;&nbsp;&nbsp;The operating system kernel will call your driver's primary<br>
+interrupt service routine.</li>
+<li>When the device request is complete, memory structures prepared by<br>
+PrepareMemoryForIO for this operation are released with CheckpointIO, and<br>
+the interrupt service routine calls IOCommandIsComplete to return final<br>
+status to the caller.</li>
+</ol>
+<p>
+This sequence represents an idealized and somewhat simplified situation. For example,<br>
+display frame buffers generally don't interrupt when written to but might interrupt<br>
+at the end of a display cycle. 
+</p>
+<p>
+I won't say much about the Read, Write, Control, Status, and KillIO handlers: they<br>
+carry out tasks that are specific to the particular driver. Often, they initiate an<br>
+operation that will be completed by a device hardware interrupt. Control and Status<br>
+handlers must process PBControl csCode = 43 (driverGestalt) requests. These provide<br>
+a systematic way to query device capabilities and are also used for power management.<br>
+KillIO replaces the PBControl csCode = 1 (killCode) used for desk accessories; it stops<br>
+all pending I/O requests. 
+</p>
+<p>
+Before jumping into the complexities of PrepareMemoryForIO and interrupt service, I<br>
+need to mention one small task: setting and reading values in the device registers.
+</p>
+<p>
+<b>SETTING AND READING DEVICE REGISTER VALUES</b><br>
+The PCI bus architecture gives hardware developers two methods for setting and<br>
+reading values in the device registers: memory-mapped I/O and I/O cycle operations<br>
+(described in more detail in "Methods of I/O Organization"). A device advertises its I/O<br>
+organization through bits in its configuration register and by providing a<br>
+PCI-standardized "reg" property. When the system starts up, it assigns each device a<br>
+range of physical addresses in the system's 32-bit physical address space.&nbsp;&nbsp;&nbsp;The driver<br>
+canretrieve the device's physical addresses by resolving the "assigned-addresses"<br>
+property and can use the Apple-specific "AAPL,address" property to translate the<br>
+values in an "assigned- addresses" property to logical addresses, as was shown in<br>
+Listing 3. Your driver should use these values when accessing your device's registers.<br>
+Ranges of logical addresses are assigned to PCI bus memory and I/O cycles; thus, your<br>
+driver can perform I/O cycles without calling operating system functions. 
+</p>
+<p>
+For example, the sample driver's hardware device has a test register (byte) at<br>
+offset0xCC from the start of its memory base address. Suppose the logical address<br>
+retrievedby GetDeviceAddress was stored in the global gDeviceBaseAddress, defined as
+</p>
+<pre>volatile UInt8 *gDeviceBaseAddress;</pre>
+<p>
+The driver could then read the test register with
+</p>
+<pre>testRegister = gDeviceBaseAddress[0xCC];</pre>
+<p>
+The<b> volatile</b> keyword is important, as it prevents the compiler from removing what<br>
+appear to be unnecessary operations. Drivers will also need to call the SynchronizeIO<br>
+function in the Driver Services Library to force the PowerPC processor to flush its<br>
+data pipeline. While the sample device driver appears to use only memory operations,<br>
+the PCI hardware issues either memory or I/O addresses depending on the particular<br>
+logical address reference. To issue I/O addresses, your device driver would have to<br>
+retrieve the "AAPL,address" property shown in Listing 3. 
+</p>
+<p>
+While byte accesses are straightforward, word (16-bit) and long word (32-bit)<br>
+accesses are more complex. This is because the PCI bus is little-endian (the address of<br>
+a multibyte entity is the address of the low-order byte), whereas the Mac OS and the<br>
+PowerPC chip are big-endian (the address of a multibyte entity is the address of the<br>
+high-order byte). To access 16-bit and 32-bit data, then, your driver must swap<br>
+bytes in memory, either by using the PowerPC <b>lwbrx</b> instruction or by calling the<br>
+library functions EndianSwap16Bit or EndianSwap32Bit. The Expansion Bus<br>
+Managerroutines handle "endian swapping" internally. <i>Failing to swap bytes was the</i><br>
+<i>most frequent error when I wrote the sample driver; you would be wise to check this</i><br>
+<i>thoroughly in your code. </i>
+</p>
+<p>
+<b>PREPARING THE MEMORY</b><br>
+Before starting a DMA operation, the operating system must ensure that the data<br>
+accessed by the operation is in physical memory and that any data in the processor<br>
+cache has been written to memory. This is done with the PrepareMemoryForIO and<br>
+CheckpointIO routines. Because the process is complex, I'll break it down into smaller<br>
+pieces to describe it. Let's assume your driver will prepare two areas: a permanent<br>
+shared-memory area used to communicate with the device (this could be used for a<br>
+display frame buffer) and a request-specific area used for a single I/O request. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 7. </b>Preparing a shared memory area
+</p>
+<pre>IOPreparationTablegSharedIOTable;
+LogicalAddress gSharedAreaPtr;</pre>
+<pre>IOPreparationTable  gSharedIOTable;
+LogicalAddress          gSharedAreaPtr;
+OSErr PrepareSharedArea(
+        AddressSpaceID  addressSpaceID)    /* DoDriverIO parameter */
+{
+    OSErr        status;
+    ItemCount    mapEntriesNeeded;
+
+    gSharedAreaPtr = 
+         MemAllocatePhysicallyContiguous(kSharedAreaSize, TRUE);
+    if (gSharedAreaPtr == NULL)
+        return (memFullErr);
+    gSharedIOTable.options =
+        ( kIOIsInput                /* Device writes to memory. */
+        | kIOIsOutput               /* Device reads from memory. */
+        | kIOLogicalRanges          /* Input is logical addresses. */
+        | kIOShareMappingTables );  /* Share tables with kernel. */
+    gSharedIOTable.addressSpace = addressSpaceID;
+    gSharedIOTable.firstPrepared = 0;
+    gSharedIOTable.logicalMapping = NULL;   /* We don't want this. */
+    /* Describe the area we're preparing and allocate a mapping
+       table. */
+    gSharedIOTable.rangeInfo.range.base = gSharedAreaPtr;
+    gSharedIOTable.rangeInfo.range.length = kSharedAreaSize;
+    mapEntriesNeeded =
+        GetMapEntryCount(gSharedArea, kSharedAreaSize);
+    gSharedIOTable.physicalMapping = PoolAllocateResident(
+            (mapEntriesNeeded * sizeof (PhysicalAddress)), TRUE);
+    if (gSharedIOTable.physicalMapping == NULL)
+        status = memFullErr;
+    else
+        status = PrepareMemoryForIO(&amp;gSharedIOTable);
+    if (status == noErr)
+        status = CheckPhysicalMapping(&amp;gSharedIOTable,
+            kSharedAreaSize);
+    return (status);
+}</pre>
+<p>
+Preparing the shared area is fairly straightforward: your driver allocates a physical<br>
+mapping table, initializes an IOPreparationTable, and calls PrepareMemoryForIO.<br>
+Listing 7 shows how to prepare a shared area and Listing 8 shows several related<br>
+utility routines. Because PrepareSharedArea allocates memory for its physical<br>
+mapping table, it must be called when your driver is initialized. Note that<br>
+GetLogicalPageSize, used in several routines, returns a systemwide constant value; a<br>
+production device driver would call it once, storing the value in a global variable. 
+</p>
+<p>
+<b>Listing 8. </b>PrepareMemoryForIO utilities
+</p>
+<pre>/* Return the number of PhysicalMappingTable entries that will be
+    needed to describe this memory area. */
+ItemCount GetMapEntryCount(void       *areaAddress,
+                           ByteCount  areaLength)
+{
+    ByteCount       normalizedLength;
+    UInt32          theArea;
+
+    theArea = (UInt32) areaAddress;
+    normalizedLength = PageBaseAddress(theArea + areaLength - 1)
+                          - PageBaseAddress(theArea);
+    return (normalizedLength / GetLogicalPageSize());
+}
+/* Check that the entire area was prepared and that all physical
+    memory is contiguous. */
+OSErr CheckPhysicalMapping(IOPreparationTable *ioTable,
+                           ByteCount areaLength)
+{
+    ItemCount        i;
+    OSErr            status;
+
+    if (areaLength != ioTable-&gt;lengthPrepared)
+        status = paramErr;      /* Didn't prepare the entire area. */
+    else {
+        status = noErr;
+        for (i = 0; i &lt; ioTable-&gt;mappingEntryCount - 1; i++) {
+            if (NextPageBaseAddress(ioTable-&gt;physicalMapping[i])
+             != ioTable-&gt;physicalMapping[i + 1]) {
+                status = paramErr; 
+                              /* Area isn't physically contiguous. */
+                break;
+            }
+        }
+    }
+    return (status);
+}
+
+/* Return the start of the physical page that follows the page
+    containing this physical address. */
+PhysicalAddress NextPageBaseAddress(PhysicalAddress theAddress)
+{
+    UInt32              result;
+
+    result =  PageBaseAddress
+        (((UInt32) theAddress) + GetLogicalPageSize());
+    return ((PhysicalAddress) result);
+}
+
+/* Return the start of the physical page containing this address. */
+UInt32 PageBaseAddress(UInt32 theAddress)
+{
+    return (theAddress &amp; ~(GetLogicalPageSize() - 1));
+}</pre>
+<p>
+To prepare a request-specific user area, your driver will initialize an<br>
+IOPreparationTablewith the procedure shown in Listing 9. Since your driver can be<br>
+called from an I/O completion routine, it can't allocate a physical mapping table for<br>
+each I/O request. Instead, your initialization procedure will allocate a<br>
+maximum-length mapping table.
+</p>
+<p>
+To process an I/O request, the driver initializes the options and I/O range and then<br>
+calls PrepareMemoryForIO and, after I/O completion, CheckpointIO. How to prepare a<br>
+single request is shown in Listing 10. You call CheckpointIO to complete your use of<br>
+the buffer in the interrupt service routine, as shown later in Listing 11.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 9. </b>Initializing a request-specific IOPreparationTable
+</p>
+<pre>IOPreparationTable  gRequestIOTable;
+ItemCount           gRequestMapEntries;
+
+OSErr InitializeRequestIOTable(void)
+{
+    OSErr            status;
+    ByteCount        mapTableSize;
+
+    /* Compute the worst-case number of map entries. */
+    gRequestMapEntries =
+                GetMapEntryCount((void *) GetLogicalPageSize() - 1,
+                kDriverMaxTransferLength);
+    mapTableSize = (gRequestMapEntries * sizeof (PhysicalAddress));
+    gRequestIOTable.physicalMapping =
+                PoolAllocateResident(mapTableSize, TRUE);
+    status = (gRequestIOTable.physicalMapping != NULL)
+                ? noErr : memFullErr;
+    return (status);
+}</pre>
+<p>
+A production device driver must extend the algorithm in Listing 10 to handle two more<br>
+complex cases:
+</p>
+<ul>
+<li>Virtual memory is enabled. This being the normal case, the user area isn't<br>
+necessarily physically contiguous. If your hardware can handle this, you can<br>
+postprocess the physical mapping table into a scatter-gather table. </li>
+<li>The operating system has only a limited amount of permanently resident<br>
+memory.&nbsp;&nbsp;&nbsp;Even if your hardware can perform a single 500 MB I/O transfer,<br>
+you won't want to allocate that many physical mapping tables; you wouldn't get<br>
+a significant performance gain and you would make your driver unusable on<br>
+smaller configurations. </li>
+</ul>
+<p>
+The solution to both of these problems is partial preparation. Your driver provides a<br>
+physical mapping table of reasonable size. PrepareMemoryForIO prepares as much as<br>
+possible and your driver uses the firstPrepared and lengthPrepared fields to navigate<br>
+the physical mapping table. When your driver has performed all I/O in a partial<br>
+preparation, it recalls PrepareMemoryForIO to prepare the next segment. So the<br>
+overall, somewhat simplified, algorithm is as follows:
+</p>
+<ol>
+<li>Prepare the first area. </li>
+<li> Build scatter-gather tables and start up the device. When the device<br>
+interrupts, continue with the next step. </li>
+<li> When the device needs more data, have the interrupt service routine<br>
+check the state field in the IOPreparationTable. If the I/O is incomplete, send a<br>
+software interrupt to the driver's "restart I/O" task. </li>
+<li> Have the "restart I/O" task call PrepareMemoryForIO to prepare the<br>
+next area (this can cause virtual memory paging). If successful, continue with<br>
+step 2 to restart the device. </li>
+<li> When I/O completes, call CheckpointIO to release the kernel resources<br>
+reserved by PrepareMemoryForIO. </li>
+</ol>
+<p>
+<b>Listing 10. </b>Using the request-specific IOPreparationTable
+</p>
+<pre>OSErr PrepareIORequest(AddressSpaceID addressSpaceID,
+                       LogicalAddress userBufferPtr,
+                       ByteCount      userCount)
+{
+    OSErr          status;
+    ItemCount      mapEntriesNeeded;
+
+    gRequestIOTable.options =
+        ( kIOIsInput                /* Device writes to memory. */
+        | kIOLogicalRanges          /* Input is logical addresses. */
+        | kIOShareMappingTables );  /* Share tables with kernel. */
+    gRequestIOTable.addressSpace = addressSpaceID;
+    gRequestIOTable.firstPrepared = 0;
+    gRequestIOTable.logicalMapping = NULL;  /* We don't want this. */
+    /* Store the user parameters in the IOPreparationTable. */
+    gRequestIOTable.rangeInfo.range.base = userBufferPtr;
+    gSharedIOTable.rangeInfo.range.length = userCount;
+    mapEntriesNeeded = GetMapEntryCount(userBufferPtr, userCount);
+    if (mapEntriesNeeded &gt; gRequestMapEntries)
+        status = paramErr;
+    else {
+        gRequestIOTable.mappingEntryCount = mapEntriesNeeded;
+        status = PrepareMemoryForIO(&amp;gRequestIOTable);
+    }
+    if (status == noErr)
+        status = CheckPhysicalMapping(&amp;gRequestIOTable, userCount);
+    return (status);
+}</pre>
+<p>
+<b>THE INTERRUPT SERVICE ROUTINE</b><br>
+When the hardware device completes a request, it interrupts the PowerPC processor.<br>
+The operating system kernel fields the interrupt and searches an interrupt service<br>
+treeto find a function that's been registered to handle that interrupt. A driver has<br>
+establishedthis function by calling InstallInterruptFunctions, as was shown in Listing<br>
+5.
+</p>
+<p>
+A driver's interrupt service routine is generally broken into two parts: a primary<br>
+routine that handles immediate operations and a secondary routine that completes the<br>
+operation, releases any system resources held by PrepareMemoryForIO, and calls<br>
+IOCommandIsComplete. (Note that some drivers will have no secondary routine.)
+</p>
+<p>
+Secondary interrupt routines are serialized: they always run to completion before the<br>
+system calls them again. However, they don't block other devices from interrupting<br>
+the system. This greatly simplifies device driver design, as the secondary interrupt<br>
+routine can manage the driver's internal queues without the significant overhead that<br>
+blocking all processor interrupts would require.&nbsp;&nbsp;&nbsp;Device drivers may need more<br>
+complex processing than can be accomplished with primary and secondary interrupt<br>
+routines. For example, a CD-ROM driver needs to check for disk insertion<br>
+periodically. Also, all drivers need to handle virtual memory paging. To accomplish<br>
+this, a driver can create a software task -- an independent function that's scheduled at<br>
+a time when all system services are available. Interrupt service and timer completion<br>
+routines can schedule software tasks when necessary. 
+</p>
+<p>
+Listing 11 shows an extremely simplified interrupt service routine to familiarize you<br>
+with this organization. DriverInterruptServiceRoutine, the primary routine, stores<br>
+the hardware completion status and then queues a secondary interrupt routine to<br>
+complete the operation. The secondary interrupt routine completes the I/O request by<br>
+checkpointing the memory that was prepared before the transfer started. It then<br>
+passes final completion status back to the operating system kernel.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 11. </b>A simplified interrupt service routine
+</p>
+<pre>InterruptSetMember DriverInterruptServiceRoutine(
+        InterruptSetMember  interruptSetMember,  /* Unused here */
+        void                *refCon,             /* Unused here */
+        UInt32              theInterruptCount)   /* Unused here */
+{
+    OSErr                   status;
+    UInt8                   driverStatus;
+
+    /* Retrieve the operation status from the device. This is
+        fiction: a real device will be much more complex. */
+    driverStatus = gDeviceBaseAddress[kDeviceStatusRegister];
+    if (driverStatus == &lt;device is not interrupting&gt;
+        return (kISRIsNotComplete);
+    if (driverStatus == kDeviceStatusOK)
+        status = noErr;
+    else
+        status = ioErr;
+    /* The operation is (presumably) complete. Queue a secondary
+        interrupt task that will release all memory and return the
+        final status to the caller. We'll ignore an error from
+        QueueSecondaryInterrupt. */
+    (void) QueueSecondaryInterrupt(
+                DriverSecondaryInterruptRoutine,
+                NULL,                   /* No exception handler */
+                (void *) status,        /* Operation ioResult */
+                NULL);                  /* No p2 parameter */
+    return (kISRIsComplete);
+}
+
+OSStatus DriverSecondaryInterruptRoutine(
+        void        *p1,        /* Has ioResult value */
+        void        *p2)        /* Unused */
+{
+    IOPreparationID ioPreparationID;    /* Request I/O prep ID */
+
+    /* Copy operation-specific values (such as the number of bytes
+        transferred) into the caller's parameter block. */
+    gCurrentParmBlkPtr-&gt;ioActCount = &lt;device-specific value&gt;;
+    ioPreparationID = gRequestIOTable.preparationID;
+    if (ioPreparationID != kInvalidID) {
+        gRequestIOTable.preparationID = kInvalidID;
+        (void) CheckpointIO(ioPreparationID, kNilOptions);
+    }
+    /* IOCommandIsComplete is the only function that should set the
+        ioResult field. */
+    IOCommandIsComplete(gIOCommandID, (OSErr) p1);
+    return (noErr);
+}</pre>
+<p>
+This sample doesn't use the interrupt set member number, the refCon, or the<br>
+interrupt count, which are needed for interrupt service routines that handle several<br>
+devices (for example, in the case of a hardware device that controls several serial<br>
+lines). Also, to simplify this sample, I'm presuming that all information is stored in<br>
+driver globals. A better organization would make use of a "per-request" data structure<br>
+that encapsulates all information needed for a single user I/O request (such as<br>
+PBRead); this greatly simplifies the driver organization when you want to extend the<br>
+driver to support multiple simultaneous requests (concurrent I/O). 
+</p>
+<h2>JUST THE TIP OF THE ICEBERG</h2>
+<p>
+There's a lot of material here -- and a lot more that I haven't discussed. Still, this<br>
+should give you a good overview of the new driver services and how they work<br>
+together. While this may be overwhelming if you've never written a device driver<br>
+before, those of you who have (for any operating system) will be happy to note how<br>
+much isn't here: no assembly language, no dependencies on the strange quirks of the<br>
+Mac OS, and all hardware dependencies either hidden from you or limited to your<br>
+device's specific needs. 
+</p>
+<h2>METHODS OF I/O ORGANIZATION</h2>
+<p>
+Memory-mapped I/O and I/O cycle operations represent two ways of designing a<br>
+computer architecture.
+</p>
+<p>
+Using memory-mapped I/O, device hardware responds to normal memory operations<br>
+in a particular range of addresses. For example, PDP-11 computers without memory<br>
+management hardware reserved 8K for peripheral hardware registers, limiting the<br>
+memory available to programs to 56K.
+</p>
+<p>
+I/O cycle operations effectively place external devices in an independent address space.<br>
+This gives programs additional memory but requires special instructions to access<br>
+peripheral devices. The Intel 80x86 series uses this organization.
+</p>
+<p>
+To the programmer, memory-mapped I/O has the advantage of allowing direct device<br>
+operations without special instructions, making it relatively easy to write device<br>
+drivers in high-level languages. As bus widths and memory size limitations have<br>
+eased, the inability to use part of the address space for programs has become less of an<br>
+issue.
+</p>
+<p>
+Apple's PCI-based machines use only memory-mapped I/O. However, the bus interface<br>
+hardware generates PCI I/O cycles for a subset of the physical address space.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>REFERENCES</b>
+</p>
+<ul>
+<li><i>Designing PCI Cards and Drivers for Power Macintosh Computers</i>  will be<br>
+available from APDA in mid-June.&nbsp;&nbsp;&nbsp;&nbsp;</li>
+<li>IEEE document <i>1275 -- 1994 Standard for Boot (Initialization,</i><br>
+<i>Configuration) Firmware</i>&nbsp;&nbsp;(Part number&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DS02683, available from IEEE<br>
+Standards Department, P.O. Box 1331, Piscataway, NJ 08855).&nbsp;&nbsp;&nbsp;&nbsp;</li>
+<li><i>Inside Macintosh: Power PC System Software</i>  (Addison-Wesley, 1994),<br>
+Chapter 3, "Code Fragment&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Manager."</li>
+</ul>
+<p>
+<b>MARTIN MINOW </b>recently sneaked away to England from his job at Apple for a (too)<br>
+brief vacation. The high point was at the Kew Bridge Steam Museum outside of London,<br>
+where he stood inside the oldest, or perhaps the largest, working steam engine in the<br>
+world. The four-story-high, 50-foot-long engine was used to pump water from the<br>
+Thames for more than 100 years and is now the centerpiece of a large collection of<br>
+working steam engines. And speaking of working, Martin's been doing too much of it<br>
+and already needs another vacation. *
+</p>
+<p>
+<b>Thanks </b>to our technical reviewers Jano Banks, Holly Knight, Wayne Meretsky, Tom<br>
+Saulpaugh, and George Towner. *
+</p>
+</body>
+</html>

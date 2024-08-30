@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 11 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 95 - Balance of Power: Introducing PowerPC Assembly Language</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Balance of Power: Introducing PowerPC Assembly<br>
+Language</h1>
+<h2>Dave Evans</h2>
+<p>
+<img src="img/144.gif" width="182 px"></img>
+</p>
+<p>
+<i>So far I've avoided the subject of PowerPC(TM) assembly language in this column, for</i><br>
+<i>fear of being struck down by the portability gods. But I also realize that a column on</i><br>
+<i>PowerPC development without a discussion of this subject would be too pious. Although</i><br>
+<i>today's compiler technology makes assembly language generally unnecessary, you</i><br>
+<i>might find it useful for critical subroutines or program bottlenecks. In this column</i><br>
+<i>I'll try to give you enough information to satisfy that occasional need.</i>
+</p>
+<p>
+<i>If the thought of using assembly language still troubles you, please consider this as</i><br>
+<i>useful information for debugging. Eventually you'll need to read PowerPC assembly for</i><br>
+<i>tracing through code that was optimized, or when symbolic debugging just isn't</i><br>
+<i>practical. Also in this column, I'll cover the runtime basics that will help you</i><br>
+<i>recognize stack frames and routine calls during debugging.</i>
+</p>
+<h2>USING POWERPC ASSEMBLY LANGUAGE</h2>
+<p>
+Assembly language on the PowerPC processor should be used only for the most<br>
+performance-critical code -- that is, when that last 5% performance improvement is<br>
+worth the extra effort. This code typically consists of tight loops or routines that are<br>
+very frequently used.
+</p>
+<p>
+After you've carefully profiled your code and found a bottleneck routine in which your<br>
+application spends most of its time, then what do you do? First you need an assembler;<br>
+I recommend Apple's PPCAsm (part of MPW Pro or E.T.O., both available from Apple<br>
+Developer Catalog).
+</p>
+<p>
+Next, you'll need to understand the instruction set and syntax. This column will give<br>
+you a basic summary, but for a thorough reference you'll need the<i>PowerPC 601 RISC</i><br>
+<i>Microprocessor User's Manual</i>; to order one, call 1-800-POWERPC<br>
+(1-800-769-3772).
+</p>
+<p>
+Finally, you need to know the basic PowerPC runtime details -- for example, that<br>
+parameters are passed in general registers R3 through R10, that the stack frame is<br>
+set up by the callee, and so on.
+</p>
+<p>
+Once you have these tools and information, you can easily write a subroutine in<br>
+assembly language that's callable from any high-level language. Then you'll need to<br>
+review your code with the persistence of Hercules, fixing pipeline stalls and otherwise<br>
+improving your performance.
+</p>
+<h2>THE INSTRUCTION SET AT A GLANCE</h2>
+<p>
+Many people think RISC processors have fewer instructions than CISC processors.<br>
+What's truer is that each RISC instruction has reduced complexity, especially in<br>
+memory addressing, but there are often many more instructions than in a CISC<br>
+instruction set. You'll be amazed at the number and variation of the instructions in the<br>
+PowerPC instruction set. The basic categories are similar to 680x0 assembly<br>
+language:
+</p>
+<ul>
+<li>integer arithmetic and logical instructions</li>
+<li> instructions to load and store data</li>
+<li> compare and branch instructions</li>
+<li> floating-point instructions</li>
+<li> processor state instructions</li>
+</ul>
+<p>
+We'll go over the first three categories here; you can read more about the last two in<br>
+the PowerPC user's manual. Once you're familiar with the PowerPC mnemonics, you'll<br>
+notice the similarity with any other instruction set. But first let's look at some key<br>
+differences from 680x0 assembly: register usage, memory addressing, and branching.
+</p>
+<h2>KEY DIFFERENCES</h2>
+<p>
+Most PowerPC instructions take three registers as opposed to two, and in the reverse<br>
+order compared to 680x0 instructions. For example, the following instruction adds<br>
+the contents of register R4 and R5 and puts the result in register R6:
+</p>
+<pre>add   r6,r4,r5   ; r6 = r4 + r5</pre>
+<p>
+Note that the result is placed in the first register listed; registers R4 and R5 aren't<br>
+affected. Most instructions operate on the last two registers and place the result in the<br>
+first register listed.
+</p>
+<p>
+Unlike the 680x0 processors, the PowerPC processor doesn't allow many instructions<br>
+to deal directly with memory. Most instructions take only registers as arguments. The<br>
+branch, load, and store instructions are the only ones with ways of effectively<br>
+addressing memory.
+</p>
+<ul>
+<li>    The branch instructions use three addressing modes: immediate, link<br>
+register indirect, and count register indirect. The first includes relative and<br>
+absolute addresses, while the other two let you load the link or count register<br>
+and use it as a target address. (The link and count registers are<br>
+special-purpose registers used just for branching.) Using the link register is<br>
+also how you return from a subroutine call, as I'll demonstrate in a moment.</li>
+<li> Load and store instructions have three addressing modes: register<br>
+indirect, which uses a register as the effective address; register indirect with<br>
+index, which uses the addition of two registers as the effective address; and<br>
+register indirect with immediate index, which adds a constant offset to a<br>
+register for the effective address. I'll show examples of these later.</li>
+</ul>
+<p>
+The more complicated 680x0 addressing modes do not have equivalents in PowerPC<br>
+assembly language.
+</p>
+<p>
+On 680x0 processors, there are branch instructions and separate jump (<b>jmp</b>), jump<br>
+to subroutine (<b>jsr</b>), and return from subroutine (<b>rts</b>) instructions. But in PowerPC<br>
+assembly there are only branches. All branches can be conditional or nonconditional;<br>
+they all have the same addressing modes, and they can choose to store the next<br>
+instruction's address in the link register. This last point is how subroutine calls are<br>
+made and then returned from. A call to a subroutine uses a branch with link (<b>bl</b>)<br>
+instruction, which loads the link register with the next instruction and then jumps to<br>
+the effective address. To return from the subroutine, you use the branch to link<br>
+register (<b>blr</b>) instruction to jump to the previous code path. For example:
+</p>
+<pre>      bl     BB            ; branch to "BB"
+AA:   cmpi   cr5,r4,0      ; is r4 zero?
+      ...
+BB:   addi   r4,r3,-24     ; r4 = r3 - 24
+      blr                  ; return to "AA"</pre>
+<p>
+Since conditional branches can also use the link or count register, you can have<br>
+conditional return statements like this:
+</p>
+<pre>      bgtlr   cr5      ; return if cr5 has
+                       ; greater than bit set</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>The instructions blr and bgtlr </b>are simplified mnemonics for the less<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;attractive <b>bclr 20,0 </b>and <b>bclr 12,[CRn+]1 </b>instructions. The PowerPC<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;user's manual lists these as easier-to-read alternatives to entering the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;specific bit fields of the <b>bclr</b> instruction, and PPCAsm supports these<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mnemonics. But when debugging you may see the less attractive versions in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;disassemblies.*
+</p>
+<h2>ARITHMETIC AND LOGICAL INSTRUCTIONS</h2>
+<p>
+You've already seen the add and addi instructions, but let's go over one key variation<br>
+before looking at other integer arithmetic and logical instructions. Notice the period<br>
+character "." in the following instruction:
+</p>
+<pre>add.      rD,rA,rB      ; rD = rA + rB, set cr0</pre>
+<p>
+You can append a period to most integer instructions. This character causes bits in the<br>
+CR0 condition register field to be set based on how the result compares to 0; you can<br>
+later use CR0 in a conditional branch. In 680x0 assembly language, this is implied in<br>
+most moves to a data register; however, PowerPC assembly instructions that move<br>
+data to a register must explicitly use the period.
+</p>
+<p>
+Other basic integer instructions include the following:
+</p>
+<pre>subf      rD,rA,rB   ; subtract from
+                     ; rD = rB - rA
+subfi     rD,rA,val  ; subtract from immediate
+                     ; rD = val - rA
+neg       rD,rA      ; negate
+                     ; rD = -rA
+mullw     rD,rA,rB   ; multiply low word
+                     ; rD = [low 32 bits] rA*rB
+MULHW     RD,RA,RB   ; MULTIPLY HIGH WORD
+                     ; rD = [high 32 bits] rA*rB
+divw      rD,rA,rB   ; divide word
+                     ; rD = rA / rB
+divwu     rD,rA,rB   ; divide unsigned word
+                     ; rD = rA / rB [unsigned]
+and       rD,rA,rB   ; logical AND
+                     ; rD = rA AND rB
+or        rD,rA,rB   ; logical OR
+                     ; rD = rA OR rB
+nand      rD,rA,rB   ; logical NAND
+                     ; rD = rA NAND rB
+srw       rD,rS,rB   ; shift right word
+                     ; rD = (rS >> rB)
+srawi     rD,rS,SH   ; algebraic shift right
+                     ; word immediate
+                     ; rD = (rS >> SH)</pre>
+<p>
+Another flexible and powerful set of instructions is the rotate instructions. They allow<br>
+you to perform a number of register operations besides just rotation, including<br>
+masking, bit insertions, clearing specific bits, extracting bits, and combinations of<br>
+these. Each rotate instruction takes a source register, a destination, an amount to shift<br>
+either in a register or as immediate data, and a mask begin (MB) and mask end (ME)<br>
+value. The mask is either ANDed with the result or is used to determine which bits to<br>
+copy into the destination register. The mask is a 32-bit value with all bits between<br>
+location MB and ME set to 1 and all other bits set to 0. For example, the following<br>
+instruction will take the contents of R3, rotate it left by 5, AND it with the bit pattern<br>
+00001111 11111100 00000000 00000000, and place the result in register R4.
+</p>
+<pre>rlwinm   r4,r3,5,4,13    ; rotate left word
+                         ; immediate, AND with mask
+                         ; r4 = (r3 << 5) &amp; 0FFC0000</pre>
+<p>
+Note that some assemblers allow you to specify a constant instead of the MB and ME<br>
+values.
+</p>
+<h2>MOVING DATA</h2>
+<p>
+Getting data to and from memory requires the load and store instructions. There are a<br>
+few variations, each with the addressing modes mentioned earlier. The amount of<br>
+memory, the address alignment, and the specific processor will also affect how much<br>
+time the operation will take. Here are some examples of specifying the size with load<br>
+instructions:
+</p>
+<pre>lbz   rD,disp(rA)   ; load byte and zero
+                    ; rD = byte at rA+disp
+lhz   rD,disp(rA)   ; load half word and zero
+                    ; rD = half word at rA+disp
+lwz   rD,disp(rA)   ; load word and zero
+                    ; rD = word at rA+disp
+lwzx   rD,rA,rB     ; load word &amp; zero indexed
+                    ; rD = word at rA+rB</pre>
+<p>
+Note that the "z" means "zero," so if the amount loaded is smaller than the register, the<br>
+remaining bits of the register are automatically zeroed. This is like an automatic<br>
+extend instruction in 680x0 assembly language. You can also have the effective address<br>
+register preincrement, by appending "u" for "update." For example,
+</p>
+<pre>lwzu   r3,4(r4)      ; r4 = r4 + 4 ; r3 = *(r4)</pre>
+<p>
+will first increment R4 by 4 and then load R3 with the word at address R4. The<br>
+preincrement doesn't exist in 680x0 assembly, but it's similar to the<br>
+predecrementing instruction <b>move.l d3,-(a4). </b>There's also an option for indexed<br>
+addressing modes -- for example, "load word and zero with update indexed":
+</p>
+<pre>lwzux  r3,r4,r5      ; r4 = r4 + r5 ; r3 = *(r4)</pre>
+<p>
+This instruction will update register R4 to be R4 plus R5 and then load R3 with the<br>
+word at address R4.
+</p>
+<p>
+Store instructions have the same options as load instructions, but start with "st"<br>
+instead of "l." (The "z" is omitted because there's no need to zero anything.) For<br>
+example:
+</p>
+<pre>stb      rD,disp(rA)   ; store byte
+sthx     rD,rA,rB      ; store half word indexed
+stwux    rD,rA,rB      ; store word update indexed</pre>
+<p>
+A word of caution: Do not use the load or store string instructions (<b>lswi, lswx,</b><br>
+<b>stswi, </b>and<b> stswx</b>) or load multiple instruction (<b>lwm</b>). Most superscalar<br>
+processors must stall their entire pipeline to execute these kinds of instructions, and<br>
+although the PowerPC 601 processor dedicates extra hardware to compensate, the 603<br>
+and 604 processors perform unacceptably slowly. Loading each register individually<br>
+will result in faster execution.
+</p>
+<h2>COMPARE AND BRANCH</h2>
+<p>
+A compare instruction operates on one of the eight condition register fields, CR0 to<br>
+CR7. It compares a register against either another register or immediate data, and<br>
+then sets the four condition bits in that condition register field accordingly. The bits<br>
+are as follows:
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;bit 0&nbsp;&nbsp;&nbsp;less than
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;bit 1&nbsp;&nbsp;&nbsp;greater than
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;bit 2&nbsp;&nbsp;&nbsp;equal to
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;bit 3&nbsp;&nbsp;&nbsp;copy of summary overflow bit
+</p>
+<p>
+If you're wondering how to test for greater than or equal to, you're paying attention:<br>
+You can test whether each bit is true or false, so to test for greater than or equal to,<br>
+just see if the less-than bit is false. The last bit is a copy of an overflow bit from the<br>
+integer or floating-point exception register. For more information on exceptions, see<br>
+the PowerPC user's manual.
+</p>
+<p>
+The official mnemonics for compare instructions include a 64-bit option, but until<br>
+PowerPC registers are 64-bit, the following simpler 32-bit mnemonics are used:
+</p>
+<pre>cmpwi  CRn,rA,val    ; compare word immediate
+                     ; rA to val
+cmpw   CRn,rA,rB     ; compare word
+                     ; RA to RB
+cmplwi CRn,rA,val    ; compare logical word
+                     ; rA to val (unsigned)
+cmplw  CRn,rA,rB     ; compare logical word
+                     ; rA to rB (unsigned)</pre>
+<p>
+The "w" stands for "word" and means these are the&nbsp;&nbsp;32-bit compare instructions. The<br>
+"l" means the comparison is logical and therefore unsigned.
+</p>
+<p>
+Now let's look at the branch instructions. We covered basic branch instructions<br>
+earlier, but here are some examples of common simplified branch mnemonics:
+</p>
+<pre>bgt   CRn,addr    ; branch if CRn has greater
+                  ; than bit set true
+ble   CRn,addr    ; branch if CRn has greater
+                  ; than bit set false (tests
+                  ; for less than or equal)
+bgtl  CRn,addr    ; set link register, branch if
+                  ; CRn has greater than bit set</pre>
+<p>
+Also useful are the decrement counter conditional branches. They allow you to load the<br>
+count register and, in one instruction, decrement it and branch based on its value and<br>
+another condition. For example:
+</p>
+<pre>dbnz   addr       ; CTR = CTR - 1
+                  ; branch if CTR is nonzero
+dbz    addr       ; CTR = CTR - 1
+                  ; branch if CTR is zero
+dbzt   bit,addr   ; CTR = CTR - 1
+                  ; branch if CTR is zero and
+                  ; condition bit is set true</pre>
+<p>
+The<b>dbzt </b>instruction's bit testing brings up an important point. Conditional branches<br>
+specify either a condition register field or a condition bit. As shown below, the<br>
+condition register fields are placed side by side in a single 32-bit condition register.<br>
+When a branch mnemonic requires a field, it needs a value from 0 to 7 to specify<br>
+which 4-bit field to use. When a branch mnemonic requires a bit value, it needs a<br>
+number from 0 to 32 specifying a bit in the whole condition register. Bit number 0 is<br>
+the high (less than) bit in CR0, bit number 4 is the high bit in CR1, and so on. (Notice<br>
+that in PowerPC architecture, bit 0 is the most significant bit, which is the opposite<br>
+of the 680x0.)
+</p>
+<p>
+<img src="img/145.gif" width="348 px"></img>
+</p>
+<p>
+Branch prediction is something that many compiler writers have yet to take advantage<br>
+of, but with PPCAsm you can use it today. By adding a "+" or "-" to a branch<br>
+mnemonic, you can specify whether you think the branch is likely or unlikely to be<br>
+taken, respectively. For example:
+</p>
+<pre>bgt+   cr0,addr      ; predict branch taken</pre>
+<p>
+However, this works only if the target address is in the same source file. Branch<br>
+prediction on the PowerPC 601 and 603 is determined by the target address of the<br>
+branch -- specifically, on whether the target address is before or after the branch<br>
+instruction. So if the target routine is in another source file, the compiler can't<br>
+determine if the target address will be before or after the branch instruction, and<br>
+therefore can't set the branch prediction bit accurately. See the Balance of Power<br>
+column in Issue 20 for more information on branch prediction.
+</p>
+<h2>CALLING CONVENTIONS</h2>
+<p>
+The PowerPC processors have 32 general-purpose registers, 8 condition register<br>
+fields, and 32 floating-point registers. Just as in the 680x0 Macintosh run time,<br>
+most registers are available for general use. But some are reserved for specific duties:<br>
+general register R1 is the stack pointer, and R2 is the RTOC or Register for Table of<br>
+Contents. R2 is similar to the classic A5 register, but instead of serving an entire<br>
+application, it's specific to each code fragment.
+</p>
+<p>
+Also important to note is which registers must be preserved across function calls.<br>
+Registers R13 to R31, FPR14 to FPR31, and CR2 to CR4 must be saved and restored if<br>
+you use them in your function. It's all right to store them in a scratch register if you<br>
+don't call another subroutine. You can always use registers R3 through R10, for<br>
+example, without any additional work.
+</p>
+<p>
+Optimized code doesn't always use stack frames, and if your assembly is just for tight<br>
+utility routines you won't need them. But if you call other subroutines, your routine<br>
+must set up a frame. This will also aid in debugging. When your assembly routine is<br>
+called, the stack pointer will point to the caller's stack frame. Your routine should set<br>
+up a frame with space for local variables plus the standard frame size of 56. It should<br>
+also save the return address in the frame and clean up before exiting. Here's the<br>
+recommended code to do this:
+</p>
+<pre>mflr   r0               ; move return addr to r0
+stw    r0,8(sp)         ; save r0 in stack frame
+stwu   sp,-frame(sp)    ; set up new frame
+...                     ; your code here
+lwz    r0,frame(sp)+8   ; return address to r0
+addic  sp,sp,frame      ; remove frame
+mtlr   r0               ; restore return
+blr                     ; return</pre>
+<p>
+The size of the frame is variable, but at a minimum is 56 bytes for parameter space<br>
+and special register storage. If you save and restore any variables, or need local stack<br>
+variables, add the size needed to 56. The frame size must be a multiple of 8, to leave<br>
+the stack double-word aligned. Add padding to your frame to make sure it's a multiple<br>
+of 8 bytes.
+</p>
+<p>
+Subroutine calls within your code fragment use just a simple instruction-relative<br>
+branch and link. If you call subroutines outside your fragment, such as into the<br>
+Toolbox, you need to put a <b>no-op</b> instruction after that branch. The <b>no-op</b> is actually<br>
+the impotent <b>ori r0,r0,0</b>instruction. The linker will replace this <b>no-op</b> with an<br>
+instruction to restore your RTOC register after the call. It will also add special<br>
+cross-TOC glue code and redirect the branch to that glue. This is necessary because you<br>
+must set up the callee's RTOC so that it can access its globals, and your code is<br>
+responsible later for restoring your RTOC.
+</p>
+<p>
+Here's an example of this cross-TOC glue:
+</p>
+<pre>lwz      r12,routine(RTOC)   ; load t-vector
+stw      RTOC,20(RTOC)       ; save my RTOC
+lwzr     0,0(r12)            ; get callee address
+lwz      RTOC,4(r12)         ; set callee RTOC
+mtctr    r0                  ; prepare branch
+bctr                         ; jump to callee</pre>
+<p>
+You'll often see this glue during low-level debugging. The first instruction gets<br>
+a<i>transition vector </i>(or t<i>-vector</i>) from your global data and places it in R12. This<br>
+vector is a structure containing the callee's address and RTOC, and it's filled in by the<br>
+Code Fragment Manager when your code binds to the callee's fragment. Notice that the<br>
+glue uses a branch with count register (<b>bctr</b>)instruction to call the subroutine. This<br>
+uses the count register as a target address so that the link register with your return<br>
+address will remain unmodified; therefore, don't make cross-TOC calls in loops that<br>
+use the count register.
+</p>
+<h2>OPTIMIZING FOR SPEED</h2>
+<p>
+Let's look at a simple routine in C that compares two Pascal strings:
+</p>
+<pre>Boolean pstrcompare(StringPtr p1, StringPtr p2)
+{
+   short   length, i;
+  
+   if ((length = p1[0]) != p2[0]) return false;
+   for (i = 1; i &lt;= length; ++i)
+      if (p1[i] != p2[i]) return false;
+   return true;
+}</pre>
+<p>
+Compiling this with the PPCC compiler and using the optimizer for speed produces the<br>
+assembly code shown below. (While it certainly is possible to tune the C code directly,<br>
+we'll ignore that for the purposes of this example.)
+</p>
+<pre>       lbz   r11,0(r3)       ;  r11 = length p1
+       lbz   r5,0(r4)        ;  r5 = length p2
+       cmpw   cr0,r11,r5     ;* compare lengths
+       beq   pre             ;*
+       li   r3,0             ;  nope, return false
+       blr
+pre:   cmpwi   cr0,r11,1     ;  check length
+       li   r12,1            ;  load count
+loop:  blt   pass            ;* done?
+       lbzx   r5,r3,r12      ;  r5 = p1[i]
+       lbzx   r6,r4,r12      ;  r6 = p2[i]
+       cmpw   cr0,r5,r6      ;* equal?
+       bne   fail
+       addic   r5,r12,1      ;  add 1
+       extsh   r12,r5         ;* extend and move
+       cmpw   cr0,r11,r12    ;* check if done
+       b   loop
+pass:  li   r3,1             ;  return true
+       blr
+fail:  li   r3,0             ;  return false
+       blr</pre>
+<p>
+Looking at this code, we notice that the two StringPtr parameters are passed in R3 and<br>
+R4. The first six instructions check the lengths of these two strings and return false if<br>
+they're not equal. Then the loop preloads a count and uses<b>cmpwi cr0,r11,1 </b>to see if<br>
+it needs to iterate even once. The loop is simple, but it does an extraneous <b>extsh</b><br>
+instruction because the optimizer doesn't realize R12 is already a full word.
+</p>
+<p>
+The key to optimizing PowerPC assembly code is to keep the processor's pipeline from<br>
+stalling. This isn't always possible, and different PowerPC processors have different<br>
+pipelines, but you can usually arrange your assembly code for significant performance<br>
+improvements on all PowerPC processors.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>For more information</b> on pipelines and different optimization techniques,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;see the article "Making the Leap to PowerPC" in <i>develop</i> Issue 16 and the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Balance of Power column in Issues 18 and 19.*
+</p>
+<p>
+The situations that most often stall the pipeline are memory access, register<br>
+dependencies, and conditional branch instructions. If data is loaded from memory and<br>
+then used immediately, you'll stall the pipeline at least one cycle and possibly more<br>
+for cache or page misses. If one instruction writes to a register and the next<br>
+instruction references the same register, the processor might not be able to finish the<br>
+second instruction until after the first one completes. The processor alleviates this by<br>
+executing instructions out of order or with temporary registers, but you may<br>
+nonetheless waste cycles. Also, if a branch is directly preceded by the needed<br>
+comparison, the processor may mispredict the branch or just stall until the compare<br>
+is done.
+</p>
+<p>
+The key tactic for addressing these situations is to reorder your instructions. Move<br>
+loads and stores as early in your code as possible, as they may take a long time to<br>
+service. Then if two instructions reference the same register, find another unrelated<br>
+instruction and move it in between. The same goes for conditional branch instructions:<br>
+try to put as many other instructions between the compare and the branch as possible.<br>
+As examples, look for the "*" characters in the above sample code; these denote<br>
+possible pipeline stall points. Note, however, that the 603 and 604 microprocessors<br>
+issue instructions differently such that you shouldn't bunch loads and stores together.
+</p>
+<p>
+Other general tactics can improve your speed. Use as many scratch registers as<br>
+possible and go to the stack for local storage only if you absolutely must. The same<br>
+applies to your stack frame: only save to it things that will be modified in your<br>
+routine. For example, if you don't call any subroutines, don't save your link register<br>
+there. Loops should use the one-step decrement branch (<b>bdnz</b>)instruction.
+</p>
+<p>
+Finally, read the PowerPC user's manual before going to bed every night for<br>
+time-saving instructions like <b>rlwimi </b>(rotate left word immediate with mask<br>
+insert).
+</p>
+<p>
+Now let's optimize the above example by hand:
+</p>
+<pre>pstrcompare:
+      lbz      r7,0(r3)     ;  r7 = length p1
+      mr       r6,r3        ;  save a copy of p1
+      lbz      r8,0(r4)     ;  r8 = length p2
+      li       r3,0         ;  preload false
+      addi     r5,r7,1      ;  add 1 for count
+      mtctr    r5           ;* preload count
+loop:cmpw      cr0,r7,r8    ;  equal?
+      lbzu     r7,1(r6)     ;  r7 = *(++p1)
+      bnelr                 ;  return if ~ equal
+      lbzu     r8,1(r4)     ;  r8 = *(++p2)
+      bdnz     loop
+pass: li       r3,1         ;  return true
+      blr  </pre>
+<p>
+Here we've removed all the key stall points by doing more work before the loop and<br>
+also modifying the loop. With <b>lbzu </b>autoincrementing and <b>dbnz</b>autodecrementing<br>
+instructions, the loop is now only five instructions long, compared to the earlier nine<br>
+instructions and one stall point. To achieve this we also needed to preload R3 and the<br>
+count register, but we did that additional work in stall points. The<b> mtctr </b>instruction<br>
+can be expensive, with a latency of three or more cycles; however, using the count<br>
+register reduces the work done within a loop, and that often makes up for the added<br>
+<b>mtctr</b>cycles.
+</p>
+<p>
+The earlier PPCC-optimized version would take about 110 cycles to verify that two<br>
+10-byte strings were identical. Our hand-tuned version takes only half as long. And<br>
+although string comparisons are probably not your critical bottleneck, this same<br>
+procedure can be applied to your critical code.
+</p>
+<h2>PROCEED WITH CAUTION</h2>
+<p>
+Any code you write in assembly language is not portable and is usually harder to<br>
+maintain. You also don't get the type checking and warnings that a compiler provides.<br>
+But for code that must be faster than the competition, you may want to hand-tune in<br>
+PowerPC assembly language.&nbsp;&nbsp;One <i>strong </i>word of caution: Do not use IBM POWER<br>
+instructions! They may work on the 601 processor, which supports them, but they<br>
+will not run on any other PowerPC processor. If you use them, your software may<br>
+crash or run significantly slower on future Power Macintosh models. To make sure<br>
+your code is clean of POWER instructions, you can use Apple's DumpXCOFF or<br>
+DumpPEF tool, both of which have an option to check for invalid instructions. There's<br>
+also a list of POWER instructions supported by the 601 in Appendix B of the PowerPC<br>
+601 user's manual.
+</p>
+<p>
+Another warning: Most instructions take registers, immediate data, or bit numbers as<br>
+arguments, and the assembler will assume you're setting them correctly. It's easy to<br>
+think you've specified a bit number but in fact have used a critical register by<br>
+accident. These bugs are hard to find. Our earlier<b>rlwinm</b> example can be written<br>
+<b>rlwinm 4,3,5,4,13</b>; it's easy to see how argument meanings can be confused. You<br>
+might try the <b>-typecheck</b>option of PPCAsm version 1.1 to help catch mistakes, but<br>
+please be careful!</p><p><b>DAVE EVANS </b>came to California in 1991 in search of temperate<br>
+weather, having left Boston, the land of erratic and extreme climate. While in Boston<br>
+he developed Macintosh software for a radical startup company and studied applied<br>
+math at the Massachusetts Institute of Technology.
+
+<br>
+At Apple, Dave has attended an estimated 1000 meetings, but in between them he<br>
+managed to develop the Drag and Drop Developer's Kit. Dave is also trying to teach his<br>
+pet iguana Herman to roll over, but without much success.
+</p>
+<p>
+<b>Thanks</b> to Dave Falkenburg, Tim Maroney, Mike Neil, and Andy Nicholas for<br>
+reviewing this column.
+</p>
+</body>
+</html>

@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 43 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 95 - The Basics of QuickDraw 3D Geometries</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>The Basics of QuickDraw 3D Geometries</h1>
+<h2>Nick Thompson and Pablo Fernicola</h2>
+<p>
+<img src="img/216.gif" width="216 px"></img>
+</p>
+<p>
+<i>No matter how realistic or sophisticated you want your 3D images to be, you must</i><br>
+<i>always build objects with the primitive geometric shapes provided by the graphics</i><br>
+<i>system. Our article in Issue 22 gave the basic information you need to start developing</i><br>
+<i>applications with QuickDraw 3D. Here we delve deeper into the primitive geometric</i><br>
+<i>shapes provided by QuickDraw 3D and show how to use them effectively. We also give</i><br>
+<i>you some tips we've gained from working with developers.</i>
+</p>
+<p>
+Geometric shapes -- or geometries -- form the foundation of any 3D scene.<br>
+QuickDraw 3D provides a rich set of primitive geometric types that you use to define<br>
+the shapes of things. You can apply attributes (such as colors) to geometric objects,<br>
+collect geometric objects into groups, and copy, illuminate, texture, transform, or<br>
+otherwise modify them to attain the visual effects you want. In other words,<br>
+everything that's drawn by QuickDraw 3D is either a geometry or a modification of a<br>
+geometry. So you need to know how to define geometries (and usually also how to create<br>
+and dispose of them) to work effectively with QuickDraw 3D. This article describes the<br>
+geometries available in QuickDraw 3D version 1.0 and shows how they relate to other<br>
+aspects of the QuickDraw 3D architecture (such as the class hierarchy).
+</p>
+<p>
+We're assuming that you're already familiar with the basic capabilities of QuickDraw<br>
+3D. For a good introduction, see our article "QuickDraw 3D: A New Dimension for<br>
+Macintosh Graphics" in Issue 22 of develop (a copy is on this issue's CD). In that<br>
+article, we provided an overview of QuickDraw 3D's architecture and capabilities. You<br>
+can think of QuickDraw 3D as having three main parts: graphics, I/O (the QuickDraw<br>
+3D metafile), and human interface guidelines. Here, we provide more detail on the<br>
+graphics portion of the QuickDraw 3D API and highlight some parts of that API that<br>
+could use clarification as you try to implement geometries.
+</p>
+<p>
+To help you get started using geometries, this issue's CD contains version 1.0 of the<br>
+QuickDraw 3D shared library and programming interfaces, sample code, and an<br>
+electronic version of the book 3D Graphics Programming With QuickDraw 3D, which<br>
+provides complete documentation for the QuickDraw 3D programming interfaces.
+</p>
+<h2>A WORD ABOUT RENDERING AND SUBMITTING</h2>
+<p>
+Our previous article included an introduction to rendering; we'll review a key concept<br>
+here -- retained vs. immediate rendering. We'll also elaborate on an important point<br>
+we glossed over in that article: submitting something to be rendered rather than just<br>
+rendering it. These concepts will help set the stage for what you'll learn here about<br>
+working with geometries.
+</p>
+<p>
+<b>RETAINED VS. IMMEDIATE MODE RENDERING</b>
+</p>
+<p>
+A powerful feature of QuickDraw 3D is that it supports both retained and immediate<br>
+modes for rendering geometric data; you can even mix these modes within the same<br>
+rendering loop. In retained mode, the definition and storage of the geometric data are<br>
+kept internal to QuickDraw 3D -- as abstract geometric objects. In immediate mode,<br>
+the application keeps the only copy of the geometric data; for efficiency, the<br>
+application should use QuickDraw 3D data structures to hold the data, but those<br>
+structures can be embedded in application-defined structures. Retained mode<br>
+geometric objects and immediate mode geometric data define the shapes of objects.<br>
+You'll typically use one or more primitive geometric types provided by QuickDraw 3D<br>
+(such as triangles or meshes) to build up a scene.
+</p>
+<p>
+Whether you use retained or immediate mode to render geometries usually depends on<br>
+how much of a model changes from one rendering operation to the next. As we'll<br>
+illustrate with examples in this section, we prefer to use retained geometries most of<br>
+the time and to use immediate mode only for temporary objects. Since our preference<br>
+for retained mode is a departure from the traditional QuickDraw way of drawing, we'll<br>
+attempt to convince you that retained mode is a much more efficient method of<br>
+rendering geometries.
+</p>
+<p>
+<b>Immediate mode. </b>When you use immediate mode rendering, the data that defines a<br>
+geometry is stored and managed by your application. For example, to draw a triangle<br>
+you would write code similar to that in Listing 1. If you wanted to draw this triangle<br>
+many times, or from different camera angles, you would have to maintain the data in<br>
+your application's data structures.
+</p>
+<p>
+<b>Listing 1. </b>Rendering a triangle in immediate mode
+</p>
+<pre>TQ3TriangleData   myTriangle;
+
+// Set up the triangle with appropriate data.
+...
+// Render the triangle.
+Q3View_StartRendering(myView);
+do {
+   Q3Triangle_Submit(&amp;myTriangle, myView);
+} while (Q3View_EndRendering(myView) == kQ3ViewStatusRetraverse);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Typically when using immediate mode, you stick to a single type of geometry<br>
+(triangles are popular with developers accustomed to lower-level 3D graphics<br>
+libraries). If you use multiple geometric types, you need to define a data structure to<br>
+manage the order of the geometries. An example of rendering several geometries in<br>
+immediate mode is shown in Listing 2.
+</p>
+<p>
+<b>Listing 2. </b>Rendering several geometries in immediate mode
+</p>
+<pre>typedef struct myGeometryStructure {  
+   TQ3ObjectType                  type;
+   void                           *geom;
+   struct myGeometryStructure      *next;
+} myGeometryStructure;
+
+myGeometryStructure      *currentGeometry;
+...
+Q3View_StartRendering(myView);
+do {
+   while (currentGeometry != NULL) {
+      switch (currentGeometry-&gt;type) {
+         case kQ3GeometryTypeTriangle:
+            Q3Triangle_Submit(
+               (TQ3TriangleData *) currentGeometry-&gt;geom, myView);
+         break;
+         case kQ3GeometryTypePolygon:
+            Q3Polygon_Submit(
+               (TQ3PolygonData *) currentGeometry-&gt;geom, myView);
+         break;
+      }
+      currentGeometry = currentGeometry-&gt;next;
+   }
+} while (Q3View_EndRendering(myView) == kQ3ViewStatusRetraverse);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+If you wanted to apply transforms to a geometry as it's being drawn, you would have to<br>
+add a new case to the switch statement. This gets complicated pretty quickly. As a<br>
+result, many developers, when given a choice, will use immediate mode only for<br>
+models that have a fixed geometry and are not being altered.
+</p>
+<p>
+<b>Retained mode. </b>Creating geometric objects allows renderers to take advantage of<br>
+characteristics of particular geometries and thus optimize the drawing code. The code<br>
+in Listing 3 draws a triangle in retained mode.
+</p>
+<p>
+<b>Listing 3. </b>Rendering a triangle in retained mode
+</p>
+<pre>TQ3TriangleData   triangleData;
+
+// Set up the triangle with appropriate data.
+...
+// Create the triangle.
+triangleObject = Q3Triangle_New(&amp;triangleData);
+// Render the triangle.
+Q3View_StartRendering(myView);
+do {
+   Q3Object_Submit(triangleObject, myView);
+} while (Q3View_EndRendering(myView) == kQ3ViewStatusRetraverse);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>SUBMITTING</b>
+</p>
+<p>
+You'll notice that the routine to draw an object is Q3Object_Submit. This probably<br>
+seems a bit strange: why didn't we call it Q3Object_Draw? The reason is that there are<br>
+four occasions in which you need to specify a geometry -- when writing data to a file,<br>
+when picking, when determining the bounds of a geometry, and when rendering -- and<br>
+QuickDraw 3D provides a single routine that you use in all of these cases. To indicate<br>
+which operation you want to perform, you call the Submit routine inside a loop that<br>
+begins and ends with the appropriate calls. For instance, to render a model, you call<br>
+Submit functions inside a rendering loop, which begins with a call to<br>
+Q3View_StartRendering and ends with a call to Q3View_EndRendering (as shown in<br>
+Listing 3). Similarly, to write a model to a file, you call Submit functions inside a<br>
+writing loop, which begins with a call to Q3View_StartWriting and ends with a call to<br>
+Q3View_EndWriting.
+</p>
+<p>
+We recommend that you put all your Submit calls together within a single function<br>
+(such as the one shown in Listing 4) that you can then call from your rendering loop,<br>
+picking loop, writing loop, or bounding loop. Organizing your code in this fashion will<br>
+prevent a common mistake: creating rendering loops that are out of sync with picking<br>
+or bounding loops. It also simplifies your rendering and picking loops -- you just call<br>
+your submitting function from within the loop. Here's an example of calling the<br>
+function in Listing 4 from within a rendering loop:
+</p>
+<pre>Q3View_StartRendering((**theDocument).fView);
+do {
+   theStatus = SubmitScene(theDocument);
+} while (Q3View_EndRendering((**theDocument).fView)
+           == kQ3ViewStatusRetraverse);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 4. </b>A submitting function
+</p>
+<pre>// Submit the scene for rendering, file I/O, bounding, or picking.
+TQ3Status SubmitScene(DocumentHdl theDocument)
+{
+   TQ3Vector3D      globalScale, globalTranslate;
+
+   globalScale.x = globalScale.y = globalScale.z =
+                                       (**theDocument).fGroupScale;
+   globalTranslate = *(TQ3Vector3D *)&amp;(**theDocument).fGroupCenter;
+   Q3Vector3D_Scale(&amp;globalTranslate, -1, &amp;globalTranslate);
+   Q3Style_Submit((**theDocument).fInterpolation,
+      (**theDocument).fView);
+   Q3Style_Submit((**theDocument).fBackFacing, (**theDocument).fView);
+   Q3Style_Submit((**theDocument).fFillStyle, (**theDocument).fView);
+
+   Q3MatrixTransform_Submit(&amp;(**theDocument).fRotation,
+      (**theDocument).fView);
+   Q3ScaleTransform_Submit(&amp;globalScale, (**theDocument).fView);
+   Q3TranslateTransform_Submit(&amp;globalTranslate,
+      (**theDocument).fView);
+   Q3DisplayGroup_Submit((**theDocument).fModel,
+      (**theDocument).fView);
+
+   return (kQ3Success);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<h2>QUICKDRAW 3D CLASS HIERARCHY</h2>
+<p>
+Even if you perform all your rendering in immediate mode -- that is, without creating<br>
+any QuickDraw 3D geometric objects -- you still need to create some QuickDraw 3D<br>
+objects, such as a view, camera, and draw context, in order to render any image at all.<br>
+So working with geometries in QuickDraw 3D means working with at least some<br>
+objects. Before going into detail about how to create and use QuickDraw 3D geometric<br>
+objects, let's review the object system and some of its basic classes.
+</p>
+<p>
+QuickDraw 3D is an object-based system. We chose to implement the API with the C<br>
+language, which doesn't support objects directly; nevertheless QuickDraw 3D is<br>
+organized into a definite class hierarchy. Figure 1 shows part of this hierarchy,<br>
+emphasizing the classes that are discussed in this article. At the top of the class<br>
+hierarchy is the basic QuickDraw 3D Object class. Geometries, such as the triangle,<br>
+polygon, and mesh classes, are at the bottom of the hierarchy.
+</p>
+<p>
+<b>The Object class</b> is really named TQ3Object. This article uses shortened forms of<br>
+the QuickDraw 3D class names.*
+</p>
+<p>
+<img src="img/217.gif" width="600 px"></img>
+</p>
+<p>
+<b>1. Partial QuickDraw 3D class hierarchy</b>
+</p>
+<p>
+You can determine the class in which a function is defined simply by looking at the<br>
+function's name: function names have the form Q3class-name_method. For example,<br>
+the function Q3Shared_GetReference is defined in the Shared class and returns a<br>
+reference to the shared object that's passed as an argument. The function<br>
+Q3Object_Dispose is defined in the Object class; it accepts any QuickDraw 3D object as<br>
+an argument (since Object is the root class) and disposes of it.
+</p>
+<p>
+In the following sections, we'll talk more about the classes shown in Figure 1 and<br>
+answer some questions developers have had about using them when working with<br>
+geometries. Then we'll (finally!) talk about the geometric objects themselves and<br>
+provide sample code for using many of them.
+</p>
+<h2>THE SHARED CLASS</h2>
+<p>
+Generally speaking, drawing anything with QuickDraw 3D involves working with<br>
+objects that inherit from the Shared class. There can be multiple references to shared<br>
+objects (hence the name); the way QuickDraw 3D determines whether a shared object<br>
+is still referenced is by way of a reference count, initially 1. Developers new to<br>
+QuickDraw 3D are sometimes confused by reference counts, but they're actually very<br>
+straightforward. When you create a shared object, its reference count is 1. For<br>
+example:
+</p>
+<pre>myNewObject = Q3Mesh_New();
+// myNewObject now has a reference count of 1.</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+When you get a shared object as a result of a Get call, or pass one as an argument in an<br>
+Add or Set call, the object's reference count is incremented.
+</p>
+<pre>// The following calls increment the object's reference count.
+Q3Group_GetPositionObject(myGroup, currentPosition,
+    &amp;myExistingObject);
+...
+Q3Group_AddObject(myGroup, myObject);
+...
+Q3View_SetDrawContext(myView, myDrawContext);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Passing a shared object as the argument to a Dispose call decrements its reference<br>
+count; only when the count goes to 0 does QuickDraw 3D actually dispose of the<br>
+memory occupied by the object. As a general rule, you should dispose of the object<br>
+before the scope of the variable expires. For example:
+</p>
+<pre>{   // Start of the block. Variables come into scope.
+   TQ3Object myObject = Q3Mesh_New(); // The start of myObject's scope
+
+   // Do something that manipulates myObject.
+   ...
+   // The scope of myObject is going to end at the next closing brace,
+   // so dispose of it before we go out of scope.
+   Q3Object_Dispose(myObject);
+}   // End of the block.</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+If you were assigning an object reference to a global variable, you would dispose of the<br>
+object before calling Q3Exit and exiting your program.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Q: Why does my application crash when I call Q3Exit?
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A: In the debugging version of QuickDraw 3D, Q3Exit generates a debugging<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;message for each remaining object. The default behavior is to display the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;message with the DebugStr call; the message is displayed in MacsBug (or<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;whatever debugger you use). So your application isn't crashing; it's trying to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tell you to tidy up after yourself! To avoid this unscheduled trip into your<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;debugger, you can install your own error handler and log the message to a file.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;And, of course, you should fix your application so that it doesn't leak<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memory!*
+</p>
+<p>
+Let's take a closer look at what happens to reference counts when you create and<br>
+dispose of a shared object. Figure 2 shows the typical lifetime of a group of QuickDraw<br>
+3D objects (we'll talk more about groups later).
+</p>
+<ul>
+<li>An application creates a geometric object. Its reference count is 1.</li>
+<li>The application creates a group object. Its reference count is also 1.</li>
+<li>The application adds the geometry to the group (by calling the function<br>
+Q3Group_AddObject), which increments the reference count of the geometric<br>
+object (to 2).</li>
+<li>The application disposes of the geometric object (by calling the function<br>
+Q3Object_Dispose), which is safe to do once it's added to the group. This<br>
+decrements the reference count of the geometry back to 1. The application can<br>
+then operate on the group (which now contains the geometry).</li>
+<li>When it's finished with the group, the application can dispose of the group<br>
+object. This lowers the reference count of the group to 0, which causes<br>
+QuickDraw 3D to dispose of the group and of all the objects within the group.<br>
+As you can see, the geometry is disposed of as a side effect of disposing of the<br>
+group.</li>
+</ul>
+<p>
+<img src="img/218.gif" width="597 px"></img>
+</p>
+<p>
+<b>Figure 2. Reference counts in QuickDraw 3D</b>
+</p>
+<p>
+<b>THE VIEW CLASS</b>
+</p>
+<p>
+The view object ties together the elements required to draw a scene; it's the central<br>
+object that holds the state information for rendering a scene. A scene consists of the<br>
+geometry being drawn (hereafter referred to as the model), together with the light,<br>
+camera, draw context, and other objects. Our previous article discussed how to set up a<br>
+view; we'll expand on that discussion by describing how to create and manage multiple<br>
+scenes of a model.
+</p>
+<p>
+To display a scene, you need at least one view object, and each view object must have a<br>
+camera associated with it. Each of your application's windows usually has one view<br>
+object attached to it. When you need to display multiple scenes of the same model, you<br>
+can create multiple windows, each with its own view object. Then you simply submit<br>
+the model to the desired view. Alternatively, you can display multiple scenes using a<br>
+single view object by setting up several different cameras and draw contexts and<br>
+switching between them -- manipulating the view's camera to create each scene (see<br>
+Figure 3).
+</p>
+<p>
+<img src="img/219.gif" width="401 px"></img>
+</p>
+<p>
+<b>Figure 3. Multiple scenes of the same model</b>
+</p>
+<p>
+You can have only one active draw context and camera for each view object, so to update<br>
+one of your windows, you need to manually set the active draw context and camera for<br>
+the appropriate scene. For this reason, the first option (one view per window) is<br>
+usually simpler to implement.
+</p>
+<p>
+<b>THE GROUP CLASS</b>
+</p>
+<p>
+QuickDraw 3D provides a number of classes for grouping objects together. Groups are<br>
+useful because they provide a structure to your models, allowing you to express the<br>
+relationship between different geometric objects. Of course, if you want to use your<br>
+own data structures for storing your geometries, you can do so, but generally it's more<br>
+work. Using QuickDraw 3D's group classes, you can create hierarchies of geometric<br>
+data by nesting groups within other groups. Figure 4 shows the group classes provided<br>
+with QuickDraw 3D.
+</p>
+<p>
+<img src="img/220.gif" width="303 px"></img>
+</p>
+<p>
+<b>Figure 4. Group classes provided by QuickDraw 3D</b>
+</p>
+<p>
+You can create a group object by calling Q3Group_New. This creates an object<br>
+belonging to the generic Group class. QuickDraw 3D provides the following subgroups<br>
+of the generic Group class, which are distinguished by the types of objects you're<br>
+allowed to place in them:
+</p>
+<ul>
+<li>A light group places the light objects for a scene in a group, which<br>
+simplifies lighting management. For example, you could provide an iterator<br>
+function to loop through the group and turn all the lights on or off.</li>
+<li>A display group manages objects that are drawable, including geometries,<br>
+styles, and transforms. You can use the function Q3Object_IsDrawable to<br>
+confirm whether an object is drawable.</li>
+<li>An information group stores informational strings, such as the author,<br>
+copyright, trademark, and other human-readable information within a<br>
+metafile.</li>
+</ul>
+<p>
+Because we want to talk about geometries, which are drawable objects, we'll<br>
+concentrate on display group objects. In addition to "plain" display groups, there are<br>
+two specialized subclasses of the display group class: ordered and I/O proxy. For a<br>
+plain display group, the order in which items are placed in the group is the order in<br>
+which they're drawn when the group is submitted, regardless of the class that the<br>
+objects belong to. For an ordered display group, objects in the group are sorted by<br>
+object type and are submitted (when you call Q3DisplayGroup_Submit) in the<br>
+following order: transforms, styles, attribute sets, shaders, geometric objects,<br>
+groups.
+</p>
+<p>
+Ordered display groups are most useful when you want to operate on a group of objects<br>
+as a single entity. For example, you know that transforms are always at the start of the<br>
+group, so you could manipulate the transform to alter the orientation of the entire<br>
+group. (If you were using a plain display group, you would have to search for the<br>
+transform, or otherwise store a reference to it, which makes life more complicated.)<br>
+Sometimes you'll want to nest a number of ordered display groups within a plain<br>
+display group. If you were animating a robotic arm, for example, each component of<br>
+the arm could be an ordered display group that's nested within a plain display group.
+</p>
+<p>
+You can use I/O proxy display groups to provide multiple representations of the same<br>
+data. This is useful when dealing with applications that aren't based on QuickDraw 3D<br>
+or that run on other platforms. For example, some applications might be able to read<br>
+only mesh objects; your application may want to use NURB patches (another type of<br>
+geometric object), but you want other applications to be able to read your metafiles. In<br>
+this case, you could write a NURB patch representation of your data, followed by a<br>
+mesh representation. To provide both representations of the same data in a metafile,<br>
+you would create an I/O proxy group that contains the NURB patch object first and the<br>
+mesh object second, and write the group to the metafile. When you draw with<br>
+QuickDraw 3D, the objects that appear first in the group are preferred over later<br>
+objects in the group.
+</p>
+<p>
+<b>THE TRANSFORM CLASS</b>
+</p>
+<p>
+The Transform class enables you to change the position, orientation, or size of<br>
+geometries. When you specify the coordinates for the vertices that define a geometry,<br>
+the x, y, z values are expressed as floating-point values in local coordinates.<br>
+Rendering, however, and associated operations like backface removal and lighting are<br>
+performed in world coordinates. To transform a geometry from one space to another,<br>
+QuickDraw 3D multiplies the local coordinates by a local-to-world matrix. The default<br>
+value for this matrix is the identity matrix, which leaves the original geometry<br>
+unchanged. By changing the value of the local-to-world matrix, you can transform<br>
+geometries without having to change the geometries' coordinates.
+</p>
+<p>
+Using an example from our previous article, let's say that you have a model that<br>
+contains several boxes (see Figure 5). We could enter the coordinates for the points<br>
+that make up each of the four boxes, but that's a lot of work (and if you're creating an<br>
+object for each box, it's a waste of memory). Instead, we define one box at a certain<br>
+location and call it the reference box. To get the effect of four boxes in different<br>
+locations, we draw the reference box four times -- changing the local-to-world<br>
+matrix each time before drawing.
+</p>
+<p>
+<img src="img/221.gif" width="344 px"></img>
+</p>
+<p>
+<b>Figure 5. Boxes drawn by changing the local-to-world matrix four</b><br>
+<b>times</b>
+</p>
+<p>
+If you look in the file QD3DTransform.h, you'll notice that there are several different<br>
+types of transforms. The most general type is the matrix transform, which is a 4 x 4<br>
+matrix. To use this transform, you supply the translation, rotation, and scale values<br>
+in the appropriate entries of the matrix, as shown in Figure 6. You can do any type of<br>
+transform that can be expressed as a 4 x 4 matrix. In the figure, you can see that the<br>
+upper 3 x 3 submatrix is a rotation matrix, with the entries in the main diagonal<br>
+containing the scale factors for x, y, and z. The lower row contains the translation<br>
+factors.
+</p>
+<p>
+<img src="img/222.gif" width="459 px"></img>
+</p>
+<p>
+<b>Figure 6. A matrix transform</b>
+</p>
+<p>
+If you know which type of transform you'll be applying, however, it's better to use one<br>
+of the more specific types. In this way, QuickDraw 3D renderers and shaders will be<br>
+able to take advantage of the information contained in the transform; for example, if<br>
+your local-to-world matrix is just a translate transform, the renderer doesn't have to<br>
+transform normals before performing the backface removal operation (because<br>
+directions are not affected by translations). Also, using the more specific types<br>
+provides a better abstraction and tends to make the logic of your code easier to<br>
+understand (and you don't have to deal with all those pesky matrices).
+</p>
+<p>
+When you change the local-to-world matrix by applying transforms, each transform<br>
+is concatenated as it's applied through a Submit call. For example, if before drawing a<br>
+point object, we submit a translate transform, a rotate transform, a scale transform,<br>
+and then a point, the point will be transformed as follows:
+</p>
+<p>
+p' = p * S * R * T
+</p>
+<p>
+p' is the resulting transformed point and p is the original point. T is the matrix<br>
+containing the translate operation, R is the matrix containing the rotate operation, and<br>
+S is the matrix containing the scale operation.
+</p>
+<p>
+You can apply transforms either by using immediate mode calls or by creating<br>
+transform objects -- just as you do for geometries. Note that transforms accumulate;<br>
+that is, if you apply a translation, any objects drawn after that will be translated by<br>
+the same amount. If you want a transform to apply to a certain object only, you can use<br>
+the Q3Push_Submit and Q3Pop_Submit calls around it or place the object in a group,<br>
+since groups perform an implicit push and pop (you can change this behavior if you<br>
+want).
+</p>
+<p>
+So, let's build on what we've learned so far. We want to draw the model shown in<br>
+Figure 5. Let's first do it by submitting new transforms in immediate mode, before<br>
+each box is drawn, as shown in Listing 5.
+</p>
+<p>
+<b>Listing 5. </b>Using translate transforms in immediate mode
+</p>
+<pre>Q3View_StartRendering(viewObject);
+do {
+   TQ3Vector3D   translationX = {2.0,  0.0, 0.0},
+               translationY = {0.0, -2.0, 0.0};
+
+   Q3View_Push(viewObject);
+
+   // Note how we are using a retained mode geometry with immediate
+   // mode transforms. As we execute each of the calls, the boxes
+   // are drawn.
+
+   Q3Object_Submit(referenceBox, viewObject);
+   // Move to the right.
+   Q3TranslateTransform_Submit(&amp;translationX, viewObject);
+   Q3Object_Submit(referenceBox, viewObject);
+   // The Pop will move back to the left.
+   Q3View_Pop(viewObject);
+   // Move down.
+   Q3TranslateTransform_Submit(&amp;translationY, viewObject);
+   Q3Object_Submit(referenceBox, viewObject);
+   // Move to the right.
+   Q3TranslateTransform_Submit(&amp;translationX, viewObject);
+   Q3Object_Submit(referenceBox, viewObject);
+} while (Q3View_EndRendering(viewObject) == kQ3ViewStatusRetraverse);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Alternatively, we could create the model of the four boxes as a group, as shown in<br>
+Listing 6.
+</p>
+<p>
+<b>Listing 6. </b>Creating translate transform objects
+</p>
+<pre>TQ3GroupObject         myModel;
+TQ3Vector3D            translationX = {2.0, 0.0, 0.0},
+                     translationYAndNegativeX = {-2.0, -2.0, 0.0};
+TQ3TransformObject   xform_x, xform_yx;
+
+// Note that as we execute these calls, nothing is drawn.
+
+myModel = Q3Group_New();
+xform_x = Q3TranslateTransform_New(&amp;translationX);
+xform_yx = Q3TranslateTransform_New(&amp;translationYAndNegativeX);
+Q3Group_AddObject(myModel, referenceBox);
+Q3Group_AddObject(myModel, xform_x);
+Q3Group_AddObject(myModel, referenceBox);
+Q3Group_AddObject(myModel, xform_yx);
+Q3Group_AddObject(myModel, referenceBox);
+Q3Group_AddObject(myModel, xform_x);
+Q3Group_AddObject(myModel, referenceBox);
+
+// To draw the boxes, you would call Q3Object_Submit(myModel, myView)
+// within a submitting loop.</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>THE ATTRIBUTE SET CLASS</b>
+</p>
+<p>
+Attributes affect the way an object is rendered in QuickDraw 3D. A view has a default<br>
+set of attributes, defined in the QD3DView.h file, that can be modified to suit a<br>
+particular application. If no attributes are supplied for the objects being rendered<br>
+within a view, the default view attributes are applied. Attributes can be applied in a<br>
+number of ways: by submitting them to a view object; by adding them to a group; or by<br>
+attaching them to a geometry, to a geometry's face, or to each vertex of a geometry.
+</p>
+<p>
+&nbsp;&nbsp;The order in which attribute sets are applied during rendering is based on a fixed<br>
+hierarchy, as illustrated in Figure 7. Attributes of the same type (such as diffuse<br>
+color) can override one another; they use the following preference hierarchy, from<br>
+highest to lowest precedence: vertex, face, geometry, group, view. For example, a<br>
+specular color attribute at the vertex level does not override a diffuse color attribute<br>
+at the geometry level, whereas a specular color attribute at the vertex level does<br>
+override a specular color attribute at the geometry level (because they are attributes<br>
+of the same type). If attributes at any level are not supplied, the parent's attributes<br>
+apply. If there are no attributes supplied anywhere in the hierarchy, the default<br>
+attribute set for the view will be used.
+</p>
+<p>
+<img src="img/223.gif" width="522 px"></img>
+</p>
+<p>
+<b>Figure 7. Hierarchy of applying attributes to a geometry</b>
+</p>
+<p>
+Here are the six most commonly used predefined attribute types that you can specify<br>
+(there are 12 in all):
+</p>
+<ul>
+<li>The diffuse color is the actual color of the object.</li>
+<li>The specular color is the color of the light reflected by the object, which<br>
+may or may not be the same as the diffuse color.</li>
+<li>The specular control determines how much light of the specular color is<br>
+reflected.</li>
+<li>The ambient coefficient determines how much the ambient lighting affects<br>
+the object.</li>
+<li>The surface UV attribute specifies how a texture is mapped to a<br>
+geometry's vertex.</li>
+<li>A texture shader can be applied to a surface that has UV parameterization<br>
+applied (more on this later).</li>
+</ul>
+<p>
+You can also define your own custom attributes. Later, in the geometry code samples,<br>
+we'll create attribute sets to affect the way the geometries are drawn.
+</p>
+<h2>BUILDING GEOMETRIES</h2>
+<p>
+Now we're ready to look at the specific geometries and show how to build them.<br>
+QuickDraw 3D version 1.0 supports 12 geometries (illustrated in Figure 8). In the<br>
+code examples later in this article, we'll cover the most commonly used geometries.
+</p>
+<p>
+<img src="img/224.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 8. QuickDraw 3D geometries supplied in version 1.0</b>
+</p>
+<ul>
+<li>A marker object is a bitmap that's displayed face-on at any orientation --<br>
+similar to a sprite. It's useful for denoting the position of objects and for<br>
+providing annotations, such as labels on objects in a 3D chart.</li>
+<li>A point object is the most basic object in QuickDraw 3D; it specifies<br>
+discrete points in a scene.</li>
+<li>A line object is a line between two points.</li>
+<li>A polyline object is a line that consists of multiple segments.</li>
+<li>A triangle object is a closed planar geometry defined by three intersecting<br>
+lines. It's the simplest form of a polygon.</li>
+<li>A simple polygon object is a planar geometry described by a list of<br>
+vertices; it's a figure formed by a closed chain of intersecting straight lines. A<br>
+simple polygon consists of a single convex contour and may not contain holes.</li>
+<li>A general polygon object is a planar geometry that may contain holes, be<br>
+concave, and consist of one or more contours.</li>
+<li>A trigrid object is a grid whose surface consists of multiple triangles that<br>
+share edges and vertices.</li>
+<li>A box object is a three-dimensional rectangular object.</li>
+<li>A mesh object is a collection of vertices, faces, and edges that represent a<br>
+topological polyhedron. It's sometimes referred to as a winged-edge structure.</li>
+<li>A NURB curve object is a curve described by a NURB equation.</li>
+<li>A NURB patch object is a three-dimensional surface described by a NURB<br>
+equation.</li>
+</ul>
+<p>
+<b>NURB stands for </b>nonuniform rational B-spline. A B-spline is a parametric curve<br>
+(a curve defined by coordinates derived from functions sharing a common parameter)<br>
+whose shape is determined by a series of control points whose influence is described<br>
+by basis functions.*
+</p>
+<p>
+<b>SIMPLE GEOMETRIES</b>
+</p>
+<p>
+Let's start with some simple geometries first: lines, polylines, triangles, simple<br>
+polygons, and general polygons. In essence, these are the building blocks for<br>
+QuickDraw 3D. You can use combinations of these to construct your model, or you can<br>
+use some of the composite geometries, such as meshes and trigrids (described later).
+</p>
+<p>
+Line and polyline objects. Lines are defined by two noncoincident points. If you want to<br>
+have multiple line segments, you can use polylines (see Listing 7). In polylines, every<br>
+vertex after the first one defines a new line. You can attach attributes at the geometry<br>
+level or at the vertex level (which is useful for having multicolored lines, but<br>
+remember that you need to use per-vertex interpolation when rendering in order for<br>
+the multiple colors to apply).
+</p>
+<p>
+<b>Listing 7. </b>Creating a polyline
+</p>
+<pre>TQ3ColorRGB            polyLineColor;
+TQ3PolyLineData      polyLineData;
+TQ3GeometryObject      polyLineObject;
+
+static TQ3Vertex3D
+    points[4] = { { { -1.0, -0.5, -0.25 }, NULL }, // first vertex
+                  { { -0.5,  1.5,  0.45 }, NULL }, // second vertex
+                  { {  0.0,  0.0,  0.0  }, NULL }, // third vertex
+                  { {  1.5,  1.5,  1.0  }, NULL }  // fourth vertex
+                };
+
+// The polyline has four vertices.
+polyLineData.numVertices = 4;
+polyLineData.vertices = points;
+
+// Add a color to the line as a whole.
+polyLineData.polyLineAttributeSet = Q3AttributeSet_New();
+Q3ColorRGB_Set(&amp;polyLineColor, 0.4, 0.2, 0.9);
+AttributeSet_AddDiffuseColor(polyLineData.polyLineAttributeSet,
+   &amp;polyLineColor);
+
+// Create the polyline.
+polyLineObject = Q3PolyLine_New(&amp;polyLineData);
+
+Q3Object_Dispose(polyLineData.polyLineAttributeSet);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Triangle objects. </b>Triangles are the most basic of the planar geometries in<br>
+QuickDraw 3D. Triangles are defined by three noncolinear, noncoincident vertices. In<br>
+Listing 8, we set a color attribute for the entire geometry and for the individual<br>
+vertices. When you draw the triangle with flat interpolation, the geometry color is<br>
+used; when you draw it with per-vertex interpolation, however, the vertex attributes<br>
+take precedence and you can see a color ramp on the triangle (see Figure 8, where the<br>
+color ramp is approximated in grayscale).
+</p>
+<p>
+<b>Listing 8. </b>Creating a triangle in a group
+</p>
+<pre>TQ3ColorRGB            triangleColor;
+TQ3GroupObject         model;
+TQ3TriangleData      triangleData;
+TQ3GeometryObject      triangleObject;
+
+static TQ3Vertex3D
+          vertices[3] = { { { -1.0, -0.5, -0.25 }, NULL },
+                          { {  0.0,  0.0,  0.0  }, NULL },
+                          { { -0.5,  1.5,  0.45 }, NULL } };
+
+triangleData.vertices[0] = vertices[0];
+triangleData.vertices[1] = vertices[1];
+triangleData.vertices[2] = vertices[2];
+triangleData.triangleAttributeSet = Q3AttributeSet_New();
+Q3ColorRGB_Set(&amp;triangleColor, 0.8, 0.5, 0.2);
+AttributeSet_AddDiffuseColor(triangleData.triangleAttributeSet,
+   &amp;triangleColor);
+
+triangleData.vertices[0].attributeSet = Q3AttributeSet_New();
+triangleData.vertices[1].attributeSet = Q3AttributeSet_New();
+triangleData.vertices[2].attributeSet = Q3AttributeSet_New();
+Q3ColorRGB_Set(&amp;triangleColor, 1.0, 0.0, 0.0);
+AttributeSet_AddDiffuseColor(triangleData.vertices[0].attributeSet,
+   &amp;triangleColor);
+
+Q3ColorRGB_Set(&amp;triangleColor, 0.0, 1.0, 0.0);
+AttributeSet_AddDiffuseColor(triangleData.vertices[1].attributeSet,
+   &amp;triangleColor);
+
+Q3ColorRGB_Set(&amp;triangleColor, 0.0, 0.0, 1.0);
+AttributeSet_AddDiffuseColor(triangleData.vertices[2].attributeSet,
+   &amp;triangleColor);
+
+// Create the triangle and group.
+triangleObject = Q3Triangle_New(&amp;triangleData);
+model = Q3OrderedDisplayGroup_New();
+if (triangleObject != NULL) {
+   Q3Group_AddObject(model, triangleObject);
+   Q3Object_Dispose(triangleObject);
+}
+
+Q3Object_Dispose(triangleData.vertices[0].attributeSet);
+Q3Object_Dispose(triangleData.vertices[1].attributeSet);
+Q3Object_Dispose(triangleData.vertices[2].attributeSet);
+Q3Object_Dispose(triangleData.triangleAttributeSet);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Simple polygon and general polygon objects. </b>Simple polygons and general<br>
+polygons are planar objects with multiple vertices. Simple polygons must be convex,<br>
+but general polygons can be either convex or concave. In addition, general polygons can<br>
+be self-intersecting and have multiple contours.
+</p>
+<p>
+As was shown in Figure 8, a general polygon can have a "hole" in it, but a simple<br>
+polygon never does. This is the primary difference between the two geometries.<br>
+Processing general polygons takes more time than processing simple polygons, so we<br>
+advise you to use simple polygons whenever possible.
+</p>
+<p>
+If the geometry you're creating is convex, you should use simple polygons to achieve<br>
+better performance. If your polygons always have three vertices, however, you should<br>
+opt for triangles. If you don't know what your geometry looks like (for example, it's<br>
+being built by the user on the fly and you don't want to check the points), use general<br>
+polygons and set the complexity flag to kQ3GeneralPolygonShapeHintComplex (see<br>
+Listing 9). Renderers look at this flag as a hint on how to process the general polygon.
+</p>
+<p>
+<b>Listing 9. </b>Creating polygons
+</p>
+<pre>TQ3PolygonData        polygonData;
+TQ3GeneralPolygonData         genPolyData;
+TQ3GeometryObject             polygonObject, generalPolygonObject;
+TQ3GeneralPolygonContourData  contours[2];
+TQ3ColorRGB                   color;
+
+static TQ3Vertex3D   polyVertices[4] = {
+                        { { -1.0,  1.0, 0.0 }, NULL },
+                        { { -1.0, -1.0, 0.0 }, NULL },
+                        { {  1.0, -1.0, 0.0 }, NULL },
+                        { {  1.0,  1.0, 0.0 }, NULL }
+                     },
+                     genPolyHoleVertices[4] = {
+                        { { -0.5,  0.5, 0.0 }, NULL },
+                        { { -0.5, -0.5, 0.0 }, NULL },
+                        { {  0.5, -0.5, 0.0 }, NULL },
+                        { {  0.5,  0.5, 0.0 }, NULL }
+                     };
+
+polygonData.numVertices = 4; polygonData.vertices = polyVertices;
+polygonData.polygonAttributeSet = NULL;
+polygonObject = Q3Polygon_New(&amp;polygonData);
+
+contours[0].numVertices = 4; contours[0].vertices = polyVertices;
+contours[1].numVertices = 4;
+contours[1].vertices = genPolyHoleVertices;
+genPolyData.numContours = 2; genPolyData.contours = contours;
+genPolyData.shapeHint = kQ3GeneralPolygonShapeHintComplex;
+genPolyData.generalPolygonAttributeSet = Q3AttributeSet_New();
+Q3ColorRGB_Set(&amp;color, 1.0, 1.0, 1.0);
+AttributeSet_AddDiffuseColor(genPolyData.generalPolygonAttributeSet,
+   &amp;color);
+
+polyVertices[1].attributeSet = Q3AttributeSet_New();
+polyVertices[2].attributeSet = Q3AttributeSet_New();
+Q3ColorRGB_Set(&amp;color, 0.0, 0.0, 1.0);
+AttributeSet_AddDiffuseColor(polyVertices[1].attributeSet, &amp;color);
+Q3ColorRGB_Set(&amp;color, 0.0, 1.0, 1.0);
+AttributeSet_AddDiffuseColor(polyVertices[2].attributeSet, &amp;color);
+
+genPolyHoleVertices[0].attributeSet = Q3AttributeSet_New();
+genPolyHoleVertices[2].attributeSet = Q3AttributeSet_New();
+Q3ColorRGB_Set(&amp;color, 1.0, 0.0, 1.0);
+AttributeSet_AddDiffuseColor(genPolyHoleVertices[0].attributeSet,
+   &amp;color);
+Q3ColorRGB_Set(&amp;color, 1.0, 1.0, 0.0);
+AttributeSet_AddDiffuseColor(genPolyHoleVertices[2].attributeSet,
+   &amp;color);
+
+generalPolygonObject = Q3GeneralPolygon_New(&amp;genPolyData);
+Q3Object_Dispose(genPolyData.generalPolygonAttributeSet);
+Q3Object_Dispose(polyVertices[1].attributeSet);
+Q3Object_Dispose(polyVertices[2].attributeSet);
+Q3Object_Dispose(genPolyHoleVertices[0].attributeSet);
+Q3Object_Dispose(genPolyHoleVertices[2].attributeSet);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>GETTING FANCY</b>
+</p>
+<p>
+There's nothing wrong with using only simple geometries, as described above. You can<br>
+build any complex object just with triangles, but from a performance point of view<br>
+that's not always the best thing to do. When your object is made up of faces that share<br>
+vertices, it's a good idea to use a representation that allows the graphics system to<br>
+reuse the vertex information (such as lighting calculations) for the shared vertices.
+</p>
+<p>
+With a box, for example, each vertex is shared by three faces, where each face is made<br>
+up of two triangles. If we draw the box as a bunch of triangles, QuickDraw 3D would<br>
+have to perform the same lighting calculations on each vertex up to six times. If, on<br>
+the other hand, we represent the box as a box primitive or mesh object, the lighting<br>
+calculations are performed only once per vertex. (However, if you attach vertex<br>
+colors or face attributes, such as normals or colors, the calculations need to be<br>
+performed more often.)
+</p>
+<p>
+Here we show how to use two composite geometries -- trigrid and mesh objects -- as<br>
+well as UV parameterization, which you may need to supply if you want to apply a<br>
+texture to a trigrid or mesh.
+</p>
+<p>
+<b>Trigrid objects. </b>Trigrids are a collection of triangles that share vertices. We<br>
+create a trigid in Listing 10.
+</p>
+<p>
+<b>Listing 10. </b>Creating a trigrid
+</p>
+<pre>TQ3ColorRGB            triGridColor;
+TQ3GroupObject         model;
+TQ3TriGridData         triGridData;
+TQ3GeometryObject      triGridObject;
+unsigned long          numFacets, i;
+
+static TQ3Vertex3D
+           vertices[12] = { { { -1.0, -1.0,  0.0 }, NULL },
+                             ... // 10 more lines of vertex data
+                            { {  0.7,  1.0,  0.5 }, NULL }};
+
+triGridData.numRows = 3; triGridData.numColumns = 4;
+triGridData.vertices = vertices;
+triGridData.triGridAttributeSet = Q3AttributeSet_New();
+Q3ColorRGB_Set(&amp;triGridColor, 0.8, 0.7, 0.3);
+AttributeSet_AddDiffuseColor(triGridData.triGridAttributeSet,
+   &amp;triGridColor);
+
+numFacets = (triGridData.numRows - 1) * (triGridData.numColumns - 1)
+   * 2;
+triGridData.facetAttributeSet =
+   malloc(numFacets * sizeof(TQ3AttributeSet));
+for (i = 0; i &lt; numFacets; i++) {
+   triGridData.facetAttributeSet[i] = NULL;
+}
+Q3ColorRGB_Set(&amp;triGridColor, 1.0, 0.0, 0.5);
+triGridData.facetAttributeSet[5] = Q3AttributeSet_New();
+AttributeSet_AddDiffuseColor(triGridData.facetAttributeSet[5],
+   &amp;triGridColor);
+
+triGridObject = Q3TriGrid_New(&amp;triGridData);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>UV parameterization. </b>Texturing allows you to have more realistic looking models.<br>
+For texturing to work, the geometry must have UV parameters on its vertices, which<br>
+may have to be supplied by you. The UV parameters are two floating-point values (U<br>
+and V) that correlate a location on the geometry to a point in the picture of the texture<br>
+(see Figure 9).
+</p>
+<p>
+<img src="img/225.gif" width="353 px"></img>
+</p>
+<p>
+<b>Figure 9. UV parameters on a trigrid's vertices for texture mapping</b>
+</p>
+<p>
+The convention for QuickDraw 3D is to start the UV parameters at 0.0,0.0 at the<br>
+bottom left, with U increasing toward the right and V increasing upward. You supply<br>
+the UV parameterization as a collection of vertex attributes.
+</p>
+<p>
+Once a UV parameterization has been applied to a surface's vertices, the surface can be<br>
+texture mapped. There are several steps to texturing surfaces with QuickDraw 3D. In<br>
+general, you'll already have a texture stored in a pixel map somewhere. What you need<br>
+to do is create a texture shader (of type TQ3TextureObject) and add it into your display<br>
+group before you add the geometry you want to shade.
+</p>
+<p>
+Listing 11 is a general-purpose routine for adding a texture shader to a group. It's<br>
+interesting for a number of reasons: it shows how to search a group for particular<br>
+objects (in this case, an existing shader that it will replace), how to edit items within<br>
+a group, and how to add new items.
+</p>
+<p>
+<b>Listing 11. </b>Routine to texture-map an object
+</p>
+<pre>TQ3Status AddTextureToGroup(TQ3GroupObject theGroup,
+    TQ3StoragePixmap *textureImage)
+{
+   TQ3TextureObject   textureObject;
+   TQ3GroupPosition   position;
+   TQ3Object         firstObject;
+  
+   // Create a texture object.
+   textureObject = Q3PixmapTexture_New(textureImage);
+   if (textureObject) {
+      if (Q3Object_IsType(theGroup, kQ3GroupTypeDisplay) == kQ3True) {
+         // If the group is a display group...
+         Q3Group_GetFirstPosition(theGroup, &amp;position);
+         Q3Group_GetPositionObject(theGroup, position, &amp;firstObject);
+         if (Q3Object_IsType(firstObject, kQ3SurfaceShaderTypeTexture)
+               == kQ3True) {
+            TQ3TextureObject   oldTextureObject;
+            TQ3StoragePixmap   oldTextureImage;
+            // Replace existing texture by new one.
+            Q3TextureShader_GetTexture(firstObject,
+&amp;oldTextureObject);
+            Q3PixmapTexture_GetPixmap(oldTextureObject,
+                &amp;oldTextureImage);
+            Q3Object_Dispose(oldTextureObject);
+            Q3TextureShader_SetTexture(firstObject, textureObject);
+            Q3Object_Dispose(textureObject);
+         } else {
+            TQ3ShaderObject   textureShader;
+            // Create texture shader and add it to group.
+            textureShader = Q3TextureShader_New(textureObject);
+            if (textureShader) {
+               Q3Object_Dispose(textureObject);
+               Q3Group_AddObjectBefore(theGroup, position,
+                   textureShader);
+               Q3Object_Dispose(textureShader);
+            } else
+               return (kQ3Failure);
+         }
+         Q3Object_Dispose(firstObject);
+      } else if (Q3Object_IsType(theGroup, kQ3DisplayGroupTypeOrdered)
+                   == kQ3True) {
+         // If the group is an ordered display group...
+         TQ3ShaderObject   textureShader;
+         Q3Group_GetFirstPositionOfType(theGroup, kQ3ShapeTypeShader,
+             &amp;position);
+         if (position) {
+            Q3Group_GetPositionObject(theGroup, position,
+                &amp;firstObject);
+            if (Q3Object_IsType(firstObject,
+                kQ3SurfaceShaderTypeTexture) == kQ3True) {
+               TQ3TextureObject   oldTextureObject;
+               TQ3StoragePixmap   oldTextureImage;
+               // Replace existing texture by new one.
+               Q3TextureShader_GetTexture(firstObject,
+                   &amp;oldTextureObject);
+               Q3PixmapTexture_GetPixmap(oldTextureObject,
+                   &amp;oldTextureImage);
+               Q3Object_Dispose(oldTextureObject);
+               Q3TextureShader_SetTexture(firstObject, textureObject);
+               Q3Object_Dispose(textureObject);
+            } else {
+               // Create texture shader and add it to group.
+               textureShader = Q3TextureShader_New(textureObject);
+               if (textureShader) {
+                  Q3Object_Dispose(textureObject);
+                  Q3Group_SetPositionObject(theGroup, position,
+                      textureShader);
+                  Q3Object_Dispose(textureShader);
+               } else
+                  return (kQ3Failure);
+            }
+         } else {
+            // Create texture shader and add it to group.
+            textureShader = Q3TextureShader_New(textureObject);
+            if (textureShader) {
+               Q3Object_Dispose(textureObject);
+               Q3Group_AddObject(theGroup, textureShader);
+               Q3Object_Dispose(textureShader);
+            } else
+               return (kQ3Failure);
+         }
+      }
+   return (kQ3Success);
+   } else          // If pixmap shader not created...
+      return (kQ3Failure);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Mesh objects. </b>Listing 12 shows the key components needed to create a simple mesh<br>
+geometry. We create a mesh consisting of two faces, with one of them having a hole. We<br>
+also add UV parameters to the vertices so that we can texture-map the mesh. Figure 10<br>
+shows the texture map and the resulting textured mesh.
+</p>
+<p>
+<b>Listing 12. </b>Creating a mesh
+</p>
+<pre>TQ3GroupObject BuildMesh(void)
+{
+   TQ3ColorRGB            meshColor;
+   TQ3GroupObject         model;
+   TQ3Vertex3D            vertices[9] = {
+      { { -0.5,  0.5,  0.0 }, NULL },
+      { { -0.5, -0.5,  0.0 }, NULL },
+      { {  0.0, -0.5,  0.3 }, NULL },
+      { {  0.5, -0.5,  0.0 }, NULL },
+      { {  0.5,  0.5,  0.0 }, NULL },
+      { {  0.0,  0.5,  0.3 }, NULL },
+      { { -0.4,  0.2,  0.0 }, NULL },
+      { {  0.0,  0.0,  0.0 }, NULL }
+   };
+   TQ3Param2D            verticesUV[9] = {
+      { 0.0, 1.0 }, { 0.0, 0.0 }, { 0.5, 0.0 },
+      { 1.0, 0.0 }, { 1.0, 1.0 }, { 0.5, 1.0 },
+      { 0.1, 0.8 }, { 0.5, 0.5 }, { 0.1, 0.4 }
+   };
+   TQ3MeshVertex         meshVertices[9];
+   TQ3GeometryObject      meshObject;
+   TQ3MeshFace            meshFace;
+   TQ3AttributeSet      faceAttributes;
+   unsigned long         i;
+  
+   meshObject = Q3Mesh_New();
+   Q3Mesh_DelayUpdates(meshObject);
+   for (i = 0; i &lt; 9; i++) {
+      TQ3AttributeSet   vertexASet;
+      meshVertices[i] = Q3Mesh_VertexNew(meshObject, &amp;vertices[i]);
+      vertexASet = Q3AttributeSet_New();
+      AttributeSet_AddSurfaceUV(vertexASet, &amp;verticesUV[i]);
+      Q3Mesh_SetVertexAttributeSet(meshObject, meshVertices[i],
+         vertexASet);
+      Q3Object_Dispose(vertexASet);
+   }
+   faceAttributes = Q3AttributeSet_New();
+   Q3ColorRGB_Set(&amp;meshColor, 0.3, 0.9, 0.5);
+   AttributeSet_AddDiffuseColor(faceAttributes, &amp;meshColor);
+   meshFace = Q3Mesh_FaceNew(meshObject, 6, meshVertices,
+      faceAttributes);
+   Q3Mesh_FaceToContour(meshObject, meshFace,
+      Q3Mesh_FaceNew(meshObject, 3, &amp;meshVertices[6], NULL));
+   Q3Mesh_ResumeUpdates(meshObject);
+   model = Q3OrderedDisplayGroup_New();
+   Q3Group_AddObject(model, meshObject);
+   Q3Object_Dispose(faceAttributes);
+   Q3Object_Dispose(meshObject);
+   return (model);
+}</pre>
+<p>
+<img src="img/226.gif" width="299 px"></img>
+</p>
+<p>
+<b>Figure 10. Texture map applied to a mesh</b>
+</p>
+<p>
+Q3Mesh_DelayUpdates and Q3Mesh_ResumeUpdates, used in Listing 12, are two very<br>
+important routines. Mesh objects can often contain hundreds and even thousands of<br>
+vertices. When you're building a complex model, we advise that you turn off updates to<br>
+the internal ordering of the mesh data, so that building the mesh takes as little time as<br>
+possible. The difference between doing this and not doing this can be, in the case of a<br>
+complex model containing 3000 polygons, several minutes when<br>
+Q3Mesh_DelayUpdates is not called, compared with 3 seconds when it is called (on a<br>
+mid-level computer).
+</p>
+<h2>WHAT DO YOU WANT TO BUILD TODAY?</h2>
+<p>
+We hope that the hints in this article will save you some time and help you in your<br>
+development process. We've been pleasantly surprised by some of the applications in<br>
+which developers have been putting QuickDraw 3D to use; for example, a European<br>
+developer used QuickDraw 3D to prproduce 3D representations of his code profiler<br>
+application's data. Learning the basics of QuickDraw 3D's geometries is the first step<br>
+toward mining the rich seam of functionality that QuickDraw 3D offers.
+</p>
+<p>
+<b>NICK THOMPSON</b> (AppleLink NICKT) from Apple's Developer Technical Support<br>
+group took a trip to Las Vegas this year in a rented Cadillac. He was impressed by some<br>
+of the ancient architecture on show in this fine city, such as the Pyramid of Luxor,<br>
+Excalibur's Castle, and Caesar's Palace (he was surprised that the ancient Egyptians,<br>
+King Arthur, and the Roman emperor had all made it that far west). He was also<br>
+impressed by the free food and drinks -- all he had to do was sit at a table and buy<br>
+small plastic disks with green scraps of paper that the got from a hole in the wall.<br>
+Having rented a Cadillac for this trip, Nick now has his heart set on a 1968 Eldorado<br>
+convertible.*
+</p>
+<p>
+<b>PABLO FERNICOLA</b> (AppleLink PFF, eWorld EscherDude), the short one in the<br>
+picture, is the brains behind the operation. His hobbies include traveling to exotic<br>
+places (such as the local supermarket), eating fine cuisine, and talking to his dog (who<br>
+is almost as big as Nick, and probably a lot smarter). He's hard at work on the next<br>
+generation of QuickDraw 3D, which--like Pablo--is bound to be even smarter. Pablo<br>
+says, "You can use QuickDraw 3D's metafile format everywhere, even for defining<br>
+virtual environments on the net. So get those applications ready, won't you?"*
+</p>
+<p>
+Thanks to our technical reviewers Tom Dowdy, Tim Monroe, and Philip Schneider.*
+</p>
+</body>
+</html>

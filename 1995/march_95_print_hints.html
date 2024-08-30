@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 5 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 95 - Print Hints</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>PRINT HINTS</h2>
+<h2>Writing QuickDraw GX Drivers With Custom I/O and<br>
+Buffering</h2>
+<h1>DAVE HERSEY</h1>
+<p>
+<img src="img/130.gif" width="180 px"></img>
+</p>
+<p>
+One of the great features of QuickDraw GX is that it provides the printer driver<br>
+developer with default implementations of commonly used routines. For example, just<br>
+by specifying a few parameters in your driver's 'comm'<br>
+(gxDeviceCommunicationsType) resource, your printer driver can connect to a<br>
+printer either serially or through the Printer Access Protocol (PAP). You don't need<br>
+to write a single line of communications code! 
+</p>
+<p>
+Another powerful feature of QuickDraw GX is that you can ignore the default<br>
+implementations of printer driver routines and write your own routines instead. This<br>
+feature enables you to tailor your printer driver so that it can accommodate unique<br>
+situations. The ability to modify bits and pieces of the printing system is especially<br>
+useful when it comes to writing printer drivers with custom communications code or<br>
+buffering routines. 
+</p>
+<p>
+In general, to create custom communications code, youconfigure your driver's 'iobm'<br>
+(gxUniversalIOPrefsType)resource, create a "not connected" 'comm' resource, and<br>
+then override certain QuickDraw GX messages. For SCSI printers, however, you don't<br>
+need to create the "not connected" resource, because a SCSI format of the 'comm'<br>
+resource is already defined. We'll talk more about when you would want to use custom<br>
+communications code, and how to write it, later in this column. 
+</p>
+<p>
+Also covered is how to write custom buffering routines. You may want to use custom<br>
+buffering if, for example, you already have code that you want to use or you want to<br>
+increase printer performance by taking advantage of a hardware buffer that you have<br>
+available. 
+</p>
+<p>
+On this issue's CD, you'll find a sample printer driver called CustomWriter that<br>
+illustrates how to implement "not connected" custom I/O and buffering. In addition,<br>
+there's a sample LaserWriter IISC printer driver that shows how to create custom I/O<br>
+code for a SCSI printer.
+</p>
+<p>
+<b>CUSTOM I/O -- WHO NEEDS IT?</b><br>
+The default communications code in QuickDraw GX handles asynchronous<br>
+communications for serial and PAP printers and QuickDraw GX shared printers. Even<br>
+so, you may want to override this code in some cases, such as if your printer<br>
+communicates using a protocol that QuickDraw GX doesn't support (like 200<br>
+Kbits/second serial), or if you have your own PAP code that you'd like to continue<br>
+using. 
+</p>
+<p>
+QuickDraw GX also supports the special cases of "not connected" printers and SCSI<br>
+printers. If you're writing a driver using either of these two types of connections,<br>
+you'll need to write some custom I/O code. In fact, the "not connected" communications<br>
+method is provided specifically for the developer writing a driver containing custom<br>
+communications code. What does this type of communications method do? In the default<br>
+implementation, nothing at all. In a minute, you'll see how to use this to your<br>
+advantage. 
+</p>
+<p>
+The only SCSI support currently built into QuickDraw GX handles filling out the<br>
+Chooser list with your devices' SCSI addresses and saving updated 'comm' resources for<br>
+any desktop printers that are created. Otherwise, QuickDraw GX doesn't actually open<br>
+connections or try to send commands, such as SCSIRead or SCSIWrite, to the printer.<br>
+SCSI printers usually have unique command sets, and trying to provide a generic<br>
+mechanism to support all of these devices is unrealistic. As a result, you must provide<br>
+your own communications code if you're writing a SCSI driver. 
+</p>
+<p>
+Finally, if your device is connected through a hardware interface that QuickDraw GX<br>
+doesn't provide default support for (such as a NuBusTM card), you'll need to provide<br>
+all of the communications code for your driver. 
+</p>
+<p>
+<b>HOW TO GET STARTED</b><br>
+The first step in writing a driver with custom communications code is to configure<br>
+your driver's 'iobm' resource. This is a very easy (and very critical) exercise. 
+</p>
+<p>
+<b>&nbsp;'iobm' stands for </b>"Input/Output and Buffering preferences." So what does the "m"<br>
+stand for? Great question. As it turns out, if you set up this resource incorrectly, it<br>
+becomes an "I/O BooM" resource. (The system crashes.) The "m" is silent as long as<br>
+the resource is set up correctly. *
+</p>
+<p>
+The 'iobm' resource tells QuickDraw GX how your driver wants its communications and<br>
+buffering environment set up. This resource has the following format:
+</p>
+<pre>type gxUniversalIOPrefsType {
+    longint standardIO = 0x00000000,
+            customIO = 0x00000001;
+    longint;        // number of buffers to allocate,
+                    // 0 = none
+    longint;        // size of each buffer
+    longint;        // number of IO requests that can
+                    // be pending at any one time
+    longint;        // open/close time-out in ticks
+    longint;        // read/write time-out in ticks
+};</pre>
+<p>
+The 'iobm' resource was described in the<i>develop</i> Issue 20 Print Hints column about<br>
+QuickDraw GX buffering. Rather than reiterate that information here, we're going to<br>
+briefly focus on the first three fields of the resource. 
+</p>
+<p>
+The first item in the 'iobm' resource (standardIO or customIO) tells QuickDraw GX<br>
+whether you want to use its built-in communications code. You must specify customIO<br>
+if you want to use your own custom I/O code. When customIO is specified, QuickDraw<br>
+GX won't go through the overhead of initialization and data allocation for the internal<br>
+communications routines; as a result, you<i>must</i> override certain messages, as<br>
+described in a following section. When you specify customIO, the last three longint<br>
+fields of this resource are ignored. 
+</p>
+<p>
+The two fields in the 'iobm' resource that follow the I/O type field indicate the number<br>
+and size of the buffers your driver would like QuickDraw GX to create. Note that you<br>
+can use QuickDraw GX's built-in buffering even if you're writing your own<br>
+communications code. If, however, you're creating and disposing of your own buffers,<br>
+you should set the "number of buffers" field to 0, so that QuickDraw GX won't waste<br>
+time and memory allocating buffers that are never used. For code that communicates<br>
+synchronously, multiple buffers don't improve performance, so you should set this<br>
+field to 1. 
+</p>
+<p>
+Later in this column we'll take a closer look at what's required to create and manage<br>
+your own I/O buffers. 
+</p>
+<p>
+<b>WHEN "NOT CONNECTED" MEANS "CONNECTED"</b><br>
+Unless you're writing custom I/O routines to support a SCSI printer, you'll want to<br>
+create a "not connected" 'comm' resource for your driver. Below is the declaration of a<br>
+'comm' resource for the "not connected" case. 
+</p>
+<p>
+<b>&nbsp;For the full description </b> of a 'comm' resource, see <i>Inside Macintosh: QuickDraw</i><br>
+<i>GX Printing Extensions and Drivers</i> .*
+</p>
+<pre>type gxDeviceCommunicationsType {
+    unsigned longint = 'nops';
+};</pre>
+<p>
+There's not a whole lot to it, is there? When you specify customIO in your 'iobm'<br>
+resource, QuickDraw GX never does anything with your desktop printer's 'comm'<br>
+resources other than examine the first longint. So, all sorts of possibilities become<br>
+apparent. As long as that first longint is 'nops', you can extend the definition of this<br>
+resource to suit your needs. Whether to change the definition of the resource in the<br>
+PrintingResTypes.r interface file or not is up to you. Instead, you could just resize the<br>
+resource when you update it at desktop printer creation time, as we'll discuss<br>
+momentarily. 
+</p>
+<p>
+<b>CUSTOM I/O -- THE MESSAGES</b><br>
+When you supply your own I/O routines, there are several messages that you need to<br>
+override. Some of these messages will always need to be<i>totally</i> overridden, meaning<br>
+that your overrides for these messages should never forward the messages. Other<br>
+messages should be<i>partially</i> overridden, in which case the message is forwarded at<br>
+some point in your override code.
+</p>
+<p>
+Now we'll look at the messages you need to override. (Table 1 summarizes these<br>
+messages and the ones to override for custom buffering.) If you want more information<br>
+on writingmessage overrides, see Sam Weiss's article, "DevelopingQuickDraw GX<br>
+Printing Extensions,"&nbsp;&nbsp;in <i>develop</i> Issue 15, and<i>Inside Macintosh: QuickDraw GX</i><br>
+<i>Printing Extensions and Drivers</i> .
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Table 1. </b>Overriding QuickDraw GX messages
+</p>
+<p><table border="0"><tr><td><b style="font-size:80%;">When to Override</b></td><td><b style="font-size:80%;"></b><b style="font-size:80%;">Custom I/O</b></td><td><b style="font-size:80%;"></b><b style="font-size:80%;">Custom Buffering</b></td></tr>
+<tr><td><span style="font-size:80%;">Always override (partially)</span></td><td><span style="font-size:80%;">GXOpenConnection</span></td><td><span style="font-size:80%;">GXOpenConnection</span></td></tr>
+<tr><td></td><td><span style="font-size:80%;">GXCloseConnection</span></td><td><span style="font-size:80%;">GXCloseConnection</span></td></tr>
+<tr><td></td><td><span style="font-size:80%;">GXCleanupOpenConnection</span></td><td><span style="font-size:80%;">GXCleanupOpenConnection</span></td></tr>
+<tr><td></td><td><span style="font-size:80%;">GXWriteData</span></td><td></td></tr>
+<tr><td><span style="font-size:80%;">Always override (totally)</span></td><td><span style="font-size:80%;">GXDumpBuffer</span></td><td><span style="font-size:80%;">GXBufferData</span></td></tr>
+<tr><td></td><td></td><td><span style="font-size:80%;">GXWriteData</span></td></tr>
+<tr><td><span style="font-size:80%;">Usually override (partially)</span></td><td><span style="font-size:80%;">GXDefaultDesktopPrinter</span></td><td></td></tr>
+<tr><td></td><td><span style="font-size:80%;">GXChooserMessage</span></td><td></td></tr>
+<tr><td><span style="font-size:80%;">Sometimes override (totally)</span></td><td><span style="font-size:80%;">GXFreeBuffer</span></td><td></td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Always override (partially)</b>
+</p>
+<ul>
+<li>GXOpenConnection</li>
+<li>GXCloseConnection</li>
+<li>GXCleanupOpenConnection</li>
+<li>GXWriteData</li>
+</ul>
+<p>
+When you override these messages, you should first forward the message, then execute<br>
+your added code. Your overrides for the first three messages should contain code to<br>
+open and close a connection to your device.
+</p>
+<p>
+GXCloseConnection is sent to close a connection if no errors occur during the device<br>
+communications phase of printing; GXCleanupOpenConnection is sent if an error does<br>
+occur during this time. The goal for both of these overrides is to "undo" any data<br>
+allocation or initialization that occurred in the GXOpenConnection override. Often,<br>
+your GXCleanupOpenConnection message override can simply execute the same code as<br>
+your GXCloseConnection override. 
+</p>
+<p>
+The GXWriteData override should forward the message(with a nil pointer and a length<br>
+of 0) to flush any data that's buffered, and then send the data to the printer. 
+</p>
+<p>
+<b>Always override (totally)</b>
+</p>
+<ul>
+<li>GXDumpBuffer</li>
+</ul>
+<p>
+Your override for this message should execute code that sends the indicated data to your<br>
+printer.&nbsp;&nbsp;&nbsp;When this message is sent, a connection to your device will already have<br>
+been established through the successful execution of your GXOpenConnection override.<br>
+The GXDumpBuffer message is used to send data to the printer whenever an I/O buffer<br>
+becomes full.
+</p>
+<p>
+<b>Usually override (partially)</b>
+</p>
+<ul>
+<li>GXDefaultDesktopPrinter</li>
+<li>GXChooserMessage</li>
+</ul>
+<p>
+When QuickDraw GX creates a desktop printer, it stores in it a 'comm' resource that<br>
+specifies how to communicate with the printer. By default, this 'comm' resource is<br>
+just a filled-in copy of one of your driver's 'comm' resources. Depending on the setting<br>
+in the Chooser's "Connect via:" menu, the 'comm' resource is updated with information<br>
+about the printer, such as the selected serial port, SCSI address, and network address<br>
+for an AppleTalk printer. If your driver uses a "not connected" 'comm' resource (as<br>
+described earlier), it will be copied verbatim, without updated information about the<br>
+selected printer. As a result, you might need to step in and fill out the resource<br>
+yourself. 
+</p>
+<p>
+To update the 'comm' resource, you need to override the GXDefaultDesktopPrinter<br>
+message as shown in Listing 1. Here we forward the message so that QuickDraw GX<br>
+completes creation of the desktop printer; then we retrieve the 'comm' resource from<br>
+the desktop printer, update it, and replace the old version with the updated version. 
+</p>
+<p>
+When you update the 'comm' resource, you need to know which printer the user<br>
+selected, as well as its addressing information and so forth. You can find this<br>
+information by overriding GXChooserMessage, which is sent by the<br>
+GXHandleChooserMessage API call. In this override, possibly with some help from your<br>
+Chooser PACK's LDEF, you can determine the relevant information about the selected<br>
+printer. 
+</p>
+<p>
+For example, you can store this information in a column of cells that's appended to the<br>
+printer list.&nbsp;&nbsp;&nbsp;Or you can store it in the list record's userHandle or, by using<br>
+PC-relative addressing, in a data storage area following your jump table. When you<br>
+retrieve this data in your GXChooserMessage override, simply store it using one of<br>
+QuickDraw GX's global data functions for printing. Finally, retrieve the information<br>
+from your GXDefaultDesktopPrinter override and store it in the desktop printer's<br>
+'comm' resource. 
+</p>
+<p>
+It's important to note that you can't use any of the functions<br>
+GetMessageHandlerInstanceContext, SetMessageHandlerInstanceContext,<br>
+GXGetJobRefCon,GXSetJobRefCon, and NewMessageGlobals for the example in Listing 1,<br>
+because the GXChooserMessage and GXDefaultDesktopPrinter messages are sent to two<br>
+different message handler instances. Therefore, you should use<br>
+GetMessageHandlerClassContext, SetMessageHandlerClassContext, or some other<br>
+method that works across message handler instances. 
+</p>
+<p>
+<b>Sometimes override (totally)</b>
+</p>
+<ul>
+<li>GXFreeBuffer</li>
+</ul>
+<p>
+If your communications code runs asynchronously, you must override GXFreeBuffer so<br>
+that QuickDraw GX can tell when operations on a buffer have completed. The<br>
+GXFreeBuffer message is sent to make sure that all the data in the buffer has been<br>
+processed before the buffer is used again.&nbsp;&nbsp;&nbsp;When GXFreeBuffer returns, the indicated<br>
+buffer is ready to accept more data. An override for this message should loop (calling<br>
+GXJobIdle) until I/O on the specified buffer is complete, and then return. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 1. </b>Updating a 'comm' resource when a desktop printer is created
+</p>
+<pre>OSErr MyDefaultDesktopPrinter (Str31 dtpName) {
+    OSErr   anyErrors;
+    Handle  theCommResource;
+   
+    // Forward the message so that the desktop printer is created.
+    anyErrors = Forward_GXDefaultDesktopPrinter(dtpName);
+    nrequire(anyErrors, Abort);
+   
+    // Load the data for the 'comm' resource that was stored in the
+    // desktop printer.
+    anyErrors = GXFetchDTPData(dtpName, gxDeviceCommunicationsType,
+       gxDeviceCommunicationsID, &amp;theCommResource);
+    require_action(theCommResource != nil, Abort,
+       anyErrors = resNotFound;);
+   
+    // Update the 'comm' data with info about the selected printer,
+    // and store the updated copy
+    // back in the desktop printer.
+    MyUpdateCommResource(theCommResource);
+    anyErrors = GXWriteDTPData(dtpName, gxDeviceCommunicationsType,
+       gxDeviceCommunicationsID, theCommResource);
+   
+    // Finally, dispose of the handle we received from
+    // GXFetchDTPData. It's a detached resource
+    // handle, so DON'T USE RELEASERESOURCE!!
+    DisposeHandle(theCommResource);
+
+Abort:
+    return anyErrors;
+}</pre>
+<p>
+<b>USING YOUR OWN BUFFERING SCHEME</b><br>
+At this point, we've discussed everything that's needed to handle your own custom I/O<br>
+code. Now we'll take a quick look at what's required if you want to create and maintain<br>
+your own buffers, instead of using those that the default implementation provides. 
+</p>
+<p>
+First things first. Go back to your 'iobm' resource, and set the number of buffers to 0.<br>
+This tells QuickDraw GX not to waste time and memory allocating buffers that you<br>
+aren't going to use. 
+</p>
+<p>
+When you implement your own buffering scheme, you can use any sort of internal<br>
+representation for your buffers that you want to. However, since some of the buffering<br>
+messages take a pointer to a gxPrintingBuffer, you'll need to use that format for<br>
+passing your buffers between certain messages.&nbsp;&nbsp;&nbsp;But as far as the actual buffer<br>
+structures go, you can use a handle, a linked list, or any other configuration that's<br>
+convenient or necessary to use. 
+</p>
+<p>
+To support custom buffering code, you'll need to override the following messages. 
+</p>
+<p>
+<b>Always override (partially)</b>
+</p>
+<ul>
+<li>GXOpenConnection</li>
+<li>GXCloseConnection</li>
+<li>GXCleanupOpenConnection</li>
+</ul>
+<p>
+The partial overrides for these messages should forward the messages and then allocate<br>
+or dispose of your internal buffer structures. If you're using custom I/O, you already<br>
+provide overrides of these messages. In that case, simply add this new code to the<br>
+existing overrides. 
+</p>
+<p>
+<b>Always override (totally)</b>
+</p>
+<ul>
+<li>GXBufferData</li>
+<li>GXWriteData</li>
+</ul>
+<p>
+Provide an override of GXBufferData that stores the passed data in your next available<br>
+buffer. If a buffer becomes full, call Send_GXDumpBuffer. Before you attempt to add<br>
+data to this buffer again, call Send_GXFreeBuffer to make sure that all of the buffer's<br>
+data has been sent to the printer. 
+</p>
+<p>
+Your override for the GXWriteData message should flush all data from your buffers and<br>
+then immediately send the passed data to the printer. To do this, call<br>
+Send_GXDumpBuffer on all buffers, followed bySend_GXFreeBuffer on all buffers. If<br>
+you're performingcustom I/O, just add this code to your existing override. 
+</p>
+<p>
+You may wonder why you don't need to override the GXDumpBuffer message when you<br>
+perform custom buffering. Unlike the messages listed above, GXDumpBuffer takes a<br>
+pointer to a gxPrintingBuffer. Whenever your code calls Send_GXDumpBuffer, you<br>
+must pass data in a gxPrintingBuffer structure, regardless of the internal buffer<br>
+representation that you're using. Since the buffered data is passed in the format that<br>
+GXDumpBuffer already expects, there's no need to override the message. 
+</p>
+<p>
+<b>DRIVE SAFELY</b><br>
+That's all there is to it. So, the next time someone asks, "Can you write QuickDraw GX<br>
+printer drivers for my 200 Kbits/second serial typesetter, my SCSI copier/printer,<br>
+and my NuBus-interfaced cutter plotter?" tell them, "Yoooooooou betcha!"
+</p>
+<p>
+<b>DAVE HERSEY </b>(AppleLink HERSEY) left Apple's Developer Technical Support (DTS)<br>
+group about six months ago to join the Print Shop software development group. He now<br>
+fixes the QuickDraw GX bugs that he reported while in DTS, and works on QuickDraw<br>
+GX 2.0 -- the "knock your socks off" release. *
+</p>
+<p>
+<b>Thanks </b>to Tom Dowdy, David Hayward, and Nick Thompson for reviewing this column.<br>
+*
+</p>
+</body>
+</html>

@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 28 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 95 - Macintosh Q & A</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Macintosh Q &amp; A</h1>
+<b>Q</b><i> I'm using the TPopup class in MacApp 3.0.1 in my window and I want to underline</i><br>
+<i>the title string of a pop-up menu programmatically. The title text style is stored in a</i><br>
+<i>field in the class but is used only when the pop-up menu is first created. How can I</i><br>
+<i>change the text style of a pop-up menu title after it has been created?</i><br>
+<p>
+<b>A</b>&nbsp;MacApp's TPopup class is basically just a wrapper around System 7's Popup CDEF<br>
+(with its own CDEF for pre-System 7) and so is subject to the same limitations as<br>
+normal System 7 pop-up menus. You're correct that the title style is stored in the<br>
+TPopup class and referenced only once, when the pop-up control is created. What<br>
+happens is that when a pop-up menu is created with NewControl, the Popup CDEF<br>
+interprets the value parameter to NewControl to be the title style of the pop-up menu<br>
+control. Thereafter, the value of the control is equal to the currently selected menu<br>
+item. TPopup::CreateCMgrControl calls NewControl as follows:
+</p>
+<pre>ControlHandle aCMgrControl = NewControl(itsPort, qdArea, itsTitle,
+      FALSE, (short) this-&gt;GetPopupTitleStyle(), fMenuID,
+      fItemOffset, this-&gt;GetProcID(), fUseAddResMenuResType);</pre>
+<p>
+The important setting is the title style: notice the TPopup::GetPopupTitleStyle call,<br>
+which returns a short integer corresponding to the text style settings. The problem is<br>
+that there's no way of defining this title style after the control has been created, so you<br>
+have to recreate the control when you want to change the title style. This may seem a<br>
+bit much, but it takes only a few lines of code. The important thing to remember is that<br>
+most of the information you need is already part of TPopup; all you're doing is<br>
+recreating the control.
+</p>
+<p>
+Dispose of the old control, set the fTitleStyle field to the title style you want, and then<br>
+call CreateCMgrControl to create a new control with this title style, using all the<br>
+characteristics already set in your TPopup object. Here's the code to do this:
+</p>
+<pre>CStr255   itsLabel;
+short      itsVal;
+
+/* First free the old control. */
+DisposeControl(myPopup-&gt;fCMgrControl);
+myPopup-&gt;fCMgrControl = NULL;
+/* Now set the pop-up title style to underline. */
+myPopup-&gt;fTitleStyle = myPopup-&gt;fTitleStyle + underline;
+/* Get title and current value to send to CreateCMgrControl. */
+myPopup-&gt;GetMenuLabel(itsLabel);
+itsVal = myPopUp-&gt;GetCurrentItem();
+/* Now create a new control with the desired text style. */
+myPopup-&gt;CreateCMgrControl(itsLabel, itsVal, 0, 0, 0);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Q</b><i>&nbsp;I'm having a problem with Balloon Help, getting HMCompareItem to work properly.</i><br>
+<i>I've got several menu items that can change dynamically, and while HMCompareItem</i><br>
+<i>successfully finds the first item, all other items have no balloons. What's the problem</i><br>
+<i>here?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The problem is that the match string isn't exact. HMCompareItem only finds exact<br>
+matches for the actual menu items. (A common case to look out for is ellipsis (...)<br>
+versus three periods (...): always use an ellipsis in menus.)
+</p>
+<p>
+If you can't determine the exact match ahead of time, we suggest that you use a<br>
+different technique: modify the help string on the fly. A method that other developers<br>
+have used is to store the current menu state in their preferences file along with the<br>
+current menu help string; then, as the application changes menu items, they modify<br>
+the 'STR ' resource that the help item refers to on the fly.
+</p>
+<p>
+<b>Q</b><i> I'm writing a QuickDraw GX printer driver and need to get the text size of a shape.</i><br>
+<i>I've tried GXGetStylePenSize and GXGetShapePenSize, but these continuously send back</i><br>
+<i>12 no matter what the real size is. I've looked through the shapes in GraphicsBug, and</i><br>
+<i>12 is there for the text size. What can I do to get the correct size?</i>
+</p>
+<p>
+<b>A</b>&nbsp;QuickDraw GX has three different shapes to handle typography -- text, glyph, and<br>
+layout -- and each one stores the typographic style objects (which are what you need)<br>
+differently. (There's a good discussion of the three types of typographic shapes in<br>
+QuickDraw GX: Programmer's Overview on pages 97 through 115.)
+</p>
+<p>
+The important thing to remember is that simple text shapes can have only one type<br>
+style (attached to the style attribute of the object), so they're fairly easy to work<br>
+with. However, glyph and layout shapes can have one or more runs of type styles<br>
+(attached to the style list attribute of the object's geometry), so they can be more<br>
+complex to work with. Only if a glyph or layout shape doesn't have a style list attached<br>
+to its geometry is the style attribute of the object itself used. For shapes with multiple<br>
+style runs, there's no simple answer to the question "What is the text size of this<br>
+object?"
+</p>
+<p>
+For glyph and layout shapes, you'll need to write a "GetSizes" function that's capable of<br>
+returning one or more sizes. This routine should get the style list by calling<br>
+GXGetGlyphShapeParts or GXGetLayoutShapeParts. If the style list is nil, return the<br>
+default size in the style attribute of the object itself; otherwise, return an array of<br>
+each size in the list of styles, or whatever is appropriate for your application.
+</p>
+<p>
+<b>Q</b><i> I'm writing a QuickDraw GX application, and the glyphs that are drawn on the screen</i><br>
+<i>sometimes don't match the character codes in the shape. Any idea what's going on?</i>
+</p>
+<p>
+<b>A</b>&nbsp;It's very important to pass the correct script system, language, and platform when<br>
+your application creates a layout shape or a style used within a layout shape. The<br>
+following code fragment will do the trick:
+</p>
+<pre>long   script;
+long   language;
+// Set myStyle's encoding correctly for this machine.
+if ((script = GetEnvirons(smKeyScript)) != 0 &amp;&amp;
+    (language = GetScript(script, smScriptLang)) != 0)
+   GXSetStyleEncoding(myStyle, gxMacintoshPlatform,
+      (gxFontScript) (script + 1), (gxFontLanguage) (language + 1));
+else
+   GXSetStyleEncoding(myLayoutStyle, gxMacintoshPlatform,
+      gxRomanScript, gxNoLanguage);</pre>
+<p>
+In the case of a shape, the code is similar but calls GXSetShapeEncoding instead of<br>
+GXSetStyleEncoding. Note the "(script + 1)" and "(language + 1)": this synchronizes<br>
+the information returned by the Script Manager with QuickDraw GX's representation<br>
+of the same data.
+</p>
+<p>
+<b>Q</b><i> When displaying JPEG-compressed PICTs with DrawPicture, I call QDError and get</i><br>
+<i>the error code -8976, which isn't documented anywhere I've looked. What's going on?</i>
+</p>
+<p>
+<b>A</b>&nbsp;This is the codecNothingToBlitErr error. It means that the picture was drawn into an<br>
+entirely clipped-out bitmap. You can safely ignore this error. This is fixed in Apple's<br>
+Multimedia Tuner (and will be fixed in future versions of QuickTime), so that the<br>
+error won't be reported. Better, of course, would be to avoid drawing into clipped-out<br>
+bitmaps at all.
+</p>
+<p>
+<b>Q</b><i> I'd like to add the capability to turn the Macintosh on and off automatically in my</i><br>
+<i>application. Is there an API for scheduled startup and shutdown?</i>
+</p>
+<p>
+<b>A</b>&nbsp;Yes and no: there's an API for auto-startup, but not for timed shutdown. The<br>
+auto-startup feature is built into the Time Manager. The Power Manager features flag<br>
+has been updated so that it can easily be tested. Timed shutdown will have to be done<br>
+manually: we recommend creating a background-only application that simply waits for<br>
+the appropriate time and then issues the Finder event to shut the system down.
+</p>
+<p>
+Auto-startup can be used if the PMFeatures routine returns a long word with bit 10<br>
+set. The name of the enum in the new headers is hasStartupTimer. If this flag is<br>
+present, these routines are also supported:
+</p>
+<pre>void SetStartupTimer(StartupTime *theTime);</pre>
+
+<pre>OSErr GetStartupTimer(StartupTime *theTime);</pre>
+
+<p>
+SetStartupTimer sets the time that the Macintosh will start up from a power-off state,<br>
+and enables or disables the startup timer. On a Macintosh that doesn't support the<br>
+startup timer, SetStartupTimer does nothing. The time and enable flags are passed in<br>
+the following structure:
+</p>
+<pre>typedef struct WakeupTime WakeupTime, StartupTime;
+struct WakeupTime {
+  unsigned  long wakeTime;
+                     /* startup time (same format as current time) */
+  Boolean   wakeEnabled;  /* 1 = enable startup timer, 0 = disable */
+  SInt8     filler;
+};</pre>
+<p>
+GetStartupTimer returns the startup time and the state of the startup timer. If a<br>
+particular Macintosh doesn't support the startup timer, GetStartupTimer returns 0.
+</p>
+<p>
+<b>Q</b><i> We'd like to open a (usually color) dialog with GetNewDialog such that, if indicated</i><br>
+<i>by the user, it ignores the 'dctb' resource and opens in black and white instead. This is</i><br>
+<i>a feature request from our users. The best solution we've got so far is to check to see</i><br>
+<i>whether we want a dialog to appear in color before calling GetNewDialog. If we want to</i><br>
+<i>suppress color, we patch GetResource with code that will look for any call to fetch a</i><br>
+<i>'dctb' resource with the same ID as our dialog. If the patch detects such a call, it</i><br>
+<i>returns a nil handle; otherwise, it calls the original GetResource trap and returns its</i><br>
+<i>return value. When the GetNewDialog call is complete, we unpatch GetResource if we</i><br>
+<i>had patched it. Is this a good solution?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The method you describe -- patching GetResource -- will probably work, but is a<br>
+needlessly complex solution to the problem. In general, patching should be considered a<br>
+last resort solution, suitable only when there are no other options.
+</p>
+<p>
+Why not just have two duplicate DLOG resources (both referencing the same DITL),<br>
+one with a corresponding 'dctb' and one without? (DLOG resources are small, on the<br>
+order of 30 bytes, so there shouldn't be a size problem.) You can then pass the<br>
+appropriate ID to GetNewDialog to get either a color or a noncolor dialog. If you want to<br>
+make this "automatic," make the DLOG resource without a corresponding 'dctb' have an<br>
+ID that's, say, 1000 more than the one that has a 'dctb'; then keep a global variable<br>
+that contains either 0 (if the user wants color) or 1000 (for black and white). When<br>
+you call GetNewDialog, add the global to the (color) dialog ID and pass the result to<br>
+GetNewDialog. Voil&agrave;! You get color if the global is 0, black and white if it's<br>
+1000. This is far cleaner and safer than patching could ever be -- and easier, too.
+</p>
+<p>
+<b>Q</b><i> I have a question about the MailTime structure and setting the</i><br>
+<i>postIt.coreData.sendTime field based on the contents of GetDateTime. The messages I'm</i><br>
+<i>reading have the time and date in them, so I can retrieve the time the message was</i><br>
+<i>received. I convert this to a DateTimeRec and then call Date2Secs. What's the real way</i><br>
+<i>to handle this? I've written a routine that seems to be the right approach, but the time</i><br>
+<i>in the mailbox is always wrong, though my location is correct in the Date &amp; Time</i><br>
+<i>control panel.</i>
+</p>
+<p>
+<b>A</b>&nbsp;Here's a snippet that does what you need:
+</p>
+<pre>void MacToMailTime(unsigned long macTime, MailTime&amp; mailTime)
+{
+   long               internalGmtDelta;
+   long               dlsDelta = 0;
+   MachineLocation   aLocation;
+
+   ReadLocation(&amp;aLocation);
+   internalGmtDelta = aLocation.gmtFlags.gmtDelta &amp; 0x00ffffff;
+   if (BitTst(&amp;internalGmtDelta, 23))
+      internalGmtDelta = internalGmtDelta | 0xff000000;
+   mailTime.time = macTime;
+   mailTime.offset = internalGmtDelta;
+}</pre>
+<p>
+<b>Q</b><i>&nbsp;&nbsp;I'm trying to get unread mail messages from the PowerTalk mailbox, but the</i><br>
+<i>SMPGetNextLetter routine is returning an error of -903. That's a PPC Toolbox error</i><br>
+<i>noPortErr! What's going on?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The problem is that you haven't set the isHighLevelEventAware flag in the SIZE<br>
+resource for your application. This is necessary because the AOCE Standard Mail<br>
+Package routines require your application to accept high-level events.
+</p>
+<p>
+<b>Q</b><i> How can I count the number of unread messages in the PowerTalk mailbox?</i>
+</p>
+<p>
+<b>A</b>&nbsp;Using the existing AOCE programming interfaces, this isn't possible. However, a new<br>
+mailbox API will be available soon (if it isn't already) that will allow these types of<br>
+operations.
+</p>
+<p>
+<b>Q</b><i> I've been using the Standard Mail Package to add mail capability to my application. In</i><br>
+<i>some circumstances we generate text or PICT files and add them as attachments to the</i><br>
+<i>document we're mailing. The documentation states that the enclosure isn't actually</i><br>
+<i>added until well after SMPAddAttachment has returned. I'd like to delete the files as</i><br>
+<i>soon as possible after I've generated them. How do I know when the file has been</i><br>
+<i>completely copied so that I can delete the original?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The problem with SMPAddAttachment is that the process is nondeterministic. The file<br>
+is added by an asynchronous background process that's controlled by sending Apple<br>
+events between your application and the Finder. Apple events are returned to your<br>
+application during the file copy (they'll be handled by the normal Apple event<br>
+mechanism).
+</p>
+<p>
+Generally, these are the indications that the copy is complete:
+</p>
+<ul>
+<li>    SMPMailerEvent returns with the kSMPDisposeCopyWindow bit set in<br>
+the whatHappened field.</li>
+<li> The Finder sends a kAEReply Apple event to your application.</li>
+<li> The size of the enclosures field goes up by sizeof(FSSpec).</li>
+</ul>
+<p>
+However, if you were to try to add another enclosure at this point, you might still end<br>
+up getting the kSMPCopyInProgress error.
+</p>
+<p>
+What you need to do is treat the kSMPCopyInProgress error as a "busy, try later"<br>
+indication, and try the action again the next time through your event loop. This ensures<br>
+that the Mailer (and the Finder) get a chance to move data between successive tries.
+</p>
+<p>
+<b>Q</b><i> I'm trying to write a patch that gets called when a floppy disk is inserted. I tried a</i><br>
+<i>GNE filter patch that looks for the diskEvt message in the event queue. It works, but</i><br>
+<i>it's not really what I want; the patch also gets called when any volume, not just a</i><br>
+<i>floppy disk, is mounted. Also, when a floppy disk is inserted, the patch gets called after</i><br>
+<i>the disk's icon shows up on the desktop, and I'd like to trigger the action before that.</i><br>
+<i>Any ideas?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The Finder always gets events before your GNE patch, which is why your patch gets<br>
+called after the icon shows up on the desktop. Instead you should patch MountVol inside<br>
+the Finder.
+</p>
+<p>
+<b>Q</b><i> I'm attempting to use the MenuHook routine called by MenuSelect to update a status</i><br>
+<i>bar with text as the user traverses menu items with the mouse. It seems that if I call</i><br>
+<i>TextEdit functions directly from within the function pointed to by MenuHook,</i><br>
+<i>problems occur: the mouse highlights the first item in a menu, but that item stays</i><br>
+<i>highlighted no matter where you move the mouse. In other words, it seems that</i><br>
+<i>MenuSelect stops working correctly or that the screen is no longer correctly updated.</i><br>
+<i>Can you tell me how to fix this?</i>
+</p>
+<p>
+<b>A</b>&nbsp;You need to save and restore the graphics port in your MenuHook routine. Even if<br>
+you aren't explicitly changing the port yourself, the TextEdit routines will probably<br>
+leave it set to the edit record's owning port, not what it was when you started.
+</p>
+<p>
+<b>Q</b><i> I found the following declarations in Scripts.h:</i>
+</p>
+<pre>extern PASCAL Boolean IsCmdChar(const EventRecord *eventRecord,
+         short test)
+
+    FOURWORDINLINE(0x2F3C, 0x8206, 0xFFD0, 0xA8B5);</pre>
+<p>
+<i>But I can't seem to find any documentation for this call. Does such documentation</i><br>
+<i>exist? If this is what I think it is, it could be very useful.</i>
+</p>
+<p>
+<b>A</b>&nbsp;Whoops, thanks for pointing this out. That routine was introduced with System 7.<br>
+We've updated the Macintosh Technical Note "International Canceling" (TE 23)<br>
+accordingly. Here's a description of the routine:
+</p>
+<pre>FUNCTION IsCmdChar(keyEvent: EventRecord; testChar: CHAR): BOOLEAN;</pre>
+<p>
+This function tests whether the Command key is being pressed in conjunction with<br>
+another key (or keys) that could generate testChar for some combination of Command<br>
+up or down and Shift up or down. This accommodates European keyboards that may have<br>
+testChar as a shifted character, and non-Roman keyboards that will only generate<br>
+testChar if Command is down. It's most useful for testing for Command-period.
+</p>
+<p>
+The caller passes in the event record, which is assumed by the function to be an event<br>
+record for a key-down or auto-key event with the Command key down. The caller also<br>
+passes in the character to be tested for (for example, '.'). The function returns TRUE<br>
+if testChar is produced with the current modifier keys, or if it would be produced by<br>
+changing the current modifier key bits in either or both of the following ways:
+</p>
+<ul>
+<li>    turning the Command bit off</li>
+<li> toggling the Shift bit</li>
+</ul>
+<p>
+<b>Q&nbsp;</b>Someone has to ask this: just what are the "Miscellaneous Traps" toward the end of<br>
+Traps.h, and in particular _HFSPinaforeDispatch?
+</p>
+<p>
+<b>A</b>&nbsp;Those few defines in Traps.h are leftover baggage:
+</p>
+<pre>/* Miscellaneous Traps */
+   _InitDogCow               = 0xA89F,
+   _EnableDogCow             = 0xA89F,
+   _DisableDogCow            = 0xA89F,
+   _Moof                     = 0xA89F,
+   _HFSPinaforeDispatch      = 0xAA52,</pre>
+<p>
+0xA89F is really _Unimplemented and 0xAA52 is really _HighLevelFSDispatch. They<br>
+were possibly left there to keep system builds working -- or perhaps to keep the<br>
+build engineers amused.
+</p>
+<p>
+<b>Q</b><i> To get started writing a raster printer driver for QuickDraw GX, I wrote a</i><br>
+<i>"skeleton" driver (only 5K!) that overrides only two messages: RenderPage and</i><br>
+<i>RasterDataIn. The RenderPage override merely posts debug notices before and after</i><br>
+<i>forwarding the message. The RasterDataIn override also posts a debug message, then</i><br>
+<i>returns immediately. So no data is sent to the printer; this is, after all, only a</i><br>
+<i>demonstration driver.</i>
+</p>
+<p>
+A crash occurs after BuggyDriver forwards the RenderPage message but before control<br>
+returns to the RenderPage override. RasterDataIn is called one or more times before<br>
+the crash occurs. Since there's hardly any code, yet the driver still crashes, I'm<br>
+guessing that incorrect driver resources are to blame (I don't pretend that I've figured<br>
+out the 'rdip' resource yet).
+</p>
+<p>
+<b>A</b>&nbsp;You've stumbled onto a bug in QuickDraw GX: rendering into 32-bit-deep view<br>
+devices at high resolutions causes the crash you're seeing. Since the problem is in<br>
+several of the QuickDraw GX blitters, there's no workaround short of reducing the bit<br>
+depth or the resolution, or both. This problem is fixed in version 1.1.
+</p>
+<p>
+<b>Q</b><i> I'm patching NewControl so that I can replace the standard controls on AV and Power</i><br>
+<i>Macintosh machines. This seems to work fine everywhere except in alerts. When an</i><br>
+<i>alert is posted, NewControl doesn't get called until after the original control is drawn</i><br>
+<i>once. Any ideas?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The "proper" way to do this is to patch NewControl and GetNewControl to change the<br>
+procID to your CDEF's procID. This is pretty clean: the Control Manager thinks your<br>
+CDEF was the one that was always asked for. The only drawback is that you'll have to<br>
+make sure your resource file is always available and in the search path. Be sure to set<br>
+the system bit in your CDEF to avoid constant reloading.
+</p>
+<p>
+<b>Q</b><i> I'm trying to call LMGetUnitTableEntryCount in my application, but when I compile</i><br>
+<i>for PowerPC I get a link error: the function isn't in the native libraries. Is this policy</i><br>
+<i>or an inadvertent omission? What can I do about it?</i>
+</p>
+<p>
+<b>A</b>&nbsp;This is an oversight. You'll need to create an external function in a file (say, Extra.c)<br>
+to access the low-memory global yourself (from native code only), as shown below.<br>
+When an updated library is released, you'll only have to remove the Extra.c.o file from<br>
+your link command and relink your application, not recompile it.
+</p>
+<p>
+Your Extra.c file would be simple and look something like this:
+</p>
+<pre>// Compile with: PPCC -appleext on Extra.c -o Extra.c.o
+// Add Extra.c.o to your PPCLink command line.
+// Later, when a .xcoff file is provided by Apple, replace it with
+// that, and delete your Extra.c.o file.
+#if defined (powerc) || defined (__powerc)
+   pascal short LMGetUnitTableEntryCount()
+   {
+      return *(short *)0x01D2;
+   }
+#endif</pre>
+<p>
+Of course, best of all would be to rewrite your application so that it doesn't depend on<br>
+low memory at all.
+</p>
+<p>
+<b>Q</b><i> The cursor flickers when it's over a playing QuickTime movie. Is there any way to</i><br>
+<i>stop this? I don't want to hide it completely because the user needs to access controls</i><br>
+<i>elsewhere on the screen, and the movie is large, so hiding it only over the movie is</i><br>
+<i>still disorienting.</i>
+</p>
+<p>
+<b>A</b>&nbsp;Unfortunately, there's no way to prevent the flickering cursor, short of hiding it<br>
+completely. The Macintosh doesn't have a hardware cursor, so the cursor always has to<br>
+be hidden during blits to the screen. QuickTime 2.0 improved this situation by<br>
+shielding the cursor less of the time, but it still happens.
+</p>
+<p>
+<b>Q</b><i> Is it OK for different nodes to run different versions of AppleTalk on a network?</i>
+</p>
+<p>
+<b>A</b>&nbsp;You don't need to run the same version of AppleTalk for each node on the network.<br>
+However, AppleTalk versions 53 and later support AppleTalk Phase 2, so if you're<br>
+working on an application that depends on Phase 2 support (for instance, use of the<br>
+NBP wildcard character "~"), you'll need to use AppleTalk version 53 or later for all<br>
+nodes running that application.
+</p>
+<p>
+<b>Q</b><i> When I use the LaunchApplication routine with the launchDontSwitch bit set in the</i><br>
+<i>launchControlFlags field for an application that doesn't have the canBackground size</i><br>
+<i>resource bit set, LaunchApplication returns 0 (noErr) but the application doesn't</i><br>
+<i>launch. What gives?</i>
+</p>
+<p>
+<b>A</b>&nbsp;LaunchApplication doesn't return an error in this case because the application<br>
+actually is launched. But since it doesn't have the canBackground bit set and it was<br>
+launched into the background, it never gets any processor time, which means that it<br>
+doesn't initialize anything and isn't added to the Application menu. If the user<br>
+double-clicks an application that has been launched like this, it will bounce forward<br>
+and get processor time, initialize itself, and be added to the Application menu as usual.
+</p>
+<p>
+<b>Q</b><i> A colleague of mine who is a Latin freak always calls me a "lens culinaris." What</i><br>
+<i>does it mean?</i>
+</p>
+<p>
+<b>A</b>&nbsp;You are being called a "lentil."
+</p>
+<p>
+These answers are supplied by the technical gurus in Apple's Developer Support<br>
+Center. Special thanks to Pete "Luke" Alexander, Mark Baumwell, Mark "The Red"<br>
+Harlan, David Hayward, Scott Kuechle, Larry Lai, Joseph Maurer, Jim Mensch, and<br>
+Nick Thompson for the material in this Q &amp; A column.
+</p>
+<p>
+Have more questions? Need more answers? Take a look at the Macintosh Q &amp; A<br>
+Technical Notes on this issue's CD.
+</p>
+</body>
+</html>

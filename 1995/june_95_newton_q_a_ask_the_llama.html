@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 24 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 95 - Newton Q & A: Ask the Llama</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Newton Q &amp; A: Ask the Llama</h2>
+<h1>Newton Developer Tecchnical Support</h1>
+<p>
+<b>Q</b><i> When I try to print or fax something, the Newton usually runs out of memory. I'm</i><br>
+<i>sending a lot of data to my print format, but it seems that the </i><b><i> fields</i></b><i> frame passed to</i><br>
+<i>SetupRoutingSlip should have only a reference to the data. What am I doing wrong?</i>
+</p>
+<p>
+<b>A</b> Unfortunately, you're missing one important step in the process of printing. The <br>
+<b>fields</b> frame is eventually placed in the outbox soup. Thus all references are followed,<br>
+which means that all the data you placed in the <b> fields</b> frame is duplicated. The<br>
+duplication occurs in the soup:Add call.
+</p>
+<p>
+&nbsp;In other words, you probably have a large data structure (or view, or proto) in your<br>
+application. You put a reference to this structure in the <b> fields</b> frame in<br>
+SetupRoutingSlip. When the user accepts the item to be printed (or faxed, beamed, or<br>
+whatever), the <b> fields</b> frame is placed in the outbox soup, causing your structure to<br>
+be duplicated.
+</p>
+<p>
+&nbsp;Ideally, you should pass as little data as possible in the <b> fields</b> frame. As an example,<br>
+assume that your data is all in a soup. You would pass information that allowed you to<br>
+construct a query that returned the soup data of interest. This may be the index to<br>
+search on plus the key to search for. You may even pass the query frame itself. Note<br>
+that any changes made from the time the print request is made to the time the printing<br>
+occurs will be reflected in the printed items. This may not be what you want. As in<br>
+most cases, there are tradeoffs.
+</p>
+<p>
+<b>Q</b><i> I'd like to have something like a viewIdleScript in my communications endpoint. The</i><br>
+<i>endpoint proto doesn't contain a way to do this. What's a good way to do it?</i>
+</p>
+<p>
+<b>A</b> One solution is to include your endpoint in a view object, such as a clView. You can<br>
+then treat the whole clView as the communications object. You can use the view<br>
+messages associated with opening a view to manage the control of your endpoint.<br>
+Similar things can be done with viewQuitScript. And of course you can use a<br>
+viewIdleScript.
+</p>
+<p>
+&nbsp;Also note that using a view gives you a way to provide visual feedback (assuming it<br>
+makes sense). Take a look at protoLlamaTalk in the LlamaTalk sample on this issue's<br>
+CD for an example.
+</p>
+<p>
+<b>Q</b><i> How do I get a text view to redraw itself with a new font?</i>
+</p>
+<p>
+<b>A</b> Simply use SetValue on the viewFont slot:
+</p>
+<pre>SetValue(theParaView,
+    'viewFont,
+    {family: 'espy, face: kFaceBold, size: 12});</pre>
+<p>
+<b>Q</b><i> I'm trying to use a view that has vfFillGray as the background. I've found that it</i><br>
+<i>looks really bad. Why is this?</i>
+</p>
+<p>
+<b>A</b> The pattern vfFillGray is an alternating on/off checkerboard pattern of pixels (that<br>
+is, 50% gray). With the current state of the technology, all passive LCDs have<br>
+problems displaying large areas of 50% gray (or large areas of black). The problem<br>
+(called <i> crosstalk</i> ) is worse when you have alternating on and off pixels. Basically,<br>
+the LCD freaks out. You should avoid using large areas of 50% gray where possible.<b>Q</b><br>
+<i>When I try to add an index to my soup I sometimes get an exception -48019, but not</i><br>
+<i>always. What's going on?</i>
+</p>
+<p>
+<b>A</b> That particular exception indicates that an entry in your soup has a value of NIL in<br>
+the slot you're trying to create an index for (that is, the entry contains the slot with a<br>
+value of NIL). You can easily recreate this error by trying to add an index on the <b> bday</b><br>
+slot in the names file. Here's some code that you can type in the inspector:
+</p>
+<pre>call func()
+begin
+    local nameSoup := GetStores()[0]:GetSoup(ROM_cardfilesoupname);
+    nameSoup:AddIndex(
+          {structure: 'slot, path: 'bday, type: 'Int});
+end with ();</pre>
+<p>
+&nbsp;In this case the error occurs because the default cardfile entry has a value of NIL for<br>
+the <b> bday</b> slot. The solution is to make sure that there are no soup entries with a value<br>
+of NIL for the slot that you want to use for the new index. This is best done in the design<br>
+of your soup data.
+</p>
+<p>
+&nbsp;If this isn't possible, the only solution is to make sure that all entries in the soup<br>
+either have a valid value for the new index slot or do not contain the new index slot.<br>
+Unfortunately, you don't know in advance if the new index will fail. In this case you can<br>
+wrap the code that adds the index in a <b>try/onexception</b> clause. If an exception occurs<br>
+that has the -48019 error number, you know that you have to iterate through the<br>
+soup and fix entries.
+</p>
+<p>
+&nbsp;Also note that you may want to keep a list of those "fixed" entries around since you<br>
+may have to unfix them after the index has been added. In other words, it's OK for an<br>
+entry to have a NIL value in an indexed slot after the index has been added to the soup.
+</p>
+<p>
+<b>Q</b><i> I have a protoA2Z_TDS controlling a protoTextList. There are two things this</i><br>
+<i>combination doesn't do: (1) As the protoTextList contents are scrolled, the</i><br>
+<i>protoA2Z_TDS doesn't update the current letter, and (2) when the user clicks on a</i><br>
+<i>letter in the protoA2Z_TDS, I want to scroll the protoTextList to the appropriate</i><br>
+<i>place. How do I do these things?</i>
+</p>
+<p>
+<b>A</b> For those who may not know, protoA2Z_TDS is sample code provided by PIE<br>
+Developer Technical Support. In answer to the first question, all you need to do is set<br>
+the curIndex to the correct value, where A is 0 and Z is 25. If you use&nbsp;&nbsp;SetValue, the<br>
+display will update for you. So if your protoA2Z_TDS was declared as <b>indexer</b>, and<br>
+you wanted to change it to the letter B, you would do this:
+</p>
+<pre>SetValue(indexer, 'curIndex, 1);</pre>
+<p>
+&nbsp;You could also write a method of the protoA2Z_TDS that would update the display based<br>
+on a character:
+</p>
+<pre>SetIndex := func(newChar)
+begin
+    local newIndex := Ord(Upcase(newChar)) - 65;
+    if newIndex &lt; 0 then newIndex := 0;
+    if newIndex &gt;= numIndices then newIndex := numIndices - 1;
+          SetValue(self, 'curIndex, newIndex);
+end;</pre>
+<p>
+&nbsp;Note that this function will try to do the right thing with weird input. However, if<br>
+you're expecting the full range of Unicode values, you'll have to change the function to<br>
+accommodate multibyte characters. Now let's tackle question number 2. You need to<br>
+know about three things in the protoTextList that aren't yet documented in the<i> Newton</i><br>
+<i>Programmer's Guide</i> :
+</p>
+<ol>
+<li>There's a slot named lineHeight that contains the height of each line in<br>
+pixels.</li>
+<li>The protoTextList uses SetOrigin to scroll. Therefore, the slot<br>
+viewOriginY contains the number of pixels that the view is scrolled (and<br>
+viewOriginY DIV lineHeight is the line number of the top displayed line).</li>
+<li>There's a method DoScrollScript(offset) that scrolls from the current<br>
+position by the specified offset (in pixels).</li>
+</ol>
+<p>
+&nbsp;Given these three pieces of information, here's a method for a protoTextList that will<br>
+highlight a particular row and make it visible:
+</p>
+<pre>protoTextList.HiliteRow := func(index)
+begin
+    // highlight this item
+    SetValue(self, 'selection, index);
+    // scroll as necessary
+    local topItem := viewOriginY DIV lineHeight;
+    if index &lt; topItem or (index &gt;= topItem + viewLines) then begin
+          // we need to scroll so that the index is the first item
+          :DoScrollScript(-(topItem - index) * lineHeight);
+    end;
+end</pre>
+<p>
+&nbsp;Of course you still have to calculate what index to pass to the function. But that&nbsp;&nbsp;should<br>
+be fairly straightforward. The protoA2Z_TDS will give you the first letter, which you<br>
+can then find in your listItems array in the protoTextList. Note that if the listItems<br>
+array is sorted, you can use a binary search to find the correct index.
+</p>
+<p>
+<b>Q</b><i> What is the origin of the llama?</i>
+</p>
+<p>
+<b>A</b> The first evidence of llamas dates back to the llama raptor discovered by Dr. Leakey<br>
+in the jungles of the Amazon. This find was dated back to the late "Jurassic Park"<br>
+period. Early llamas are thought to have been both more violent and more intelligent<br>
+than today's breeds. Cave paintings from the hills of Venezuela clearly depict early<br>
+humans in use as pack animals for tribes of llamas.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>The llama is </b>the unofficial mascot of the Developer Technical Support group in<br>
+Apple's Personal Interactive Electronics (PIE) division. Send your Newton-related<br>
+questions to NewtonMail DRLLAMA or AppleLink DR.LLAMA. The first time we use a<br>
+question from you, we'll send you a T-shirt. *
+</p>
+<p>
+<b>Thanks </b>to Erik York and our PIE Partners for the questions used in this column, and<br>
+to Bob Ebert, J. Christopher Bell, Mike Engber, Neil Rhodes, Kent Sandvik, Jim<br>
+Schram, Maurice Sharp, and Bruce Thompson for the answers. *
+</p>
+<p>
+<b>Have more questions? </b>Need more answers? Take a look at PIE Developer Info on<br>
+AppleLink. *
+</p>
+</body>
+</html>

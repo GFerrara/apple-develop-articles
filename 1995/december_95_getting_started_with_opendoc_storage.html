@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 53 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 95 - Getting Started With OpenDoc Storage</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Getting Started With OpenDoc Storage</h1>
+<h2>Vincent Lo</h2>
+<p>
+<img src="img/247.gif" width="180 px"></img>
+</p>
+<p>
+<i>OpenDoc's structured storage model is an innovative departure from the traditional</i><br>
+<i>storage scheme. As you make the move into OpenDoc development, you need to</i><br>
+<i>understand the new storage model and its implications for the way data is stored and</i><br>
+<i>retrieved. This article introduces the new concepts and policies you'll need to know in</i><br>
+<i>order to use OpenDoc storage effectively.</i>
+</p>
+<p>
+In the traditional Macintosh user model, each application creates and maintains its own<br>
+documents, storing each document in a separate file. A file has one creator signature<br>
+and one file type, identifying the application it belongs to and the kind of document it<br>
+contains. In OpenDoc, by contrast, a document can have multiple parts, created and<br>
+maintained by different part editors (called part handlers in earlier versions of<br>
+OpenDoc), which are analogous to the standalone applications of the traditional model.<br>
+Because all of a document's parts are stored together in the same container (usually<br>
+corresponding to a file), there has to be a way for separate part editors to share access<br>
+to the same container without interfering with each other.
+</p>
+<p>
+OpenDoc meets this need by providing a structured model for persistent storage (that<br>
+is, for storing data from one session to the next). Each part is given its own storage<br>
+unit in which to store and retrieve data. The part can thus operate as a standalone<br>
+entity, independent of other parts and their storage. OpenDoc maintains all of the<br>
+storage units and notifies each part when to read or write its data.
+</p>
+<p>
+The same techniques that are used in dealing with persistent storage also apply to the<br>
+various forms of data interchange between part editors, such as the Clipboard, drag<br>
+and drop, and linking. Because all of these mechanisms use the same data storage<br>
+medium (the storage unit), they all work essentially the same way from the part<br>
+editor's point of view. For example, a part uses the same API calls to copy data to the<br>
+Clipboard that it would use in writing the data to a file container. The same is true for<br>
+drag and drop and for linking. Thus, once you learn how to work with OpenDoc storage<br>
+units for file storage, you can use the same techniques to implement data interchange<br>
+as well.
+</p>
+<p>
+This article assumes that you're already familiar with basic OpenDoc concepts and<br>
+terminology. If you need a quick introduction or refresher, see the article "The<br>
+OpenDoc User Experience" in <i>develop</i> Issue 22. You can find additional information on<br>
+some of OpenDoc's technical basics in the articles "Building an OpenDoc Part Handler"<br>
+in Issue 19 and "Getting Started With OpenDoc Graphics" in Issue 21. Developer<br>
+releases of OpenDoc include the definitive documentation, the <i>OpenDoc Programmer's</i><br>
+<i>Guide</i> and <i>OpenDoc Class Reference</i>. Developer releases are available through a number<br>
+of different sources, or you can request the latest release at AppleLink OPENDOC or at<br>
+opendoc@applelink.apple.com on the Internet. The source code in this article is<br>
+excerpted from a sample part included with the developer release.
+</p>
+<p>
+Because OpenDoc was developed jointly by a consortium of companies including Apple,<br>
+IBM, and Novell, its interfaces are designed for cross-platform compatibility, using<br>
+IBM's platform-independent Standard Object Model (SOM). OpenDoc method<br>
+definitions, including the ones in this article, are commonly written in a<br>
+language-neutral Interface Definition Language (IDL). The SOM compiler converts<br>
+these into equivalent language-specific declarations for whatever source language you<br>
+happen to be using. The method definitions shown in this article, for instance, are<br>
+taken from the OpenDoc interface file StorageU.idl. To use these methods in your<br>
+program, you must include the corresponding language-specific <i>binding file</i> (such as<br>
+StorageU.xh for a C++ program).
+</p>
+<h2>DRAFTS, DOCUMENTS, AND CONTAINERS</h2>
+<p>
+The OpenDoc classes responsible for providing storage capabilities are ODContainer,<br>
+ODDocument, ODDraft, and ODStorageUnit. Collectively, a set of subclasses derived<br>
+from these four is known as a <i>container suite.</i> A <i>container</i>represents the physical<br>
+storage medium in which a document is stored, such as a disk file. Different container<br>
+suites share the same API, but may use different low-level storage mechanisms and<br>
+operate on different physical storage media. For example, the Bento container suite,<br>
+which will be shipped with OpenDoc 1.0, supports both file containers and in-memory<br>
+containers. A part editor can thus use the same code to store a part's data either to a<br>
+file or in memory.
+</p>
+<p>
+&nbsp;&nbsp;A single container may contain one or more documents, each of which in turn can<br>
+include one or more <i>drafts</i>. A part ordinarily works with a draft, rather than directly<br>
+with a document or its container. Each draft is a "snapshot" representing the state of<br>
+the document at a particular point in its development. Together, the drafts embody the<br>
+history of the document over time.
+</p>
+<p>
+A part may need to interact with its draft for a variety of reasons:
+</p>
+<ul>
+<li>Persistent objects -- Every persistent object (such as a part, a frame,<br>
+or a link) is created by a draft.</li>
+<li>Data interchange -- A part asks its draft to copy transferred objects to<br>
+and from a data-interchange container, such as the Clipboard or a<br>
+drag-and-drop container.</li>
+<li>Linking -- A part uses its draft to create link specifications and copy data<br>
+to and from link objects.</li>
+<li>Permissions -- A part may need to find out whether it's allowed to write<br>
+to the draft.</li>
+<li>Scripting -- A part gets its scripting-specific identifier through its<br>
+draft.</li>
+</ul>
+<h2>STORAGE UNITS</h2>
+<p>
+The basic entity of a container suite is the storage unit. Every persistent OpenDoc<br>
+object has a storage unit in which to store and retrieve its data. Figure 1 shows a<br>
+typical example.
+</p>
+<p>
+<img src="img/248.gif" width="309 px"></img>
+</p>
+<p>
+<b>Figure 1. Structure of a storage unit</b>
+</p>
+<p>
+A storage unit consists of one or more properties, each of which in turn is associated<br>
+with one or more values containing the data itself. The storage unit shown in Figure 1,<br>
+for instance, has properties named kODPropContents, kODPropPreferredKind, and<br>
+kODPropDisplayFrames; the kODPropContents property has values of types<br>
+kTextEditorKind and kODMacIText.
+</p>
+<p>
+Using multiple values allows a property to represent the same data in different forms.<br>
+For example, a property holding a drawing may have three values representing the<br>
+same data: one as a Macintosh PICT, one as a Windows metafile, and one in TIFF format.<br>
+Although OpenDoc cannot enforce the principle, part developers are urged to use<br>
+multiple values within a property only for multiple representations of the same data,<br>
+not for storing unrelated data items.
+</p>
+<p>
+The property names and value types shown in Figure 1 represent string constants of<br>
+type ODPropertyName and ODValueType, respectively. For cross-platform<br>
+extensibility, both of these types are defined as equivalent to an ISO string instead of a<br>
+traditional Macintosh OSType: that is, they're 7-bit ASCII null-terminated strings, as<br>
+specified by the International Standards Organization (ISO). The string values<br>
+themselves are expected to follow a standard naming convention: for instance, the<br>
+constants kODPropDisplayFrames and kODWeakStorageUnitRefs stand for the strings<br>
+"OpenDoc:Property:DisplayFrames" and "OpenDoc:Type:StorageUnitRefs",<br>
+respectively. The OpenDoc interface files StdProps.idl and StdTypes.idl define name<br>
+constants for standard properties and value types; any property and type names that<br>
+you define for yourself should follow the same naming conventions.
+</p>
+<p>
+<b>FOCUSING A STORAGE UNIT</b>
+</p>
+<p>
+The OpenDoc operations for manipulating values don't explicitly identify the value to<br>
+operate on. Instead, you have to focus the storage unit on the desired property or value<br>
+before invoking the operation. The method for setting the focus is defined in class<br>
+ODStorageUnit as follows:
+</p>
+<pre>ODStorageUnit Focus(in ODPropertyName propertyName,
+                     in ODPositionCode propertyPosCode,
+                     in ODValueType valueType,
+                     in ODValueIndex valueIndex,
+                     in ODPositionCode valuePosCode);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+This allows you to set the storage unit's focus in a variety of ways:
+</p>
+<ul>
+<li>to a property by name</li>
+<li>to a property by position relative to the current property</li>
+<li>to a value by type within a property</li>
+<li>to a value by position within a property</li>
+<li>to a value by position relative to the current value</li>
+</ul>
+<p>
+Properties and values are ordered within the storage unit according to the sequence in<br>
+which they were added. Values within a property are indexed from 1: that is, the first<br>
+value has index 1, the second index 2, and so on. Positions relative to the current focus<br>
+are specified with a position code. The same position code can refer to either a<br>
+property or a value, depending on the current focus. For instance, if the storage unit is<br>
+currently focused on a property, the position code kODPosNextSib designates the next<br>
+property; if the current focus is on a value, kODPosNextSib designates the next value.
+</p>
+<p>
+Another way to set the focus of a storage unit is with a storage unit cursor:
+</p>
+<pre>ODStorageUnit FocusWithCursor(in ODStorageUnitCursor cursor);</pre><p class="spacer">&nbsp;</p>
+<p>
+The cursor identifies a property by name or a value by its property name and its index<br>
+or value type. Once created (with method CreateCursor or CreateCursorWithFocus of<br>
+class ODStorageUnit), the same cursor can be reused multiple times to refer to<br>
+properties or values within the storage unit.
+</p>
+<p>
+Once you've focused a storage unit, you can create a <i>storage unit view</i> to refer to the<br>
+same property or value again later without having to reset the focus:
+</p>
+<pre>ODStorageUnitView CreateView();</pre><p class="spacer">&nbsp;</p>
+<p>
+The view responds to all the same access methods as the storage unit itself, but applies<br>
+them to the property or value that had the focus at the time the view was created,<br>
+rather than at the time the method is invoked. It does this by automatically resetting<br>
+the underlying storage unit to the original focus, then forwarding the method call to<br>
+the storage unit for processing.
+</p>
+<p>
+<b>MANIPULATING VALUE DATA</b>
+</p>
+<p>
+The operations for manipulating data within a storage value are stream-based, very<br>
+much like reading or writing to a sequential file. Each value has a current offset<br>
+position that controls where the next operation will take place, similar to the file<br>
+mark in the Macintosh file system. In addition to reading and writing data sequentially,<br>
+you can also insert or delete data at the current offset position.
+</p>
+<p>
+Class ODStorageUnit defines the following methods for manipulating value data:
+</p>
+<pre>void SetOffset(in ODULong offset);
+ODULong GetOffset();
+void SetValue(in ODByteArray value);
+ODULong GetValue(in ODULong length, out ODByteArray value);
+void InsertValue(in ODByteArray value);
+void DeleteValue(in ODULong length);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The ODByteArray structure is used to pass data to or from a storage unit.
+</p>
+<pre>typdef struct {
+   unsigned long  _maximum; /* size of buffer */
+   unsigned long  _length;  /* number of bytes of actual data */
+   octet*         _buffer;  /* pointer to buffer containing the */
+                            /* data */
+} _IDL_SEQUENCE_octet;
+
+typedef _IDL_SEQUENCE_octet ODByteArray;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+(An<b>octet</b> is simply the SOM term for an 8-bit byte.) Listing 1 shows how to<br>
+manipulate one of the values shown in Figure 1.
+</p>
+<p>
+<b>Listing 1. </b>Adding data to a value
+</p>
+<pre>/* Focus the storage unit, using property name and value type. */
+storageUnit-&gt;Focus(ev, kODPropContents, kODPosUndefined,
+                  kTextEditorKind, 0, kODPosUndefined);
+
+/* Set up the byte array. */
+ODByteArray ba;
+ba._length = size;
+ba._maximum = size;
+ba._buffer = buffer;
+
+/* Set the offset. (This step isn't really needed here, since the
+   Focus operation automatically sets the offset to 0. It's included
+   for illustrative purposes only.) */
+storageUnit-&gt;SetOffset(ev, 0);
+
+/* Add the value. */
+storageUnit-&gt;SetValue(ev, &amp;ba);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>STORAGE UNIT REFERENCES</b>
+</p>
+<p>
+Storage unit references allow one storage unit to refer persistently to another. A part<br>
+can use this mechanism to access information stored in a storage unit (which may or<br>
+may not belong to it) across multiple sessions. A draft thus consists essentially of a<br>
+network of storage units connected to each other with persistent references.
+</p>
+<p>
+&nbsp;&nbsp;When a storage unit is cloned (copied to a data-interchange container), any other<br>
+storage units it references are cloned along with it. Since all storage units in a draft<br>
+are interconnected, cloning any one of them may cause the whole draft to be cloned.<br>
+Because this may be an expensive and unnecessary operation, OpenDoc provides two<br>
+levels of storage unit reference: strong and weak. Only strongly referenced storage<br>
+units are copied when the unit that refers to them is cloned.
+</p>
+<p>
+In Figure 2, frame A refers strongly to part A, which refers strongly to frame B,<br>
+which refers strongly to part B. Thus if frame A's storage unit is cloned, all four<br>
+storage units will be copied. On the other hand, cloning frame B's storage unit will<br>
+copy those for frame B and part B only, since frame B's reference to frame A is weak<br>
+rather than strong.
+</p>
+<p>
+<img src="img/249.gif" width="239 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>Strong and weak storage unit references
+</p>
+<p>
+An object can use strong storage unit references to refer to other objects that are<br>
+essential to its functioning, such as embedded frames. Weak references are mainly for<br>
+informational or secondary purposes: a part might use them, for instance, to refer to<br>
+its display frames.
+</p>
+<h2>LIFE CYCLE OF A PART</h2>
+<p>
+Figure 3 shows the life cycle of a part and its associated storage unit. Because the<br>
+part's lifetime may span multiple editing sessions, it must be able to <i>externalize</i> its<br>
+internal state (save it to persistent storage) in order to reconstruct itself from one<br>
+session to the next. The part's InitPart method, called when the part is first created,<br>
+receives a storage unit as a parameter. The Externalize method can then use this<br>
+storage unit to save the part's state. Once externalized, the part can be released from<br>
+memory and later reconstituted from external storage by a method named<br>
+InitPartFromStorage. Unlike InitPart, InitPartFromStorage can be called multiple<br>
+times during a part's lifetime, whenever the part needs to be reconstructed from<br>
+external storage.
+</p>
+<p>
+<img src="img/250.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 3. </b>Life cycle of a part
+</p>
+<p>
+Notice that externalizing a part is not the same as cloning it. Externalizing means<br>
+writing the part's data to persistent storage, using a storage unit associated with the<br>
+draft in which the part resides; cloning is transferring the part's data to a<br>
+data-interchange container such as the Clipboard, using a storage unit associated with<br>
+the container. Although the two operations are different, they're both based on the<br>
+same ODStorageUnit API and can share much of the same code.
+</p>
+<p>
+Another related operation is <i>purging</i>, which reclaims memory space by eliminating<br>
+unnecessary runtime data structures such as caches. Because such structures can<br>
+usually be reconstructed from persistent data, many OpenDoc programmers believe<br>
+that a part's Purge method should always begin by externalizing the part's data before<br>
+deleting unused or unnecessary memory. While this might sound plausible in<br>
+principle, the externalization operation itself requires additional memory -- the very<br>
+thing that's in short supply during purging. As a general rule, the Purge method should<br>
+avoid invoking externalization unless it's absolutely necessary.
+</p>
+<p>
+All persistent objects carry a reference count, enabling OpenDoc to identify unused<br>
+objects and reclaim the memory they occupy. The Acquire method, which creates a<br>
+reference to a specified object, increments the object's reference count; the Release<br>
+method destroys a reference and decrements the reference count. When the reference<br>
+count goes down to 0, OpenDoc can safely delete the object from memory.
+</p>
+<p>
+<b>INITIALIZATION</b>
+</p>
+<p>
+The initialization method InitPart is called only once, to set up a part's initial state. It<br>
+should take the following actions:
+</p>
+<p><ol>
+<li>Call the parent class's InitPart method to perform any initialization<br>
+required at the parent level.</li>
+
+
+<li>Save the incoming part wrapper object (discussed below) in an internal<br>
+field.</li>
+
+
+<li>Set up an internal permissions field to indicate that writing to the draft is<br>
+allowed.</li>
+
+
+<li>Set up the part's runtime data structures.</li>
+
+
+<li>Set the part's internal dirty flag to true.</li></ol>
+</p>
+<p>
+Listing 2 shows an example. Notice that the SOM compiler, in translating the method<br>
+declaration from language-independent IDL into a specific source language, adds two<br>
+additional parameters at the beginning of the parameter list: a pointer to the object<br>
+executing the method (somSelf) and an environment pointer (ev) used for error<br>
+reporting. All of our example method definitions in this article begin with these two<br>
+parameters.
+</p>
+<p>
+<b>Listing 2. </b>Initializing a part
+</p>
+<pre>SOM_Scope   void
+SOMLINK  TextEditor__InitPart(SampleCode_TextEditor *somSelf,
+                              Environment           *ev,
+                              ODStorageUnit         *storageUnit,
+                              ODPart                *partWrapper)
+{
+   SampleCode_TextEditorData *somThis =
+      SampleCode_TextEditorGetData(somSelf);
+   SOMMethodDebug("TextEditor", "InitPart");
+  
+   SOM_TRY
+      // Call the parent class's InitPart method. The parent will in
+      //   turn call its parent, and so on.
+      parent_InitPart(somSelf, ev, storageUnit, partWrapper);
+     
+      // Store part wrapper object in an internal field.
+      _fSelf = partWrapper;
+     
+      // Set a flag showing that this draft is not read-only.
+      _fReadOnlyStorage = kODFalse;
+     
+      // Call common initialization code to set up our initial state.
+      somSelf-&gt;Initialize(ev);
+     
+      // Set the dirty flag to true.
+      somSelf-&gt;SetDirty(ev);
+     
+   SOM_CATCH_ALL
+      // No explicit code needed here: cleanup will be performed by
+      // the destructor, which is called automatically when an error
+      // is thrown.
+  
+   SOM_ENDTRY
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Parent initialization.</b> It's important for a part's initialization method to call that<br>
+of its parent class. The parent's initialization method will in turn call that of its<br>
+parent and so on up the inheritance chain, ensuring that all of the part's inherited<br>
+properties are properly initialized. Inherited properties set up by ODPart and its<br>
+parents, such as ODPersistentObject, include the following:
+</p>
+<ul>
+<li>kODPropCreateDate contains the part's creation date.</li>
+<li>kODPropModDate tells when the part's storage unit was last externalized.</li>
+<li>kODPropModUser contains the name of the last user who modified the<br>
+part.</li>
+</ul>
+<p>
+<b>Part wrapper. </b>Every part is <i>wrapped</i> by another object, called its <i>part</i><br>
+<i>wrapper.</i>Clients of the part object deal with it indirectly, through the part wrapper,<br>
+instead of holding a direct pointer to the part object itself. The part wrapper receives<br>
+all method invocations and delegates them to the actual part. This insulation of the part<br>
+object allows the part editor to be changed at run time without affecting its clients.
+</p>
+<p>
+The InitPart method should save the part wrapper object in an internal field. Then,<br>
+whenever the part needs to pass an object representing itself as a parameter, it should<br>
+pass the part wrapper in place of itself.
+</p>
+<p>
+<b>Draft permissions. </b>A part editor needs to know whether a part is in a read-only<br>
+draft. If so, its functionality may be restricted: for example, the part may not allow<br>
+the user to change its contents, either through keyboard input or through menu<br>
+operations such as Cut and Paste. Also, if the draft is read-only, its Externalize method<br>
+need never be called on its parts or any persistent objects. When a part is created for<br>
+the first time, its draft is guaranteed to be writable, so it should initialize its<br>
+read-only flag to false.
+</p>
+<p>
+<b>Dirty flag.</b> The purpose of a dirty flag is to let the part's Externalize method know<br>
+whether it needs to write out the part's state to external storage. Externalization<br>
+(especially to disk) can be a time-consuming and expensive operation; using a dirty<br>
+flag can greatly improve performance by avoiding it whenever possible.
+</p>
+<p>
+When a part is first created, its storage unit is empty. Since the state has not yet been<br>
+written out, the part should initialize its dirty flag to true; the flag should also be set<br>
+to true whenever the contents of the part are changed. After saving the state and<br>
+content data to external storage, the Externalize method should clear the flag to false,<br>
+indicating that the state need not be saved again unless the part's contents are changed.
+</p>
+<p>
+<b>EXTERNALIZATION</b>
+</p>
+<p>
+A part's Externalize method can be called at any time. Typically, it's called by the draft<br>
+when the user chooses to save the document. Since a part has no idea when this may<br>
+happen, it should always be ready to externalize itself.&nbsp;&nbsp;The Externalize method should<br>
+do the following:
+</p>
+<p><ol>
+<li>Call the parent class's Externalize method.</li>
+
+
+<li>Check that all required properties exist; if not, add them to the storage unit.</li>
+
+<p class="spacer">&nbsp;
+
+<li>Clean up the part's contents if necessary.</li>
+
+
+<li>Write out the part's state information and contents.</li>
+
+
+<li>Clear the part's internal dirty flag to false.</li></ol>
+</p>
+<p>
+Listing 3 shows an example.
+</p>
+<p>
+<b>Listing 3.</b> Externalizing a part
+</p>
+<pre>SOM_Scope  void
+
+SOMLINK  TextEditor__Externalize(SampleCode_TextEditor *somSelf,
+                                 Environment           *ev)
+{
+   SampleCode_TextEditorData *somThis =
+      SampleCode_TextEditorGetData(somSelf);
+   SOMMethodDebug("TextEditor", "Externalize");
+  
+   SOM_CATCH return;
+  
+   // Ask parent classes to externalize themselves.
+   parent_Externalize(somSelf, ev);
+  
+   // Check dirty flag.
+   if (_fDirty) {
+      // Get storage unit.
+      ODStorageUnit *storageUnit = somSelf-&gt;GetStorageUnit(ev);
+     
+      // Verify that the storage unit has the appropriate properties;
+      // if not, add them.
+      somSelf-&gt;CheckAndAddProperties(ev, storageUnit);
+     
+      // Validate storage unit's contents and clean up if necessary.
+      somSelf-&gt;CleanseContentProperty(ev, storageUnit);
+     
+      // Write out state information and contents.
+      somSelf-&gt;ExternalizeStateInfo(ev, storageUnit, 0, kODNULL);
+      somSelf-&gt;ExternalizeContent(ev, storageUnit, kODNULL);
+     
+      // Clear dirty flag.
+      _fDirty = kODFalse;
+   }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The contents of a part must be written out to a special content property named<br>
+kODPropContents. Like other properties, the content property can contain multiple<br>
+values representing the same data in different forms. A value type used for content data<br>
+is referred to as a part kind. To facilitate data interchange, part editors are encouraged<br>
+to include one or more standard part kinds in their content property, much the way<br>
+traditional Macintosh applications use common data formats like 'TEXT' or 'PICT' when<br>
+writing to the Clipboard.
+</p>
+<p>
+Each value in the content property should be a complete representation of the content<br>
+data. A value may contain references to other storage units, but cannot depend on other<br>
+values in the content property or on other properties in the part's storage unit. Even<br>
+if every other property and value were deleted from the storage unit, the part editor<br>
+should still be able to reconstruct the part using just that one content value.
+</p>
+<p>
+The ordering of values within the content property is completely determined by the<br>
+part editor. An important principle, however, is that values that represent the<br>
+underlying contents with greater fidelity should precede those of lesser fidelity:<br>
+formatted text, for instance, should precede plain (unformatted) text. The first value<br>
+should be the one that represents the content most faithfully.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>When a part editor reconstructs a part</b> from an external storage unit,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;there's a chance that the storage unit may have originally been written by<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;some other part editor. As a result, the content property may contain part<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kinds that the current part editor doesn't support, or the values may appear in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the wrong fidelity order. In this case, the part's Externalize method should<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;remove all existing values from the content property so that it can write out<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;its own content data in proper fidelity order.*
+</p>
+<p>
+A standard property named kODPropPreferredKind identifies the part kind that the<br>
+user chooses to represent the data. If this property already exists, the part editor<br>
+shouldn't tamper with it; if it doesn't exist, the part editor may create it and give it a<br>
+value of type kODISOStr containing the name of the highest-fidelity part kind. When<br>
+writing out the content data, the part editor should be sure to include a value in the<br>
+format specified by this property.
+</p>
+<p>
+<b>RECONSTRUCTION</b>
+</p>
+<p>
+The InitPartFromStorage method is called whenever a part object needs to be<br>
+reconstructed from external storage. This method should do the following:
+</p>
+<p><ol>
+<li>Call the parent class's InitPartFromStorage method.</li>
+
+
+<li>Save the incoming part wrapper object in an internal field.</li>
+
+
+<li>Set up an internal permissions field to indicate whether writing to the draft<br>
+is allowed.</li>
+
+
+<li>Set up the part's runtime data structures.</li>
+
+
+<li>Read the content data from the storage unit into the runtime data structures.</li>
+
+<p class="spacer">&nbsp;
+
+<li>Clear the part's internal dirty flag to false.</li></ol>
+</p>
+<p>
+Notice that these are essentially the same steps we listed earlier for the InitPart<br>
+method, except that the contents of the part's runtime data structures are read in from<br>
+the storage unit instead of being initialized to standard values, and that the dirty flag is<br>
+cleared to false instead of true to show that the part's contents agree with those in the<br>
+external storage unit. Listing 4 shows an example of an InitPartFromStorage method.
+</p>
+<p>
+<b>Listing 4.</b> Reconstructing a part
+</p>
+<pre>SOM_Scope   void
+SOMLINK  TextEditor__InitPartFromStorage
+               (SampleCode_TextEditor   *somSelf,
+                Environment             *ev,
+                ODStorageUnit           *storageUnit,
+                ODPart                  *partWrapper)
+{
+   SampleCode_TextEditorData *somThis =
+       SampleCode_TextEditorGetData(somSelf);
+   SOMMethodDebug("TextEditor", "InitPartFromStorage");
+  
+   // Avoid initializing the part twice.
+   if (fSelf != kODNULL)
+      return;
+  
+   SOM_TRY
+      // Call the parent class's InitPartFromStorage method. The
+      // parent will in turn call its parent, and so on.
+      parent_InitPartFromStorage(somSelf, ev, storageUnit,
+         partWrapper);
+     
+      // Store part wrapper object in an internal field.
+      _fSelf = partWrapper;
+     
+      // Set a flag showing whether this draft is read-only.
+      _fReadOnlyStorage = (storageUnit-&gt;GetDraft(ev)-&gt;
+                              GetPermissions(ev) == kDPReadOnly);
+     
+      // Call common initialization code to set up our initial state.
+      somSelf-&gt;Initialize(ev);
+      // Read in state data from external storage.
+      somSelf-&gt;InternalizeStateInfo(ev, storageUnit);
+     
+      // Read in content data from external storage.
+      somSelf-&gt;InternalizeContent(ev, storageUnit);
+  
+   SOM_CATCH_ALL
+      // No explicit code needed here: cleanup will be performed by
+      // the destructor, which is called automatically when an error
+      // is thrown.
+  
+   SOM_ENDTRY
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+As we've already noted, the storage unit from which a part is reconstructed may have<br>
+been created by a part editor other than the one reading it in. The OpenDoc binding<br>
+subsystem uses the part kinds found in the storage unit's content property to<br>
+determine which part editor to invoke. If the original part editor cannot be found, the<br>
+binding subsystem will look for another editor capable of reading the available part<br>
+kinds. The contents of the storage unit may thus be very different from what the<br>
+current part editor expects. Here are a few points to note:
+</p>
+<ul>
+<li>If the storage unit identifies a preferred part kind (that is, if it contains<br>
+the property kODPropPreferredKind), the part editor should read its content<br>
+data from the indicated value of the content property. If no preferred kind is<br>
+specified (or if the part editor cannot handle a value of the specified kind), it<br>
+should iterate through the available values looking for one it can handle. When<br>
+it finds such a value, it should read the content data from that value into its<br>
+runtime data structures.</li>
+<li>The InitPartFromStorage method should not add its own properties to the<br>
+part's storage unit, but should leave that task to the Externalize method<br>
+instead. This is because the user may close the document without modifying<br>
+any of its contents. If the InitPartFromStorage method modifies the storage<br>
+unit, the user will be prompted to save the document before closing it, even<br>
+though the document has not been modified.</li>
+<li>The part editor should not alter the part's preferred-kind property<br>
+(kODPropPreferredKind).</li>
+</ul>
+<h2>WHAT NEXT?</h2>
+<p>
+Needless to say, the only real way to get familiar with OpenDoc programming is to<br>
+jump in and develop a part editor of your own. The techniques discussed in this article<br>
+will help you manage your storage needs effectively. The rest is up to you and your<br>
+imagination.
+</p>
+<p>
+<b>RELATED READING</b>
+</p>
+<ul>
+<li>"The OpenDoc User Experience" by Dave Curbow and Elizabeth<br>
+Dykstra-Erickson, <i>develop</i> Issue 22.</li>
+<li>"Getting Started With OpenDoc Graphics" by Kurt Piersol, <i>develop</i><br>
+Issue 21.</li>
+<li>"Building an OpenDoc Part Handler" by Kurt Piersol, <i>develop</i><br>
+Issue 19.</li>
+<li><i>OpenDoc Programmer's Guide</i> and <i>OpenDoc Class Reference</i>,<br>
+available as part of the OpenDoc developer releases.</li>
+<li>The latest news on OpenDoc can be found on the World Wide Web at<br>
+http://www.info.apple.com/opendoc or http://www.cilabs.org.</li>
+</ul>
+<p>
+<b>VINCENT LO</b> is Apple's technical lead for OpenDoc. When he isn't removing<br>
+"unwanted features" or participating in design meetings, he divides his time<br>
+equally among roller hockey, ice hockey, and explaining to his friends why he<br>
+plays so much hockey. He has also been known to apply his body checking<br>
+techniques in intense engineering discussions.
+</p>
+<p>
+Thanks to our technical reviewers Dave Bice, Craig Carper, Ed Lai, and Steve<br>
+Smith.
+</p>
+</body>
+</html>

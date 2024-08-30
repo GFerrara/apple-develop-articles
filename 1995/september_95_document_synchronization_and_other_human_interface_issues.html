@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 36 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 95 - Document Synchronization and Other Human Interface Issues</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Document Synchronization and Other Human<br>
+Interface Issues</h1>
+<h2>Mark H. Linton</h2>
+<p>
+<img src="img/204.gif" width="216 px"></img>
+</p>
+<p>
+<i>One of the things the Finder does best is maintain the illusion that an icon and its</i><br>
+<i>window represent a single object. Using the routines described in this article, your</i><br>
+<i>application can help maintain that illusion. You can ensure that when the user renames</i><br>
+<i>an open document, the change is reflected in the document window's title. You can also</i><br>
+<i>gracefully handle problems that may arise if the document file is moved. Other</i><br>
+<i>improvements that make your application's interface more consistent with the</i><br>
+<i>Finder's include preventing a second window from opening when an open document's</i><br>
+<i>icon is double-clicked and adding a pop-up navigation menu to the document window's</i><br>
+<i>title bar.</i>
+</p>
+<p>
+To rename a folder or file in the Finder, you click the icon name, type a new name, and<br>
+press Return. For folders, if the window is open, the change is reflected right away in<br>
+the window's title bar. But for files, if the document is open in your application, its<br>
+window may not reflect the name change. Try this little experiment: Create a document<br>
+in your application and save it. Switch to the Finder, find your document, and change<br>
+its name. What did your application do? If it's like most applications, nothing<br>
+happened: the document window has the same name as before. Go ahead and try to use<br>
+Save As to give the file the same name you gave it in the Finder. You probably get an<br>
+error message. Now try to save the document under the original name. Do you still get<br>
+an error message? Quit your application and read on for a way out of this frustration.
+</p>
+<p>
+The only convenient way for a user to rename a document is with the Finder. (The Save<br>
+As command doesn't rename a document; it creates a copy of the document with a new<br>
+name.) As you've just seen, name changes made in the Finder aren't automatically<br>
+reflected in an open document window. Another change that's often not picked up by the<br>
+application is when the user moves the document to a different folder. The code in this<br>
+article helps synchronize your application's documents with their corresponding files,<br>
+so that a document will respond to changes made outside the application to its file's<br>
+name or location.
+</p>
+<p>
+This article also describes how to prevent a duplicate window from being opened if the<br>
+user opens an already open document in the Finder and how to add a pop-up menu to the<br>
+document title bar to help the user determine where the file is stored. All the code for<br>
+implementing these features is provided on this issue's CD, along with a sample<br>
+application that illustrates its use.
+</p>
+<h2>DOCUMENT SYNCHRONIZATION</h2>
+<p>
+The <i>Electronic Guide to Macintosh Human Interface Design</i> says that applications<br>
+should "match the window title to the filename." Specifically, when a user changes the<br>
+document name in the Finder, you should update all references to the title. The guide<br>
+also refers to the <i>Macintosh Human Interface Guidelines,</i>page 143, where it says, "The<br>
+document and its corresponding window name must match at all times."
+</p>
+<p>
+When I first started looking at the problem of document synchronization, I assumed<br>
+that the animated example in the Electronic Guide to Macintosh Human Interface Design<br>
+was the way to go. In this animation, the application checks for a name change when it<br>
+receives a resume event. However, I became uncomfortable with this approach,<br>
+because it would cause a delay between the user's changing the name of the document in<br>
+the Finder and the application's updating the window title. Using a resume event relies<br>
+on a separate action by the user, namely, bringing the application to the foreground.<br>
+This seemed nonintuitive and didn't support the illusion that a window and its icon<br>
+represent a single object. Also, it's possible that with Apple events and AppleScript an<br>
+application could be launched, do some work, and quit without ever being frontmost --<br>
+that is, without ever receiving a resume event.
+</p>
+<p>
+The truth is that these days, with multiple applications running at the same time, with<br>
+networked, shared disks everywhere, and with applications and scripts pulling the<br>
+puppet strings as often as users, a file's name or location may change at any time,<br>
+whether the application is in the foreground or the background. A script might move or<br>
+rename a file or, if the file is on a shared volume, another user on the network could<br>
+move or rename it or even put the file in the Trash -- all behind the application's<br>
+back. The only solution I found under the current system software was to regularly<br>
+look at the file to see if its name or location has changed. In other words, the<br>
+application has to poll for changes.
+</p>
+<p>
+Polling is generally a bad idea, but there are cases when it's the only reasonable way to<br>
+accomplish a task, and this is one of them. However, I tried to keep the polling very<br>
+"lightweight" and low impact by using the following guidelines:
+</p>
+<ul>
+<li>An application shouldn't poll any more often than it absolutely needs to.<br>
+Waking up an application causes a context switch, and context switches take a<br>
+significant amount of time. Forcing the system to wake up an application every<br>
+few ticks just so that it can look for file changes would be a bad idea,<br>
+especially when the application is in the background. Instead, the application<br>
+should poll only when an event has already been received -- that is, when the<br>
+application is awake. Set your WaitNextEvent sleep time appropriately, and<br>
+wait at least a second or two between "peeks." (The Finder, for instance, polls<br>
+for disk changes every five seconds or so.)</li>
+<li>Avoid any polling that causes disk or network access; if at all possible,<br>
+examine only information that's in RAM on the local machine. Network access<br>
+in particular can be a real drain on performance.</li>
+</ul>
+<p>
+The sample code follows this advice, doing everything it can to be unobtrusive. It polls<br>
+for file changes only once every second while in the foreground. In the background, the<br>
+application's WaitNextEvent sleep time is set to ten seconds, so it only wakes up --<br>
+and thus polls -- every ten seconds if nothing else is going on. To detect changes to<br>
+files, I chose to examine the volume modification date of the volume containing the file,<br>
+since this information is always available in local RAM, even for a shared volume. If<br>
+that date changes, I look deeper to see if the change is one I'm interested in. As you dip<br>
+into the code, you'll see the details.<b>I use the file reference number</b> to track files<br>
+because it survives changes in the name and parent directory. However, this requires<br>
+that the files be kept open. If&nbsp;&nbsp;you can't keep your files open, you might want to look at<br>
+John Norstad's excellent NewsWatcher application, which uses alias records to<br>
+synchronize files. NewsWatcher is on this issue's CD; its official source can be found<br>
+at ftp://ftp.acns.nwu.edu/pub/newswatcher/.*
+</p>
+<p>
+Friendly as it is, this polling solution is appropriate only for the current system<br>
+software; future system software versions (such as Copland, the next generation of the<br>
+Mac OS) will provide a much better way to detect changes. Your application will be<br>
+able to subscribe to notification of changes that it's interested in. In fact, polling the<br>
+current file system structures will be unfriendly behavior under Copland, which will<br>
+have demand-paged virtual memory and a completely new file system. For this reason,<br>
+the sample code is designed to work only under System 7. You'll be able to easily<br>
+retrofit the code to run under Copland once the details of the correct way to detect file<br>
+changes have been worked out.
+</p>
+<p>
+<b>THE HEART OF THE MATTER</b>
+</p>
+<p>
+Every Macintosh programmer eventually comes to grips with how to keep track of all<br>
+the information associated with a document. I use a structure called a document list and<br>
+I have a set of routines that support it. The document list reverses some common<br>
+assumptions used by developers. Developers often use the window list to track their<br>
+windows and attach their document data to it, but this limits Apple's ability to redefine<br>
+the window list. My recommendation is to create a document list (almost identical to<br>
+the window list) containing the document data and attach the windows to it. In this way,<br>
+the actual structure of the window list is not a concern. You'll find my implementation<br>
+of the document list and its supporting routines on this issue's CD.
+</p>
+<p>
+While the code presented here is specific to my implementation, you can easily<br>
+generalize it as needed. The code below shows how your application might call<br>
+DSSyncWindowsWithFiles, a routine that keeps your documents synchronized with the<br>
+Finder by checking for and handling changes made outside the application to file names<br>
+or locations. Call the routine from within your main event loop when you receive an<br>
+event (including null events). Note that error checking has been removed from the<br>
+code shown in the article, but it does appear on the CD.
+</p>
+<pre>while (!done) {
+   gotEvent = WaitNextEvent(everyEvent, &amp;theEvent, gSleepTime,
+      theCursorRegion);
+   if (gotEvent)
+      DoEvent(&amp;theEvent);
+   DSSyncWindowsWithFiles(kDontForceSynchronization);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+This minor change does most of the work for your application. The machinery that<br>
+makes it happen lies within DSSyncWindowsWithFiles (see Listing 1). This routine<br>
+first checks to make sure that enough time has passed since the last check for changes.<br>
+If so, or if the caller requested immediate synchronization, it iterates through each of<br>
+the windows registered in the document list, calling DSSyncWindowWithFile to<br>
+process each of these windows.
+</p>
+<p>
+<b>Listing 1. </b>DSSyncWindowsWithFiles
+</p>
+<pre>#define kCheckTicks 60
+
+pascal void DSSyncWindowsWithFiles(Boolean forceSync)
+{
+   WindowPtr        theWindow;
+   static long      theTicksOfLastCheck = 0;
+   long             theTicks;
+  
+   theTicks = TickCount();
+   if (theTicks &gt; (theTicksOfLastCheck + kCheckTicks) || forceSync){
+      theTicksOfLastCheck = theTicks;
+      for (theWindow = DSFirstWindow(); theWindow != nil;
+           theWindow = DSNextWindow(theWindow)) {
+         DSSyncWindowWithFile(theWindow);
+      }
+   }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+DSSyncWindowWithFile, shown in Listing 2, begins by getting the file reference<br>
+number for the window from the document list. If it's appropriate to continue<br>
+(DoSyncChecks returns true), DSSyncWindowWithFile calls three other routines to<br>
+handle name changes, changes that move the file to a different folder, and changes that<br>
+move the file to the Trash.
+</p>
+<p>
+<b>Listing 2. </b>DSSyncWindowWithFile
+</p>
+<pre>pascal void DSSyncWindowWithFile(WindowPtr aWindow)
+{
+   short theFRefNum;
+
+   DSGetWindowDFRefNum(aWindow, &amp;theFRefNum);
+   if (DoSyncChecks(theFRefNum, aWindow)) {
+      HandleNameChange(theFRefNum, aWindow);
+      HandleDirectoryChange(theFRefNum, aWindow);
+      HandleMoveToTrash(theFRefNum, aWindow);
+   }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>THE CHECKPOINT</b>
+</p>
+<p>
+The DoSyncChecks routine (Listing 3) checks for changes to the volume that the file is<br>
+on. If the volume has been modified, DoSyncChecks returns true to<br>
+DSSyncWindowWithFile, which consequently calls the next three routines --<br>
+HandleNameChange, HandleDirectoryChange, and HandleMoveToTrash.
+</p>
+<p>
+<b>Listing 3. </b>DoSyncChecks
+</p>
+<pre>static Boolean DoSyncChecks(short aRefNum, WindowPtr aWindow)
+{
+   Boolean         doCheck = false;
+   unsigned long   theLastDate, theDate;
+   short          theVRefNum;
+  
+   if (aRefNum != 0) {
+      DSGetWindowFileVRefNum(aWindow, &amp;theVRefNum);
+      GetVolumeModDate(theVRefNum, &amp;theDate);
+      DSGetWindowVLsBkUp(aWindow, &amp;theLastDate);
+      if (theLastDate != theDate) {
+         DSSetWindowVLsBkUp(aWindow, theDate);
+         doCheck = true;
+      }
+    }
+   return doCheck;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>A FILE BY ANY OTHER NAME</b>
+</p>
+<p>
+After determining that the volume containing the file has been modified,<br>
+DSSyncWindowWithFile calls HandleNameChange (Listing 4). This simple routine<br>
+compares the names of the window and the file; if they're not exactly the same, it<br>
+updates the window to reflect the new filename. A minimal implementation of document<br>
+synchronization might include only this routine.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Have you been wondering where the magical file management calls that<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DoSyncChecks and HandleNameChange use come from -- for example,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GetVolumeModDate and GetNameOfReferencedFile? See the file EvenMoreFiles.c<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;on the CD for details. This is my tribute to Jim Luther's excellent MoreFiles<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;collection. Whenever I need a routine that's not in the standard header, I write<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;it and add it to the collection. Someday we'll be up to SonOfMoreFiles and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NightOfTheLivingMoreFiles.*
+</p>
+<p>
+<b>Listing 4. </b>HandleNameChange
+</p>
+<pre>void HandleNameChange(short aFRefNum, WindowPtr aWindow)
+{
+   Str255    theTitle, theName;
+  
+   GetWTitle(aWindow, theTitle);
+   GetNameOfReferencedFile(aFRefNum, theName);
+   if (!EqualString(theTitle, theName, true, true))
+      SetWTitle(aWindow, theName);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>MOVING TO A NEW NEIGHBORHOOD</b>
+</p>
+<p>
+After checking, and possibly synchronizing, the filename, DSSyncWindowWithFile<br>
+calls HandleDirectoryChange (Listing 5) to see whether the file has been moved. This<br>
+routine starts out by comparing the old parent directory to the new parent directory.<br>
+If they're not the same, the file has been moved and the routine stores the file's new<br>
+parent directory for later use by the application. It's possible that the file was moved<br>
+to a parent for which the user doesn't have access privileges. In that case, a later Save<br>
+will fail and revert to a Save As.
+</p>
+<p>
+<b>Listing 5. </b>HandleDirectoryChange
+</p>
+<pre>void HandleDirectoryChange(short aFRefNum, WindowPtr aWindow)
+{
+   long       theOldParID, theNewParID;
+
+   DSGetWindowFileParID(aWindow, &amp;theOldParID);
+   GetFileParID(aFRefNum, &amp;theNewParID);
+   if (theOldParID != theNewParID)
+      DSSetWindowFileParID(aWindow, theNewParID);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>GETTING TRASHED</b>
+</p>
+<p>
+Finally, DSSyncWindowWithFile calls HandleMoveToTrash (Listing 6) to see if the file<br>
+is in the Trash. If it is, HandleMoveToTrash gets the FSSpec corresponding to the file<br>
+reference number, which will be needed later. If the application is running in the<br>
+background, and there are unsaved changes to the document, the routine notifies the<br>
+user (with the Notification Manager) that the application needs assistance. While<br>
+waiting for the user to respond to the request for assistance, HandleMoveToTrash<br>
+handles events normally and also checks to see whether the user has moved the<br>
+document back out of the Trash. After all, there's no sense in asking the user what to do<br>
+about a file in the Trash if it's no longer there. If the user responds to the request, or<br>
+moves the file out of the Trash while the application is still in the background,<br>
+HandleMoveToTrash removes the notification. If the file is still in the Trash when the<br>
+application becomes frontmost, an alert appears asking the user what to do.
+</p>
+<p>
+<b>Listing 6.</b> HandleMoveToTrash
+</p>
+<pre>static void HandleMoveToTrash(short aFRefNum, WindowPtr aWindow,
+      Boolean *inTrashCan)
+{
+   FSSpec         theFile;
+   Boolean         inBackground;
+   short            theResponse;
+   EventRecord      theEvent;
+  
+   FileInTrashCan(aFRefNum, inTrashCan);
+   if (*inTrashCan)
+      GetFileSpec(aFRefNum, &amp;theFile);
+   if ((aFRefNum != 0) &amp;&amp; *inTrashCan) {
+      if (DSIsWindowDirty(aWindow)) {
+         InBackground(&amp;inBackground);
+         if (inBackground) {
+            DSNotify();
+            do {
+               InBackground(&amp;inBackground);
+               if ( WaitNextEvent(everyEvent, &amp;theEvent,
+                      gSleepTime, nil))
+                  DoEvent(&amp;theEvent);
+               FileInTrashCan(aFRefNum, inTrashCan);
+            } while (inBackground &amp;&amp; *inTrashCan);
+            DSRemoveNotice();
+         }
+         if (*inTrashCan) {
+            ParamText(theFile.name, "\p", "\p", "\p");
+            theResponse = Alert(rCloseAlert, nil);
+            switch (theResponse) {
+
+               case kSave:
+                  DoSave(aWindow);
+                  /* Fall through */
+
+               case kDontSave:
+                  ZoomWindowToTrash(aWindow);
+                  DoCloseCommand(aWindow);
+                  break;
+               case kPutAway:
+                  DSAESendFinderFS(kAEFinderSuite, kAEPutAway,
+                    &amp;theFile);
+                  *inTrashCan = false;
+                  break;
+            }
+         }
+      } else    /* Window is clean; just close it */
+         DoCloseCommand(aWindow);
+   }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Now if this were the Finder, there would be no question of what to do in this situation.<br>
+When the user drags the icon for a folder to the Trash, the folder is essentially gone, so<br>
+the associated window doesn't remain on the desktop. In the application world, life is a<br>
+little more problematic. What happens if there are unsaved changes in the document?<br>
+If the application blindly closes the document when the user drags the icon to the<br>
+Trash, data could be lost. This would be a Bad Thing.
+</p>
+<p>
+My mother always told me, "When in doubt, ask." So if there are unsaved changes to<br>
+the file, an alert gives the user three choices: Don't Save, Remove From Trash, and<br>
+Save. The Save and Don't Save options are simple: each closes the window as expected.<br>
+Remove From Trash is a little tricky and takes advantage of the Scriptable Finder and<br>
+Apple events.
+</p>
+<p>
+The Remove From Trash case is similar to the Finder situation in which the user<br>
+decides not to throw the document in the Trash and chooses Put Away from the File<br>
+menu. HandleMoveToTrash handles this change of mind the same way the Finder handles<br>
+it with Put Away: it sends the Finder a Put Away Apple event specifying the file in<br>
+question as the target. (If the Scriptable Finder isn't available, the same action can be<br>
+simulated manually; see the code on the CD for details.)
+</p>
+<h2>HOW CAN YOU BE IN TWO PLACES AT ONCE?</h2>
+<p>
+That's all there is to document synchronization. Now let's take a look at some other<br>
+ways you can make your application's interface more consistent with the Finder's.
+</p>
+<p>
+&nbsp;&nbsp;Many applications create a new window when an already open document is opened<br>
+again in the Finder. But if the Finder were to open a second copy of a folder when you<br>
+double-click the icon of a folder that's already open, wouldn't you be surprised? One of<br>
+the guiding principles of human interface design is consistency; if your application<br>
+doesn't perform the same action as the Finder (in this case, bring an already open<br>
+window to the front), the user must learn and remember what will happen in each<br>
+particular situation. This detracts from the user's happiness with your application.
+</p>
+<p>
+Making your application notice that the document is already open is easy if you're<br>
+using the document list. The following code would appear where you normally call your<br>
+open-file routine. When the application receives an event to open a file, it checks to<br>
+see if the file is already registered in the document list. If it's registered, the<br>
+application simply brings it to the front instead of opening it again.
+</p>
+<pre>if (DSFileInDocumentList(aFile, &amp;theWindow))
+   SelectWindow(theWindow);
+else
+   DoOpenFile(aFile);</pre>
+<p class="spacer">&nbsp;</p>
+<h2>POP-UP NAVIGATION</h2>
+<p>
+A nifty feature introduced with the System 7 Finder is the pop-up menu in the title<br>
+bar that allows the user to determine the location of an open folder and to navigate the<br>
+file system without having to resort to browsing (see Figure 1). The user simply<br>
+holds down the Command key and presses on the window title to see the menu. The<br>
+computer knows where your document is; it just needs a good way to present the<br>
+information. If you have Metrowerks CodeWarrior, you'll find that it does something<br>
+similar to the System 7 Finder. Your application can provide the same interface.
+</p>
+<p>
+<img src="img/205.gif" width="338 px"></img>
+</p>
+<p>
+<b>Figure 1. The Finder's pop-up navigation menu</b>
+</p>
+<p>
+To provide a pop-up navigation menu for your document windows, replace the existing<br>
+call to FindWindow in your mouse-down event handler with a call to the<br>
+DSFindWindow routine. DSFindWindow is simply a wrapper for the Window Manager's<br>
+FindWindow routine. If FindWindow returns inDrag, DSFindWindow does some<br>
+additional checking to determine whether the window is frontmost, the Command key is<br>
+down, and the mouse is in the window title area. If the mouse-down event meets these<br>
+conditions, DSFindWindow calls DSPopUpNavigation, which implements the menu and<br>
+returns inDesk as the window part, telling the application to ignore the click.
+</p>
+<p>
+Note that DSPopUpNavigation makes an assumption about the location of the window's<br>
+title that may not be true for nonstandard window types or in future versions of the<br>
+system software. In such cases the pop-up menu will still work fine, though it may not<br>
+be cosmetically correct. This is another area of the code that should be revisited when<br>
+Copland becomes available.
+</p>
+<h2>CONSISTENCY PAYS OFF</h2>
+<p>
+Consistency is one of the key principles that make using the Macintosh the wonderful<br>
+experience that it is. If your program responds to the user's actions in the same way<br>
+that the Finder does -- in particular, maintaining the illusion that an icon and its<br>
+window represent a single object -- your users can explore your application with<br>
+skills they've already acquired. The techniques presented here show how to provide<br>
+that extra measure of consistency with the Finder that keeps the Macintosh interface<br>
+clean, consistent, and seamless. They're not too hard to implement, they're fun, and<br>
+they just happen to be useful!
+</p>
+
+
+
+<p>
+<b>RECOMMENDED READING</b>
+</p>
+<ul>
+<li><i>Electronic Guide to Human Interface Design</i> (Addison-Wesley,<br>
+1994). This CD (available from Apple Developer Catalog) combines<br>
+the Macintosh Human Interface Guidelines and its companion CD,<br>
+Making It Macintosh, into one easy-to-swallow capsule. Take one<br>
+every night before going to bed, and wake up with a more consistent<br>
+user interface.</li>
+<li><i>Macintosh Human Interface Guidelines, </i>(Addison-Wesley, 1993).<br>
+Available separately from Apple Developer Catalog in book form.</li>
+<li> Polya, G., <i>How to Solve It</i> (Princeton University Press, 1945).<br>
+This book explains a logical approach to problem solving. Very<br>
+simply, the approach is: understand the problem, compare it to a<br>
+related problem that has been solved before to arrive at a plan, carry<br>
+out the plan, and examine the solution. That's what I've done with the<br>
+subject of this article.</li>
+</ul>
+<p>
+<b>MARK H. LINTON </b>(mhl@hrb.com) lives in Centre Hall, Pennsylvania, with his wife<br>
+Gretchen. When he isn't jetting around the globe or meeting with some high<br>
+government officials as part of his job as senior engineer at HRB Systems, he can be<br>
+found in his log cabin at the base of Mount Nittany playing with his Macintosh.*
+</p>
+</body>
+</html>

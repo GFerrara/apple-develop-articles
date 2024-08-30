@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 23 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 95 - Futures: Don't Wait Forever</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>Futures: Don't Wait Forever</h2>
+<h1>GREG ANDERSON</h1>
+<p>
+<img src="img/171.gif" width="180 px"></img>
+</p>
+<p>
+<i>Futures provide a convenient way to implement asynchronous interapplication</i><br>
+<i>communication without having to manage unwieldy completion routines. This article</i><br>
+<i>presents an updated Futures Package that supports event timeouts, allows threaded</i><br>
+<i>execution of incoming Apple events, and has been revised to work with the Thread</i><br>
+<i>Manager in System 7.5.</i>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Asynchronous Apple-event handling is difficult in Macintosh applications, and<br>
+programmers who make the extra effort to implement it often find that detecting and<br>
+recovering from event timeouts is an unmanageable task. Code that's written with the<br>
+assumption that a completion routine will eventually be called will end up waiting<br>
+forever if the event never completes. Futures provide a convenient way to support<br>
+asynchronous interapplication communication and handle timeouts in a robust way,<br>
+without sacrificing the simplicity or readability of the code.
+</p>
+<p>
+Most applications attempt to manage multiple concurrent events through callbacks<br>
+passed to AESend -- but that leaves you, the application writer, with the burden of<br>
+ensuring that the callbacks really do handle every event that's processed by the<br>
+application's main event loop. For example, if you're writing an application that sends<br>
+events to the Scriptable Finder, and you want to make that application scriptable<br>
+itself, you'd have to be particularly careful not to lock up the user interface portion of<br>
+your application every time an Apple event was received and processed. But by using<br>
+threads, futures, and the asynchronous event-processing techniques described in this<br>
+article, you can make the user-interface and event-processing modules of your<br>
+application function independently -- and almost without effort on your part. 
+</p>
+<p>
+If you're a long-time<i>develop</i> reader, you probably remember Michael Gough's article<br>
+on futures that appeared in<i>develop</i> Issue 7. That article's information is still valid,<br>
+and its code runs as well on today's Macintosh computers as it did when first<br>
+published; however, it requires the Threads Package that came with Issue 6 in order to<br>
+run. Thisarticle presents a revised version of the Futures Package, which works with<br>
+the ThreadManager that's now part of System 7.5. We'll also delve a little deeper into<br>
+the realm of asynchronous event processing and timeout event handling. And, for the<br>
+curious, we'll open the black box and peer inside to examine the inner workings of<br>
+futures. 
+</p>
+<p>
+<b>&nbsp;For a review of threads and futures, </b>see "Threads on the Macintosh" in <i>develop</i><br>
+Issue 6, "Threaded Communications With Futures" in Issue 7, and "Concurrent<br>
+Programming With the Thread Manager" in Issue 17.*You can use the techniques<br>
+described in this article with any application that uses Apple events, but they're<br>
+particularly effective with scriptable applications that also send Apple events to other<br>
+applications. You'll find the code for the new Futures Package on this issue's CD, along<br>
+with the code for the FutureShock example, described later on, and preliminary<br>
+documentation for the Thread Manager (eventually to be incorporated into<i>Inside</i><br>
+<i>Macintosh: Processes</i> ). 
+</p>
+<p>
+<b>&nbsp;For more on interactions with the Scriptable Finder, </b>see "Scripting the<br>
+Finder From Your Application,"<i> develop</i>&nbsp;&nbsp;Issue 20.*
+</p>
+<h2>OVERVIEW OF FUTURES</h2>
+<p>
+For those of you who missed "Threaded Communications With Futures" in<i>develop</i> Issue<br>
+7, a<i> future</i> is a data object that looks and acts just like a real reply to some message,<br>
+when in reality it's nothing more than a placeholder for a reply that the server<br>
+application will deliver at some future time. (See "Client/Server Review" for a<br>
+summary of how clients and servers interact.) Code written to use futures looks the<br>
+same as code that waits for the reply to arrive (using a sendMode of kAEWaitReply)<br>
+and then works with the actual data. The only difference is that the futures code uses a<br>
+timeout value of 0. This causes AESend to return immediately to the caller with a<br>
+timeout error -- the normal and expected result -- and execution of the client<br>
+application is allowed to continue without delay.
+</p>
+<p>
+The futures-savvy application then does as much processing as possible without<br>
+accessing the reply, including sending other Apple events. When the data from the<br>
+reply is absolutely needed, it's accessed as usual via AEGetKeyPtr or some other Apple<br>
+Event Manager data-accessor function. It's at this point that the Futures Package steps<br>
+in and suspends processing of the client application until the data for the reply<br>
+arrives; other parts of the client keep running unhindered. Of course, it's not possible<br>
+to stop one part of an application without stopping all of it, unless the application is<br>
+multithreaded. Therefore, futures need to run with some sort of Thread Manager.<br>
+Figure 1, which appeared originally in<i>develop</i> Issue 7, summarizes the roles of<br>
+threads and futures and the interactions that take place when a client asks a question. 
+</p>
+<p>
+The primary benefit of the Thread Manager and Futures Package is that their use<br>
+removes the burden of managing multiple concurrent events, whether they're Apple<br>
+events or user actions. As mentioned earlier, most applications try to get around this<br>
+problem by providing a callback procedure to AESend that can handle other incoming<br>
+Apple events, update events, and user actions while the application is waiting for the<br>
+reply. This technique works, but it's up to you to make sure the callbacks handle<br>
+everything. Listing 1 shows an example of how the callback approach works; notice<br>
+that we need idle and filter procs to handle events that come in while the handler is<br>
+waiting for a reply. 
+</p>
+<p>
+<img src="img/172.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>The transformation of a future into a real answer
+</p>
+<p>
+Responding to Apple events without using threads and futures is even more<br>
+problematic, particularly if the application needs to send out another message in order<br>
+to process the one that just came in (as in Listing 1). In that case, AESend is typically<br>
+called again with the same callback procedure, and the whole process stacks up one<br>
+level and repeats.
+</p>
+<p>
+The problem with the stacked approach is threefold: First, the stack must unwind in<br>
+the same order in which it was set up -- an ill-timed incoming event, if it's a lengthy<br>
+request, could interfere with the processing of the current outgoing request for quite a<br>
+while. Second, every stack is finite in size; it's often difficult to prove that reentrant<br>
+code will always have enough stack space to complete. Finally, writing callbacks and<br>
+having multiple event loops in your application makes the source harder to follow, and<br>
+what's more, it's a real drag. By contrast, futures allow the freedom of asynchronous<br>
+operation without the drudgery of callbacks or completion routines -- your code looks<br>
+as simple as the normal synchronous version, but it runsasynchronously. The only<br>
+difference from Listing 1 is that the code calls AskForFutureinstead of AESend, as<br>
+follows:
+</p>
+<pre>if (err == noErr)
+    err = AskForFuture(&amp;question, &amp;answer, kAEDefaultTimeout,
+        kNoMaximumWait, kNormalPriority);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 1. </b>An Apple event handler that sends an event
+</p>
+<pre>pascal OSErr AnAEHandler(AppleEvent* ae, AppleEvent* reply,
+        long refCon)
+{
+    OSErr           err = noErr;
+    AppleEvent      question, answer;
+    AEAddressDesc   target;
+    DescType        typeCode;
+    long            actualSize, result;
+   
+    // Create an Apple event addressed to a previously determined
+    // target. 'question' and 'answer' should be set to null
+    // descriptors.
+    err = AECreateAppleEvent(kAnEventClass, kAnEventID, &amp;gTarget,
+        kAutoGenerateReturnID, kAnyTransactionID, &amp;question);
+    // Call AESend with the send mode kAEWaitReply. Note the idle
+    // and filter procs.
+    if (err == noErr)
+        err = AESend(&amp;question, &amp;answer, kAEWaitReply,
+            kNormalPriority, kAEDefaultTimeout, gAEIdleProcRD,
+            gAEFilterProcRD);
+    if (err == noErr)
+        err = AEGetParamPtr(&amp;answer, keyAEResult, typeLongInteger,
+            &amp;typeCode, (Ptr) &amp;result, sizeof(long), &amp;actualSize);
+    if (err == noErr)
+        err = AEPutParamPtr(reply, keyAEResult, typeLongInteger,
+            (Ptr) &amp;result);
+    AEDisposeDesc(&amp;question);
+    AEDisposeDesc(&amp;answer);
+
+    return noErr;
+}</pre>
+<p>
+One of the primary differences between the behavior of the code that calls AESend and<br>
+the code that calls AskForFuture is that in the latter case, the event handler is already<br>
+executing in its own thread when it's called. This is just one of the conveniences<br>
+offered by the new Futures Package, and it's a major enhancement; we'll describe how<br>
+it works shortly. 
+</p>
+<h2>OUR SAMPLE APPLICATION: FUTURESHOCK</h2>
+<p>
+This issue's CD contains a sample application called FutureShock that demonstrates the<br>
+use of futures. You'll notice that there are two copies of this application on the CD, one<br>
+sitting right next to the other. These copies are provided because FutureShock likes to<br>
+talk to itself -- well, not exactly to itself, but to other applications having the same<br>
+process signature but a different process serial number. To use FutureShock, launch<br>
+both copies of the application; you'll be presented with two instances of the same<br>
+window. Clicking the button marked Send in one application window will send an Apple<br>
+event to the other FutureShock application, which will acknowledge the receipt and<br>
+begin "processing" the event.
+</p>
+<p>
+Actually, no processing is being done -- FutureShock is just whiling away the time<br>
+looking at its watch (TickCount, that is), calling AEResetTimer every now and again,<br>
+and calling YieldToAnyThread a lot. But don't tell the other FutureShock application<br>
+that. It's busy keeping track of how long the message has been out for processing and<br>
+how long it's been since its server last called AEResetTimer. If the server FutureShock<br>
+is too slow, the client FutureShock will give up and cancel the message. (If you'd like<br>
+to see this happen, use the set of radio buttons that allow you to inhibit the server<br>
+from calling AEResetTimer.)
+</p>
+<p>
+The sample source code included with the applications gives you a good example of how<br>
+to use futures and keep track of message timeouts in a robust way. You'll also notice<br>
+that FutureShock installs custom thread context-switching callbacks -- a critical step<br>
+for any application that uses threads (see "Custom Context Switching").
+</p>
+<h2>A LOOK AT THE SOURCE</h2>
+<p>
+The magic that makes Apple-event futures possible lies in the special blocking and<br>
+unblocking callbacks supported by the Apple Event Manager. These callbacks aren't<br>
+documented in<i>Inside Macintosh,</i> but they can be enabled with the function<br>
+AEInstallSpecialHandler with the special keywords keyAEBlock ('blck') and<br>
+keyAEUnblock ('unbk'). 
+</p>
+<p>
+<b>&nbsp;AEInstallSpecialHander is described </b>in <i>Inside Macintosh: Interapplication</i><br>
+<i>Communication,</i>&nbsp;&nbsp;page 4-100.*
+</p>
+<p>
+If a blocking handler is installed, the Apple Event Manager calls it whenever an<br>
+attempt is made to access data from an Apple-event reply that hasn't yet beenreceived.<br>
+Any Apple Event Manager function that extracts data, such as AEGetKeyPtr,causes the<br>
+blocking routine to be called. The Apple Event Manager calls the unblocking routine as<br>
+soon as the reply arrives. The blocking routine may be called many times for one reply<br>
+(once for each call to AEGetKeyPtr or to another data accessor), but the unblocking<br>
+routine will be called only once -- whether it's needed or not. 
+</p>
+<p>
+The Futures Package makes use of the blocking and unblocking callbacks in a<br>
+straightforward way.&nbsp;&nbsp;&nbsp;Whenever the blocking routine is called for a given Apple event<br>
+reply, the reply's return ID is looked up via its keyReturnIDAttr attribute. The return<br>
+ID is assigned by the Apple Event Manager whenever an event is sent. The Futures<br>
+Package creates a semaphore and gives it an ID number that matches the return ID of<br>
+the reply event so that the semaphore can be found again later. (For a review of<br>
+semaphores, see "What's a Semaphore?")
+</p>
+<p>
+<b>&nbsp;The return ID </b>is a long integer that's assigned sequentially when an event is<br>
+created, and then copied into the reply event so that the Apple Event Manager can match<br>
+the reply with the event that generated it.*
+</p>
+<p>
+Once the semaphore has been created, the blocking routine gets a reference to the<br>
+current thread, adds it to the semaphore, and puts the thread to sleep. The thread is<br>
+now said to be<i>blocked on the semaphore.&nbsp;&nbsp;</i> If all goes well, the reply arrives shortly,<br>
+and the Apple Event Manager calls the unblocking routine. Once again, the return ID is<br>
+extracted from the reply event passed to the unblocking routine and is used to look up<br>
+the semaphore created by the blocking routine. The unblocking routine then frees the<br>
+semaphore, waking up all the threads that are blocked on it. Listing 2 shows the<br>
+implementation of the blocking and unblocking routines in the Futures Package. 
+</p>
+<h2>THE CLIENT SIDE -- SENDING EVENTS</h2>
+<p>
+To use futures in your application, simply follow these guidelines:
+</p>
+<ul>
+<li>Use the Macintosh Thread Manager. </li>
+<li>Call InitFutures once when your application starts up to initialize the<br>
+Futures Package. If your application has a custom thread scheduler, you'll<br>
+probably want to provide a thread creation procedure. Alternatively, you can<br>
+prevent the Futures Package from ever spawning threads, and keep track of<br>
+housekeeping and asynchronicity issues on your own. </li>
+<li>Call AESend using the send mode kAEWaitReply, but specifying atimeout of<br>
+zero ticks. Ignore the resulting error if it's errAETimeout.&nbsp;&nbsp;You may instead<br>
+prefer to use AskForFuture, a convenient wrapper to AESend. </li>
+<li>Call AEGetKeyPtr and other standard Apple-event accessors to extract data<br>
+from your replies. If the reply has not yet arrived, the current thread is<br>
+blocked automatically. Make sure that the current function is running within a<br>
+thread before accessing the data of the reply event; it wouldn't do any good at<br>
+all to block the main thread.</li>
+<li>Call AEDisposeDesc to dispose of the event sent and the reply when done<br>
+with them, just as with any other Apple event. </li>
+</ul>
+<p>
+<b>Listing 2. </b>Blocking and unblocking routines
+</p>
+<pre>pascal OSErr AEBlock(AppleEvent* reply)
+{
+    TSemaphore*     semaphore = nil;
+    OSErr               err = noErr;
+   
+    // It should always be possible to create and grab the semaphore.
+    semaphore =
+        GetFutureSemaphore(reply, kCreateSemaphoreIfNotFound);
+    if (semaphore != nil)
+        err = semaphore-&gt;Grab();
+    else
+        err = errAEReplyNotArrived;
+    return err;
+}
+
+pascal OSErr AEUnblock(AppleEvent* reply)
+{
+    TSemaphore*     semaphore = nil;
+    OSErr               err = noErr;
+
+    semaphore =
+        GetFutureSemaphore(reply, kDontCreateSemaphoreIfNotFound);
+    if (semaphore != nil) {
+        semaphore-&gt;ReleaseAllThreads();
+        semaphore-&gt;Dispose();
+    }
+    return err;
+}</pre>
+<p>
+As you can see, there's almost nothing special you need to do in order to use futures --<br>
+your code will look almost exactly the same as similar code that doesn't use futures at<br>
+all. 
+</p>
+<h2>THE SERVER SIDE -- RESPONDING TO EVENTS</h2>
+<p>
+Futures provide a convenient way to send messages and receive replies<br>
+asynchronously, but it's just as important for the server application to <i>process</i> <br>
+events asynchronously. There are a number of techniques for creating threads to<br>
+process incoming events, but the most convenient thing to do would be to spawn a<br>
+thread before calling AEProcessAppleEvent and allow the Apple Event Manager to<br>
+dispatch the event from within the cozy, asynchronous environment of its own thread. <br>
+Unfortunately, AEProcessAppleEvent is not reentrant; if you call it from a thread,<br>
+your application will crash if another event is received before the current one<br>
+finishes processing -- which rather defeats the whole purpose of asynchronous<br>
+processing, to put it mildly. Fortunately, there's a convenient workaround for this<br>
+problem. 
+</p>
+<p>
+The solution is to install a predispatch handler that intercepts all events being<br>
+dispatched by AEProcessAppleEvent and makes sure that the event is suspended and that<br>
+the handler exits right away. The predispatch handler also forks a new thread that<br>
+manually dispatches the event when the thread is next scheduled. When the event<br>
+handler returns, this thread calls AEResumeTheCurrentEvent to force the Apple Event<br>
+Manager to send the reply back to the client.&nbsp;&nbsp;&nbsp;Listing 3 shows how this is done. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 3. </b>Spawning a new thread before dispatching the event
+</p>
+<pre>#define kUseDefaultStackSize 0
+pascal OSErr Predispatch(AppleEvent* ae, AppleEvent* reply,
+        long refCon)
+{
+    OSErr               err = errAEEventNotHandled;
+    PredispatchParms**  dispatchParams = nil;
+    AEEventHandlerUPP   handler = nil;
+    long                handlerRefCon = 0;
+
+    if (GetAppleEventHandlerUPP(ae, &amp;handler, &amp;handlerRefCon) ==
+           noErr) {
+        dispatchParams = (PredispatchParms**)NewHandle(
+                sizeof(PredispatchParms));
+        if (dispatchParams != nil) {
+            ThreadID newThreadID;
+            (*dispatchParams)-&gt;fAppleEvent = *ae;
+            (*dispatchParams)-&gt;fReply = *reply;
+            (*dispatchParams)-&gt;fEventHandler = handler;
+            (*dispatchParams)-&gt;fHandlerRefCon = handlerRefCon;
+            if (NewThread(kCooperativeThread,
+                    (ThreadEntryProcPtr)RedispatchEvent,
+                    (void*)dispatchParams, kUseDefaultStackSize,
+                    kCreateIfNeeded | kFPUNotNeeded, nil,
+                        &amp;newThreadID)
+                    == noErr) {
+                dispatchParams = nil;
+                // Suspend the current event so that the Apple Event
+                // Manager won't break. Set the error to noErr to
+                // tell the Apple Event Manager we handled the event.
+                AESuspendTheCurrentEvent(ae);
+                err = noErr;
+            }
+        }
+    }
+    // Dispose of the dispatch parameters if created but not used.
+    if (dispatchParams != nil)
+        DisposeHandle((Handle)dispatchParams);
+    return err;
+}
+
+void RedispatchEvent(void* threadParam)
+{
+    OSErr   err = noErr;
+
+    PredispatchParms** dispatchParams =
+        (PredispatchParms**)threadParam;
+    AppleEvent ae = (*dispatchParams)-&gt;fAppleEvent;
+    AppleEvent reply = (*dispatchParams)-&gt;fReply;
+    AEEventHandlerUPP handler = (*dispatchParams)-&gt;fEventHandler;
+    long handlerRefCon = (*dispatchParams)-&gt;fHandlerRefCon;
+    DisposeHandle((Handle)dispatchParams);
+    // Call the event handler directly.
+    err = CallAEEventHandlerProc(handler, &amp;ae, &amp;reply,
+        handlerRefCon);
+    if (err != noErr) {
+        DescType        actualType = typeNull;
+        long            actualSize = 0;
+        long            errorResult;
+       
+        // If the event handler returned an error, but the reply does
+        // not contain the parameter keyErrorNumber, put the error
+        // result into the reply.
+        if (AEGetParamPtr(&amp;reply, keyErrorNumber, typeLongInteger,
+                &amp;actualType, &amp;errorResult, sizeof(long), &amp;actualSize)
+                != noErr) {
+            errorResult = err;
+            AEPutParamPtr(&amp;reply, keyErrorNumber, typeLongInteger,
+                &amp;errorResult, sizeof(long));
+        }
+    }
+    // Tell the Apple Event Manager to send the reply.
+    AEResumeTheCurrentEvent(&amp;ae, &amp;reply,
+        (AEEventHandlerUPP)kAENoDispatch, 0);
+}</pre>
+<p>
+The beauty of the technique shown in Listing 3 is that it's nicely isolated from the rest<br>
+of the code.&nbsp;&nbsp;&nbsp;The application's main event loop still calls AEProcessAppleEvent as<br>
+usual, and event handlers are installed and dispatched as usual. The only difference is<br>
+that now, event handlers are processed in their own thread of execution and may call<br>
+YieldToAnyThread to allow other parts of the application to run. The Futures Package<br>
+installs this predispatch handler when it's initialized; Listing 4 shows an example of<br>
+an event handler similar to the one in the FutureShock application. 
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 4. </b>Simple threaded event handler
+</p>
+<pre>pascal OSErr TestEvent(AppleEvent* ae, AppleEvent* reply,
+        long refCon)
+{
+    OSErr   err = noErr;
+
+    while (WorkLeftToDo() &amp;&amp; (err == noErr)) {
+        YieldToAnyThread();
+        if (gHasIdleUpdate)
+            IdleUpdate();
+        err = DoSomeWork();
+    }
+    return err;
+}</pre>
+<p>
+Note the call to IdleUpdate; on PowerBooks, if the operating system thinks that the<br>
+system isn't doing anything important, it will slow down the processor to conserve<br>
+power. This happens after 15 seconds during which no user activity and no I/O occurs.<br>
+In the realm of threads and interapplicationcommunication, it's easy for 15 seconds to<br>
+go by with no such activity, even if the machine is actually busy processing an event.&nbsp;&nbsp;<br>
+Calling the Power Manager procedure IdleUpdate avoids the power-saving mode, and<br>
+any application that performs lengthy operations should do this. Be sure, though, to<br>
+check the gestaltPMgrCPUIdle bit of the Gestalt selector gestaltPowerMgrAttr before<br>
+calling IdleUpdate, because most desktop machines don't implement this trap. 
+</p>
+<p>
+<b>&nbsp;IdleUpdate is described </b>in <i>Inside Macintosh: Devices,</i>&nbsp;&nbsp;page 6-29.*
+</p>
+<p>
+Another mechanism for spawning a thread besides using the predispatch handler is to<br>
+use Steve Sisak's AEThreads library; see "The AEThreads Library" for more<br>
+information. 
+</p>
+<h2>CLIENT/SERVER TIMEOUT NEGOTIATIONS</h2>
+<p>
+The Apple Event Manager provides a function called AEResetTimer that lets servers<br>
+inform their clients that work is being done on the event but that the reply is not yet<br>
+available. AEResetTimer is of value only to clients that use the send mode<br>
+kAEWaitReply -- the intention was for clients to use a fairly short timeout value and<br>
+for servers to periodically inform the clients of progress so that the call to AESend<br>
+isn't aborted unless the server actually can't be reached (or crashes). The mechanism<br>
+involves the Apple Event Manager sending a "wait longer" event back to the client,<br>
+tagged with the return ID of the Apple-event reply. The "wait longer" event is<br>
+intercepted by a filter inside AESend that's supposed to reset the event's timer;<br>
+unfortunately, a bug in the Apple Event Manager prevents the "wait longer" event from<br>
+working correctly, and the timer is not reset. 
+</p>
+<p>
+The existence of this bug shouldn't deter you from calling AEResetTimer in your<br>
+server application, though. The bug exists in the code that runs on the client side of the<br>
+communication, and some future version of the Apple Event Manager will fix it. Also,<br>
+as you'll see shortly, the Futures Package hooks into the "wait longer" event and uses<br>
+it to prevent blocked messages from timing out if the server application<br>
+usesAEResetTimer to request more time, effectively bypassing the bug. Other<br>
+applicationsthat don't use the Futures Package could use a similar technique to detect<br>
+server activity -- thus, AEResetTimer is the correct protocol for the server, whether<br>
+the client application uses AESend with kAEWaitReply or the Futures Package. 
+</p>
+<p>
+<b>TIME AFTER TIME</b><br>
+How often should the server call AEResetTimer? Calling it too frequently is a bad idea,<br>
+because an event is generated on every call to reset the timer. Some existing<br>
+applications call AEResetTimer when half the message's timeout value has expired; the<br>
+timeout value can be determined by examining the attribute keyTimeoutAttr in the<br>
+Apple event that the server receives. The problem with this technique is that futures,<br>
+as you may remember, are always sent with a timeout value of 0.&nbsp;&nbsp;&nbsp;Naive servers that<br>
+always depend on keyTimeoutAttr to be a meaningful value will call AEResetTimer<i>much</i><br>
+too frequently.
+</p>
+<p>
+At the very least, servers should define a threshold, perhaps 150 ticks, and never call<br>
+AEResetTimer more frequently than that. The recommended solution, however, is first<br>
+to check for the presence of the attribute keyAEResetTimerFrequency. If it exists, it<br>
+indicates approximately how often, in ticks, the client would like the server to call<br>
+AEResetTimer. If this attribute doesn't exist, the server should fall back on the default<br>
+method of using the larger of half the value of keyTimeoutAttr or 150 ticks.&nbsp;&nbsp;&nbsp;This<br>
+technique provides the greatest flexibility for clients, while allowing the server<br>
+application to continue to perform reasonably well even with clients that don't provide<br>
+specific timeout information in the events they send.
+</p>
+<p>
+It's the responsibility of the client to pick timeout and reset frequency values that<br>
+allow the server enough time to respond but still provide adequate response time to the<br>
+user when the server actually isn't available. The client should take into account that<br>
+the transit time for the event will vary, depending on whether the event is being sent<br>
+to a local or a remote process and on the network conditions at the time the event is<br>
+sent. Finally, when choosing timeout values, remember that almost no background<br>
+processing is done on the Macintosh as long as the user is doing something with the<br>
+mouse button down (such as browsing menus or dragging windows or Finder items). A<br>
+client that picks too small a value for its timeout is in danger of having user actions<br>
+interfere with the server's processing of its events, which could quite easily cause the<br>
+client's events to time out unnecessarily. 
+</p>
+<p>
+<b>HOW FUTURES DEAL WITH TIMEOUTS</b><br>
+The Futures Package keeps track of timeouts whenever a thread is blocked while<br>
+accessing data from a reply that hasn't arrived yet. The client must specify the timeout<br>
+value to use with the SetReplyTimeoutValue function, which must be called after the<br>
+message is sent but before the reply is accessed. The AskForFuture function follows<br>
+this protocol when it calls SetReplyTimeoutValue, so your application doesn't need to<br>
+call SetReplyTimeoutValue if it calls AskForFuture. When this timeout value is set, the<br>
+Futures Package creates a semaphore and stores the timeout values inside it. This same<br>
+semaphore is used to block any thread that attempts to access data from the reply<br>
+before it arrives. If an event times out, the semaphore wakes up all threads that are<br>
+blocked on it and returns a timeout error to the future's blocking routine. The error is<br>
+passed to the Apple Event Manager, which will return errAEReplyNotArrived to the<br>
+accessor(s) that caused the thread to be blocked. 
+</p>
+<p>
+Both SetReplyTimeoutValue and AskForFuture take two parameters: a timeout value<br>
+and a maximum wait value, both expressed in ticks. The timeout value indicates how<br>
+many ticks the client is willing to wait before it hears anything from the server; if the<br>
+server calls AEResetTimer, the client resets its timer and begins waiting again. But if<br>
+the timeout value is the only control that a client has, a berserk-server-from-hell<br>
+that does nothing but call AEResetTimer for days on end and never returns any results<br>
+could keep the hapless client locked up forever. This is where the maximum wait value<br>
+comes in: if the client specifies a maximum wait time, any event that remains<br>
+unserviced for longer than this period of time immediately terminates, even if the<br>
+server called AEResetTimer only a couple of ticks ago.
+</p>
+<p>
+Usually, it's best for clients to assume that servers are well behaved, and that they<br>
+will eventually return results as long as they're still working on the problem.<br>
+Distributed computing applications, though, might find it better to reschedule some<br>
+lagging events on a faster machine if the server initially selected doesn't respond<br>
+quickly enough. The maximum wait value gives them the control they need to do so. If<br>
+either the timeout value or the maximum wait time expires, the Futures Package<br>
+automatically wakes up all threads blocked on that future. The error code returned by<br>
+the Apple Event Manager is errAEReplyNotArrived, which is the same result that<br>
+would be returned if a reply that had timed out from AESend was accessed without<br>
+using the Futures Package.
+</p>
+<p>
+Note that the Apple Event Manager doesn't assume that an application has given up on a<br>
+reply until the reply is disposed of. Until that happens, the reply will be filled in as<br>
+soon as it's received, even if the event has timed out. A distributed computing<br>
+application that rescheduled an event on a faster machine could keep a reference to the<br>
+old future around and use the result from the machine that finished first. 
+</p>
+<h2>THE FUTURES PACKAGE API</h2>
+<p>
+Here's a description of the routines provided by the updated Futures Package. 
+</p>
+<pre>void InitFutures(ThreadCreateUPP threadCreateProc,
+        long initFuturesFlags)</pre>
+<p>
+The function InitFutures initializes and enables the Futures Package. The parameter<br>
+initFuturesFlags should be set to the sum of the flags that the futures-savvy<br>
+application wants to set. The Futures Package recognizes two flags: the first,<br>
+kInstallHouseKeepingThread, causes the Futures Package to create a new thread that<br>
+does nothing but call IdleFutures (described below); the other parameter,<br>
+kInstallPredispatch, specifies that the Futures Package should install the predispatch<br>
+handler shown earlier in Listing 4.&nbsp;&nbsp;&nbsp;This handler causes a new thread to be created for<br>
+every Apple event dispatched by AEProcessAppleEvent. The threadCreateProc<br>
+parameter to InitFutures is for applications that install custom context-switching<br>
+routines or that maintain a custom thread scheduler. This thread creation procedure is<br>
+called every time the Futures Package creates a new thread, allowing your application<br>
+to hook the new thread into its scheduler and install custom context-switching<br>
+routines. 
+</p>
+<p>
+The thread creation procedure is defined like this:
+</p>
+<pre>pascal OSErr MyThreadCreateHandler(ThreadEntryProcPtr threadEntry,
+    void* threadParam, long handlerRefCon, ThreadID* threadMade)</pre>
+<p>
+The threadEntry, threadParam, and threadMade parameters should be passed on to<br>
+NewThread.&nbsp;&nbsp;&nbsp;The handlerRefCon parameter is the refCon that was passed to<br>
+AEInstallEventHandler when the event handler for the Apple event being dispatched was<br>
+installed. InitFutures will also call the thread creation procedure to create the<br>
+housekeeping thread; in that case, the refCon passed in will be 0. If a thread creation<br>
+procedure isn't provided, the Futures Package will call NewThread directly. 
+</p>
+<pre>void BlockUntilReal(AppleEvent* reply)</pre>
+<p>
+The function BlockUntilReal causes the current thread of execution to be blocked until<br>
+the specified Apple event reply becomes a real message. Usually, this routine doesn't<br>
+need to be called; the Futures Package automatically blocks the current thread<br>
+whenever any Apple Event Manager accessor function is called to get data out of a<br>
+future. 
+</p>
+<pre>Boolean ReplyArrived(AppleEvent* reply)</pre>
+<p>
+The function ReplyArrived returns true if the given reply has been received, in which<br>
+case it may be accessed without blocking. Usually, this routine won't need to be called.<br>
+The whole idea of the Futures Package is to remove the burden of keeping track of<br>
+whether a reply has arrived.&nbsp;&nbsp;&nbsp;ReplyArrived has a counterpart function named<br>
+IsFuture, which is provided for compatibility with the Futures Package API presented<br>
+in Issue 7 of<i>develop. </i>
+</p>
+<pre>void SetReplyTimeoutValue(AppleEvent* reply, long timeout,
+    long maxWaitTime)</pre>
+<p>
+SetReplyTimeoutValue allows the client to specify a timeout value and an upper bound<br>
+on the amount of time it's willing to wait before a thread that's blocked on a future<br>
+should be awakened and informed that the event timed out. If used,<br>
+SetReplyTimeoutValue must be called after the event is sent, but before the reply is<br>
+accessed in any way. Usually, SetReplyTimeoutValue won't need to be called directly,<br>
+because it's called by the function AskForFuture (described below). 
+</p>
+<pre>void IdleFutures()</pre>
+<p>
+The IdleFutures function does the actual test to see whether any of the blocked messages<br>
+have timed out. Usually, IdleFutures is called automatically by the Futures Package; if<br>
+your application doesn't specify the flag kInstallHouseKeepingThread in InitFutures,<br>
+however, it should call IdleFutures periodically. It's not necessary to call IdleFutures<br>
+more frequently than every tick or so, but the function is smart enough not to do work<br>
+superfluously, so there shouldn't be a negative performance hit to calling IdleFutures<br>
+more frequently than once a tick. Don't go overboard, though -- enough is enough. 
+</p>
+<pre>OSErr AskForFuture(const AppleEvent* ae, AppleEvent* future,
+    long timeout, long maxWaitTime, AESendMode sendMode,
+    AEPriority priority)</pre>
+<p>
+The AskForFuture&nbsp;&nbsp;function calls AESend following the protocol defined by the Futures<br>
+Package; keyAEResetTimerFrequency is set before the event is set, and<br>
+SetReplyTimeoutValue is called with the specified timeout and maximum wait times.<br>
+AskForFuture will always return immediately; the reply received will be a future,<br>
+and timeout processing will be done correctly if the current thread of execution blocks<br>
+on the future. 
+</p>
+<pre>long GetResetTimerFrequency(const AppleEvent* ae)</pre>
+<p>
+The GetResetTimerFrequency function returns the frequency, in ticks, with which the<br>
+Futures Package thinks that your application should call the Apple Event Manager<br>
+function AEResetTimer, based on parameters in the provided Apple event. Note that<br>
+GetResetTimerFrequency should be passed the Apple-event message; this is different<br>
+from the Apple Event Manager routine AEResetTimer, which needs the Apple-event<br>
+reply. 
+</p>
+<pre>OSErr ResetTimerIfNecessary(AppleEvent* reply,
+    unsigned long&amp; lastReset, long resetFrequency)</pre>
+<p>
+ResetTimerIfNecessary calls AEResetTimer when enough time has elapsed since the<br>
+last time it was called. The server is responsible for keeping track of the reset<br>
+frequency and storing away the last reset tick, although the Futures Package will do<br>
+the housekeeping of updating the last reset tick whenever AEResetTimer is actually<br>
+called. 
+</p>
+<h2>FUTURE DIRECTIONS</h2>
+<p>
+Apple events allow ordinary applications to become powerful tools for use both in<br>
+scripting and by other applications; however, the power afforded by Apple events can<br>
+be quickly negated if the server can't process multiple events asynchronously, or if<br>
+the user can't work with the client process while it's waiting for a reply. As more<br>
+applications become scriptable, and as component-oriented systems such as OpenDoc<br>
+become more prevalent, the distinction between client and server becomes blurred,<br>
+and more applications will take on both roles.&nbsp;&nbsp;&nbsp;In a world where asynchronous<br>
+interapplication communication is the norm rather than the exception, the Futures<br>
+Package allows you to harness the power of asynchronicity without becoming lost in a<br>
+mire of completion routines. 
+</p>
+<h2>CLIENT/SERVER REVIEW</h2>
+<p>
+In the vocabulary of interapplication communication, the <i> client</i>&nbsp;&nbsp;is the application<br>
+that sends a message, and the <i>server</i>&nbsp;&nbsp;is the application that receives, processes, and<br>
+responds to it. Since any application that processes events is a server, all scriptable<br>
+applications are servers.
+</p>
+<p>
+Some applications may take on the role of both client and server at different times. For<br>
+instance, if an application needs to send an event to some other application in order to<br>
+process the event that it just received, that application is the client of one application<br>
+and the server of the other. It's also possible for an application to be a client of itself,<br>
+if it sends itself messages; factored, recordable applications fall into this category.
+</p>
+<p>
+Applications that act as both clients and servers should process events asynchronously<br>
+-- otherwise, the system can quickly become lost in a sea of woe and deadlock. But<br>
+asynchronous event handling is complex and difficult; that's the problem that futures<br>
+solve.
+</p>
+<h2>CUSTOM CONTEXT SWITCHING</h2>
+<p>
+An application that uses threads must install custom thread context-switching<br>
+callbacks if it has any global variables that need to have separate instances in every <br>
+thread of execution. The most common reason for needing separate instances of a global<br>
+variable is to maintain any&nbsp;&nbsp;global stacks in the application, such as the failure<br>
+handler stack maintained by most exception handler packages.
+</p>
+<p>
+A custom thread context-switching callback must be installed for every thread created<br>
+by an application and also for the main thread (the thread created automatically by the<br>
+Thread Manager). You can reference the main thread by using the constant<br>
+kApplicationThreadID for its thread ID.
+</p>
+<p>
+In the Metrowerks environment, an internally used global variable called<br>
+_local_destructor_chain points to the top of a stack that keeps track of all the local<br>
+variables that may need to have their destructor called (~TObject). If this variable<br>
+isn't swapped out on a per-thread basis, one thread could cause the destructor<br>
+forobjects still active in another thread to be called out of context. The results, of<br>
+course, would be disastrous (a crash). Compiler-specific global variables should be<br>
+saved and restored within <b> #if</b> blocks, as is done in the following code (taken from<br>
+FutureShock's swap-context-out callback):
+</p>
+<pre>#if _MWERKS_
+    fLocalDestructorChain = _local_destructor_chain;
+#endif</pre>
+<p>
+The same technique should also be used in the swap-context-in callback.
+</p>
+<h2>WHAT'S A SEMAPHORE?</h2>
+<p>
+A semaphore is an object that's used to arbitrate access to a limited resource or to<br>
+somehow synchronize execution of independently operating processes. A semaphore<br>
+controls the flow of execution in an application.
+</p>
+<p>
+Threads of execution that "own" a semaphore are allowed to run, and threads that<br>
+attempt to take ownership of a semaphore that isn't available are stopped and not<br>
+allowed to run again until the semaphore becomes available. When used to arbitrate<br>
+access to a limited resource, the semaphore also enforces strict sequencing of the<br>
+threads that are blocked on it -- ownership of the semaphore is provided to the<br>
+threads that request it one at a time, in the order the requests are made. Typically,<br>
+only one thread of execution is allowed to own a semaphore at a time.
+</p>
+<p>
+With the Futures Package, when a thread attempts to access data from a future, a<br>
+semaphore is used to synchronize its execution with the arrival of the reply.&nbsp;&nbsp;In this<br>
+case, none of the threads owns the semaphore; conceptually, ownership lies with the<br>
+future that the semaphore is associated with. When the future becomes a real reply,<br>
+all of the threads blocked on the semaphore are allowed to run, and the semaphore is<br>
+deleted.
+</p>
+<h2>THE AETHREADS LIBRARY</h2>
+<p>
+<b>BY STEVE SISAK</b>
+</p>
+<p>
+In my article entitled "Adding Threads to Sprocket" in&nbsp;&nbsp;the December 1994 issue of<br>
+<i>MacTech Magazine</i> , I described an implementation of futures and a library called<br>
+AEThreads that allows you to install asynchronous Apple event handlers. I stated that<br>
+the futures code should really be supported by Apple and that you should go&nbsp;&nbsp;with their<br>
+solution if they eventually provide one. This is the case here. The Futures Package<br>
+addresses many of the issues that my library did not, and is also provided&nbsp;&nbsp;in source<br>
+form. Therefore I recommend that you use Greg's futures implementation instead of<br>
+mine in any&nbsp;&nbsp;new code.
+</p>
+<p>
+You may, however, find AEThreads more useful for spawning threads than the<br>
+predispatch handler in the Futures Package. Its main advantage is that it allows&nbsp;&nbsp;you to<br>
+control, on an individual basis, which events are handled asynchronously and which<br>
+are handled immediately. It also enables you to control all of the thread parameters<br>
+(for example, stack size and needFPU) for your event-handling threads, and it doesn't<br>
+interfere with installing a predispatch handler in your application (as described in<br>
+<i>Inside Macintosh: Interapplication Communication</i>&nbsp;&nbsp;on pages 10-19 to 10- 21).
+</p>
+<p>
+The AEThreads library is provided on this issue's CD. To use it, don't install the<br>
+predispatch handler when you initialize the Futures Package (as explained in the<br>
+description of InitFutures later in this article), and call<br>
+AEInstallThreadedEventHandler where you would have called AEInstallEventHandler.<br>
+Everything else should work the same. If you have any questions, comments, or<br>
+problems with AEThreads, please let me know at sgs@gnu.ai.mit.edu.
+</p>
+<p><b>RELATED READING</b></p>
+<ul>
+<li><i>Inside Macintosh: Interapplication Communication</i>  (Addison-Wesley,<br>
+1993).&nbsp;&nbsp;&nbsp;&nbsp;</li>
+<li><i>develop</i> articles: "Threads on the Macintosh" by Michael Gough, Issue 6; <br>
+"Threaded Communications&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;With Futures" by Michael Gough, Issue 7;<br>
+"Concurrent Programming With the Thread Manager" by Eric&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Anderson and<br>
+Brad Post, Issue 17; "Scripting the Finder From Your Application" by Greg<br>
+Anderson, Issue 20.&nbsp;&nbsp;&nbsp;&nbsp;</li>
+<li>"Adding Threads to Sprocket" by Steve Sisak, <i> MacTech Magazine,</i> <br>
+December 1994.</li>
+</ul>
+<p>
+<b>GREG ANDERSON </b>worked with Michael Gough on the original Futures Package that<br>
+was described in Issue 7 of <i> develop</i> . One of Greg's favorite activities is ballroom<br>
+dancing, which he does at every opportunity -- particularly if he gets the chance to<br>
+polka like a mad dog. Professionally, Greg is the technical lead of the Finder team at<br>
+Apple. *
+</p>
+<p>
+<b>Thanks </b>to our technical reviewers Eric Anderson, Michael Gough, Ed Lai, and Steve<br>
+Sisak. Special thanks to Ed Lai, who put futures support into the Apple Event Manager.<br>
+*
+</p>
+</body>
+</html>

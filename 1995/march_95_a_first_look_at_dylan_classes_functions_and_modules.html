@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 15 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 95 - A First Look at Dylan: Classes, Functions, and Modules</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>A First Look at Dylan: Classes, Functions, and<br>
+Modules</h1>
+<h2>Steve Strassmann</h2>
+<p>
+<img src="img/152.gif" width="182 px"></img>
+</p>
+<p>
+<i>Dylan is a new object-oriented dynamic language (OODL) that's attracting a lot of</i><br>
+<i>attention. Like C++, it's designed for efficient compilation and delivery of mainstream</i><br>
+<i>commercial applications. However, Dylan differs from C++ in important ways that</i><br>
+<i>make it more powerful and flexible. Here we'll focus on one important difference from</i><br>
+<i>C++: the way classes and their methods are organized.</i>
+</p>
+<p>
+The organization of classes and functions is different in Dylan than in C++. In C++,<br>
+classes are used in two ways: to encapsulate data and as a scoping mechanism. Methods<br>
+in C++ "belong to" classes, and there are many complex mechanisms governing access<br>
+to methods from "inside" and "outside" a class. In Dylan, classes are used only for data<br>
+encapsulation -- there's no notion of methods being owned by classes. As a result,<br>
+specifying and using methods is cleaner, simpler, and more expressive.
+</p>
+<p>
+Access is simplified and abstracted through <i>modules, </i>which are a way of grouping<br>
+related classes, methods, and variables. Rather than being tied to a single class, each<br>
+method belongs to a family called a generic function. Each<i>generic function </i>can operate<br>
+on one or more related classes, and can be extended across one or more modules. We'll<br>
+talk more about generic functions, polymorphism, and modules later in this article.
+</p>
+<p>
+Dylan has many other features that distinguish it from C++, including:
+</p>
+<ul>
+<li>    automatic memory management</li>
+<li> clean, consistent syntax</li>
+<li> fully and consistently object-oriented model</li>
+<li> dynamic as well as static type checking</li>
+<li> support for incremental compilation</li>
+<li> first-class functions and classes</li>
+</ul>
+<p>
+There's not enough space here to do justice to each of these topics, so we'll just touch<br>
+on some of them as we discuss classes, functions, and modules. As you might expect,<br>
+this article assumes you have some familiarity with basic object-oriented concepts,<br>
+such as classes, instances, and inheritance.
+</p>
+<p>
+On this issue's CD, you'll find a freeware Dylan interpreter, called Marlais, that you<br>
+can use to execute code written in Dylan.&nbsp;&nbsp;Simply run the application and enter your<br>
+code at the prompt. Also on the CD are the code samples you'll see in this article, plus<br>
+the <i>Dylan Interim Reference Manual </i>and other Dylan goodies.
+</p>
+<p>
+Apple's implementation of Dylan, called Apple Dylan, is planned to ship later this year.<br>
+One great feature of Apple Dylan is that it allows you to call existing C and<br>
+C-compatible code libraries, such as the Macintosh Toolbox. See "Creole: Using the<br>
+Toolbox and Other C Code From Within Dylan Code" for details.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CREOLE: USING THE TOOLBOX AND OTHER C CODE FROM<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WITHIN DYLAN CODE</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;With any new language, you're bound to wonder whether you'll be able to get at<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the "really good stuff." You know, interfaces always seem to be published just<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for C programmers, and nobody else. I don't mean merely the Macintosh<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Toolbox, but any other code already written by you or a third party, like<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;database access routines or advanced graphics libraries. In many cases (such<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;as with the Macintosh Toolbox), you may not have access to the source code, so<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;recompiling or translating it into the new language is simply not an option.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Apple has designed a cross-language extension to the Dylan language. This<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;extension, called Creole in Apple Dylan, allows you to build programs with<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;parts written in both Dylan and C or C-compatible languages. We at Apple hope<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the extension will be supported by other Dylan implementations, but since the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;extension isn't part of the standard Dylan language, it's not required. (The<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Marlais interpreter on this issue's CD doesn't support it.) In the future, Apple<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;will also support the System Object Model (SOM) extension, which is used by<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OpenDoc. Here we'll take a look at some features of Apple Dylan's Creole<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;implementation.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Once you import C interfaces into Dylan, you can call C functions and refer to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;C <b>struct</b>sas if they were Dylan functions and objects. There's no need to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;translate the C headers first; Creole reads them directly. In the following<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;simple example, we import the interface file OSUtils.h, which contains the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Toolbox function SysBeep; we can then, for instance, call<b>SysBeep(1)</b> from<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Dylan.
+</p>
+<pre>      define interface
+         #include "OSUtils.h",
+            import: {"SysBeep"};
+      end interface;</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Creole provides these additional facilities:
+</p>
+<ul>
+<li style="margin-left: 17px">    An access path (linking) mechanism links compiled C-compatible<br>
+modules, including C++, Pascal, assembler, and FORTRAN modules, into a<br>
+Dylan application. Creole supports object (".o") files, shared libraries (Apple<br>
+Shared&nbsp;&nbsp;Library Manager or Code Fragment Manager), inline traps, code<br>
+resources, and PowerPC transition vectors.</li>
+<li style="margin-left: 17px"> Cross-language calls allow Dylan routines to call routines in another<br>
+language, and vice versa.</li>
+<li style="margin-left: 17px"> Name mapping translates names of entities in another language into Dylan<br>
+variable names in a specified module. Apple Dylan offers several convenient<br>
+mappings for common naming conventions.</li>
+<li style="margin-left: 17px"> Type mapping translates C types into Dylan types and provides type<br>
+checking for Dylan clients of the Macintosh Toolbox and other interfaces.</li>
+<li style="margin-left: 17px"> Low-level facilities provide Dylan programs with direct use of machine<br>
+pointers and the raw bits pointed to by the machine pointers.</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A <b>define interface</b> statement imports one or mointerface files and creates<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Dylan classes, constants, and functions corresponding to the C types,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;constants, and functions in the interface files. Like any Dylan expression, a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>define interface </b>statement exists in a particular module, as do the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;variables that it defines. You can export and rename these variables using<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;module options just as you would for normal Dylan variables (as discussed<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;later under "The Role of Modules").
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Many options are available to override Creole's default behavior. For example,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;you can do any of the following:
+</p>
+<ul>
+<li style="margin-left: 17px">    selectively import parts of an interface</li>
+<li style="margin-left: 17px"> explicitly control type mapping -- for example, to map <b>StringPtr</b>to<br>
+<b>&lt;Pascal-string&gt;</b></li>
+<li style="margin-left: 17px">explicitly control name mapping to avoid name conflicts because of the<br>
+difference in case-sensitivity and scoping rules in Dylan and C</li>
+<li style="margin-left: 17px"> work around undesirable features in the interface or in Creole</li>
+<li style="margin-left: 17px"> control tradeoffs between runtime memory consumption and dynamic<br>
+functionality</li>
+</ul><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________</p>
+<h2>CLASSES AND OBJECTS</h2>
+<p>
+Dylan is fully and consistently object-oriented, much like Smalltalk(TM). Everything<br>
+is an object, including numbers, strings, and even functions and classes themselves.<br>
+Each object descends from a single common ancestor class, named <b>&lt;object&gt;</b>.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>The &lt;&gt; characters</b> are not some fancy operator but are merely a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;typographic convention for indicating the name of a class in Dylan, just as<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;all-uppercase letters might indicate a macro in C++. You're allowed to name a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;class without the <b>&lt;&gt; </b>characters, but that would be considered bad style.*
+</p>
+<p>
+To illustrate how classes are used in Dylan, let's look at one of our samples, SimMogul,<br>
+to model Hollywood high finance. In Listing 1, we define a few classes, creating the<br>
+inheritance hierarchy shown in Figure 1.
+</p>
+<p>
+<b>Listing 1. </b>SimMogul -- basic version
+</p>
+<pre>define class &lt;project&gt; (&lt;object&gt;)
+   slot script;                      // All you need is a hot script
+   slot star;                        // and a big name.
+end class &lt;project&gt;;                 // Last two words are optional.
+
+define class &lt;actor&gt; (&lt;object&gt;)
+   slot name;                        // Actor's name
+   slot salary;                      // Cost to hire
+   slot fans;                        // Audience size
+end class;
+
+define class &lt;script&gt; (&lt;object&gt;)
+   slot name;                        // Script's name
+   slot fx-budget;                   // Cost of special effects
+end class;
+
+define class &lt;sci-fi&gt; (&lt;script&gt;)
+end class;
+
+define class &lt;romance&gt; (&lt;script&gt;)
+end class;</pre>
+<p>
+<img src="img/153.gif" width="590 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>Inheritance hierarchy of SimMogul classes
+</p>
+<p>
+The first thing you might notice about this code is that Dylan identifiers draw on a<br>
+richer stock of characters than do most languages. Dylan identifiers are<br>
+case-insensitive and can include characters like &lt;, &gt;, *, +, and -, which are<br>
+traditionally reserved for operators. As a result, operators like these must be<br>
+surrounded by spaces when used in formulas (as you'll see later in the definitions for<br>
+<b>profits </b>in Listing 5).
+</p>
+<p>
+As shown in Listing 1, each <b>define class </b>statement begins with the name of the class<br>
+being defined, followed by its parent (or <i>superclass</i>) in parentheses. Dylan supports<br>
+multiple inheritance; multiple superclasses would be listed in the parentheses,<br>
+separated by commas. For this short example, however, we'll stick to single<br>
+inheritance.
+</p>
+<p>
+<b>&lt;project&gt; </b>is a simple class with two <i>slots </i>(comparable to data members in C++)<br>
+named <b>script </b>and <b>star. </b>This is a pretty basic structure that doesn't include any<br>
+options, but it illustrates the syntax for class definitions. There's no need to create<br>
+constructor or destructor methods; that's taken care of automatically. The last two<br>
+words, <b>class &lt;project&gt;,</b> are optional, but if you provide them, the name must match<br>
+that of the class being defined. You can just say <b>end </b>or <b>end class</b> instead if you like,<br>
+which is what we've done for the remaining classes.
+</p>
+<p>
+<b>TYPE DECLARATIONS AND AUTOMATIC MEMORY MANAGEMENT</b>
+</p>
+<p>
+Type declarations are optional in Dylan because values, not storage locations, are<br>
+strongly typed. Each object's type is always known from the moment it's created, so<br>
+there's less need to declare types on storage locations. It's OK to leave off type<br>
+declarations, as we did for slots in Listing 1. This makes rapid prototyping much<br>
+easier than in C++.
+</p>
+<p>
+Listing 2 shows a version of SimMogul that does contain some type declarations. The<br>
+definition of <b>&lt;actor&gt;</b>, for example, has a slot declared as<b>name :: &lt;string&gt;</b>, which<br>
+specifies the type of the <b>name</b>slot. The compiler will generate code that guarantees<br>
+that only strings can be stored in this slot; attempts to store anything else will cause<br>
+an error.
+</p>
+<p>
+<b>Listing 2.</b> SimMogul -- embellished version
+</p>
+<pre>define class &lt;project&gt; (&lt;object&gt;)
+   slot script;                    // All you need is a hot script
+   slot star;                      //  and a big name.
+end class &lt;project&gt;;         // Last two words are optional.
+
+define class &lt;actor&gt; (&lt;object&gt;)
+   slot name :: &lt;string&gt;,    // Actor's name
+      required-init-keyword: name:;
+   slot salary :: &lt;number&gt;,  // Cost to hire
+      init-value: 1000000,
+      init-keyword: salary:;
+   slot fans :: &lt;number&gt;,    // Audience size
+      init-value: 1000000,
+      init-keyword: fans:;
+end class;
+
+define class &lt;script&gt; (&lt;object&gt;)
+   slot name :: &lt;string&gt;,           // Script's name
+      required-init-keyword: name:;
+   slot fx-budget :: &lt;number&gt;,      // Cost of special effects
+      init-value: 10000,
+      init-keyword: fx-budget:;
+end class;
+
+define class &lt;sci-fi&gt; (&lt;script&gt;)
+   inherited slot fx-budget, init-value: 20000000;
+end class;
+
+define class &lt;romance&gt; (&lt;script&gt;)
+   inherited slot fx-budget, init-value: 0;
+end class;
+
+define variable arnold =
+   make(&lt;actor&gt;, name: "Arnold", fans: 10000000);
+
+define variable betty =
+   make(&lt;actor&gt;, name: "Betty", fans: 5000000);
+
+define variable tender :: &lt;script&gt; =
+   make(&lt;romance&gt;, name: "Tender Sunshine");
+
+define variable zarx :: &lt;script&gt; =
+   make(&lt;sci-fi&gt;, name: "Land of the Zarx-Eaters");
+
+define constant $ticket-price = 7;</pre>
+<p>
+Another reason to provide type declarations is that it allows the compiler to generate<br>
+more efficient code. For example, if you wrote code that stores an appropriately<br>
+declared value in an <b>&lt;actor&gt;</b>'s <b>name</b> slot, at compile time the compiler would be able<br>
+to deduce the value's type. Values that are known to be strings will be stored<br>
+efficiently, with no runtime type checking. Those known not to be strings will generate<br>
+compile-time warnings, just as they would in a strongly typed language. If you choose<br>
+to leave off declarations, the compiler will insert instructions for runtime type<br>
+checking, so you'll have crash-safe code no matter what. This is an example of how<br>
+Dylan always lets you compile in a way that's both maximally safe and efficient.
+</p>
+<p>
+In general, Dylan programs should crash much less often than comparable C programs,<br>
+because most errors will be detected and handled gracefully and automatically.<br>
+Automatic memory management is one big source of this safety, since it eliminates the<br>
+majority of bugs that usually come from manually operating on raw memory pointers.<br>
+Dylan's ability to ensure safety, however, is limited when working with code imported<br>
+from outside Dylan, such as the Macintosh Toolbox, which forces Dylan programmers<br>
+to use raw memory pointers in some cases. Apple Dylan will insulate programmers as<br>
+much as possible from these pointers with an application framework.
+</p>
+<p>
+<b>CREATING OBJECTS AND FILLING THEIR SLOTS</b>
+</p>
+<p>
+Your application creates objects by calling <b>make</b>, which creates<i>instances </i>of a class.<br>
+Listing 2 gives some examples of actors and scripts being created with calls to <b>make</b>.<br>
+Values for slots are provided with keyword arguments to <b>make</b>, called <i>init-keywords.</i><br>
+Dylan keywords, which are similar to Smalltalk keywords, are a way to provide<br>
+optional function parameters. I'll have more to say about specifying and using<br>
+keywords in function calls in the section on functions.
+</p>
+<p>
+Since the slots in <b>&lt;project&gt; </b>don't have init-keywords, you can't provide values for<br>
+them when you use<b> make </b>to make projects. If a project is created with<br>
+<b>make(&lt;project&gt;), </b>the slots are uninitialized, and any attempt to read their values<br>
+in this uninitialized state is an error that will be detected and reported.
+</p>
+<p>
+The <b>name </b>slot in <b>&lt;actor&gt; </b>has a <b>required-init-keyword:</b>option, which is used<br>
+further down to specify the name of the <b>arnold</b>object. Required init-keywords are<br>
+commonly used for slots with no default value because this requires callers to provide<br>
+a value when they make objects.
+</p>
+<p>
+The other slots in <b>&lt;actor&gt;, salary </b>and <b>fans</b>, have default values as well as<br>
+init-keywords. When an actor is created, the slot's value can be defaulted (for<br>
+example, <b>arnold</b>'s <b>salary</b>) or overridden (for example, <b>arnold</b>'s <b>fans</b>). Slots can<br>
+also be initialized with the<b>init-function: </b>option, which calls a function to compute<br>
+the default value.
+</p>
+<p>
+The declaration <b>salary :: &lt;number&gt; </b>restricts the <b>salary</b>slot to hold only numbers.<br>
+Notice that we didn't choose a specific numeric type for the <b>salary </b>slot type (such as<br>
+short, int, long, or double), though we easily could have. Dylan provides a rich<br>
+library of numeric types, including integers of unlimited size (which are good for<br>
+devalued currencies and salaries of major athletes). By using <b>&lt;number&gt; i</b>nstead of a<br>
+more specific numeric type, your type declaration becomes a tool for documentation<br>
+and error checking, even while you're in the midst of rapid prototyping. We're not<br>
+obliged to make some arbitrary and premature optimization at this stage, as we would<br>
+with C or C++. Using <b>&lt;number&gt;</b>captures as much of our design as we want for now;<br>
+we can always come back and tune it later.
+</p>
+<p>
+A Dylan class inherits slots from all its superclasses and can also define its own new<br>
+slots, just as in C++. All slots in a given class must be unique; there cannot be two<br>
+different slots with the same name. You can override some properties of an inherited<br>
+slot, however, by partially respecifying the slot. Taking a look at the definition of<br>
+<b>&lt;sci-fi&gt;</b> in Listing 2, we see that it overrides the default init-value for <b>fx-budget</b><br>
+inherited from<b>&lt;script&gt; </b>with a somewhat higher value. The keyword<br>
+<b>inherited</b>indicates that the slot is inherited from a superclass; it's not a new slot<br>
+with the coincidentally identical (and therefore illegal) name.
+</p>
+<p>
+You can specify many other interesting options for slots, such as <b>class</b>allocation,<br>
+which shares a singly allocated value used by all instances of that class; <b>class</b><br>
+allocation roughly corresponds to a static data member in C++. Dylan also lets you<br>
+provide<b> virtual </b>allocation for slots. Rather than being stored in the slot, a virtual<br>
+slot's value is computed by a function each time the slot is referenced. This feature is<br>
+missing from C++ and is very different from what C++ refers to as virtual data<br>
+members.
+</p>
+<p>
+<b>USING VARIABLES AND CONSTANTS</b>
+</p>
+<p>
+In Listing 2, we make some objects out of the classes and bind them to global variables<br>
+with the <b>define variable</b> statement. The variables holding the actors have no type<br>
+declaration -- we didn't do this with any design considerations in mind, but just to<br>
+show you that it can be done. Like slot declarations, type declarations for global<br>
+variables are optional; they're used to increase efficiency, not to change the program<br>
+logic. The other two variables have <b>:: &lt;script&gt; </b>type declarations, which is OK, since<br>
+the values stored there are indirect instances of<b> &lt;script&gt;</b>. The variable <b>tender </b>is an<br>
+instance of <b>&lt;romance&gt;, </b>which is a subclass of <b>&lt;script&gt;.</b>
+</p>
+<p>
+Also included is a <b>define constant </b>statement, which looks just like<b>define</b><br>
+<b>variable</b>, except that once you give it a value, the running program isn't allowed to<br>
+change it. The $ in the name <b>$ticket-price </b>is something of a coincidence. By<br>
+convention, all constants in Dylan are given names beginning with a dollar character,<br>
+as in <b>define constant $pi = 3.14159.</b>
+</p>
+<p>
+It's worth noting that <b>define constant </b>doesn't restrict mutable objects from being<br>
+mutated. Some collections, such as vectors, are mutable in that the value of an element<br>
+can change, and class instances are mutable in that a slot can change (unless you<br>
+declare the slot as a <b>constant</b> in the class definition, of course). Since <b>define</b><br>
+<b>constant </b>describes the identifier, not the object, what it really means is that the<br>
+identifier will always refer to <i>that particular object,</i> and to no other object. This is<br>
+the same as a<b>const </b>pointer in C++, where the pointer is not allowed to change but the<br>
+object pointed to may be mutated.
+</p>
+<p>
+<b>$ticket-price</b> is a real constant after all, because its value of 7 (like all numbers)<br>
+cannot be mutated; for example, you cannot change the 7 to an 8 without changing the<br>
+object itself.
+</p>
+<p>
+<b>VARIABLES HOLD ANYTHING</b>
+</p>
+<p>
+Variables (and constants, which are a kind of variable) can contain any type of Dylan<br>
+data object, including numbers, strings, and user-defined objects like actors and<br>
+scripts. But in Dylan, the classes and functions themselves are also objects, and hence<br>
+are also stored in variables. It turns out that<b>&lt;actor&gt; </b>is just another variable, as is<br>
+<b>arnold. </b>The value of the variable whose name is <b>&lt;actor&gt; </b>happens to be a class, and<br>
+the value of the variable whose name is <b>arnold </b>is an instance of that class.
+</p>
+<p>
+When we say everything's an object in Dylan, we mean <i>everything. </i>A variable is just a<br>
+way of naming an object so that you can refer to it in your program. Since you can<br>
+refer to functions or classes just as easily as you can refer to numbers, we think of<br>
+them as "variables." So don't be shocked when you see documentation referring to<br>
+something like <b>print</b> as a variable. It's just a variable whose value happens to be a<br>
+function.
+</p>
+<h2>HOW FUNCTIONS WORK IN DYLAN</h2>
+<p>
+Dylan uses a simple, consistent, functional interface for slot access, which avoids<br>
+many of the confusing aspects of C++'s data members. Functions in Dylan have many<br>
+elegant features that make them more powerful than their counterparts in C++, but<br>
+without adding a lot of complicated syntax. In this section we'll talk about some of the<br>
+ways you can create and use Dylan functions.
+</p>
+<p>
+<b>GETTERS AND SETTERS</b>
+</p>
+<p>
+By default, a pair of accessor functions, called <i>getter </i>and <i>setter</i>functions, is created<br>
+for each slot. For example, the definition of<b>&lt;actor&gt; </b>in Listing 1 automatically creates<br>
+the following six functions:
+</p>
+<pre>name(a)                     // Gets the name of actor a
+name-setter(new, a)         // Sets the name of actor a to new
+salary(a)                   // Gets the salary of actor a
+salary-setter(new, a)       // Sets the salary of actor a to new
+fans(a)                     // Gets the audience size of actor a
+fans-setter(new, a)         // Sets the audience size of actor a to
+new</pre>
+<p>
+Slot access in Dylan looks exactly like a function call, even though the compiler may<br>
+implement slot access much more efficiently. Alternatively, you can use the more<br>
+traditional dot notation for slot access. Therefore, the syntax<b>object.property </b>is<br>
+exactly equivalent to <b>property(object). </b>You can use whichever syntax best fits the<br>
+situation.
+</p>
+<p>
+This functional interface is a great feature, because it allows a class's implementation<br>
+details to remain an abstraction for the users of a class. The<b>fans </b>property, which<br>
+indicates the box office drawing power, might be stored as a slot in some classes or it<br>
+might be computed on the fly by a function for other classes. Users will always see a<br>
+functional interface, and never need to know about the internal implementation.
+</p>
+<p>
+Whenever a slot reference appears on the left side of an assignment statement, the<br>
+reference is translated into a call to the appropriate setter function. For example,<br>
+these are all equivalent ways of changing the <b>name </b>slot of the<b>arnold </b>object:
+</p>
+<pre>arnold.name := "Arnie";
+name(arnold) := "Arnie";
+name-setter("Arnie", arnold);  </pre>
+<p>
+Slots can also take a <b>setter: </b>option, which lets you provide the name of the setter<br>
+function. The default is to give it a name like <b>name-setter,</b> but you can use a<br>
+different name, or specify that no setter at all should be created. If there is no setter<br>
+function, you effectively make the slot's value read-only. As you'll see later in the<br>
+section on modules, you can also control read and write access to slots by selectively<br>
+exporting getter and setter functions to other modules.
+</p>
+<p>
+<b>POLYMORPHISM</b>
+</p>
+<p>
+Object-oriented languages, including Dylan, provide <i>polymorphic</i>functions, which<br>
+means a given function may be executed as one of several possible implementations of<br>
+that function, called<i> methods. </i>In our code above,<b> name i</b>s just such a function. Calling<br>
+<b>name(arnold) </b>calls the <b>name </b>method for actors, but calling <b>name(tender)</b><br>
+invokes the<b>name</b> method for scripts, which may have a very different<br>
+implementation.
+</p>
+<p>
+So, when Dylan sees a call to <b>name(x),</b> depending on what type of objectis, one of<br>
+several methods is selected and executed. In Dylan,<b> name</b>is called a <i>generic function,</i><br>
+consisting of a family of <b>name</b>methods that implement the functionality of <b>name </b>for<br>
+various classes (see Figure 2). Each of these methods "belongs to" its generic function<br>
+(in this case, <b>name) </b>rather than to a class. This is a key point; it's the core<br>
+difference between C++'s object model and Dylan's.
+</p>
+<p>
+<img src="img/154.gif" width="422 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>Generic function containing several methods
+</p>
+<p>
+C++'s virtual methods are polymorphic only to the extent that they share a common<br>
+ancestor. In C++, if you wanted<b> name </b>to work on both actors and scripts, you'd have<br>
+to create a class (for example, <b>nameableObject)</b> just to contain the <b>name</b> method,<br>
+and then modify both actor and script classes to inherit from it. This scenario creates<br>
+quite a few unwanted complications. First, it clutters up your object hierarchies with<br>
+unnatural "glue" classes that have little to do with the problem domain being<br>
+represented. Second, it requires you to add inheritance links to bring together classes<br>
+that otherwise have no reason to be connected, which reduces modularity. Multiple<br>
+inheritance is extremely awkward in C++ (much less so in Dylan), so you usually<br>
+want to avoid it wherever possible when using C++.
+</p>
+<p>
+You also may not have the desire or the ability to change classes near the root of a C++<br>
+class hierarchy, either because you don't have access to the affected classes' source<br>
+code, or because the recompilation time would be very costly. The latter is usually not<br>
+a problem in Dylan, because most commercial Dylan implementations (including Apple<br>
+Dylan) provide incremental compilation, which means you can edit, recompile, and<br>
+relink classes in a matter of seconds.
+</p>
+<p>
+<b>METHOD SPECIFICITY</b>
+</p>
+<p>
+As with slots and global variables, type declarations for Dylan function parameters are<br>
+optional. Providing type declarations, which is called<i>specializing </i>the method, restricts<br>
+a method to be valid for a specific set of operands. Listing 3 shows several methods<br>
+belonging to the <b>double</b>generic function, specialized for various parameter types.<br>
+(The value returned by a Dylan function is simply the value returned by the last<br>
+expression executed in its body; there's no need for an explicit <b>return</b>statement.)
+</p>
+<p>
+<b>Listing 3. </b>Method specificity
+</p>
+<pre>define method double (x)      // No type declaration, default handler
+   pair(x, x);                // Works on any type of object
+end method double;
+define method double (x :: &lt;number&gt;)// Works on all numbers
+   2 * x;                                 // Returns 2 times x
+end method double;
+
+define method double (x :: &lt;string&gt; // Works on all strings
+   concatenate(x, x);                     // Returns "stringstring"
+end method double;
+
+define method double (x == cup:)          // Works on the symbol cup:
+   pint:;                                 // Returns the symbol pint:
+end method double;</pre>
+<p>
+The first method in Listing 3 has no specialization at all, so it's equivalent to a default<br>
+specialization of <b>x :: &lt;object&gt;,</b> which means it will work on anything. It returns a<br>
+new structure (an instance of the built-in class<b>&lt;pair&gt;</b>), containing two pointers to<br>
+the argument <b>x.</b>
+</p>
+<p>
+The default specialization might not be satisfactory for all objects, of course, so the<br>
+second method specializes the behavior for the case where <b>x</b>is a <b>&lt;number&gt;</b>. In this<br>
+case, <b>double </b>returns the argument multiplied by 2. For a <b>&lt;string&gt;,</b> the third method<br>
+returns a new string created by concatenating the argument to itself.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Dylan provides a large</b><b>library</b> of collection types, including strings,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vectors, hash tables, and much more, along with an extensive and highly<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;consistent library of operations on them. Working with Dylan's collections is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;much easier than with C, since you don't have the administrative headaches of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;manual storage management.*
+</p>
+<p>
+The last method in Listing 3 illustrates Dylan's ability to specialize on specific<br>
+instances (called <i>singletons</i>), not just whole classes. Through the use of <b>== </b>rather<br>
+than ::, the parameter is constrained by an equality test, not class membership. The<br>
+object in this case is a symbol, which is an interesting data type not found in C or C++.<br>
+A symbol is a case-insensitive immutable string, often used where you might use an<br>
+<b>enum</b>in C. In this method, <b>double </b>is defined to return the symbol<b>pint: </b>whenever the<br>
+argument is the symbol <b>cup:.</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>The foo: syntax </b>is a convenient way to refer to symbols in your code, but it<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;can be confusing, especially when passing symbols as keyword parameters in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;function calls. Dylan provides a second, equivalent syntax for symbols, which<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;looks like a string with a # (for example, <b>#"foo"</b>). This also lets you create<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;symbols with spaces in their names.*
+</p>
+<p>
+When <b>double </b>is invoked on an argument, the most specific method is invoked.<br>
+Singletons are considered to be the most specific; if a match isn't found, a method for<br>
+the most specific matching parameter type is found. For example, <b>double("foo")</b><br>
+would invoke the third method, because<b>&lt;string&gt;</b> is more specific than <b>&lt;object&gt;,</b><br>
+which is what the first method is specialized to. If no match is found, Dylan will catch<br>
+it and signal an error.
+</p>
+<p>
+<b>OTHER PARAMETER TRICKS: #REST, #KEY, AND RETURNED VALUES</b>
+</p>
+<p>
+In addition to having the normal kind of parameters (also called <i>required parameters)</i>,<br>
+whose number and position are fixed, Dylan functions can take varying numbers of<br>
+additional parameters.
+</p>
+<p>
+A <b>#rest </b>parameter collects an arbitrary number of arguments as a sequence. For<br>
+example, the following function takes one required argument,<b>view,</b> and any number of<br>
+additional arguments. A<b> for </b>loop is used inside the function to iterate over the<br>
+arguments.
+</p>
+<pre>define method polygon (view :: &lt;view&gt;, #rest points)
+   for (p in points)
+   ...
+   end for;
+end method;</pre>
+<p>
+Here's an example of using this function:
+</p>
+<pre>polygon(myWindow, p1, p2, p3, p4, p5);   // Typical usage</pre>
+<p>
+Keyword parameters specified with <b>#key </b>are quite handy, especially for functions<br>
+with many parameters, which often take default values. As we saw earlier,<b>make </b>takes<br>
+keyword parameters in order to create objects. These can be provided in any order by<br>
+the caller, or omitted entirely if default values are specified. The keywords themselves<br>
+provide an extra degree of clarity to the calling code, since they serve to document the<br>
+arguments they introduce. For example:
+</p>
+<pre>define method rent-car (customer :: &lt;person&gt;,
+                                          // Two required parameters
+   location :: &lt;city&gt;,              // and up to 4 keywords
+   #key color = white:,                   // Default color is white
+      sunroof? = #f,                      // Default no sunroof
+      automatic? = #t,                    // Default automatic shift
+      days = 3)                           // Default 3-day rental
+...
+end method;</pre>
+<p>
+Notice the usage of <b>#t</b> and <b>#f.</b> These are the Dylan values for Boolean true and false,<br>
+respectively.
+</p>
+<p>
+Some examples of using this function are as follows:
+</p>
+<pre>rent-car(arnold, dallas, days: 7, sunroof?: #t);
+rent-car(betty, dallas, days: 8, color: #"red");
+rent-car(colin, vegas);            // Everything defaulted</pre>
+<p>
+You also have the option of specifying the return parameters for Dylan functions, as<br>
+illustrated in Listing 4. This provides more information to the compiler to assist in<br>
+optimization, as well as documents your code for other users. Dylan functions can<br>
+return multiple values, which means the caller can get zero, one, or more than one<br>
+value from the callee. This lets you program in a cleaner, more functional style than<br>
+in C. In Dylan, you don't need to mix your input and output parameters and bash inputs<br>
+to make them outputs, or clutter your code with definitions for funny data structures<br>
+that do nothing more than carry the results of one function back to another.
+</p>
+<p>
+<b>Listing 4.</b> Example of return declarations and multiple return values
+</p>
+<pre>define class &lt;brick&gt; (&lt;object&gt;)
+   slot vert;
+   slot horiz;
+   slot depth;
+   slot density;
+end class;
+
+define method calculate-weight (b :: &lt;brick&gt;)
+   =&gt; weight :: &lt;number&gt;;        // Declares return parameter
+   let (x, y, z) = bounding-box(b);       // Binds multiple values
+   x * y * z * b.density;                 // Returns one value
+end method;
+
+define method bounding-box (b :: &lt;brick&gt;)
+   =&gt; (height :: &lt;number&gt;, width :: &lt;number&gt;, length :: &lt;number&gt;);
+   values(b.vert, b.horiz, b.depth);      // Returns three values
+end method;</pre>
+<p>
+All methods in a generic function must be <i>congruent. </i>Basically, this means they must<br>
+all take the same number of required parameters, and they must agree on taking<br>
+keyword and rest values. There are a few more options you can specify for a generic<br>
+function using the <b>define generic </b>statement, which can also constrain method<br>
+congruency.
+</p>
+<p>
+<b>MULTIPLE POLYMORPHISM</b>
+</p>
+<p>
+One interesting feature of Dylan is that functions are <i>multiply polymorphic</i>(unlike in<br>
+C++ or Smalltalk). A function can have as many required parameters as you like, and<br>
+any or all of them can be specialized. When you call a generic function, a method is<br>
+picked based on the specializations of all the required parameters, not just of the first<br>
+one.
+</p>
+<p>
+There are two methods in the <b>profits </b>generic function defined in Listing 5. The second<br>
+of these methods is more specialized than the first one, because its script parameter<br>
+(<b>&lt;sci-fi&gt;</b>) is more specific than that in the first (<b>&lt;script&gt;</b>)<b>.</b> It just happens that<br>
+the script parameter is in the second position. When selecting the method to handle a<br>
+call like<b>profits(betty, tender), </b>Dylan determines that the first method is the only<br>
+one that's applicable, so that's the one that's used (see Figure 3). It turns out that both<br>
+methods are applicable in a call like <b>profits(arnold, zarx)</b>. The second method is<br>
+more specific, so that's what gets invoked.
+</p>
+<p>
+Listing 5.
+</p>
+<pre>define method profits (star :: &lt;actor&gt;, script :: &lt;script&gt;)
+   (star.fans * $ticket-price)           // Money from ticket sales
+   - (script.fx-budget + star.salary);   //  minus expenses
+end method;
+
+define method profits (star :: &lt;actor&gt;, script :: &lt;sci-fi&gt;)
+   next-method() / 2;          // Sci-fi is out of fashion these days
+end method;</pre>
+<p>
+<img src="img/155.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 3. </b>Method selection based on all arguments (not just the first one)
+</p>
+<p>
+The body of the second <b>profits </b>method uses a special trick to inherit functionality<br>
+provided in the base method. It calls next-method, a Dylan function that calls the next<br>
+appropriate method in the generic function, in decreasing order of specificity. In the<br>
+example, <b>next-method </b>gets a numeric value calculated by the first method, divides<br>
+it by 2, and returns that to the caller. As a result, you don't have to write the basic<br>
+equation twice; new methods have the option of calling up the specificity chain and<br>
+doing what they want with the results. You can also add code to perform tasks before or<br>
+after calling <b>next-method.</b>
+</p>
+<h2>THE ROLE OF MODULES</h2>
+<p>
+Dylan provides an important abstraction tool, called a<i> module</i>, which typically<br>
+contains several related functions and classes. Modules let you simplify or limit access<br>
+to objects by controlling their names. In other words, a module is a <i>namespace</i>, a set of<br>
+names and the objects they refer to.
+</p>
+<p>
+A module's definition specifies which names are exported. This gives you control over<br>
+which variables, functions, classes, and slots are private to that module and which are<br>
+public. For example, suppose the code in Listing 2 lived in a module called the <b>studio</b><br>
+module. We could define this module with the statement below, which exports three<br>
+classes and three functions. Since<b>arnold </b>and <b>betty </b>are not exported, they're private<br>
+to the<b>studio </b>module, and are inaccessible to any code outside it.
+</p>
+<pre>define module studio
+   use dylan;
+   export &lt;project&gt;, &lt;actor&gt;, &lt;script&gt;, name, name-setter,
+       profits;
+end module</pre>
+<p>
+Modules can selectively import some or all of another module's exports. Once<br>
+imported, these can be used internally, extended, or reexported. We can define a<br>
+new<b>hollywood </b>module that uses (imports everything exported from) the<b>studio</b><br>
+module. Notice that both modules also use the <b>dylan</b>module. Since the <b>dylan </b>module<br>
+defines all the basic language primitives (like addition), it's a good idea for<br>
+user-defined modules to always use it.
+</p>
+<pre>define module hollywood
+   use dylan;
+   use studio,
+      export: name, profits;
+   export &lt;movie&gt;, &lt;tv-show&gt;, &lt;videogame&gt;, do-oscars;
+end module</pre>
+<p>
+This definition assumes that the <b>hollywood </b>module defines three new classes, plus<br>
+one new function for computing the Oscar winners. It may define others for internal<br>
+purposes, but those are the only internal classes and functions that it exports. The<br>
+module also exports two functions imported from the <b>studio</b>module, <b>name</b> and<br>
+<b>profits. </b>Even though the <b>hollywood</b>module imports the <b>&lt;actor&gt;</b> class from the<br>
+<b>studio</b>module, there's no way to access the <b>salary </b>slot because <b>salary</b>wasn't<br>
+exported, and hence cannot be imported into the <b>hollywood</b>module (see Figure 4).
+</p>
+<p>
+<img src="img/156.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 4. </b>Selectively exporting names from modules to other modules
+</p>
+<p>
+You can selectively export just the getter but not the setter function for a slot, which<br>
+has the effect of making the slot read-only to all other modules. This is what<br>
+<b>hollywood </b>does with <b>name.</b> Code in the<b> hollywood</b>module can change an object's<br>
+name because <b>name-setter </b>is imported from <b>studio,</b> but clients outside <b>hollywood</b><br>
+can only read, but not set, an object's name.
+</p>
+<p>
+You could go ahead and define a new function in the <b>hollywood </b>module called <b>fans,</b> but<br>
+it would have nothing to do with the<b> fans </b>slot in <b>&lt;actor&gt;</b>. This new fans function<br>
+would be totally unrelated, and could have a different number of parameters than the<br>
+<b>fans</b> function in the <b>studio </b>module. It's like two different cities each having a street<br>
+called Main Street; the references are not valid across city borders. This is another<br>
+key advantage of namespaces -- they reduce the pressure to keep names unique at the<br>
+expense of legibility or clarity.
+</p>
+<p>
+You can even rename what you import, which is useful to prevent name conflicts, or to<br>
+emphasize the origin of a name. For example, the following version of the<b>hollywood</b><br>
+module imports the <b>&lt;project&gt; </b>class from<b>studio, </b>but renames it. Within this<br>
+<b>hollywood </b>module, the class is known only as &lt;production&gt;, not <b>&lt;project&gt;</b>. Modules<br>
+have many more fancy renaming and import/export features, but we'll skip them for<br>
+now.
+</p>
+<pre>define module hollywood
+   use dylan;
+   use studio,
+      export: name, profits,
+      rename: {&lt;project&gt; =&gt; &lt;production&gt;};
+   export &lt;movie&gt;, &lt;tv-show&gt;, &lt;videogame&gt;, do-oscars;
+end module</pre>
+<p>
+Modules let you control the interface to a portion of code by specifying exactly what<br>
+you want to make public. You can even use several modules to provide high- and<br>
+low-level interfaces to the same internal code -- a capability not available in C++.<br>
+For example, a <b>hollywood-tourist </b>module would import, rename, and export a<br>
+subset of documented high-level calls to one set of users, whereas a separate<br>
+<b>hollywood-insider </b>module might import, rename, and export more detailed calls to<br>
+a different audience. This helps keep the implementation and interface nicely<br>
+separated.
+</p>
+<p>
+C++ has many notions of scope, including lexical (block scope inside functions), class,<br>
+file, and name space. Some people even rely on the selective inclusion of header files<br>
+or verbose name prefixes ("typographic scoping") to prevent name collisions. Dylan's<br>
+simpler scheme -- just lexical scope and modules -- provides precise control over<br>
+the importing, exporting, and naming of classes, functions, and variables in a clean<br>
+and consistent way.
+</p>
+<h2>COMING SOON TO A DESKTOP NEAR YOU</h2>
+<p>
+In this whirlwind tour, you've had a quick look at how to write classes, functions, and<br>
+modules in Dylan. Methods are grouped into generic functions, instead of being "owned"<br>
+by classes. Modules package the names of related classes and functions into convenient<br>
+APIs.
+</p>
+<p>
+Apple Dylan isn't planned to ship until later this year, but that doesn't mean you can't<br>
+play with Dylan before then. If you like what you've seen here, or want to see more,<br>
+check out the goodies on the CD or those available from on-line services (see "Where<br>
+to Get Dylan Software and Information").
+</p>
+<p>
+Just like the Macintosh, Dylan was carefully designed from scratch to make your life a<br>
+lot more fun and productive. Enjoy, and happy hacking!
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WHERE TO GET DYLAN SOFTWARE AND INFORMATION</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Some experimental freeware Dylan implementations are now available.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Marlais, an interpreter, has been ported to Macintosh, Windows, and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;UNIXreg., and is included on this issue's CD so that you can play with the code<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;examples in this article. Mindy, a byte-code compiler, is available for UNIX.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Also on the CD is the <i>Dylan Interim Reference Manual </i>and other goodies.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Other sources of Dylan software and documentation include the following<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;on-line services:
+</p>
+<ul>
+<li style="margin-left: 17px">    On the Internet is the Apple Dylan World Wide Web server and  Apple's<br>
+Dylan ftp site.</li>
+<li style="margin-left: 17px"> On AppleLink, look in Developer Support: Developer Services:<br>
+Development Platforms: Dylan Related.</li>
+<li style="margin-left: 17px"> On eWorld, go (Command-G) to "dev service"; then click Tool Chest:<br>
+Development Platforms: Dylan Related.</li>
+<li style="margin-left: 17px"> On CompuServe, type GO APPLE to get to the Apple support forum. There<br>
+are 16 libraries; go into Programmers/Developers Library #15.</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Dylan discussions can be found on the Internet newsgroup called<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;comp.lang.dylan. You can also access Dylan discussions through e-mail.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Internet users can ask to be included in discussions by sending a request to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;info-dylan-request@cambridge.apple.com (AppleLink users can use the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;address info-dylan-req@cambridge.apple.com@internet#).
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;If you'd like to become a beta tester of Apple Dylan, please send a message,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;including your name, address, telephone number, and a brief statement of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;what you'd like to do with Apple Dylan, to AppleLink DYLAN.
+</p><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________</p>
+<p>
+<b>STEVE STRASSMANN </b>(AppleLink STRAZ, Internet straz@apple.com) has a patent on<br>
+surgical catheters (#4,838,859) and is the co-author of the infamous UNIX-Haters<br>
+Handbook.&nbsp;&nbsp;After getting his Ph.D. at the MIT Media Lab in entertainment engineering,<br>
+he joined the Dylan team at Apple in Cambridge, Mass.*
+</p>
+<p>
+<b>Thanks</b> to our technical reviewers Stoney Ballard, Jeff Barbose, Ken Dickey, Phil<br>
+Kania, Ken Karakotsios, David Moon, Carl Nelson, and Kent Sandvik.*
+</p>
+</body>
+</html>

@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 55 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 95 - The New Device Drivers: Memory Matters</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>The New Device Drivers: Memory Matters</h1>
+<h2>Martin Minow</h2>
+<p>
+<img src="img/251.gif" width="188 px"></img>
+</p>
+<p>
+<i>If you're writing a device driver for the new PCI-based Macintosh computers, you</i><br>
+<i>need to understand the relationship of the memory an application sees to the memory</i><br>
+<i>the hardware device sees. The support for these drivers (which will also run under</i><br>
+<i>Copland, the next generation of the Mac OS) includes the PrepareMemoryForIO</i><br>
+<i>function, as discussed in my article in Issue 22. This single coherent facility connects</i><br>
+<i>the application's logical view of memory to the hardware device's physical view.</i><br>
+<i>PrepareMemoryForIO has proven difficult to understand; this article should help</i><br>
+<i>clarify its use.</i>
+</p>
+<p>
+If you managed to struggle through my article "Creating PCI Device Drivers" in<i>develop</i><br>
+Issue 22, you probably noticed that it got rather vague toward the end when I tried to<br>
+describe how the PrepareMemoryForIO function works. There are a few reasons for<br>
+this: the article was getting pretty long and significantly overdue (the excuse), and I<br>
+really didn't understand the function that well myself (the reason). Things are a bit<br>
+better now, thanks to the enforced boredom of a very long trip, the need to teach this<br>
+algorithm to a group of developers, and some related work I'm doing on the SCSI<br>
+interface for Copland.
+</p>
+<p>
+My previous article showed the simple process of preparing a permanent data area<br>
+that might be used by a device driver to share microcode or other permanent<br>
+information with a device. This article attacks a number of more complex problems<br>
+that appear when a device performs <i>direct memory access</i> (DMA) transfers to or from<br>
+a user data area. It also explores issues that arise if data transfers are needed in<br>
+situations where the device's hardware cannot use DMA.
+</p>
+<p>
+A later version of the sample device driver that accompanied the Issue 22 article is<br>
+included in its entirety on this issue's CD. Of course, you'll need a hardware device to<br>
+use the driver and updated headers and libraries to recompile it. Included is the source<br>
+code for the DMA support library (files DMATransfer.c and DMATransfer.h), which<br>
+consists of several functions I've written that interact with PrepareMemoryForIO; the<br>
+revised sample device driver shows how this library can be incorporated into a<br>
+complete device driver for PCI-based Power Macintosh computers.
+</p>
+<p>
+I'll assume that you've read my earlier article (which you can find on the CD if you<br>
+don't have it in print). That article gives an overview of the new device driver<br>
+architecture and touches on the PrepareMemoryForIO function, but for a<br>
+comprehensive description of the architecture and details about the function, see<br>
+<i>Designing PCI Cards and Drivers for Power Macintosh Computers</i>(available from<br>
+Apple Developer Catalog). I'll also assume that you're reasonably familiar with the<br>
+basic concepts of a virtual memory operating system, including memory pages and<br>
+logical and physical addresses; for a brief review, see "Virtual Memory on the<br>
+Macintosh."
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;VIRTUAL MEMORY ON THE MACINTOSH</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BY DAVE SMITH
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Virtual memory on the Macintosh has two major functions: it increases the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;apparent size of RAM transparently by moving data back and forth from a disk<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;file, and it remaps addresses. Of the two, remapping addresses is more<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;relevant to device driver developers (and, incidentally, much more of a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;headache).
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;When Macintosh virtual memory is turned on, the processor and the code<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;running on the processor always access logical addresses. A logical address is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;used the same way as a physical address; however, the Memory Management<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Unit (MMU) integrated into the processor remaps the logical address on the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fly to a physical address if the data is resident in memory. If the data isn't<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;resident in memory, a page fault occurs; this requires reading the desired data<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;into memory from the disk and possibly writing other, unneeded data from<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memory to the disk to free up space in memory. (This explanation is slightly<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;simplified, of course.)
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Since it would be impractical to have a mapping for each byte address,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memory is subdivided into blocks called pages. A page is the smallest unit that<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;can be remapped. Memory is broken into pages on page boundaries, which are<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;page-size intervals starting at 0. The remapping allows physical pages that<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;are not actually contiguous in physical memory to appear contiguous in the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;logical address space.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The Macintosh currently uses a page size of 4096 bytes; however, future<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hardware may use a different page size. You should call the GetLogicalPageSize<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;function in the Driver Services Library to determine the page size if you need<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;it.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DMA is performed on physical addresses since the MMU of the processor is not<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;on the address bus that devices use. One of the functions of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PrepareMemoryForIO is to translate logical addresses into physical addresses<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;so that devices can copy data directly to and from the appropriate buffers.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Many virtual memory systems provide multiple logical address spaces to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;prevent applications from interfering with each other. It appears to each<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;application that it has its own memory system, not shared with any other<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;application. The Macintosh currently has only one logical address space, but<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;future releases of the Mac OS will support multiple logical address spaces.
+</p><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________</p>
+<h2>PREPARING MEMORY FOR A USER DATA TRANSFER</h2>
+<p>
+At the beginning of a user data transfer (a data transfer on behalf of a program that's<br>
+calling into your driver), the device driver calls PrepareMemoryForIO to determine<br>
+the physical addresses of the data and to ensure the coherency of memory caches. At the<br>
+end of the transfer, the driver calls the CheckpointIO function to release system<br>
+resources and adjust caches, if necessary. PrepareMemoryForIO performs three<br>
+functions that are necessary for DMA transfers: it locates data in physical memory; it<br>
+ensures that the data locations contain the actual data needed or provided by the device;<br>
+and, with the help of CheckpointIO, it maintains cache coherence.
+</p>
+<p>
+&nbsp;&nbsp;Your device driver can call PrepareMemoryForIO from task level, from a software<br>
+interrupt, or from the mainline driver function (that is, DoDriverIO). CheckpointIO<br>
+can be called from task level, from a software interrupt, or from a secondary<br>
+interrupt handler. (For more on the available levels of execution, see "Execution<br>
+Levels for Code on the PCI-Based Macintosh.") In a short while, we'll see how the fact<br>
+that these functions must be called from particular points affects the transfer process.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;EXECUTION LEVELS FOR CODE ON THE PCI-BASED MACINTOSH</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BY TOM SAULPAUGH
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Native code on PCI-based Macintosh computers may run in any of four<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;execution contexts: software interrupt, secondary interrupt, primary<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;interrupt, or task. All driver code contexts have access to a driver's global<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data. No special work (such as calling the SetA5 function on any of the 680x0<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;processors) is needed to access globals from any of these contexts.
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SOFTWARE INTERRUPT</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A software interrupt routine runs within the execution environment of a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;particular task. Running a software interrupt routine in a task is like forcing<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the task to call a specific subroutine asynchronously. When the software<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;interrupt routine exits, the task resumes its activities. A software interrupt<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;routine affects only the task in which it's run; the task can still be preempted<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;so that other tasks can run. Those tasks, in turn, can run their own software<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;interrupt routines, and a task running a software interrupt routine can be<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;interrupted by a primary or secondary interrupt handler.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;All software interrupt routines for a particular task are serialized; they don't<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;interrupt each other, so there's no equivalent to the 680x0 model of nested<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;primary interrupt handlers.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Page faults are allowed from software interrupt routines. A software<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;interrupt routine is analogous to a Posix signal or a Windows NT asynchronous<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;procedure call. A software interrupt routine running in the context of an<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;application, INIT, or cdev doesn't have access to a driver's global data.
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SECONDARY INTERRUPT</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The secondary interrupt level is the execution context provided to a device<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;driver's secondary interrupt handler. In this context, hardware interrupts<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;are enabled and additional interrupts may occur. A secondary interrupt<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;handler is a routine that runs in privileged mode with primary interrupts<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;enabled but task switching disabled.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;All secondary interrupt handlers are serialized, and they never interrupt<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;primary interrupt handlers; in other words, they resemble primary<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;interrupt handlers but have a lower priority. Thus, a secondary interrupt<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;handler queued from a primary interrupt handler doesn't execute until the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;primary interrupt handler exits, while a secondary interrupt handler queued<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;from a task executes immediately.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Page faults are not allowed at primary or secondary interrupt level. A<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;secondary interrupt handler is analogous to a deferred task in Mac OS System<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;7 or a Windows NT deferred procedure call. Secondary interrupt handlers,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;like primary interrupt handlers, should be used only by device drivers. Never<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;attempt to run application, INIT, or cdev code in this context or at primary<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;interrupt level.
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PRIMARY INTERRUPT</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The primary interrupt level (also called hardware interrupt level) is the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;execution context in which a device's primary interrupt handler runs. Here,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;primary interrupts of the same or lower priority are disabled, the immediate<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;needs of the device that caused the interrupt are serviced, and any actions that<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;must be synchronized with the interrupt are performed. The primary<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;interrupt handler is the routine that responds directly to a hardware<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;interrupt. It usually satisfies the source of the interrupt and queues a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;secondary interrupt handler to perform the bulk of the servicing.
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TASK (NON-INTERRUPT)</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The task level (also called non-interrupt level) is the execution environment<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for applications and other programs that don't service interrupts. Page faults<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;are allowed in this context.
+</p><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________</p>
+<p>
+If the data is currently in physical memory, PrepareMemoryForIO locks the memory<br>
+page containing the data so that it cannot be relocated. If the data isn't in physical<br>
+memory, PrepareMemoryForIO calls the virtual memory subsystem and a page fault<br>
+occurs, reorganizing physical memory to make space in it for the data. After the<br>
+transfer finishes, CheckpointIO releases the memory page locks.
+</p>
+<p>
+PrepareMemoryForIO and CheckpointIO perform an important function related to the<br>
+use of caches. A cache is a private, very fast memory area that the CPU can access at<br>
+full speed. The processor runs much faster than its memory runs; to keep the<br>
+processor running at its best speed, the CPU copies data from main memory to a cache.<br>
+Both the PowerPC and the Motorola 68040 processors support caching, although their<br>
+implementation details differ. The important point is that a value of a data item in<br>
+memory can differ from the value for the same data item in the cache (called <i>cache</i><br>
+<i>incoherence</i>). Furthermore, you have to explicitly tell the PowerPC or 680x0<br>
+processor to synchronize the cache with memory.
+</p>
+<p>
+Normally, the processor hardware prevents cache incoherence from causing data value<br>
+problems. However, for some processor architectures, DMA transfers access main<br>
+memory independently of the processor cache. PrepareMemoryForIO (for write<br>
+operations) and CheckpointIO (for read operations) synchronize the processor cache<br>
+with main memory. This means that DMA write operations write the valid contents of<br>
+memory, and the processor uses the valid data just read from the external device.
+</p>
+<p>
+As noted earlier, some devices cannot perform DMA transfers; instead, they<br>
+use<i>programmed I/O,</i> in which the CPU moves data between logical addresses and the<br>
+device. PrepareMemoryForIO also returns the logical address that such devices must<br>
+use.
+</p>
+<h2>A SIMPLE MEMORY PREPARATION EXAMPLE</h2>
+<p>
+Listing 1 presents a very simple example that shows how a memory area may be<br>
+prepared for I/O.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>To simplify listings, </b>I've often omitted data type casting. Think of all data<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;types as unsigned 32-bit integers. Because of this omission, you can't<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;implement these listings as written, but should base your code on the sample<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;on this issue's CD.*
+</p>
+<p>
+<b>Listing 1.</b> Simplified memory preparation
+</p>
+<pre>#define kBufferSize   512
+#define kMapCount      2
+/* The buffer your driver or application is preparing */
+UInt8                  gMyBuffer[kBufferSize];
+IOPreparationTable   gIOTable;
+/* Logical &amp; physical mapping tables, */
+/* filled in by PrepareMemoryForIO */
+LogicalAddress         gLogicalMapping[2];
+PhysicalAddress      gPhysicalMapping[kMapCount];
+
+void SimpleMemoryPreparation(void)
+{
+   OSStatus      osStatus;
+
+   gIOTable.options =
+      (kIOMinimalLogicalMapping | kIOLogicalRanges | kIOIsInput);
+   gIOTable.state = 0;
+   gIOTable.addressSpace = kCurrentAddressSpaceID;
+   gIOTable.granularity = 0;
+   gIOTable.firstPrepared = 0;
+   gIOTable.lengthPrepared = 0;
+   gIOTable.mappingEntryCount = kMapCount;
+   gIOTable.logicalMapping = gLogicalMapping;
+   gIOTable.physicalMapping = gPhysicalMapping;
+   /* Set the logical address to be mapped and the length of the area
+      to be mapped. */
+   gIOTable.rangeInfo.range.base = (LogicalAddress) gMyBuffer;
+   gIOTable.rangeInfo.range.length = sizeof gMyBuffer;
+   /* Call PrepareMemoryForIO and process the preparation. */
+   do {
+      osStatus = PrepareMemoryForIO(&amp;gIOTable);
+      if (osStatus != noErr)
+         break;
+      MyDriverDMARoutine(...);
+      CheckpointIO(gIOTable.preparationID, kNilOptions);
+      gIOTable.firstPrepared += gIOTable.lengthPrepared;
+   } while ((gIOTable.state &amp; kIOStateDone) == 0);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+PrepareMemoryForIO is called with one parameter, an IOPreparationTable. Among<br>
+other things, this table specifies one or more address ranges to prepare (only one, in<br>
+this example). Each address range is indicated by a starting logical address and a count<br>
+of the number of bytes in the range.
+</p>
+<p>
+The IOPreparationTable also points to a <i>logical mapping table</i> and a <i>physical mapping</i><br>
+<i>table</i> (gLogicalMapping and gPhysicalMapping in our example). The physical mapping<br>
+table is where PrepareMemoryForIO returns the page addresses that the driver can<br>
+use to access the client's buffer during DMA. The logical mapping table is the list of<br>
+addresses that the driver must use for doing programmed I/O.
+</p>
+<p>
+The simplest IOPreparationTable options -- kIOMinimalLogicalMapping and<br>
+kIOLogicalRanges -- are set in this example. The kIOMinimalLogicalMapping flag<br>
+indicates that only the first and last logical pages need to be mapped, while the<br>
+kIOLogicalRanges flag indicates that the data (here, the gMyBuffer vector) consists of<br>
+logical addresses.
+</p>
+<p>
+Because kIOMinimalLogicalMapping is set, the logical mapping table requires two<br>
+entries for each address range; we have only one range, so our logical mapping table<br>
+needs a total of two entries. The physical mapping table requires one entry per page;<br>
+we set this to two entries because our 512-byte buffer may cross a page boundary.<br>
+When writing your driver, you can use the GetMapEntryCount function in the DMA<br>
+support library to compute the actual number of physical mapping table entries<br>
+needed for an address range.
+</p>
+<p>
+If the preparation is successful, the driver performs the DMA transfer and calls<br>
+CheckpointIO to release internal operating system structures that were used by<br>
+PrepareMemoryForIO. PrepareMemoryForIO sets the kIOStateDone flag in the<br>
+IOPreparationTable's state field if the entire area has been prepared.
+</p>
+<p>
+If PrepareMemoryForIO can't prepare the entire area, it doesn't set the kIOStateDone<br>
+flag, and your driver needs to call PrepareMemoryForIO again with the firstPrepared<br>
+field updated to reflect the number of bytes prepared in this range of memory. The<br>
+recall must be done from a software interrupt routine; it cannot be performed from an<br>
+interrupt handler.
+</p>
+<h2>MORE ABOUT MAPPING</h2>
+<p>
+Address ranges to be prepared by PrepareMemoryForIO may cross one or more page<br>
+boundaries and thus may take up two or more pages in physical memory. Figure 1<br>
+shows what the physical mapping might look like for two address ranges: the first is<br>
+more than two pages long and crosses two page boundaries, while the second is an even<br>
+page long and crosses one page boundary.
+</p>
+<p>
+<img src="img/252.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>Mapping to multiple pages
+</p>
+<p>
+Each address range maps to an area in physical memory that can be thought of as<br>
+having up to three sections: the beginning page, the middle pages, and the ending page.
+</p>
+<ul>
+<li>    Every address range produces a beginning page. Your data may start at<br>
+an offset into this page, depending on the starting address of the range. This is<br>
+true for both address ranges in Figure 1. The address in the mapping table for<br>
+the beginning page points to the beginning of your data in the page. Notice that<br>
+for the second address range in our example, the logical address for the start<br>
+of the data, 0x4400, maps to the physical address 0x6400.</li>
+<li> If your address range maps to three or more pages, some number of<br>
+middle pages are completely filled with your data. The first address range in<br>
+Figure 1 illustrates this.</li>
+<li> If your address range maps to two or more pages, the data on the ending<br>
+page begins at the beginning of the page, but it may cover only part of the page,<br>
+depending on the count in your address range.</li>
+</ul>
+<p>
+Unfortunately, there's no simple one-to-one correspondence between entries in the<br>
+physical and logical mapping tables and the address range (or ranges) that a driver or<br>
+application specifies when it calls PrepareMemoryForIO. Because of this, the function<br>
+that controls a driver's DMA or programmed I/O process must iterate through the<br>
+input address ranges and output mapping tables to compute the address and size of each<br>
+data transfer segment. As you'll see when you look at the DMA support library on this<br>
+issue's CD, this turns out to be an extremely complex process.
+</p>
+<p>
+The DMA support library functions iterate through the address ranges and mapping<br>
+tables, matching the two together to provide each data transfer segment in order. The<br>
+library recognizes when two physical pages are contiguous and extends the data<br>
+transfer length as far as possible.
+</p>
+<p>
+When called for the example in Figure 1, the DMA support library returns five<br>
+physical transfer segments (this example doesn't demonstrate logical alignment<br>
+problems). To learn how PrepareMemoryForIO's algorithm works, I'd recommend that<br>
+you work out the actual addresses and segment transfer lengths using pencil and paper.<br>
+(When you look at the DMA support library in DMATransfer.c, you'll see a more<br>
+mechanized approach that I strongly recommend if you're developing complex<br>
+software.)
+</p>
+<h2>THE DATA TRANSFER PROCESS</h2>
+<p>
+Figure 2 illustrates how a data transfer might proceed through the system. It shows<br>
+the five steps involved in a transfer that requires partial preparation of a large chunk<br>
+of data that can't be prepared in one gulp. The diagram also shows the proper execution<br>
+levels for each step. As we'll see later, the process is considerably simpler without<br>
+partial preparation.
+</p>
+<p>
+<img src="img/253.gif" width="546 px"></img>
+</p>
+<p>
+<b>Figure 2.</b> The progress of a data transfer with partial preparation
+</p>
+<p>
+Here's a breakdown of the steps in the data transfer:
+</p>
+<p><ol>
+<li>The transfer starts at task (application or driver mainline) level. The<br>
+driver must call PrepareMemoryForIO from task level because<br>
+PrepareMemoryForIO may require virtual memory page faults and has to<br>
+reserve system memory for its own tables. After memory is prepared, the<br>
+driver examines the logical and physical mapping tables and starts the DMA<br>
+operation. It then waits for an interrupt. (Of course, the actual driver<br>
+behavior depends on your hardware.)
+
+
+<li>When the driver's primary interrupt handler runs, it determines that<br>
+another DMA transfer is needed, but that no more data is prepared (because<br>
+the number of bytes transferred equals the value in the lengthPrepared field<br>
+in the IOPreparationTable). Since another partial preparation must be<br>
+performed, the primary interrupt handler queues a secondary interrupt and<br>
+exits the primary interrupt. The device is in a "frozen" state: it either has<br>
+data available (to read) or needs more data (to write) but cannot proceed at<br>
+this time. I'll talk more about this problem later.</li>
+
+
+<li>The driver's secondary interrupt handler starts. It examines its internal<br>
+state and determines that a DMA transfer has been completed. It calls<br>
+CheckpointIO with the kMoreIOTransfers flag to complete the current partial<br>
+transfer. Since another data transfer will be needed, it begins the process of<br>
+calling PrepareMemoryForIO again, by calling SendSoftwareInterrupt to<br>
+queue a software interrupt routine. Then, with nothing more to do, the<br>
+secondary interrupt handler exits. The device is still frozen.</li>
+
+
+<li>The software interrupt routine runs. It updates the firstPrepared field and<br>
+calls PrepareMemoryForIO to prepare the next segment (range of memory).<br>
+This may require a page fault, causing the virtual memory subsystem to move<br>
+data between main memory and the virtual memory disk file. When<br>
+PrepareMemoryForIO finishes, the logical and physical mapping tables are<br>
+updated and the lengthPrepared field contains the number of bytes that can be<br>
+transferred in the next segment. The software interrupt routine calls a<br>
+secondary interrupt handler (which is equivalent to queuing the handler).</li>
+
+
+<li>The sequence returns to the secondary interrupt handler, and the DMA<br>
+operation is restarted. The partial preparation algorithm continues at step 2,<br>
+progressing through steps 2 to 5 until all data is transferred.</li>
+</ol>
+<p>
+The device is frozen in steps 2 to 5; it cannot proceed on the current I/O request until<br>
+the partial preparation completes. But note that the page fault handler in step 4 may<br>
+require disk I/O; consequently, any device that can service the page fault device (such<br>
+as the SCSI bus manager) cannot support partial preparation. Writers of disk drivers<br>
+and other SCSI-based interface software must understand these restrictions.
+</p>
+<h2>A CLOSER LOOK: SOME EXAMPLES</h2>
+<p>
+Unfortunately, as a result of some necessary constraints of PrepareMemoryForIO, the<br>
+code in Listing 1 isn't usable in an actual device driver when the data transfer results<br>
+in the interruption of the hardware device by the CPU. In this section, I'll return to<br>
+the five-step transfer process outlined above, with more detail on the way that a<br>
+driver interacts with memory preparation. I'll illustrate the process with three<br>
+different examples: the simple case of a single DMA transfer; the more complicated<br>
+case where more than one DMA transfer is needed because the physical mapping<br>
+entries are discontiguous; and finally the full five-step transfer process, complete<br>
+with partial preparation.
+</p>
+<p>
+<b>A SIMPLE TRANSFER</b>
+</p>
+<p>
+Our first example uses the sample preparation shown in Figure 3. Here your<br>
+application or driver created a simple IOPreparationTable for an application data<br>
+buffer that's 512 bytes long and begins at logical address 0x01B89F80. In this case<br>
+the transfer process consists of only three steps:
+</p>
+<p><ol>
+<li>The buffer in our example crosses a physical page boundary, so two<br>
+mapping entries are needed. PrepareMemoryForIO fills in the logical and<br>
+physical mapping tables and sets the lengthPrepared field. Since it has<br>
+successfully prepared the entire buffer, it sets the kIOStateDone flag in the<br>
+state field. After your driver uses the NextPageIsContiguous macro (in<br>
+DMATransfer.h) to determine that the two physical mapping entries are<br>
+contiguous, it puts the first physical address, 0x0077EF80, and the entire<br>
+byte count into the DMA registers and starts the device.</li>
+
+
+<li>When the transfer finishes, the driver's primary interrupt handler runs.<br>
+It determines that the transfer has finished and queues a secondary interrupt<br>
+to complete processing.</li>
+
+
+<li>The driver's secondary interrupt handler calls CheckpointIO to complete the<br>
+transfer. It then completes the entire device driver operation by calling<br>
+IOCommandIsComplete.</ol>
+</p>
+<p>
+<b>DISCONTIGUOUS PHYSICAL MAPPING</b>
+</p>
+<p>
+The above example requires a single DMA transfer; however, if the physical mapping<br>
+entries are discontiguous, the first two steps of the process become more complicated:
+</p>
+<p><ol>
+<li>After preparation, your driver determines that the two physical mapping<br>
+entries are not contiguous. Therefore, it puts the first physical address,<br>
+0x0077EF80, and the first byte count (128 bytes in this case) into the DMA<br>
+registers and starts the DMA operation.</li>
+
+
+<li>When the transfer finishes, the driver's primary interrupt handler runs.<br>
+It determines that the transfer has finished; however, another physical<br>
+transfer is needed and can be performed, so it loads the DMA registers with the<br>
+new physical address and the remaining byte count (384 bytes in this case),<br>
+restarts the DMA operation, and exits the primary interrupt handler.</ol>
+</p>
+<p>
+After this DMA operation finishes, the operating system reenters the primary<br>
+interrupt handler. Upon the completion of the entire transfer, the primary<br>
+interrupt handler queues the secondary interrupt handler to finish the entire<br>
+operation.
+</p>
+<p>
+<b>PARTIAL PREPARATION</b>
+</p>
+<p>
+The example in Figure 3 requires only a single preparation, but in some cases<br>
+PrepareMemoryForIO cannot prepare the entire area at once and so requires partial<br>
+preparation. To illustrate this, I'll change a few parameters in the<br>
+IOPreparationTable.
+</p>
+<ul>
+<li>    The logical address of the buffer is 0x01B89F80.</li>
+<li> The transfer length is 20480 bytes.</li>
+<li> The transfer granularity is 8192 bytes. This value limits the length of<br>
+the longest preparation.</li>
+</ul>
+<p>
+<img src="img/254.gif" width="534 px"></img>
+</p>
+<p>
+<b>Figure 3. </b>A simple IOPreparationTable
+</p>
+<p>
+PrepareMemoryForIO performs partial preparation of the data three times, as shown<br>
+in Table 1.
+</p>
+<p>
+<img src="img/255.gif" width="600 px"></img>
+</p>
+<p>
+The entire transfer requires these three repetitions of the five-step transfer process:
+</p>
+<p><ol>
+<li>The driver prepares the first DMA operation for physical address<br>
+0x0077EF80, length 4224. After it interrupts, the primary interrupt<br>
+handler queues a secondary interrupt that, when run, calls CheckpointIO and<br>
+causes a software interrupt routine to run. This software interrupt routine<br>
+updates the firstPrepared field from 0 to 4224 (the amount previously<br>
+prepared) and calls PrepareMemoryForIO for the next partial preparation.<br>
+When PrepareMemoryForIO finishes, the software interrupt routine calls the<br>
+secondary interrupt handler.</li>
+
+
+<li>The secondary interrupt starts the next transfer for physical address<br>
+0x00780000, length 8192. When this transfer finishes, the primary<br>
+interrupt queues the secondary interrupt, which, in turn, calls CheckpointIO<br>
+and causes the software interrupt routine to run a second time. This task calls<br>
+PrepareMemoryForIO for the next preparation and calls the secondary<br>
+interrupt handler again.</li>
+
+
+<li>The secondary interrupt handler starts the final transfer. When it finishes,<br>
+the driver completes the entire preparation.</ol>
+</p>
+<h2>LOGICAL DATA TRANSFER: PROGRAMMED I/O</h2>
+<p>
+Some hardware devices do not support DMA but rather use programmed I/O, in which<br>
+the main processor moves data between program logical addresses and the device.<br>
+Programmed I/O is also needed when the device's DMA hardware cannot use DMA in a<br>
+particular situation or context -- for example, a one-byte transfer.
+</p>
+<p>
+Some hardware devices cannot transfer data that isn't properly aligned to some<br>
+hardware-specific address value. For example, the DMA controller on the Power<br>
+Macintosh 8100 requires addresses to be aligned to an 8-byte boundary; it can only<br>
+transfer to physical addresses in which the low-order three bits are set to 0. Also,<br>
+data transfers must be a multiple of 8 bytes. To handle such cases, the DMA support<br>
+library returns the logical addresses of unaligned segments so that a device driver can<br>
+transfer them with programmed I/O operations.
+</p>
+<p>
+This restriction on logical alignment means that before starting a DMA transfer, the<br>
+driver must look at the low-order bits of the physical address and the low-order bits<br>
+of the count. The actual data transfer process is illustrated by the code in Listing 2,<br>
+which presumes 8-byte alignment and ignores a few additional complications. The ugly<br>
+stuff is in the ComputeThisSegment function, which examines the global<br>
+IOPreparationTable and handles multiple address ranges. The DMA support library<br>
+simplifies the procedure, as we'll see in the next section.
+</p>
+<p>
+<b>Listing 2. </b>Data transfer with logical alignment
+</p>
+<pre>LogicalAddress      thisLogicalAddress;
+PhysicalAddress   thisPhysicalAddress;
+ByteCount         thisByteCount, segmentByteCount;
+
+ComputeThisSegment(&amp;thisLogicalAddress, &amp;thisPhysicalAddress,
+   &amp;thisByteCount);
+if ((thisPhysicalAddress &amp; 0x07) != 0) {
+   /* Pre-alignment logical transfer */
+   segmentByteCount = 8 - (thisPhysicalAddress &amp; 0x07);
+   if (segmentByteCount &gt; thisByteCount)
+      segmentByteCount = thisByteCount;
+   DoLogicalTransfer(thisLogicalAddress, segmentByteCount);
+   thisByteCount -= segmentByteCount;
+   thisLogicalAddress += segmentByteCount;
+   thisPhysicalAddress += segmentByteCount;
+}
+if (thisByteCount &gt; 0) {
+   /* Aligned physical transfer */
+   segmentByteCount = thisByteCount &amp; ~0x07;
+   if (segmentByteCount != 0) {
+      DoPhysicalTransfer(thisPhysicalAddress, segmentByteCount);
+      thisByteCount -= segmentByteCount;
+      thisLogicalAddress += segmentByteCount;
+   }
+}
+if (thisByteCount != 0) {
+   /* Post-alignment logical transfer */
+   DoLogicalTransfer(thisLogicalAddress, thisByteCount);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<h2>PUTTING IT ALL TOGETHER</h2>
+<p>
+Here we'll take a look at how your driver can use several of the functions in the DMA<br>
+support library to simplify dealing with PrepareMemoryForIO.
+</p>
+<p>
+Before you can call any of the functions in the DMA support library to make a partial<br>
+preparation, you need to create the system context for a software interrupt. This<br>
+context is created by the CreateSoftwareInterrupt system routine, as shown in the<br>
+InitializePrepareMemoryGlobals function in Listing 3. CreateSoftwareInterrupt must<br>
+be called from your driver's intialization routine because it allocates memory. Your<br>
+driver's interrupt handler uses a software interrupt to start a task that can call<br>
+PrepareMemoryForIO (as described earlier in step 4 of the data transfer process).
+</p>
+<p>
+<b>Listing 3. </b>Initialization for DMA
+</p>
+<pre>SoftwareInterruptID      gNextDMAInterruptID;
+
+/* This function is called once, when your driver starts. */
+OSErr InitializePrepareMemoryGlobals(void)
+{
+   OSErr      status;
+
+   gLogicalPageSize = GetLogicalPageSize();
+   gPageMask = gLogicalPageSize - 1;
+   status = CreateSoftwareInterrupt(
+         PrepareNextDMATask,     /* Software interrupt routine */
+         CurrentTaskID(),        /* For my device driver */
+         NULL,                   /* Becomes the p1 parameter */
+         TRUE,                   /* Persistent software interrupt */
+         &amp;gNextDMAInterruptID); /* Result is the task ID. */
+   return (status);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The DMA support library contains two functions that a driver can use to simplify<br>
+processing the output from PrepareMemoryForIO: InitializeDMATransfer, which is<br>
+called once to configure the overall transfer operation, and PrepareDMATransfer,<br>
+which is called to set up each individual transfer.
+</p>
+<p>
+The MyConfigureDMATransfer function in Listing 4 calls PrepareMemoryIO and<br>
+InitializeDMATransfer to configure the transfer. This function is called by the<br>
+mainline driver function (and by a software interrupt routine for partial<br>
+preparation, as we'll see later).
+</p>
+<p>
+<b>Listing 4.</b> MyConfigureDMATransfer
+</p>
+<pre>/* In a production system, kPageCount should be retrieved from the
+   operating system by calling GetLogicalPageSize. */
+#define kPageCount         4096
+#define kLongestDMA         65536
+#define kLogicalAlignment   8
+#define kMappingEntries
+                    ((kLongestDMA + (kPageCount - 1)) / kPageCount)
+
+DMATransferInfo            gDMATransferInfo;
+IOPreparationTable         gIOTable;
+LogicalAddress             gLogicalMapping[2];
+PhysicalAddress            gPhysicalMapping[kMappingEntries];
+AddressRange               gThisTransfer;
+Boolean                    gIsLogical;
+OSErr MyConfigureDMATransfer(
+         IOCommandCode   ioCommandCode, /* Parameter to DoDriverIO */
+         ByteCount      firstPrepared   /* Zero at first call */
+   )
+{
+   OSErr      status;
+
+   gThisTransfer.base = NULL;        /* Setup for programmed I/O */
+   gThisTransfer.length = 0;         /* Interrupt handler */
+   gIsLogical = FALSE;
+
+   if (firstPrepared == 0) {
+      /* This is an initial preparation for the transfer. */
+      gIOTable.preparationID = kInvalidID;   /* Error exit marker */
+      switch (ioCommandCode) {
+         case kReadCommand:  gIOTable.options = kIOIsInput;  break;
+         case kWriteCommand: gIOTable.options = kIOIsOutput; break;
+         default:               return (paramErr);
+      }
+      ioTable.ioOptions |=
+         ( kIOLogicalRanges            /* Logical input area */
+         | kIOShareMappingTables       /* Share with OS kernel */
+         | kIOMinimalLogicalMapping    /* Minimal table output */
+         );
+      gIOTable.state = 0;
+      gIOTable.addressSpace = CurrentTaskID();
+      gIOTable.granularity = kLongestDMA;
+      gIOTable.firstPrepared = 0;
+      gIOTable.lengthPrepared = 0;
+      gIOTable.mappingEntryCount = kMappingEntries;
+      gIOTable.logicalMapping = gLogicalMapping;
+      gIOTable.physicalMapping = gPhysicalMapping;
+      gIOTable.rangeInfo.range.base = pb-&gt;ioBuffer;
+      gIOTable.rangeInfo.range.length = pb-&gt;ioReqCount;
+   }
+   else   {  /* We were called to continue a partial preparation. */
+      gIOTable.firstPrepared = firstPrepared;
+   }
+   status = PrepareMemoryForIO(&amp;gIOTable);
+   if (status != noErr)
+      return (status);
+   status = InitializeDMATransfer(&amp;gIOTable, kLogicalAlignment,
+      &amp;gDMATransferInfo);
+   return (status);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+If MyConfigureDMATransfer is successful, the driver initializes the hardware to begin<br>
+processing. I assume here that the hardware interrupts the process when it requires a<br>
+data transfer. The primary interrupt handler is shown in Listing 5.
+</p>
+<p>
+<b>Listing 5. </b>The primary interrupt handler
+</p>
+<pre>InterruptMemberNumber
+    MyInterruptHandler(InterruptSetMember  member, void *refCon,
+                      UInt32 theIntCount)
+{
+   OSErr      status;
+
+   if (&lt;device has or requires more data&gt; == FALSE)
+      status = noErr;               /* Presume I/O completion. */
+   else
+      status = MySetupForDataTransfer();
+   if (status != kIOBusyStatus)
+      /* This partial transfer (or device operation) is complete. */
+      QueueSecondaryInterruptHandler(DriverSecondaryInterruptHandler,
+            NULL, NULL, (void *) status);
+   return (kIsrIsComplete);
+}
+
+OSErr MySetupForDataTransfer(void)
+{
+   OSErr      status;
+
+   if (gIsLogical &amp;&amp; gThisTransfer.length &gt; 0) {
+      /* Continue a programmed I/O transfer. */
+      DoOneProgrammedIOByte(* ((UInt8 *) gThisTransfer.base));
+      gThisTransfer.base += 1;
+      gThisTransfer.length -= 1;
+      status = kIOBusyStatus;
+   }
+   else {      /* We need another preparation segment. */
+      status = PrepareDMATransfer(&amp;gDMATransferInfo,
+            &amp;gThisTransfer, &amp;gIsLogical);
+      if (status == noErr) {      /* Do we have more data? */
+         status = kIOBusyStatus;  /* Don't queue secondary task. */
+         if (gIsLogical) {     /* Start a programmed I/O transfer. */
+            DoOneProgrammedIOByte(* ((UInt8 *) gThisTransfer.base));
+            gThisTransfer.base += 1;
+            gThisTransfer.length -= 1;
+         }
+         else   /* Start a DMA transfer segment. */
+            StartProgrammedIOToDevice(&amp;gThisTransfer);
+      }
+      else      /* This preparation is done. Can we start another? */
+         status = kPrepareMemoryStartTask;
+   }
+   return (status);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+When the primary interrupt handler determines that a data transfer is needed, it calls<br>
+the function MySetupForDataTransfer, which tries to continue a logical (programmed<br>
+I/O) transfer. If no logical transfer is appropriate, it calls PrepareDMATransfer, to<br>
+configure the next data transfer segment. This will be either a logical or a DMA<br>
+transfer, depending on the interaction between the user's data transfer parameters and<br>
+the device's logical alignment restrictions. If more data remains to be transferred,<br>
+MySetupForDataTransfer starts either a DMA transfer or another logical transfer;<br>
+otherwise, it returns a private status value that will eventually cause a software<br>
+interrupt routine to call PrepareMemoryForIO again to continue a partial preparation.
+</p>
+<p>
+Listing 6 shows the secondary interrupt handler -- at least the part that handles the<br>
+DMA operation. The primary interrupt handler provides the operation status in the p2<br>
+parameter; the secondary interrupt handler uses this parameter to determine whether<br>
+the operation is complete (in which case this is the final status), or whether some<br>
+intermediate operation is required.
+</p>
+<p>
+<b>Listing 6. </b>The secondary interrupt handler
+</p>
+<pre>OSStatus DriverSecondaryInterruptHandler(void   *p1,
+                                          void   *p2)
+{
+   OSStatus      osStatus;
+
+   osStatus = (OSErr) p2;
+   switch (osStatus) {
+      case kPrepareMemoryStartTask:      /* Need more preparation */
+         CancelDeviceWatchdogTimer();
+         osStatus = SendSoftwareInterrupt(gNextDMAInterruptID, 0);
+         if (osStatus != noErr) {
+            /* Handle error status by stopping the device. */
+            ...
+         }
+         break
+      case kPrepareMemoryRestart:         /* Preparation completed */
+         osStatus = MySetupForDataTransfer();
+         break;
+   }
+   if (osStatus != kIOBusyStatus) {       /* If I/O is complete */
+      CancelDeviceWatchdogTimer();
+      CheckpointIO(&amp;ioTable, kNilOptions);
+      IOCommandIsComplete(ioCommandID, (OSErr) osStatus);
+   }
+   return (noErr);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Finally, Listing 7 shows the software interrupt routine that's called when the driver<br>
+must call PrepareMemoryForIO again to perform a partial preparation.
+</p>
+<p>
+<b>Listing 7. </b>A software interrupt routine for partial preparation
+</p>
+<pre>void PrepareNextDMATask(void   *p1, void   *p2)
+{
+   OSErr         status;
+   ByteCount   newFirstPrepared;
+
+   if ((gIOTable.state &amp; kIOStateDone) != 0)
+      status = eofErr;        /* Data overrun or underrun error */
+   else {                     /* Do the next partial preparation. */
+      newFirstPrepared =
+            gIOTable.firstPrepared + gIOTable.lengthPrepared;
+      status = MyConfigureDMATransfer(0, newFirstPrepared);
+                                 /* ioCommandCode is not used. */
+   }
+   QueueSecondaryInterruptHandler(DriverSecondaryInterruptHandler,
+         NULL, NULL, (void *) status);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<h2>YOUR TURN IN THE BARREL</h2>
+<p>
+At times, working through the complexity of this problem felt like going off Niagara<br>
+Falls in a barrel. There used to be a joke among the developers of the UNIX operating<br>
+system: "We never document our code: if it was hard to write, it should be hard to<br>
+understand." The algorithms I've described here were hard to write, but I hope I was<br>
+able to document and clarify the most important features of the library well enough<br>
+that you don't have to go through the same struggle I did.
+</p>
+<p>
+<b>MARTIN MINOW </b>is writing the SCSI plug-in for Copland on a computer named<br>
+"There must be a pony here" and competes with his boss to see who is more cynical<br>
+about Apple management. During the few moments he can escape from meetings, he<br>
+runs with the Hash House Harriers.
+</p>
+<p>
+Thanks to our technical reviewers David Harrison, Tom Saulpaugh, Dave Smith, and<br>
+George Towner.
+</p>
+</body>
+</html>

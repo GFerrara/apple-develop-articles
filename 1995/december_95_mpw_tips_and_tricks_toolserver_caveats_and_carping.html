@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 56 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 95 - MPW Tips and Tricks: ToolServer Caveats and Carping</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>MPW Tips and Tricks: ToolServer Caveats and<br>
+Carping</h1>
+<h2>Tim Maroney</h2>
+<p>
+<img src="img/256.gif" width="180 px"></img>
+</p>
+<p>
+MPW comes with dozens of useful tools and scripts. They're handy for a lot of things<br>
+besides programming -- or would be, if you were willing to keep the MPW Shell open<br>
+all the time, and if they weren't based on command lines. Fortunately, the Shell is not<br>
+the only way to use them: a small application known as ToolServer makes it possible to<br>
+run MPW commands in a standalone mode. You can write double-clickable MPW<br>
+scripts, give MPW commands from AppleScript, and write front ends to tools in<br>
+high-level programming languages.
+</p>
+<p>
+Using ToolServer isn't exactly like using the MPW Shell. There are caveats if you want<br>
+to write scripts and tools that will work in both environments. We'll first take a look<br>
+at these issues and then explore how to package commands for use with ToolServer.
+</p>
+<p>
+<b>MODULARITY AND FACTORING</b>
+</p>
+<p>
+Shell scripting languages such as sh and csh in UNIXreg., as well as MPW, have always<br>
+taken a rather cavalier approach to code organization. Most configuration is achieved<br>
+with a global namespace of environment variables. This is a problem with ToolServer,<br>
+because you don't want to load your entire set of MPW startup scripts every time you<br>
+run a command. Even if you wanted to, you couldn't -- ToolServer doesn't have text<br>
+editing, menu bar customization, or other user interface elements of the MPW Shell,<br>
+so it's missing several built-in commands. Your existing startup scripts won't work,<br>
+and some utility commands may also fail.
+</p>
+<p>
+Three principles from structured software design are useful here:
+</p>
+<ul>
+<li>    Separate user interface code from core code.</li>
+<li> Use the "include" mechanism to provide modularity.</li>
+<li> Reduce dependencies between modules.</li>
+</ul>
+<p>
+Let's take a concrete example. Many of us cut our teeth as programmers on UNIX.<br>
+Initiates of this brilliant but byzantine operating system tend to grow fond of its<br>
+command set, in much the same way that cabalists become attached to bizarre<br>
+metaphysical formulas purporting to explain the universe. A UNIX wizard's MPW<br>
+startup script usually contains a list of aliases to translate between UNIX and MPW:<br>
+Alias ls Files, Alias cp Duplicate, and so on. These commands are then used in all the<br>
+wizard's utility scripts as well. This creates a problem with ToolServer: it can't use<br>
+these startup scripts because they also customize the user interface with commands<br>
+like AddMenu and SetKey. Without the aliases, though, the utility scripts won't run.
+</p>
+<p>
+One solution to this problem combines the first two principles listed above. First,<br>
+separate the aliases from the user interface setup code, yielding two different startup<br>
+files. Both files are invoked by the MPW Shell startup process but neither is invoked<br>
+at ToolServer startup. Second, instead of assuming a particular global configuration,<br>
+make each utility script explicitly include whatever setup files it may require. MPW's<br>
+analog of the<b>#include </b>directive of C is Execute, which executes a file in the current<br>
+namespace.
+</p>
+<p>
+We can apply common C bracketing conventions to avoid multiple inclusion of the same<br>
+file. Assuming that our UNIX wizard has split off his or her aliases into a file named<br>
+UNIXAliases, a script using these aliases would start -- after the header comment --<br>
+as follows:
+</p>
+<pre>if {__UNIXALIASES__} == ""
+   execute UNIXAliases
+end</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The script file UNIXAliases would set the variable __UNIXALIASES__ to something<br>
+other than the empty string, and decline to execute itself again if it had already been<br>
+executed, like so:
+</p>
+<pre>if {__UNIXALIASES__} == ""
+   set __UNIXALIASES__ "true"
+   ... # the aliases go here
+end # __UNIXALIASES__</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+A different solution to the same problem involves the third principle, reducing<br>
+dependencies between modules. Utility scripts don't really need to use csh commands,<br>
+after all: the aliases are there mostly so that the wizard can type them into the MPW<br>
+Shell, his or her fingers having long ago locked into an inflexible pattern of TTY<br>
+interaction. If scripts don't assume the availability of a different command set -- that<br>
+is, if they stick with the MPW command names -- the aliases need not be included at<br>
+all.
+</p>
+<p>
+Independence is a good idea for another reason: you may give your ToolServer scripts<br>
+to other people at some point in your long and happy life. The more your commands<br>
+depend on the global environment, including ToolServer startup files, the more likely<br>
+they are to conflict with another user's environment.
+</p>
+<h2>INPUT AND OUTPUT</h2>
+<p>
+ToolServer implements most of the MPW Shell's I/O system, which is based on the<br>
+stdio library and UNIX-style redirection. However, it doesn't read keyboard input or<br>
+display text output. All of its I/O channels are ultimately files, pipes, or the<br>
+pseudodevice Dev:Null.
+</p>
+<p>
+The only mechanisms for interacting with the user in ToolServer are commands like<br>
+Alert and Confirm that display dialog boxes, and interface tools you write yourself.<br>
+Even these must be used with caution, since ToolServer can run remotely over a<br>
+network, and hanging a server machine by bringing up a dialog box is often regarded as<br>
+undesirable.
+</p>
+<p>
+It helps to separate user interface code from core code, as already discussed. Commands<br>
+you intend to run with ToolServer should not have a user interface: they should<br>
+perform an action that's completely specified by their command line. An outermost<br>
+user interface script can present choices to the user, then invoke an innermost<br>
+command that has no user interface. The outermost script is just for ToolServer; the<br>
+inner script or tool is suitable for both ToolServer and the MPW Shell.
+</p>
+<p>
+You can detect when a command is running under ToolServer and squelch its user<br>
+interface by looking at the environment variable BackgroundShell. This is the empty<br>
+string when running under the MPW Shell, but it's nonempty under ToolServer. Most<br>
+user interactions in MPW commands are just confirmation alerts, so if execution<br>
+reaches a Confirm command and BackgroundShell is set, assume that the user would<br>
+answer "no." All commands that require confirmation should support the <b>-y</b> and <b>-n</b><br>
+options, which provide answers on the command line, and these options should be<br>
+provided when the commands are used from ToolServer.
+</p>
+<p>
+Some MPW commands, such as Make and Backup, write output to the Worksheet, and<br>
+the user then selects and executes the output. This model doesn't apply to the<br>
+ToolServer environment since it has no Worksheet. The easiest solution is to redirect<br>
+the command output to a temporary file, execute that file, and then delete it. This is<br>
+less selective than using the Worksheet, which allows the user to decide which lines to<br>
+execute. If selectivity is important, you can write a command that presents the lines of<br>
+output to the user and allows them to be independently accepted or rejected.
+</p>
+<p>
+We don't live in the best of all possible worlds, St. Thomas Aquinas and Dr. Pangloss to<br>
+the contrary, and so commands often return errors. These generate text that's directed<br>
+to the standard error channel. In the MPW Shell, error text goes to the frontmost<br>
+window by default, but in ToolServer, the default is a file named command.err in the<br>
+folder containing the command file. This is very antisocial behavior, especially since<br>
+commands invoke other commands and the error file could wind up buried at some<br>
+arbitrary-seeming place in your folder tree. Redirect the standard error channel to<br>
+save yourself from Sisyphean levels of frustration whenever something goes just a<br>
+little bit wrong.
+</p>
+<p>
+There are two ways to redirect errors. First, you can use the standard MPW error<br>
+redirection characters &gt;=, &gt;=&gt;=, [[Sigma]], and [[Sigma]][[Sigma]] in your<br>
+outermost user interface script. For instance, the script line
+</p>
+<pre>Veeblefetzer &gt;= "{Boot}"Veeblefetzer.Errors</pre><p class="spacer">&nbsp;</p>
+<p>
+would redirect errors to the file Veeblefetzer.Errors at the top level of your startup<br>
+disk. This does little or nothing to bring the errors to your attention, though, so your<br>
+outermost script should look something like this:
+</p>
+<pre>Set ErrorFile "{TempFolder}"MyUtility.Errors
+Delete -i "{ErrorFile}"
+Set Exit 0 # Don't bomb quietly on errors
+Potrzebie &gt;=&gt;= "{ErrorFile}"
+if {Status} == 0
+   Veeblefetzer &gt;=&gt;= "{ErrorFile}"
+end
+if `Exists "{ErrorFile}"`
+   Alert `Catenate "{ErrorFile}"`
+   Delete -i "{ErrorFile}"
+end</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The other way to redirect errors is to set the ToolServer built-in variable<br>
+BackgroundErr to the name of a file. This will create that file whenever there's an<br>
+error. This is somewhat less flexible than redirection, but it can be set once and for<br>
+all in a ToolServer startup script. That would make the script above read like this:
+</p>
+<pre>Delete -i "{BackgroundErr}"
+Set Exit 0 # Don't bomb quietly on errors
+Potrzebie
+if {Status} == 0
+   Veeblefetzer
+end
+if `Exists "{BackgroundErr}"`
+   Alert `Catenate "{BackgroundErr}"`
+   Delete -i "{BackgroundErr}"
+end</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Standard output can be controlled similarly, using either redirection characters or the<br>
+environment variable BackgroundOut.
+</p>
+<h2>FORMS OF TOOLS</h2>
+<p>
+There are several ways to package commands for use with ToolServer. The most basic<br>
+and boring ways are:
+</p>
+<ul>
+<li>Use the Execute Script command in ToolServer's File menu to select and<br>
+execute a script file.</li>
+<li>Drop a script file on the ToolServer application icon.</li>
+<li>Give the "ToolServer [<i>script</i> ... ]" command in the MPW Shell.</li>
+</ul>
+<p>
+There are more interesting deployment modes, but they require a bit more<br>
+explanation.
+</p>
+<p>
+<b>Standalone scripts.</b> If you change the creator of a script file to 'MPSX',<br>
+double-clicking it in the Finder will launch ToolServer and send it an Open Document<br>
+event, causing it to be executed. Use this approach for your outermost user interface<br>
+scripts. To change the creator, use MPW's "SetFile -c 'MPSX'<i>file</i>" command.
+</p>
+<p>
+There is, alas, no such thing as a standalone tool, but you can write a one-line script<br>
+that invokes a tool with any parameters or none.
+</p>
+<p>
+<b>AppleScript. </b>ToolServer is fully scriptable. Aside from the four required<br>
+commands, it has only one scripting command, the dreaded DoScript. This takes a<br>
+command written in another scripting language --&nbsp;&nbsp;MPW command language in this<br>
+case --&nbsp;&nbsp;and passes the command to its script interpreter. DoScript is discouraged in<br>
+new applications because it's unstructured, but it's very useful for pre-AppleScript<br>
+applications that have their own languages.
+</p>
+<p>
+A simple AppleScript script confers few benefits over a standalone ToolServer script.<br>
+In fact, it's better to avoid mixing scripting languages if you can. However, using<br>
+FaceSpan or another AppleScript authoring tool, you can use AppleScript to set up a<br>
+conventional application that relies on ToolServer as a workhorse. Simply pass<br>
+DoScript commands in response to user actions, redirecting errors and output to<br>
+temporary files that you interpret in your AppleScript code.
+</p>
+<p>
+<b>Apple events.</b> Finally, you can take AppleScript one step further, driving<br>
+ToolServer directly with Apple events generated from compiled software. This delivers<br>
+the maximum in flexibility and performance. You could even write a project-file<br>
+development system based on MPW compilers. Another possibility would be HyperCard<br>
+XCMDs, allowing MPW commands to be invoked from HyperTalk. An Apple event front<br>
+end could be created for a particular MPW tool, allowing it to be cleanly invoked from<br>
+other scripts or compiled software; this might also provide a simple user interface for<br>
+controlling it with dialogs and menus.
+</p>
+<p>
+ToolServer accepts the required Apple events, as well as DoScript and some<br>
+special-purpose events related to status checking, command canceling, and error and<br>
+output redirection. These are documented in Chapter 4 of the <i>ToolServer Reference</i><br>
+manual that comes with MPW. In this column in the last issue of<i>develop</i>, I provided<br>
+sample code for interacting with SourceServer (another Apple event-driven MPW<br>
+Shell subset), and that code can easily be adapted for ToolServer.
+</p>
+<h2>TOOLS FOR THE FUTURE?</h2>
+<p>
+Because it's tied to a command-line interface, the MPW toolset has come to seem<br>
+rather archaic, but there's life in the old girl yet. ToolServer's support for Apple<br>
+events and AppleScript allows innumerable improvements in its interface. In the<br>
+future, we may see friendly front ends for various MPW tools, as well as deeper<br>
+support for compilation and other kinds of file processing with MPW tools in<br>
+third-party development systems.
+</p>
+<p>
+Ultimately, MPW's command-line interface is destined to become a fading memory.<br>
+Although it confers some advantages in power, it must give way to friendlier<br>
+approaches in the end. However, if we fail to move its toolset forward into the<br>
+post-command-line world, we will be poorer for the loss.
+</p>
+<p>
+<b>TIM MARONEY </b>was discovered on the Isle of Wight by seal farmers in the Year of Our<br>
+Lord 1394, and again seventy years later by Tasmanian basket twirlers out for a<br>
+stroll in the Yukon. The little tyke pursued a happy life of fun, freedom, and quantum<br>
+mechanics. He resurfaced in 1961, in the town of Holyoke, Massachusetts. Tim played<br>
+a magician in bondage in a class play in the second grade, which may have prepared<br>
+him for the contract work he's now doing at Apple.
+</p>
+<p>
+Thanks to Deeje Cooley, Arno Gourdol, and Rick Mann for reviewing this column.
+</p>
+</body>
+</html>

@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 40 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 95 - Print Hints: Syncing Up With ColorSync 2.0</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Print Hints: Syncing Up With ColorSync 2.0</h1>
+<h2>David Hayward</h2>
+<p>
+<img src="img/208.gif" width="216 px"></img>
+</p>
+<p>
+In March of this year, Apple announced a major upgrade to the ColorSync extension and<br>
+API: ColorSync 2.0. Like version 1.0, ColorSync 2.0 is a powerful color management<br>
+system that allows applications and device drivers to produce consistent color across<br>
+different devices. However, ColorSync 2.0 dramatically improves the quality,<br>
+flexibility, and performance of color management. This column focuses on the new<br>
+features of ColorSync 2.0 and how applications can take advantage of them. (For a good<br>
+review of ColorSync 1.0 and color management in general, see John Wang's Print<br>
+Hints column in <i>develop</i> Issue 14.)
+</p>
+<h2>WHAT IS COLORSYNC 2.0?</h2>
+<p>
+ColorSync 2.0 is an extension to the Mac OS that provides a color management system<br>
+for applications, scanner drivers, printer drivers, and other components of the OS<br>
+such as QuickDraw and QuickDraw GX. The objective of the color management system is<br>
+to provide consistent color across devices that have different color ranges, or <i>gamuts</i>.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>All the versions of QuickDraw GX that have shipped </b>as of this<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;writing (v1.0.1 through v1.1.2) use the ColorSync 1.0 API. ColorSync 2.0 is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;backward compatible, so QuickDraw GX will work fine if ColorSync 2.0 is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;installed. QuickDraw GX version 1.2 will add full ColorSync 2.0 support.*
+</p>
+<p>
+To understand the task of color management, consider the process of scanning,<br>
+displaying, editing, and printing a color document: In a typical configuration, a color<br>
+document may interact with three devices -- scanner, monitor, and printer -- each of<br>
+which works with color in different ways. A scanner contains a CCD array, which is<br>
+nonlinearly sensitive to specific frequencies of red, green, and blue light. A monitor<br>
+hurls electrons at special phosphors to produce varying amounts of red, green, and<br>
+blue light. And a color printer relies on a mixture of dyes, waxes, or toner to subtract<br>
+cyan, magenta, yellow, and black from white paper. Because each of these devices uses<br>
+different physical systems in different color spaces with different gamuts, providing<br>
+consistent color is difficult. The goal is to provide the best consistency given the<br>
+physical limitations of each device.
+</p>
+<p>
+To meet this goal, ColorSync 2.0 requires detailed information about each device and<br>
+how it represents or characterizes color. This information is encapsulated in a <i>device</i><br>
+<i>profile</i>. A ColorSync-savvy scanner stores (or "embeds") its profile in the document<br>
+it creates. A ColorSync-savvy application uses the profile embedded in the document<br>
+and displays it according to the monitor's profile; a ColorSync-savvy printer renders<br>
+the document according to the printer's profile.
+</p>
+<h2>DEVICE PROFILES</h2>
+<p>
+Device profiles are the key ingredient of any color management system because they<br>
+define the unique color behavior of each device. They're used by <i>color management</i><br>
+<i>module</i> (CMM) components, which perform the low-level calculations required to<br>
+transform colors from a source device color space to a destination device color space.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>CMM used to stand for color matching method.</b> There was<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;disagreement with that name because a CMM component does a lot more than<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;just color matching. So we changed the name to color management module to be<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;more accurate.*
+</p>
+<p>
+<b>ICC profile format. </b>ColorSync 2.0 uses a new profile format defined by the<br>
+International Color Consortium (ICC), the founding members of which include Apple,<br>
+Adobe Systems, Agfa-Gevaert, Eastman-Kodak, Microsoft, Silicon Graphics, Sun, and<br>
+FOGRA (honorary). The <i>International Color Consortium Profile Format Specification</i><br>
+states the following in its introduction:
+</p>
+<p>
+<i>The intent of this format is to provide a cross-platform device profile format. Such</i><br>
+<i>device profiles can be used to translate color data created on one device into another</i><br>
+<i>device's native color space. The acceptance of this format by operating system vendors</i><br>
+<i>allows end users to transparently move profiles and images with embedded profiles</i><br>
+<i>between different operating systems. For example, this allows a printer manufacturer</i><br>
+<i>to create a single profile for multiple operating systems.</i>
+</p>
+<p>
+The ICC profile format is designed to be flexible and extensible so that it can be used on<br>
+a wide variety of platforms and devices. The profile structure is defined as a header<br>
+followed by a tag table followed by a series of tagged elements that can be accessed<br>
+randomly and individually. In a valid profile, a minimal set of tags must be present,<br>
+but optional and private tags may be added depending on implementation needs.<br>
+Complete definitions of the required tags can be found in the profile format<br>
+specification. Perhaps just as important, Apple and Adobe have defined how profiles<br>
+can be embedded in the common graphics file formats PICT, EPS, and TIFF.
+</p>
+<p>
+There have been changes in the way ColorSync works with profiles as a result of this<br>
+new format. For example, with ColorSync 1.0, the entire profile format was compact<br>
+enough to be used as a memory-based data structure, whereas with ColorSync 2.0,<br>
+profiles can be much larger and typically are disk-based. However, ColorSync 2.0 can<br>
+still make use of old 1.0 profiles for backward compatibility.
+</p>
+<p>
+<b>Profile types. </b>There are three main types of device profile: input, display, and<br>
+output. These types have the following signatures:
+</p>
+<ul>
+<li>'scnr' -- input devices such as scanners or digital cameras</li>
+<li>'mntr' -- display devices such as monitors or liquid crystal displays</li>
+<li>'prtr' -- output devices such as printers</li>
+</ul>
+<p>
+In addition to these basic types, three other device profile types are defined:
+</p>
+<ul>
+<li>'link' -- Device link profiles concatenate into one profile a series of<br>
+profiles that are commonly used together. A profile of this type can simplify<br>
+and expedite the processing of batch files when the same combination of device<br>
+profiles and non-device profiles is used repeatedly.</li>
+<li>'spac' -- Color space conversion profiles are used by CMMs to perform<br>
+intermediate conversions between different device-independent color spaces.</li>
+<li>'abst' -- Abstract profiles provide a generic method for users to make<br>
+subjective color changes to images or graphic objects by transforming the<br>
+color data.</li>
+</ul>
+<p>
+<b>Profile quality and rendering intent. </b>Typically you can think of a profile as a<br>
+self-contained set of data that contains all the information needed for a CMM to<br>
+perform a color match. Therefore, if an application wants to embed a profile in a<br>
+document, it shouldn't have to make any changes to the profile -- the profile is just a<br>
+black box of data. This is true for the most part, but there are a few attributes of a<br>
+profile that an application can change to modify the behavior of the profile. So, it's<br>
+better to conceptualize a profile as a black box of data with a few switches on the<br>
+outside. Before embedding a profile in a document, an application can toggle any of<br>
+these switches by setting the appropriate bit or bits in the profile's header. One of the<br>
+switches determines the profile's quality and another specifies its rendering intent:
+</p>
+<ul>
+<li>The quality flag bits provide a convenient place in the profile for an<br>
+application to indicate the desired quality of a color match (potentially at the<br>
+expense of speed and memory) as normal, draft, or best quality. In ColorSync<br>
+2.0 these qualities do not mandate the use of one algorithm over another;<br>
+they're just "recommendations" that the CMM may choose to ignore or<br>
+implement as it sees fit.</li>
+<li>The rendering intent determines how the CMM performs the match. The<br>
+possible intents are photographic matching, saturation matching, relative<br>
+colormetric matching, and absolute colormetric matching.</li>
+</ul>
+<p>
+<b>Profile header structure: CMAppleProfileHeader. </b>In the ColorSync 1.0<br>
+profile format, the first member of the profile header structure<br>
+(CMAppleProfileHeader) is a CMHeader structure, which contains all the basic<br>
+information about the profile. Similarly, the ColorSync 2.0 profile begins with a<br>
+CM2Header structure. The fields of the CM2Header structure are slightly different<br>
+from those in the old CMHeader, to reflect some of the improvements provided by the<br>
+new ICC profile format. However, to be backward-compatible with 1.0, ColorSync 2.0<br>
+defines a union of the two header structures. Because the version field is at the same<br>
+offset in both header structures, it can be used to determine the version of the profile<br>
+format.
+</p>
+<p>
+Because ColorSync 2.0 provides support for ColorSync 1.0 profiles, your application<br>
+should be prepared to handle both formats. Your code should always check the version<br>
+field of the header before accessing any of the other fields in the header or reading any<br>
+of the profile's tags.
+</p>
+<p>
+<b>Profile location structure: CMProfileLocation.</b>ColorSync 2.0 profiles are<br>
+typically disk-based files, but they can also be memory-based handles or pointers. To<br>
+allow this flexibility, whenever a profile location needs to be specified (as a<br>
+parameter for CMOpenProfile, for example) a CMProfileLocation structure is used.<br>
+This structure contains a type flag followed by a union of an FSSpec, a handle, and a<br>
+pointer.
+</p>
+<p>
+<b>Profile reference structure: CMProfileRef. </b>Once a profile has been opened, a<br>
+private structure is created by ColorSync to maintain the profile until it's closed. A<br>
+CMProfileRef (defined as a pointer to the private structure) can be used to refer to the<br>
+profile.
+</p>
+<h2>COLOR WORLDS</h2>
+<p>
+A <i>color world </i>is a reference to a private ColorSync structure that represents a unique<br>
+color-matching session. Although profiles can be large, a color world is a compact<br>
+representation of the mapping needed to match between profiles. Conceptually, you can<br>
+think of a color world as a sort of "matrix multiplication" of two or more profiles that<br>
+distills all the information contained in the profiles into a fast multidimensional<br>
+lookup table. A color world can be created explicitly with low-level routines such as<br>
+NCWNewColorWorld or automatically with high-level routines like<br>
+NCMBeginMatching.
+</p>
+<h2>COLORSYNC 2.0 ROUTINES</h2>
+<p>
+Here I'll briefly describe the most commonly used ColorSync 2.0 routines, grouped<br>
+according to purpose.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>The API naming convention </b>is as follows: Calls prefixed with "CM" are<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;high-level color management routines, while those prefixed with "CW" are<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;low-level routines that take a color world as an argument. An "N" before "CM"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;or "CW" indicates calls that are new to ColorSync 2.0, to distinguish them<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;from the old ColorSync 1.0 calls (which are still supported for backward<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;compatibility).*
+</p>
+<p>
+<b>Accessing profile files. </b>There is a set of basic routines to work with profiles as a<br>
+whole. For example, CMNewProfile, CMOpenProfile, CMCopyProfile, and<br>
+CMGetSystemProfile do what you would expect from their names.
+</p>
+<p>
+<b>Accessing profile elements. </b>These routines perform more specific operations on<br>
+profiles and profile elements. CMValidate Profile checks whether a profile contains all<br>
+the needed tags, CMGetProfileElement gets a specific tag type from a profile, and<br>
+CMGetProfileHeader gets the important header information of a profile.
+</p>
+<p>
+<b>Embedding profiles. </b>NCMUseProfile is a simple routine for embedding a profile<br>
+into a PICT. If you need to extract a profile or embed a profile into a different file<br>
+format, you can use CMFlattenProfile to embed or CMUnflattenProfile to extract.
+</p>
+<p>
+<b>QuickDraw-specific matching. </b>These high-level routines provide a basic API to<br>
+simplify color matching for QuickDraw drawing routines. NCMBeginMatching tells<br>
+Color QuickDraw to begin matching for the current graphics device using the specified<br>
+source and destination profiles. NCMUseProfileComment inserts a profile as a picture<br>
+comment into an open picture. NCMDrawMatchedPicture draws a picture using color<br>
+matching. CWMatchPixMap matches a PixMap using the specified color world.
+</p>
+<p>
+<b>Low-level matching. </b>These low-level routines create color worlds and perform<br>
+color matching. NCWNewColorWorld creates a color world using the specified source<br>
+and destination profiles, while CWConcatColorWorld creates one using an array of two<br>
+or more profiles. Using the specified color world, CWMatchColors matches a list of<br>
+colors and CWMatchBitmap matches a generic bitmap.
+</p>
+<p>
+<b>Searching profile files. </b>This set of routines allows your application to search the<br>
+ColorSync(TM) Profiles folder for the subset of profiles that meets your needs. For<br>
+example, you could search for only printer profiles and use the search result to<br>
+provide a pop-up menu for the user. CMNewProfileSearch searches the<br>
+ColorSync(TM) Profiles folder for all profile files that match the supplied<br>
+CMSearchRecord. The matches aren't returned to the caller, but the number of profiles<br>
+matched and a reference to the search result are returned. The search result is a<br>
+CMProfileSearch structure that points to private structures maintained by ColorSync<br>
+and can be accessed with a call like CMSearchGetIndProfile, which opens and returns a<br>
+CMProfileRef for the <i>n</i>th member of the search result.
+</p>
+<p>
+<b>PostScript code generation.</b> This set of routines allows your application or<br>
+printer driver to generate PostScript(TM) code that can be sent to a PostScript Level<br>
+2 printer so that the actual matching calculations will be performed in the printer<br>
+instead of on the user's computer. CMGetPS2ColorRendering gets a color rendering<br>
+dictionary (CRD) for a specified source and destination profile. CMGetPS2ColorSpace<br>
+gets a color space array (CSA) for a specified source profile.
+</p>
+<h2>BECOMING COLORSYNC-AWARE</h2>
+<p>
+At the very least, your application should respect any embedded profiles in the<br>
+documents it works with. For example, if your application works with PICT files, it<br>
+shouldn't do anything that would strip out the ColorSync picture comments used for<br>
+embedding. Even though your application may choose not to make use of the profiles,<br>
+another application or printer driver may be able to take advantage of them.
+</p>
+<h2>PRINTING WITH COLORSYNC</h2>
+<p>
+If your application prints QuickDraw data to a ColorSync-savvy printer driver, you<br>
+need do nothing to get matched output. When the stream of QuickDraw data sent to the<br>
+driver contains an embedded profile in picture comments, the ColorSync-savvy<br>
+printer driver will create a new color world to match from the embedded profile to the<br>
+printer's profile. The driver will then match subsequent QuickDraw operations<br>
+accordingly before sending them to the printer. If the QuickDraw data stream doesn't<br>
+contain embedded profiles, the driver will use the current system profile (the profile<br>
+that the user selected in the ColorSync control panel) as the source profile. That way,<br>
+the printed output will match the screen display.
+</p>
+<p>
+One example of a ColorSync-savvy printer driver is the LaserWriter 8.3 driver.<br>
+Whereas previous versions of LaserWriter 8 allowed the user to choose between<br>
+"Black and White" and "Color/Grayscale" in the Print dialog, this version adds two new<br>
+choices. "ColorSync Color Matching" tells the driver to use ColorSync to match an<br>
+image on the host Macintosh before sending it to the printer. The other option,<br>
+"PostScript Color Matching," instructs the driver to generate PostScript CSAs and<br>
+CRDs, which are sent to the printer so that the actual matching is performed in the<br>
+printer. (The ColorSync API is used to generate the CSAs and CRDs according to the<br>
+source profiles that may be embedded in the document and the destination profile of the<br>
+printer.) In either case, the LaserWriter 8.3 driver allows the user to choose a<br>
+printer profile from a list of printer profiles installed in the ColorSync(TM) Profiles<br>
+folder.
+</p>
+<p>
+Because ColorSync-savvy printer drivers do much of the work for you, it's best if<br>
+your application prints documents with QuickDraw even if they're not PICT files. For<br>
+example, if your application reads and prints TIFF files, the best approach is to<br>
+convert the TIFF data (which may have a profile embedded in tags) to a PicHandle<br>
+(which would have the profile embedded in picture comments). To print, you draw the<br>
+PicHandle with DrawPicture into the printer's color graphics port.
+</p>
+<p>
+If the printer's driver doesn't support ColorSync, your application can still use<br>
+ColorSync to produce matched output as long as you have an appropriate profile for the<br>
+device. (There are several commercial tools that build ICC profiles.) Given a source<br>
+and destination profile, you can use the ColorSync API to match the image or, if your<br>
+application must send PostScript data directly to a printer, to generate CRDs.
+</p>
+<h2>WHAT ELSE A COLORSYNC-SAVVY APPLICATION CAN DO</h2>
+<p>
+There is much that an application can do with ColorSync that will help the user work<br>
+with color. For starters, an application could do the following:
+</p>
+<ul>
+<li>Provide the user with information on any profiles embedded in a<br>
+document, and possibly also allow the user to change the quality and rendering<br>
+intent settings of embedded profiles.</li>
+<li>Include a print preview mode that shows a "soft proof" of the matched<br>
+output on the display. The application accomplishes this by building a color<br>
+world with CWConcatColorWorld that matches through three profiles: from<br>
+the source profile (which is embedded in the document) to the printer's<br>
+profile (which you allow the user to pick from a list of installed printer<br>
+profiles) and back to the screen profile (which is the current system<br>
+profile).</li>
+<li>Along with soft-proofing, it's useful to show the user what colors in the<br>
+document are out of gamut according to the current destination profile. Gamut<br>
+checking can be done with routines such as CWCheckColors and<br>
+CWCheckBitmap.</li>
+</ul>
+<p>
+Note that the LaserWriter engineering team is designing new PrGeneral code for the<br>
+8.3.1 version of the driver. This will allow an application to determine what profile is<br>
+selected in the Print dialog.
+</p>
+<h2>WHERE TO GO FOR MORE</h2>
+<p>
+Everything you need to use ColorSync 2.0, including interfaces, libraries, sample<br>
+code, utilities, and the ICC profile format specification, is on this issue's CD and in the<br>
+Mac OS Software Developer's Kit. The technical reference for ColorSync 2.0 consists of<br>
+several chapters in the book <i>Advanced Color Imaging on the Macintosh</i>, which is also<br>
+included on this issue's CD and will soon be available in print from Addison-Wesley;<br>
+this documentation covers everything from a high-level discussion of color<br>
+management theory to a detailed description of the ColorSync 2.0 API. Why not take a<br>
+closer look and see how you can take of advantage of this new improved technology in<br>
+your application?
+</p>
+<p>
+<b>DAVID HAYWARD</b> (AppleLink HAYWARD.D) has been working in the Printing,<br>
+Imaging, and Graphics group in Developer Technical Support for over a year. His<br>
+proudest achievement to date is the ability to make his hour-long commute every<br>
+morning without waking up until he hits the speed bumps on Apple's R&amp;D campus.<br>
+Currently Dave is developing a ColorSync CMM for his closet so that he no longer has<br>
+to worry about mismatching his clothes.*
+</p>
+<p>
+Thanks to Paul Danbold, Steve Swen, Nick Thompson, and John Wang for reviewing<br>
+this column.*
+</p>
+</body>
+</html>

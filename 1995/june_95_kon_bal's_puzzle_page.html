@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 25 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 95 - KON & BAL'S PUZZLE PAGE</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h2>KON &amp; BAL'S PUZZLE PAGE</h2>
+<h2>A Branch Too Far</h2>
+<h1>Chris YERGA</h1>
+<p>
+<img src="img/173.gif" width="155 px"></img>
+</p>
+<p>
+<i>See if you can solve this programming puzzle, presented in the form of a dialog</i><br>
+<i>between Konstantin Othmer and guest puzzler Chris Yerga. The dialog gives clues to</i><br>
+<i>help you. Keep guessing until you're done; your score is the number to the left of the</i><br>
+<i>clue that gave you the correct answer. Even if you never run into the particular</i><br>
+<i>problems being&nbsp;&nbsp;solved here, you'll learn some valuable debugging techniques that will</i><br>
+<i>help you solve your own programming conundrums. And please, make KON &amp; BAL's day</i><br>
+<i>by submitting a puzzle of your own to AppleLink DEVELOP.</i>
+</p>
+<p>
+Chris I have a piece of code that runs fine on my Quadra, but when I run it on a plain<br>
+old 68000 it crashes.
+</p>
+<p>
+KON A 68000? So you're still trying to get GX to run on that Mac Portable in Cary's<br>
+office, huh? How does it crash?
+</p>
+<p>
+Chris With an address error.
+</p>
+<p>
+KON What's hard about that? Your code is doing a 2- or 4-byte access to an odd<br>
+address, which is OK on a 68040 but not on a 68000. It's a trivial problem.
+</p>
+<p>
+Chris That's what I thought, but the address it's accessing appears to be uninitialized<br>
+data. The code is simply allocating a block and then storing a pointer in the block, but<br>
+the store never seems to occur, because afterward the block has random data in it. And<br>
+of course the block itself is long-aligned, because it came from the Memory Manager,<br>
+so there's no problem there.
+</p>
+<p>
+KON Maybe on your Quadra, but on a Mac Plus the Memory Manager allocates blocks<br>
+that are word-aligned.
+</p>
+<p>
+Chris Thanks for the history lesson, chief, but this isn't a Mac Plus and the Memory<br>
+Manager on this machine is much different -- much simpler, actually. It just so<br>
+happens that our Memory Manager always long-aligns blocks.
+</p>
+<p>
+KON Since when are you writing new Memory Managers? I thought you wrote graphics<br>
+code.
+</p>
+<p>
+Chris Yes. But the cornerstone of any decent graphics system is its Memory Manager<br>
+-- I wouldn't expect a "QuickDraw classic" guy like you to understand.
+</p>
+<p>
+KON I understand memory management just fine, Jackson. Show me where you're<br>
+setting up this data.
+</p>
+<p>
+<b>100</b> Chris This is the interesting section:
+</p>
+<pre>NewDMAQueueEntry
+...
++0030 0020C5D6  MOVE.L  D3,D0
++0036 0020C5DC  _NewPtr
++0038 0020C5DE  MOVE.L  A0,-$0008(A6)
++003C 0020C5E2  MOVE.L  -$000C(A6),-(A7)
++0040 0020C5E6  MOVEA.W -$000E(A6),A1
++0044 0020C5EA  MOVE.L  A1,-(A7)
++0046 0020C5EC  JSR     *+$53A4 ; 00211990
++004A 0020C5F0  MOVE.L  D0,-$000C(A6)
++004E 0020C5F4  MOVE.L  A2,(A0,D0.L)</pre>
+<p>
+&nbsp;It makes the _NewPtr call, makes some other function call, and then stores the<br>
+pointer in A2 into our newly allocated buffer.
+</p>
+<p>
+KON What's the other function call doing?
+</p>
+<p>
+<b>95</b> Chris I'm not sure, actually. The C source doesn't indicate that a function call<br>
+should be happening:
+</p>
+<pre>buffer = NewPtr(totalSize);
+count = count * size;
+*(long *) (buffer + count) = (long) handlerProc;</pre>
+<p>
+&nbsp;The only thing I see happening in the source code is a multiply. You don't need a<br>
+function call for that.
+</p>
+<p>
+KON Could this be some wacky C++ operator overloading nonsense? C++ is very good<br>
+at generating extra function calls. I think we'd better bring a SmartFriend in on this<br>
+one.
+</p>
+<p>
+Chris Don't bring out the big guns just yet. The code is written completely in plain old<br>
+C: no C++ and no CFront.
+</p>
+<p>
+KON It's got to be code you've written, because it's a PC-relative JSR. Since it's not an<br>
+A5- relative JSR, it's not going through the jump table, so it couldn't have been linked<br>
+in from a library or something external to your program. It looks like a call to a static<br>
+function.
+</p>
+<p>
+Chris Actually, all the JSR instructions in this code are PC-relative. I wrote&nbsp;&nbsp;a tool<br>
+that transforms all JSRs that go through the jump table to PC-relative JSRs. You may<br>
+want to sit down for this next part -- it's a little tricky.
+</p>
+<p>
+KON That's why it ended up in the Puzzle Page. Let's hear it.
+</p>
+<p>
+<b>90</b> Chris All the code is being built into a ROM; however, our development system of<br>
+choice only allows us to build our code as a Mac application. So I created a custom tool<br>
+that postprocesses the application and turns it into something that will run out of ROM.<br>
+Basically we use the CODE 0 jump table to link everything together.
+</p>
+<p>
+KON I see. You know where the code will reside in ROM, so you fake out the jump table<br>
+to make it look as if all the segments are loaded. Since nothing will ever move or<br>
+unload, your ROM jump table entries never need to change. Pretty tricky.
+</p>
+<p>
+Chris But not tricky enough. The scheme you describe will work, but it&nbsp;&nbsp;has two<br>
+problems. First, our ROM can be mapped into different addresses, so the code must be<br>
+completely relocatable. A Mac jump table contains JMP instructions with fixed long<br>
+addresses (for example, JMP $4083143A), which are not relocatable. Second, as a<br>
+cycle counter like you should know, the jump table is superfluous here, because no<br>
+code will ever move or unload while it's running. You're doing a JSR to the JMP in the<br>
+jump table -- the extra JMP is unnecessary and wastes cycles.
+</p>
+<p>
+KON I didn't know you GX guys counted cycles. How do you get away with removing the<br>
+extra JMP?
+</p>
+<p>
+<b>85</b> Chris Our tool scans all the object code for all instructions that reference the<br>
+jump table. They are JSR xx(A5) (function call), PEA xx(A5) (pass a function<br>
+pointer on the stack), and LEA xx(A5),Ax (get a function pointer in a local variable).<br>
+When it finds one of these instructions, it looks up the function in the jump table and<br>
+changes the instruction to a PC-relative version that simply references the address of<br>
+the target function directly. Everything is PC-relative, so it relocates correctly, and<br>
+there are no extra instructions.
+</p>
+<p>
+KON But the PC-relative addressing mode has only a 16-bit offset, so you can only<br>
+reference functions within 32K of the PC. Is your ROM that small?
+</p>
+<p>
+<b>80</b> Chris Are you kidding? The pictures for the About box are bigger than that. When<br>
+we need to reference a function that's beyond 32K, we create a "jump island" that's<br>
+still PC- relative but allows us a greater reach.
+</p>
+<pre>0020122A:   JSR     $00201FA8       ;go to jump island
+0020122E:   MOVE.W  D0,(A3)
+...
+00201FA8:   LEA     *+0,A0          ;get pc
+00201FAC:   ADDA.L  #$00014B02,A0   ;add long offset
+00201FB2:   JMP (A0)                ;jump to destination</pre>
+<p>
+KON That looks suspicious to me. You're messing with A0 in your jump island.
+</p>
+<p>
+<b>75</b> Chris But that should be OK because the whole thing is written in C, which never<br>
+passes a parameter in A0 and never expects A0 to be preserved.
+</p>
+<p>
+KON I can't find a specific problem, but I'm still a little suspicious of all&nbsp;&nbsp;this OS code<br>
+you're writing. You said that this code runs fine on&nbsp;&nbsp;your Quadra. Does the Quadra<br>
+version undergo the jump table transformation process?
+</p>
+<p>
+Chris No. The Quadra version is run just like a Mac application out of RAM.
+</p>
+<p>
+KON Tell me all the differences between the two environments.
+</p>
+<p>
+<b>70</b> Chris The 68000 version of the software is different in two ways. First, it's<br>
+generated with the exact same compiler, but without 68020 code generation enabled.<br>
+Then, I run it through my BuildROM tool, which transforms all the jump table<br>
+references to PC- relative references. The 68000 target hardware is a diskless<br>
+system; the only way to get code into it is through ROM cartridges, so we can't try to<br>
+run a version of the software that hasn't undergone the BuildROM step.
+</p>
+<p>
+KON So the bug may have nothing to do with the differences between the 68040 and<br>
+68000 processors -- it may be the BuildROM process. Let's sum up what we know:<br>
+First we saw a piece of code that allocates a block of memory and stores a value into<br>
+that block, but the store never seems to happen. Near that code is an unexplained JSR<br>
+which we believe is a function call. Finally, we know that a critical difference in the<br>
+environment is that you alter the code path of function calls. It's really starting to<br>
+smell like your BuildROM tool.
+</p>
+<p>
+Chris The evidence is all circumstantial, counselor. The only questionable part of the<br>
+BuildROM process we've seen is my usage of A0 in the jump islands, but I can't see a<br>
+case where a C function call takes a parameter in A0 or assumes A0 is preserved.
+</p>
+<p>
+KON We should trace through the NewDMAQueueEntry routine and see what that<br>
+mysterious function call is doing.
+</p>
+<p>
+<b>65</b> Chris I put in a breakpoint. But when I run the program again, I drop into the<br>
+debugger with a debug message complaining that some kind of parameter is out of<br>
+range.
+</p>
+<p>
+KON You mean the bug isn't reproducible?
+</p>
+<p>
+Chris After many tries, this is the first time it's failed this way.
+</p>
+<p>
+KON Hmm. What parameter is out of range?
+</p>
+<p>
+Chris The debug message doesn't say, exactly. The value it's complaining about is in<br>
+D2. The value is $00004E56.
+</p>
+<p>
+KON That's a funny-looking number. It looks like an opcode to me. <b> dh 4E56</b> tells me<br>
+it's a LINK A6,#xx instruction. Where did the value in D2 come from?
+</p>
+<p>
+<b>60</b> Chris From a MOVE.W (A0),D2 instruction. The code seems to think A0 points to<br>
+some data.
+</p>
+<p>
+KON But it looks as if it points to code instead. Where is A0?
+</p>
+<p>
+Chris It points to the start of a routine called VBLHandler.
+</p>
+<p>
+KON VBLHandler sure sounds like an interrupt service routine to me, which would<br>
+explain the various failure modes. Is the routine written in C? C routines don't bother<br>
+to preserve A0, so your interrupt routine is trashing a register!
+</p>
+<p>
+<b>55</b> Chris There's some inline assembly code to save all the registers. Take a look:
+</p>
+<pre> void VBLHandler(void)
+{
+asm {
+    MOVEM.L     A0-A6/D0-D7, -(SP)
+};
+
+FlushQueue();
+HandleVBLTasks();
+
+asm {
+    MOVEM.L     (SP)+, A0-A6/D0-D7
+};
+}</pre>
+<p>
+KON It seems quite suspicious to me that A0 points to the beginning of this routine.<br>
+Sounds like your jump islands are at work. Look at the interrupt vector for your VBL<br>
+handler.
+</p>
+<p>
+<b>50</b> Chris On this particular machine the VBL is handled as a level-6 interrupt. The<br>
+level-6 vector is at $0078. It points to a jump island entry like the one above.
+</p>
+<p>
+KON And the first thing it does is trash A0 before your inline assembly gets a chance to<br>
+save it! Maybe you should stick to drawing bitmaps and leave the OS work to someone<br>
+else.
+</p>
+<p>
+<b>45</b> Chris The problem is that the code that installed the interrupt handler is more<br>
+than 32K away from the handler itself. So when it did an LEA xx(A5),Ax to get the<br>
+address of the interrupt handler, the ROM builder tool needed to stick a jump island in<br>
+there. Nasty. But I still need a way to do PC-relative jump islands.
+</p>
+<p>
+KON Use the stack, son. Try this:
+</p>
+<pre>PEA     * ;push the pc
+ADD.L   #xxxxxx,(sp) ;add a long offset
+RTS     ;jump to the destination</pre>
+<p>
+Chris All this and you can draw bitmaps too! I'll fix the ROM builder tool to do this. But<br>
+somehow I doubt that a VBL interrupt was hitting us at the same spot in my<br>
+NewDMAQueueEntry routine every time. There must be another problem there.
+</p>
+<p>
+KON We still have the breakpoint there; before we recompile and fix the bug, let's run<br>
+it again and see if we can get the original failure mode to happen again.
+</p>
+<p>
+<b>40</b> Chris This time we hit the breakpoint. We trace over the NewPtr and see that it<br>
+returns a valid pointer in A0. We step into the JSR at $20C5EC and it takes us to one<br>
+of my jump islands.
+</p>
+<p>
+KON Which alters A0, and then jumps to the function being called. What is the function<br>
+doing?
+</p>
+<p>
+<b>35</b> Chris It's a very short routine; it just takes some parameters off the stack and<br>
+does a few multiplies. It returns the result in D0 just like any normal C function<br>
+would.
+</p>
+<p>
+KON But is it using the trashed A0 for anything?
+</p>
+<p>
+Chris No. In fact, it's not using any address registers at all. It only uses data registers<br>
+for the multiplies. I repeat: no C function would ever take a parameter in A0.
+</p>
+<p>
+KON So we return to the NewDMAQueueEntry routine, with a return value in D0. We<br>
+save D0 in a local variable on the stack frame, and then hit the instruction at<br>
+$20C5F4, which stores a value in the buffer pointed to by A0.
+</p>
+<p>
+<b>30</b> Chris But A0 still has the result of the jump island calculation in it. The code<br>
+didn't set up A0 to point to anything!
+</p>
+<p>
+KON Look at the listing of NewDMAQueueEntry again. The code gets the result of the<br>
+NewPtr call in A0, makes the function call, and then assumes that A0 still has the valid<br>
+pointer in it. But meanwhile, some wannabe OS programmer has gotten in there and<br>
+hosed A0 on us!
+</p>
+<p>
+<b>20</b> Chris That function call seems to be doing the multiply. It must be some runtime<br>
+math library that the compiler uses.
+</p>
+<p>
+KON I'll bet one of your variables is a long word. With 68020 code generation turned<br>
+on, the compiler was able to generate a long multiply instruction, but the 68000<br>
+doesn't have a long multiply instruction, so it calls the math library.
+</p>
+<p>
+<b>10</b> Chris I see. Since the math library was written by the same people who wrote the<br>
+compiler, their code generator knows that A0 won't get trashed, so it doesn't bother to<br>
+save and restore it around the call to the long multiply routine. Pretty sneaky.
+</p>
+<p>
+KON But nice. You want the person writing your code generator to be the&nbsp;&nbsp;ultimate<br>
+cycle counter. Since the Mac Segment Loader implementation&nbsp;&nbsp;doesn't trash A0, it's a<br>
+worthwhile optimization for them to make.
+</p>
+<p>
+Chris Except in this case, the code that performs a multiply is more than 32K away<br>
+from where the math library resides in the ROM, so it hits a jump island and loses the<br>
+value of A0.
+</p>
+<p>
+KON Even a lowly register like A0 is sacred sometimes.
+</p>
+<p>
+Chris So it appears.
+</p>
+<p>
+KON Nasty.
+</p>
+<p>
+Chris Yeah.
+</p>
+<p>
+<b>SCORING</b>
+</p>
+<ul>
+<li>80-100 Please fax your resum&#201; to Catapult Entertainment, Inc.,<br>
+(408)366-2471.</li>
+<li>60-75 We also have junior positions available.</li>
+<li>40-55 Don't worry; just let CopyBits do the tricky stuff.</li>
+<li>10-35 I see you've done your share of long multiplies. *</li>
+</ul>
+<p>
+<b>Chris YERGA</b> During his four years working on QuickDraw GX, Chris learned a lot<br>
+about graphics systems and large projects. He's currently employed by Catapult<br>
+Entertainment, where he learned that a Sega is kinda like a Macintosh, a SNES is kinda<br>
+like an Apple II GS, and carbon dioxide can be explosive. *
+</p>
+<p>
+<b>Thanks </b>to Josh Horwich,
+</p>
+<p>
+KON (Konstantin Othmer), and BAL (Bruce Leak) for reviewing this column. *
+</p>
+</body>
+</html>

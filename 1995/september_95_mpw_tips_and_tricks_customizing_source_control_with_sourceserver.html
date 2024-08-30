@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 38 - Extracted from develop-1995 -->
+<!-- on 2024-08-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 95 - MPW Tips and Tricks: Customizing Source Control With SourceServer</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>MPW Tips and Tricks: Customizing Source Control<br>
+With SourceServer</h1>
+<h2>Tim Maroney</h2>
+<p>
+<img src="img/206.gif" width="216 px"></img>
+</p>
+<p>
+When two engineers on a team edit the same source file at the same time, the resulting<br>
+chaos can be terrible to behold. Source control was invented to mitigate the problem.<br>
+Most Macintosh programmers are familiar with the MPW Shell's Check In and Check<br>
+Out dialogs, and with its Projector commands. The next frontier of custom source<br>
+control involves SourceServer, a nearly faceless application that implements most of<br>
+the Projector commands. MPW scripts are easy to write, but they're no match for the<br>
+power, speed, and friendliness of compiled software. SourceServer exports Projector<br>
+commands as Apple events, allowing source control from compiled software without<br>
+launching the MPW Shell in all its pomp and splendor.
+</p>
+<p>
+Popular third-party development environments often send Apple events to<br>
+SourceServer for integrated source control. You can also use SourceServer to<br>
+customize Projector beyond what you might have thought possible. For instance, you<br>
+can drag source control, kicking and screaming, into the modern world of user<br>
+experience with drop-on applications. In this column, I'll show you how to check a file<br>
+in or out with a simple drag and drop, and how to use SourceServer for other things as<br>
+well. The sample code is provided on this issue's CD; SourceServer is distributed, with<br>
+documentation, on the MPW Pro and E.T.O. CDs (available from Apple Developer<br>
+Catalog) and with third-party development systems.
+</p>
+<h2>APPLE EVENTS FOR SOURCESERVER</h2>
+<p>
+Apple events have many faces, but they're primarily a way of communicating between<br>
+different applications.
+</p>
+<p>
+Each Apple event encapsulates a message as a command with any number of input<br>
+parameters; the receiver of the message may return any number of result parameters<br>
+to the sender. The most basic unit of data is the Apple event descriptor, which consists<br>
+of a type code and a data handle. Apple events are built out of descriptors and are<br>
+themselves special kinds of complex descriptors.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>For an excellent introduction to Apple events, </b>see "Scripting the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Finder From Your Application" by&nbsp;&nbsp;Greg Anderson in <i>develop</i> Issue 20.*
+</p>
+<p>
+SourceServer's commands are represented as descriptor lists. Its Apple events are<br>
+exact duplicates of the MPW Shell's Projector commands, but to avoid the overhead of a<br>
+full command parser, both the command name and each argument are descriptors in<br>
+the descriptor list. This saves you the trouble of putting quotes and escapes into<br>
+arguments that might contain spaces or other special characters. The downside is that<br>
+you have to expand arguments yourself: you can't pass in MPW wildcard characters,<br>
+backquoted commands for expansion, or other special constructs.
+</p>
+<p>
+Creating descriptor lists may sound harder than writing MPW scripts, but that's only<br>
+because it is. I've provided some utility routines to ease the way, though. Listing 1<br>
+shows the utilities and illustrates how to make a command to check out a file for<br>
+modification. As illustrated in the CheckOut routine in this listing, you call the<br>
+CreateCommand routine first and then use the AddXArg routines to add arguments.
+</p>
+<p>
+<b>Listing 1. </b>Creating SourceServer commands
+</p>
+<pre>OSErr CreateCommand(AEDesc *command, CString commandText)
+// Begin a new SourceServer command; name of command is in
+// commandText.
+{
+   OSErr err = AECreateList(NULL, 0, false, command);
+   if (err != noErr) return err;
+   err = AddCStringArg(command, commandText);
+   if (err != noErr) (void) AEDisposeDesc(command);
+   return err;
+}
+
+OSErr AddCommentArg(AEDesc *command, StringPtr comment)
+/* Add a "-cs comment" argument to a SourceServer command. */
+{
+   OSErr err;
+   if (comment[0] == 0) return noErr;
+   err = AddCStringArg(command, "-cs");
+   if (err != noErr) return err;
+   err = AddPStringArg(command, comment);
+   return err;
+}
+
+/* Other SourceServer argument utilities */
+OSErr AddDirArg(AEDesc *command, short vRefNum, long folderID);
+OSErr AddProjectArg(AEDesc *command, StringPtr projectName);
+OSErr AddUserArg(AEDesc *command, StringPtr userName);
+OSErr AddFullNameArg(AEDesc *command, FSSpec *file);
+OSErr AddPStringArg(AEDesc *command, StringPtr string);
+OSErr AddCStringArg(AEDesc *command, CString string);
+
+OSErr CheckOut(FSSpec *file, StringPtr userName,
+               StringPtr projectName, StringPtr comment)
+/* Create a "Check Out Modifiable" command for SourceServer: */
+/* CheckOut -m -cs &lt;comment&gt; -d &lt;dir&gt; -project &lt; */
+/*           project&gt; -u &lt;user&gt; &lt;file&gt; */
+{
+   OSErr             err;
+   AEDesc          command;
+   CStringHandle    output = NULL, diagnostic = NULL;
+
+   err = CreateCommand(&amp;command, "CheckOut");
+   if (err != noErr) return err;
+   err = AddCStringArg(&amp;command, "-m");
+   if (err == noErr) err = AddCommentArg(&amp;command, comment);
+   if (err == noErr)
+     err = AddDirArg(&amp;command, file-&gt;vRefNum, file-&gt;parID);
+   if (err == noErr) err = AddProjectArg(&amp;command, projectName);
+   if (err == noErr) err = AddUserArg(&amp;command, userName);
+   if (err == noErr) err = AddPStringArg(&amp;command, file-&gt;name);
+   if (err == noErr)
+     err = SourceServerCommand(&amp;command, &amp;output, &amp;diagnostic);
+   (void) AEDisposeDesc(&amp;command);
+   /* Display output or diagnostic text as desired. */
+   if (output != NULL) DisposeHandle((Handle) output);
+   if (diagnostic != NULL) DisposeHandle((Handle) diagnostic);
+   return err;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Some of the utilities take Pascal strings, while others take C strings, which could well<br>
+be considered bad programming practice. I chose this dubious method not because I'm<br>
+on drugs, but because Pascal strings and C strings are used in different ways.<br>
+SourceServer's text descriptors are C strings; when passed to these utilities as string<br>
+constants, they shouldn't be converted from Pascal format in place, since some<br>
+compilers put constants in read-only areas. If you're internationally savvy, you may<br>
+have another objection: string constants themselves are bad practice. However, for<br>
+better or worse, MPW scripts and tools are not internationalized. Just like aliens in<br>
+<i>Star Trek</i>, all MPW programmers are assumed to speak English.
+</p>
+<p>
+While on the subject of programming practice, I must gently reprimand SourceServer<br>
+for its approach to Apple events, in which script commands are simulated through a<br>
+single 'cmnd' event. SourceServer's idiosyncratic convention dates from the earliest<br>
+days of Apple events, and modern guidelines discourage this type of design. An<br>
+application implementing its own Apple events should designate a different command<br>
+code for each operation, treating arguments as keyword parameters.
+</p>
+<p>
+Listing 2 shows how to send an Apple event to SourceServer. It's first necessary to find<br>
+and perhaps launch the SourceServer application. The snippet called SignatureToApp<br>
+(by Jens Alfke) on this issue's CD accomplishes this with a single function call.<br>
+Simply pass in the creator code of SourceServer, which is 'MPSP'.
+</p>
+<p>
+<b>Listing 2. </b>Sending commands to SourceServer
+</p>
+<pre>OSErr SourceServerCommand(AEDesc *command, CStringHandle *output,
+                          CStringHandle *diagnostic)
+{
+   AppleEvent            aeEvent;
+   AERecord              aeReply;
+   AEDesc                sourceServerAddress, paramDesc;
+   ProcessSerialNumber   sourceServerProcess;
+   /* SignatureToApp requires this due to a minor bug */
+   FSSpec                appSpec;
+   long                  theLong, theSize;
+   DescType              theType;
+   OSErr                 err;
+
+   *output = *diagnostic = NULL;   /* default replies */
+  
+   /* Find the SourceServer process and make a descriptor for its */
+   /* process ID. */
+   err = SignatureToApp('MPSP', NULL, &amp;sourceServerProcess,
+                         &amp;appSpec, NULL, Sig2App_LaunchApplication,
+                         launchContinue + launchDontSwitch);
+   if (err != noErr) return err;
+   err = AECreateDesc(typeProcessSerialNumber,
+                      (Ptr) &amp;sourceServerProcess,
+                     sizeof(ProcessSerialNumber),
+                     &amp;sourceServerAddress);
+   if (err != noErr) return err;
+
+   /* Create and send the SourceServer Apple event. */
+   err = AECreateAppleEvent('MPSP', 'cmnd', &amp;sourceServerAddress,
+                           kAutoGenerateReturnID, kAnyTransactionID,
+                           &amp;aeEvent);
+   /* done with the address descriptor */
+   (void) AEDisposeDesc(&amp;sourceServerAddress);
+   if (err != noErr) return err;
+   /* add the command */
+   err = AEPutParamDesc(&amp;aeEvent, keyDirectObject, command);
+   if (err != noErr) { (void) AEDisposeDesc(&amp;aeEvent); return err; }
+   err = AESend(&amp;aeEvent, &amp;aeReply,
+                kAEWaitReply + kAENeverInteract, kAENormalPriority,
+                kNoTimeOut, NULL, NULL);
+   (void) AEDisposeDesc(&amp;aeEvent);   /* done with the Apple event */
+   if (err != noErr) return err;
+
+   /* Check for an error return in the keyErrorNumber parameter. */
+   err = AEGetParamPtr(&amp;aeReply, keyErrorNumber, typeInteger,
+                      &amp;theType, &amp;theLong, sizeof(long),
+                      &amp;theSize);
+   if (err == noErr &amp;&amp; (err = theLong) == noErr) {
+      /* Get the standard output from the keyDirectObject parameter.
+*/
+      err = AEGetParamDesc(&amp;aeReply, keyDirectObject, typeChar,
+                           &amp;paramDesc);
+      if (err == noErr)
+          *output = (CStringHandle) paramDesc.dataHandle;
+      /* Get the diagnostic output from the 'diag' parameter. */
+      err = AEGetParamDesc (&amp;aeReply, 'diag', typeChar,
+          &amp;paramDesc);
+      if (err == noErr)
+          *diagnostic = (CStringHandle) paramDesc.dataHandle;
+      /* Get the MPW status from the 'stat' parameter -- it */
+      /* becomes our error return. */
+      err = AEGetParamPtr(&amp;aeReply, 'stat', typeInteger,
+                         &amp;theType, &amp;theLong,
+                         sizeof(long), &amp;theSize);
+      if (err == noErr) err = theLong;
+   }
+
+   /* done with the reply descriptor */
+   (void) AEDisposeDesc(&amp;aeReply);
+   return err;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The event must be created before it can be sent. For SourceServer, there's a single<br>
+parameter, named keyDirectObject, which is the descriptor list containing the<br>
+command. After sending the event, you must extract the results. The results of an<br>
+Apple event are returned as keyword parameters in a reply descriptor. First there's<br>
+the standard keyErrorNumber parameter, which returns an error code if delivery<br>
+failed. SourceServer returns three other parameters: The 'stat' parameter contains a<br>
+second error code; if it's nonzero, SourceServer tried to execute the command and<br>
+failed. When there's an error, there will be diagnostic output in the 'diag' parameter, a<br>
+handle containing text from the MPW diagnostic (error) channel. Finally, there's<br>
+standard output -- a handle specified by keyDirectObject -- which contains<br>
+explanatory text.
+</p>
+<h2>PROJECTDRAG -- DRAG AND DROP SOURCE CONTROL</h2>
+<p>
+The Macintosh has always had a drag and drop user experience, but the true power and<br>
+generality of dragging has been widely recognized only recently. The drag paradigm can<br>
+even be used for source control. To turn Projector into a drag-savvy system, I've<br>
+written a set of utilities called ProjectDrag (source code and documentation are<br>
+provided on this issue's CD). You simply drag and drop icons onto the following<br>
+miniapplications that make up ProjectDrag, and the corresponding function is<br>
+performed:
+</p>
+<ul>
+<li>Check In and Check Out, for checking files in and out</li>
+<li>ModifyReadOnly, for editing a file without checking it out</li>
+<li>Update, for bringing a file or folder up to date, as well as canceling<br>
+checkouts and modify-read-only changes</li>
+<li>ProjectDrag Setup, for configuring the system</li>
+</ul>
+<p>
+These utilities are based on a drop-on application framework called DropShell<br>
+(written by Leonard Rosenthol and Stephan Somogyi), also on the CD. When a file is<br>
+dropped onto an application, the application receives an Open Documents ('odoc')<br>
+event. DropShell takes care of the rigmarole of receiving this and other required Apple<br>
+events. The ProjectDrag miniapplications pull the file specifications out of 'odoc'<br>
+events and create SourceServer commands that operate on the files and folders that<br>
+were dropped on their icons.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>DropShell is also available on the Internet </b>at<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ftp://ftp.hawaii.edu/pub/mac/info-mac/Development/src/ and at other<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Info-Mac mirror sites.*
+</p>
+<p>
+Some setup is required. ProjectDrag needs to know the locations of Projector<br>
+databases. It maps between project names and Projector database files by keeping<br>
+aliases to database folders in its Preferences folder. To start using a project, simply<br>
+drag its ProjectorDB file or the enclosing folder onto ProjectDrag Setup. Projector<br>
+also needs to know your user name, and your initials or a nickname are used in change<br>
+comments at the start of files. These are stored in a text file in the Preferences folder.<br>
+ProjectDrag asks you for this information if it can't find it, or you can launch<br>
+ProjectDrag Setup and give the Set User Name command.
+</p>
+<p>
+ProjectDrag is scriptable, unlike SourceServer and the MPW Shell. The<br>
+miniapplications have an Apple event terminology resource ('aete') to advertise their<br>
+events to scripting systems. This allows you to add source control commands to any<br>
+application that lets you add AppleScript scripts to its menus.
+</p>
+<p>
+ProjectDrag is able to run remotely over a network. This circumvents a limitation of<br>
+SourceServer, which can only be driven locally. ProjectDrag can receive remote Apple<br>
+events and then drive a copy of SourceServer that's local to it. Among other uses, this<br>
+could support an accelerator for Apple Remote Access. Checking a file in or out over<br>
+ARA takes a few minutes, which is fine, especially for those who find tedium<br>
+particularly enjoyable. Copying files is faster. With local AppleScript front ends for<br>
+remote ProjectDrag miniapplications, you could copy files to and from a remote<br>
+"shadow folder" and initiate SourceServer commands at the remote location, where<br>
+they would execute over a fast network such as Ethernet.
+</p>
+<p>
+I like to think that I can solve user interface problems in my sleep. When I was<br>
+writing ProjectDrag, I had a dream of a better user experience. Instead of<br>
+miniapplications, ProjectDrag would be a magical system extension that would put a<br>
+single small icon at some convenient place on the screen. When you dragged a file onto<br>
+this icon, it would pop open into a temporary window and show you icons for the<br>
+various options. Dreams are great for creativity, but it's easier to weigh alternatives<br>
+when you're awake. After I woke up, I realized that miniapplications will be able to do<br>
+the same thing.
+</p>
+<p>
+Here's how: In Copland, the next generation of the Mac OS, the Finder will spring-load<br>
+folders so that they open automatically when you drag onto them. It will also let you<br>
+stash commonly used folders at the bottom of the screen, where they appear as short<br>
+title bars. Drag the ProjectDrag folder to the bottom of the screen and you're set! Since<br>
+the Finder will be providing my dream interface, there's no point in a lot of trap<br>
+patching and extensibility infrastructure to accomplish the same thing.
+</p>
+<p>
+Copland will bring another user experience benefit to ProjectDrag: it's planned that<br>
+document windows will have a draggable file icon in their title bar, so you'll be able to<br>
+use ProjectDrag on an open document by dragging the icon from its window.
+</p>
+<h2>YOU TAKE IT FROM HERE</h2>
+<p>
+You can create programs that use SourceServer for many other tasks. On<br>
+cross-platform projects, Projector is sometimes used to control both platforms'<br>
+source folders. This can lead to baroque and error-prone processes. With<br>
+SourceServer, you can create front ends that do the right thing. They could copy to<br>
+remote folders over a network, or lock read-only files since the other platform doesn't<br>
+see Projector's 'ckid' resources.
+</p>
+<p>
+Quality is an interesting area for source control applications. A quality tool could<br>
+query Projector databases for the frequency and scope of changes at various stages of<br>
+the project, correlating them with bug tracking to develop project metrics. Along<br>
+similar lines, a tool could measure the change rate of various files to assist in what the<br>
+quality gods refer to as root-cause analysis.
+</p>
+<p>
+SourceServer is much more than a way for development systems to provide integrated<br>
+source control. It's great for structuring your internal development process as well!
+</p>
+<p>
+<b>TIM MARONEY </b>wrote TOPS Terminal and BackDrop, and has been a major<br>
+contributor to TOPS for Macintosh, FaxPro, and Cachet. He has also contributed to<br>
+Fiery, the Disney Screen Saver, Ofoto, Colortron, and the Usenet Mac Programmer's<br>
+Guide. Tim learned computer networking while working on the Andrew and MacIP<br>
+projects at Carnegie Mellon and studied compiler design in graduate school at Chapel<br>
+Hill. He has written for all three major operating systems and a few minor ones. On<br>
+the Macintosh, Tim's code has included applications, INITs, control panels, HyperCard<br>
+stacks, XCMDs, shared libraries, trap patches, plug-ins, scripts, and things more<br>
+difficult to characterize. Tim is currently doing contract work at Apple, and is<br>
+available for parties and special events at a nominal cost.*
+</p>
+<p>
+Thanks to&nbsp;&nbsp;Greg Anderson, Arno Gourdol, and B. Winston Hendrickson for reviewing<br>
+this column.*
+</p>
+<p>
+Special thanks to Jens Alfke, Jon Pugh, Leonard Rosenthol, and Stephan Somogyi.*
+</p>
+</body>
+</html>
