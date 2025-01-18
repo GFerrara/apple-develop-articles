@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 29 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 96 - KON & BAL's Puzzle Page: New World Order</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>KON &amp; BAL's Puzzle Page: New World Order</h1>
+<h2>CAMERON ESFAHANI and ALEX ROSENBERG</h2>
+<p>
+<img src="img/215.gif" width="180 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">See if you can solve this programming puzzle, presented in the</i>
+<br>
+
+<i style="font-size:125%;">form of a dialog between Cameron Esfahani (cam) and Alex</i>
+<br>
+
+<i style="font-size:125%;">Rosenberg. The dialog gives clues to help you. Keep guessing until</i>
+<br>
+
+<i style="font-size:125%;">you're done; your score is the number to the left of the clue that</i>
+<br>
+
+<i style="font-size:125%;">gave you the correct answer. Even if you never run into the</i>
+<br>
+
+<i style="font-size:125%;">particular problems being solved here, you'll learn some valuable</i>
+<br>
+
+<i style="font-size:125%;">debugging techniques that will help you solve your own</i>
+<br>
+
+<i style="font-size:125%;">programming conundrums. And you'll also learn interesting</i>
+<br>
+
+<i style="font-size:125%;">Macintosh trivia.</i>
+</p>
+<p><b>Alex </b>Hey cam, Marathon crashed in a weird manner when I tried to play it<br>
+under an early version of Mac OS 8.</p>
+<p><b>cam </b>Working hard, eh? I suppose you'll tell me this was compatibility testing.</p>
+<p><b>Alex </b>Yeah, well, it makes a good demo.</p>
+<p><b>cam </b>Hey, wait a minute! If it's an early version of Mac OS 8, Puzzle Page<br>
+readers won't ever find this bug, and they'll write nasty letters to the editor about it.</p>
+<p><b>Alex </b>Well, they should know that they'll learn some valuable debugging<br>
+techniques that they can apply to their own programming conundrums. Don't they read<br>
+the intro to the Puzzle Page?</p>
+<p><b>cam </b>I guess not. Anyway, back to your problem. So, in what way does it fail?</p>
+<p><b>Alex </b>Just after launch, the machine freezes. This happens every time; it's<br>
+100% reproducible. I can't seem to get into MacsBug.</p>
+<p><b>cam </b>Philistine! We use the one true debugger, the Macintosh Debugger&nbsp;&nbsp;for<br>
+PowerPC. Mac OS 8 debugging is generally done from a second machine over a serial<br>
+cable. You're probably frozen because the program has crashed and the debugger has<br>
+halted the machine, waiting to start a debugging session.</p>
+<p><b>Alex </b>What? I thought I gave that up with my Lisa. This is a Macintosh, after<br>
+all.</p>
+<p><b>cam </b>Kernel-based operating systems are typically developed with<br>
+two-machine debuggers. Besides, think of the wonderful third-party opportunity!</p>
+<p><b>Alex </b>Um, yeah. Anyway, you've hooked up the serial cable and are running the<br>
+debugger on the second machine. After watching a progress bar for a while, you see a<br>
+dialog that says "Access Fault."</p>
+<p><b>cam </b>An access fault is caused by an attempt to access an illegal address. The PC<br>
+is at the instruction that caused the fault.</p>
+<p><b>Alex </b>There's a Show PC command in the debugger's Extras menu. It puts me at<br>
+0x626FDE50.</p>
+<p><b>cam </b>Right. We need to isolate whether this fault occurred in application code<br>
+or in the system. Choose Show Fragment Info from the Views menu and type that<br>
+address into it.</p>
+<p><b>Alex </b>I can't type anything; the machine is crashed. Oh, I get it: I have to keep<br>
+switching my head back and forth between machines like a spectator at a tennis match.<br>
+What fun. So, how long does this barber pole thingy spin for, anyway? Hey look, the<br>
+Fragment Info window highlighted the Marathon code fragment. The PC is in Marathon's<br>
+code.</p>
+<p><b>cam </b>What does the code around the PC look like?</p>
+<p><b>Alex </b>It looks like this:</p>
+<pre>   626FDE34   mflr       r0
+
+   626FDE38   stw        r0,0x0008(SP)
+
+   626FDE3C   stwu       SP,-0x0038(SP)
+
+   626FDE40   lwz        r4,0x0000(r3)
+
+   626FDE44   lha        r3,0x0000(r4)
+
+   626FDE48   bl         _eGetDCtlEntry
+
+   626FDE4C   lwz        RTOC,0x0014(SP)
+
+   626FDE50   lwz        r12,0x0000(r3)
+
+   626FDE54   lbz        r3,0x0028(r12)
+
+   626FDE58   extsb      r3,r3
+
+   626FDE5C   lwz        r0,0x0040(SP)
+
+   626FDE60   addic      SP,SP,56
+
+   626FDE64   mtlr       r0
+
+   626FDE68   blr</pre>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;R3 is the return value from the function call to _eGetDCtlEntry and<br>
+apparently contained a bad address.
+</p>
+<p><b>cam </b>Choose Show Registers from the Views menu. This will show all the<br>
+registers of the current process.</p>
+<p><b>Alex </b>It looks like the return value for _eGetDCtlEntry was 0. The <b>lwz</b>instruction is<br>
+dereferencing R3 and putting the result in R12.</p>
+<p><b>cam </b>If you select the R12 register and choose Show Memory from the Views menu,<br>
+you can see the memory at that address.</p>
+<p><b>Alex </b>That entire area of memory is full of 0xEEEEEEEE's.</p>
+<p><b>cam </b>That's unmapped memory. Is _eGetDCtlEntry the internal name of the routine<br>
+GetDCtlEntry?</p>
+<p><b>Alex </b>Yes, the debugger is able to pick up that name by using a "trace-back table,"<br>
+which is the PowerPC equivalent of MacsBug symbols. I guess the next step would be to<br>
+figure out why GetDCtlEntry is returning nil. What is it supposed to be doing?</p>
+<p><b>cam </b>According to <i>Inside Macintosh: Devices</i>, GetDCtlEntry returns the device control<br>
+entry for the device specified by the value passed in refNum.</p>
+<p>
+If we look at the rest of the code in this function, right before we call GetDCtlEntry, we<br>
+seem to be getting the refNum from the first 16 bits of some "handle" (or some other<br>
+kind of pointer to a pointer), which is getting passed into this function.
+</p>
+<p><b>Alex </b>All right, but we're going to have to restart. Any information passed into this<br>
+function has been lost because we're after the call to GetDCtlEntry.</p>
+<p><b>cam </b>To restart we'll need to remember the offset into the Marathon fragment where<br>
+the fault will occur, because the Marathon fragment could be loaded in a different<br>
+address range.</p>
+<p><b>Alex </b>The offset can be calculated by subtracting the faulting address from the<br>
+beginning address for the fragment, which was shown in the Fragment Info window.<br>
+For this address, the offset is 0x4832C.</p>
+<p><b>cam </b>Right, but we'd like to get control a little before the actual crash. The offset to the<br>
+beginning of that function is 0x48310. Restart the system, and hold down the Control<br>
+key when you relaunch Marathon. On a debugging system, this will break into the<br>
+debugger after it has completely loaded the application but just before it begins to<br>
+execute it.</p>
+<p><b>Alex </b>All right. The machine seems to have stopped at that point. The new start of the<br>
+Marathon code fragment is 0x6337D6A0. Adding in the offset of 0x48310, we get an<br>
+address of 0x633C59B0.</p>
+<p><b>cam </b>Bring up the Show Instructions window and enter 0x633C59B0 as the address. It<br>
+will be exactly the same code as what we saw before. Set a breakpoint at the first<br>
+instruction in this function -- the <b>mflr</b> instruction -- and run.</p>
+<p><b>Alex </b>We've reached that breakpoint.</p>
+<p><b>cam </b>Do a stack crawl and see who called us. Head over to the ever useful Views menu;<br>
+there's a Show Stack Crawl command.</p>
+<p><b>Alex </b>All right. Apparently the caller is address 0x633988E0.</p>
+<p><b>cam </b>OK, let's step through this function and see what they end up passing to<br>
+GetDCtlEntry for the refNum.</p>
+<p><b>Alex </b>It looks like they're passing in 0 for the refNum.</p>
+<p><b>cam </b>Well, there's your problem: 0 is not a valid refNum. It seems that they're getting<br>
+an invalid refNum from some part of the system and passing that to GetDCtlEntry.<br>
+GetDCtlEntry is returning nil and we're crashing by dereferencing nil.</p>
+<p><b>Alex </b>Uh, that's great, but I still can't play Marathon.</p>
+<p><b>cam</b> Where does the caller of this function, 0x633988E0, get the "handle"<br>
+from?</p>
+<p><b>Alex </b>I'll bring up an instruction window at that address:</p>
+<p>
+&nbsp;&nbsp;&nbsp;63398778&nbsp;&nbsp;&nbsp;mflr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r0
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;...
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;633987B0&nbsp;&nbsp;&nbsp;lwz&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r24,-0x0218(RTOC)
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;...
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;633988D8&nbsp;&nbsp;&nbsp;lwz&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r3,0x0000(r24)
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;633988DC&nbsp;&nbsp;&nbsp;addic&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r3,r3,0x001C
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;633988E0&nbsp;&nbsp;&nbsp;bl&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$+0x2D340&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;; 0x633C5C20
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;633988E4&nbsp;&nbsp;&nbsp;nop
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;633988E8&nbsp;&nbsp;&nbsp;stw&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r3,0x0000(r30)
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;R3 seems to be loaded from a global. Let's figure out where this global gets<br>
+initialized. The "handle" lives inside a structure that's pointed to by the global at<br>
+-0x218(RTOC). This pointer has the "handle" stored at offset 0x1C within it.
+</p>
+<p><b>cam </b>We could try to track down where the field at offset 0x1C gets initialized. A<br>
+pointer wouldn't move around, so we wouldn't have to worry about relocation. We can<br>
+use the Data Breakpoint window feature of the Macintosh Debugger. The PowerPC 601<br>
+has a special register that allows you to stop execution whenever a specified address is<br>
+read or written to. It's like hardware support for our old friend step spy.</p>
+<p><b>Alex </b>Sounds like a plan. So, I bring up the Data Breakpoint window and will break<br>
+whenever someone writes to that address.</p>
+<p><b>cam </b>Of course, you realize that just as the code fragment could be loaded in a different<br>
+place each time it's launched, the RTOC could have a different value as well.</p>
+<p><b>Alex </b>Good point. I'll be sure to use the new RTOC value when I restart Marathon.</p>
+<p><b>cam </b>What happens after we set up the data breakpoint?</p>
+<p><b>Alex </b>It's kind of strange. We seem to be stopping a lot, but people aren't writing to<br>
+offset 0x1C in this structure; they seem to be writing 32 bits to offset 0x1A and<br>
+overwriting 0x1C.</p>
+<p><b>cam </b>I don't understand. The routine that called the crashing routine was passing in a<br>
+value at offset 0x1C.</p>
+<p><b>Alex </b>Apparently we calculated something wrong.</p>
+<p><b>cam </b>I don't know where we could have gone wrong. Wait a second. Look at address<br>
+0x633988E0; it says we're branching to address 0x633C5C20, but the routine we're<br>
+crashing in is at 0x633C59B0.</p>
+<p><b>Alex </b>Well, maybe it's just a call to a different code fragment, a "cross-TOC" call, and<br>
+it has to use some indirection to get to the crashing function.</p>
+<p><b>cam </b>No, it can't be a cross-TOC call, for two reasons: first, there's no TOC reload<br>
+after the function call, and second, the routine we crashed in is in the Marathon<br>
+fragment. You saw the Fragment Info results.</p>
+<p><b>Alex </b>I'll buy that. Now let's set our breakpoint just before this function call to the<br>
+unknown address. We can step through that code.</p>
+<p><b>cam </b>All right. After we hit the breakpoint, step into that function.</p>
+<p>45 <b>Alex</b> Holy cow! It's some totally different piece of code.</p>
+<p><b>cam </b>Look through the instruction disassembly of this new routine. Is there anywhere<br>
+in there where they call the crashing function?</p>
+<p>
+&nbsp;&nbsp;&nbsp;633C5C98&nbsp;&nbsp;&nbsp;bl&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x6337E150
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;633C5C9C&nbsp;&nbsp;&nbsp;lwz&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;RTOC,0x0014(SP)
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;633C5CA0&nbsp;&nbsp;&nbsp;ori&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r31,r3,0x0000
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;...
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;633C5CDC&nbsp;&nbsp;&nbsp;ori&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r3,r31,0x0000
+</p>
+<p>
+*&nbsp;&nbsp;&nbsp;633C5CE0&nbsp;&nbsp;&nbsp;bl&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x633C59B0
+</p>
+<p><b>Alex </b>Yeah. At address 0x633C5CE0, they call our crashing function with a parameter<br>
+obtained from R31. Working further back in the instruction disassembly, we see that<br>
+a function call is made and the result of that is put in R31. This occurs at<br>
+0x633C5C98. It calls a routine at address 0x6337E150.</p>
+<p><b>cam </b>And looking at that, it appears to be a cross-TOC call. I restart Marathon and step<br>
+into the routine at 0x6337E150.</p>
+<p><b>Alex </b>It appears to be cross-TOC glue:</p>
+<p>
+&nbsp;&nbsp;&nbsp;6337E150&nbsp;&nbsp;&nbsp;lwz&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r12,-0x0A90(RTOC)
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;6337E154&nbsp;&nbsp;&nbsp;stw&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;RTOC,0x0014(SP)
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;6337E158&nbsp;&nbsp;&nbsp;lwz&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r0,0x0000(r12)
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;6337E15C&nbsp;&nbsp;&nbsp;lwz&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;RTOC,0x0004(r12)
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;6337E160&nbsp;&nbsp;&nbsp;mtctr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r0
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;6337E164&nbsp;&nbsp;&nbsp;bctr
+</p>
+<p><b>cam </b>So apparently Marathon is calling another library to get this mystical "handle."</p>
+<p><b>Alex </b>Yep. Whenever you're going to go from one library context to another, you need to<br>
+save and restore the TOC. That's one of the things this glue code does. As you can see,<br>
+R12 is loaded from -0x0A90(RTOC). R12 will contain a pointer to a transition<br>
+vector, which contains an address of a routine and a new TOC value. The transition<br>
+vector is imported from the library we're linking against.</p>
+<p><b>cam </b>So we should be able to plop the transition vector address into the Fragment Info<br>
+window and figure out which library that comes from, right?</p>
+<p><b>Alex </b>Good idea. Dumping the address at -0x0A90(RTOC) we get the following:</p>
+<p>
+0200CC0C: 01FC9D98 01FC9DA4 01FC9DB0 01FC9DBC
+</p>
+<p>
+0200CC1C: 01FC9DE0 01FC9DEC 01FC9D80 01FC9D74
+</p>
+<p>
+...
+</p>
+<p><b>cam </b>I use the Fragment Info window to find out which fragment contains the address<br>
+0x01FC9D98.</p>
+<p><b>Alex </b>It seems to live in the QuickDraw data section, which makes sense, since a<br>
+transition vector is data.</p>
+<p><b>cam </b>Aha! QuickDraw! That figures. And you wondered why they call it KON &amp; BAL's<br>
+Puzzle Page. I use the Show Exports button in the Fragment Info window to list all of<br>
+the exports of the QuickDraw library.</p>
+<p><b>Alex </b>I was wondering when we were going to use that button. You end up getting a long<br>
+list of all the routines exported by QuickDraw, sorted alphabetically.</p>
+<p><b>cam </b>But I have an address I want to match. If you click on the Address column title,<br>
+that list will get resorted by address. I search through the list for address<br>
+0x01FC9D98.</p>
+<p><b>Alex </b>That address is the address of the GetDeviceList transition vector.</p>
+<p><b>cam </b>That makes sense. This "handle" we've been worrying about has a refNum in the<br>
+first 16 bits of the structure, and a GDHandle has the refNum of the associated driver<br>
+stored in the first field in the structure. I bring up a memory window and examine the<br>
+device list stored in low memory to see if the gdRefNum is 0.</p>
+<p><b>Alex </b>It is. Who's responsible for initializing the GDevice record?</p>
+<p><b>cam </b>NewGDevice and InitGDevice. NewGDevice will pass the refNum to InitGDevice.<br>
+Let's disassemble the code for NewGDevice.</p>
+<p><b>Alex </b>Apparently it does a NewHandleClear to allocate the GDHandle, and never<br>
+initializes the refNum.</p>
+<p><b>cam </b>Whoops. Ah, the joys of pre-alpha software. Well, it should be reasonably easy to<br>
+get one of the QuickDraw engineers to fix this bug. I install a fixed version of the<br>
+QuickDraw shared library. We should be rockin' now!</p>
+<p><b>Alex </b>Not so fast! When I restart Marathon, I crash. If I do a stack crawl and examine<br>
+the code, I seem to be crashing in exactly the same place. GetDCtlEntry still seems to<br>
+return nil.</p>
+<p><b>cam </b>Just another day at the salt mines. OK, it's time to step through GetDCtlEntry. I<br>
+put a breakpoint just before we call it.</p>
+<p><b>Alex </b>The refNum from the GDHandle is -51.</p>
+<p><b>cam </b>That looks like a valid refNum. Step into GetDCtlEntry.</p>
+<p><b>Alex </b>We first go through the cross-TOC glue and eventually get into GetDCtlEntry.</p>
+<p><b>cam </b>What does GetDCtlEntry look like?</p>
+<p><b>Alex </b>It seems fine, but when you step through the routine and actually fetch the<br>
+DCtlHandle from the unit table, it ends up being nil.</p>
+<p>
+&nbsp;&nbsp;&nbsp;...
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;626FC79C&nbsp;&nbsp;&nbsp;cntlzw&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r3,r3
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;626FC7A0&nbsp;&nbsp;&nbsp;srwi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r3,r3,5
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;...
+</p>
+<p><b>cam </b>That obviously shouldn't happen. There's a driver entry in the table and the<br>
+refNum seems valid. What is the code at 0x626FC79C doing?</p>
+<p><b>Alex </b>It's performing a logical NOT operation on R3. Groovy, huh?</p>
+<p><b>cam </b>But the bitwise NOT of the refNum should be used as the index into the unit table,<br>
+not the logical NOT!</p>
+<p><b>Alex </b>So, you claim that GetDCtlEntry is looking at the wrong place in the unit table to<br>
+get the DCtlHandle. Are you sure?</p>
+<p><b>cam </b>Let's go to the source. What does <i>Inside Macintosh: Devices</i> say?</p>
+<p><b>Alex </b>It says, "The device reference number is the one's complement (logical NOT) of<br>
+the unit number." But the logical NOT isn't the one's complement; the bitwise NOT is.</p>
+<p><b>cam </b>Um, OK, what does Inside Macintosh Volume II say?</p>
+<p><b>Alex </b>It claims that the unit number is "equal to -1 * (refNum + 1)."</p>
+<p><b>cam </b>And that's a bitwise NOT. So it seems that Inside Macintosh: Devices is wrong.<br>
+Weird, wacky stuff. But I still don't understand why the stack crawl we did earlier<br>
+pointed us to the wrong place.</p>
+<p><b>Alex </b>We did the stack crawl when we had just entered the crashing function, even<br>
+before it executed the mflr instruction. The debugger, when it does a stack crawl, is<br>
+going to look for stack frames to see where the callers are. Since we hadn't allocated a<br>
+stack frame in the crashing function yet, we were still using the caller's stack frame.<br>
+So that was the stack frame the debugger started from. If we had stepped a few more<br>
+instructions in and allocated our stack frame, the debugger would have figured it out. It<br>
+would be interesting to see if the debugger could actually detect the case of a<br>
+nonexistent stack frame and use the link register to work back to the caller.</p>
+<p><b>cam </b>That also explains why the data breakpoint stuff didn't work. We thought that the<br>
+data structure we were watching held the GDHandle. It didn't; it contained something<br>
+totally unrelated, which was passed into the function that called the crashing routine.</p>
+<p><b>Alex </b>So, because NewGDevice didn't initialize the gdRefNum and GetDCtlEntry was<br>
+returning the wrong entry from the unit table, I don't get to teach the Pfhor about<br>
+large caliber, high-velocity rounds.</p>
+<p><b>cam </b>Nasty.</p>
+<p><b>Alex </b>Yeah.</p>
+<p>
+<b>SCORING</b>
+</p>
+<p>
+Your performance compares to these memorable screen roles:
+</p>
+<p><code><b>80-100</b></code><code> Chuck Heston in El Cid</code></p>
+
+<p><code><b>55-75</b></code><code> Anne Parillaud in La Femme Nikita</code></p>
+
+<p><code><b>30-50</b></code><code> Chow Yun-Fat in Hard Boiled</code></p>
+
+<p><code><b>5-25</b></code><code>&nbsp;&nbsp;&nbsp;&nbsp;Richard Roundtree in Shaft*</code></p>
+<p>
+<b>CAMERON ESFAHANI </b>(cameron_esfahani@powertalk.apple.com, AppleLink DIRTY) <br>
+SWM, 24, 5' 7", 180 pounds, brown hair, brown eyes. Apple engineer. Loves movies<br>
+and music. Plays golf and tennis, rollerblades, ice-skates, and is learning to ski again.<br>
+Enjoys life but has a serious side. Likes cooking, reading, shopping. Once a dog guy,<br>
+now a definite cat man. Believes the American musical of the '50s and '60s to be the<br>
+second greatest invention of the twentieth century. Favorites include West Side Story,<br>
+The Sound of Music, Music Man, and Singin' in the Rain.*
+</p>
+<p>
+<b>ALEX ROSENBERG</b> (alexr@bungie.com)&nbsp;&nbsp;Alex's left brain works on everything from<br>
+communications software to the latest 3D graphics tricks. His right brain is<br>
+constantly thinking up interesting T-shirts that Apple's Marketing folks don't approve<br>
+of. While working as a member of the Mac OS 8 "Ministry of Information," he<br>
+experimented with optimization for PowerPC, worked closely with Apple's compiler<br>
+team, and contributed to IBM's The PowerPC Compiler Writer's Guide. Now one of the<br>
+minions at Bungie Software, Alex recently decided that eating is overrated.*
+</p>
+<p>
+Thanks to Tom Dowdy, Wayne Meretsky, Mike Neil, Tom Saulpaugh, KON (Konstantin<br>
+Othmer), and BAL (Bruce Leak) for reviewing this column.*
+</p>
+</body>
+</html>

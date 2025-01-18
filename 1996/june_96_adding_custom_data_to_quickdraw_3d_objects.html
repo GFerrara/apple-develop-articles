@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 32 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 96 - Adding Custom Data to QuickDraw 3D Objects</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Adding Custom Data to QuickDraw 3D Objects</h1>
+<h2>PABLO FERNICOLA, NICK THOMPSON and KENT DAVIDSON</h2>
+<p>
+<img src="img/228.gif" width="197 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">Custom attributes and elements provide a way to attach data such</i>
+<br>
+
+<i style="font-size:125%;">as scaling information, sound, and strings to QuickDraw 3D</i>
+<br>
+
+<i style="font-size:125%;">objects. In this article we explain how to create and attach custom</i>
+<br>
+
+<i style="font-size:125%;">attributes and elements. We illustrate the process by showing you</i>
+<br>
+
+<i style="font-size:125%;">how to attach a string containing a World Wide Web URL to a</i>
+<br>
+
+<i style="font-size:125%;">QuickDraw 3D object to enable 3D navigation through the Web. We</i>
+<br>
+
+<i style="font-size:125%;">also describe six new custom elements with implementations</i>
+<br>
+
+<i style="font-size:125%;">included on this issue's CD.</i>
+</p>
+<p>
+In QuickDraw 3D, attribute objects (known more simply as attributes) generally<br>
+store information about the surface properties of objects in a model, such as color and<br>
+transparency. QuickDraw 3D defines 12 basic attribute types, and it also allows you to<br>
+define custom attribute and element types so that you can attach data different from the<br>
+predefined types to QuickDraw 3D objects. Your custom data need not apply to the<br>
+appearance of objects or to how objects are drawn, although it can.
+</p>
+<p>
+For example, with custom attributes and elements you can add scaling information,<br>
+directional information, or sound to objects in your 3D scene. You can add a string<br>
+containing a name for a QuickDraw 3D object, so that you can refer to that object by<br>
+name and control it from a scripting language in your application. Your application can<br>
+enable users to navigate through the World Wide Web in 3D, by attaching a URL to a<br>
+QuickDraw 3D object, as illustrated by the code discussed in this article and included<br>
+on this issue's CD. These are just a few of the ways you can extend the functionality of<br>
+QuickDraw 3D and add value to your 3D application by adding custom data to objects.
+</p>
+<p>
+Before we explain and illustrate how to create custom attributes and elements, and how<br>
+to attach them to QuickDraw 3D objects, we'll look at how attributes and elements<br>
+relate to each other and to other QuickDraw 3D objects. To get the most from this<br>
+article, you should already be familiar with the basics of QuickDraw 3D, as presented<br>
+in the previous <i>develop</i> articles "QuickDraw 3D: A New Dimension for Macintosh<br>
+Graphics" (Issue 22) and "The Basics of QuickDraw 3D Geometries" (Issue 23). The<br>
+book <i>3D Graphics Programming With QuickDraw 3D</i>, included on this issue's CD,<br>
+provides complete documentation for the QuickDraw 3D programming interfaces.
+</p>
+<h2>ABOUT ATTRIBUTES AND ELEMENTS</h2>
+<p>
+Attributes and elements are types of QuickDraw 3D objects used to store information<br>
+about objects they're attached to. Each consists of a type and some associated data. You<br>
+apply attributes and elements to objects by creating an instance of a specific type of<br>
+attribute or element, defining its data, adding it to a set, and then attaching the set to<br>
+an object (if the set isn't already attached).
+</p>
+<p>
+&nbsp;&nbsp;Note that attributes and elements are <i>attached</i> to objects, as opposed to simply being<br>
+added to a group. The reason for binding data to objects is that both QuickDraw 3D and<br>
+the 3DMF format maintain a strong data encapsulation model. For example, this allows<br>
+QuickDraw 3D objects to be moved from file to file without losing data.
+</p>
+<p>
+<b>ATTRIBUTES AND ELEMENTS IN THE QUICKDRAW 3D HIERARCHY</b>
+</p>
+<p>
+To better understand how attributes and elements relate to each other and to other<br>
+QuickDraw 3D objects, take a look at the partial class hierarchy shown in Figure 1. As<br>
+you can see, an attribute is actually a type of element (that is, it's a subclass of the<br>
+Element class, TQ3ElementObject). An element is any QuickDraw 3D object that can be<br>
+part of a set. In contrast with shared objects (objects of the class TQ3SharedObject),<br>
+elements aren't shared (that is, they can't be referenced by multiple objects or the<br>
+application at the same time) and are always removed from memory whenever they're<br>
+disposed of. An attribute has all of these properties but also can be inherited by<br>
+subclasses of the object it's attached to.
+</p>
+<p>
+<img src="img/229.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>Partial QuickDraw 3D class hierarchy, showing set and attribute set<br>
+attachment
+</p>
+<p>
+Custom data to be attached to an object can be stored in an element or an attribute. So<br>
+how do you decide which to use? Use an attribute when you want your custom data to be<br>
+inherited. For example, suppose we create a custom attribute named Temperature and<br>
+we want to be able to assign a different temperature to an entire geometry, a face, or a<br>
+vertex. During a view traversal loop, our attribute will be inherited along with the<br>
+other attributes. This becomes extremely important with the introduction of plug-in<br>
+renderers, which will be available in a future QuickDraw 3D release. A particular<br>
+renderer might take advantage of this inherited attribute by coloring each vertex<br>
+according to the temperature inherited.
+</p>
+<p>
+<b>SETS AND ATTRIBUTE SETS</b>
+</p>
+<p>
+We mentioned earlier that attributes and elements are usually collected in sets. A set<br>
+is an instance of the Set class (TQ3SetObject), which in turn is a subclass of the<br>
+Shared class (TQ3SharedObject), as shown in Figure 1. A set collects zero or more<br>
+different elements or attributes and their associated data; it can contain only one<br>
+element or attribute of a given type. An<i>attribute</i> set is a type of set; in fact,<br>
+TQ3AttributeSet is the only subclass of the class TQ3SetObject. An attribute set has all<br>
+the properties of a set but also allows inheritance.
+</p>
+<p>
+&nbsp;&nbsp;Both elements and attributes can be collected in sets and attribute sets. Since the<br>
+AttributeSet class is derived from the Set class, you can call Q3Set_XX on an attribute<br>
+set, but you can't call Q3AttributeSet_XX on a set. In the text that follows, be sure to<br>
+pay attention to whether we're talking about sets or attribute sets; we don't use the<br>
+terms interchangeably.
+</p>
+<p>
+Sets and attribute sets can't be attached to just any QuickDraw 3D object, but only to<br>
+those objects for which it makes sense to store additional data in this way. Attribute<br>
+sets can be attached to view objects, group objects, and geometric objects, plus most of<br>
+the parts of a geometric object: faces, vertexes, mesh edges, and mesh corners. (See<br>
+"How to Attach Attribute Sets" for details.) In contrast, sets can be attached only to<br>
+objects in the Shape class or subclasses of the Shape class. (Attaching a set to a shape<br>
+is fairly straightforward; we give an example of how to do this later, in Listing 3.)<br>
+The Shape class actually has a class field of type <b>set</b>, meaning that any class derived<br>
+from Shape has a set object. The Geometry class has a class field of type <b>set</b> (inherited<br>
+from the Shape class) plus a class field of type<b>attributeSet</b>, meaning that any class<br>
+derived from Geometry has both a set object and an attribute set object.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HOW TO ATTACH ATTRIBUTE SETS</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;It may be news to you that attribute sets can be attached to views or groups,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;because how to do this is less than obvious. We'll tell you how.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;To attach an attribute set to a view object, use the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Q3View_GetDefaultAttributeSet routine to get the default attribute set (all<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;view objects have one), and then use Q3AttributeSet_Add to add attributes to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;that set. For example, the following code shows how to apply a default specular<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;color to all objects submitted to a view.
+</p>
+<pre>                Q3View_GetDefaultAttributeSet(theDocument
+                   -&gt;theView, &amp;viewSet);
+                Q3AttributeSet_Add(viewSet,
+                   kQ3AttributeTypeSpecularColor, &amp;clearColor);
+                Q3Object_Dispose(viewSet);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;You can still override the default behavior of the view by attaching attributes<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to objects before submitting them. If you write the view hints out in 3DMF<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;format using the QuickDraw 3D API, the attribute set for the view will also be<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;written out. You can preserve these settings by looking in and using the view<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hints when you read the 3DMF data back in.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;To attach an attribute set to a group object, just add the attribute set to the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;group before you add the object you want it to be applied to.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Attaching an attribute set to a geometric object or a part of a geometric object<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;is much more obvious, so we won't go into details here. Later in this article,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Listing 2 gives an example of how to do it.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+Currently, the renderers shipped with QuickDraw 3D ignore custom data attached to<br>
+shape objects, but when plug-in renderers become available, they may pay attention<br>
+to such data and use it to control certain rendering features. For example, a ray tracer<br>
+renderer may need custom data about surfaces to render them with bump mapping.
+</p>
+<p>
+<b>ATTRIBUTES AND INHERITANCE</b>
+</p>
+<p>
+When the objects in a view are rendered, attributes attached to the objects are applied<br>
+according to a strict hierarchy. The attribute sets of objects higher in the view<br>
+hierarchy are inherited by objects below them, unless some other attribute set<br>
+overrides them. Inheritance proceeds from view to group to geometric object to face to<br>
+mesh edge to vertex to mesh corner. In other words, in the hierarchy, view attributes<br>
+are always inherited unless a group contains overriding attributes; group attributes<br>
+can be overridden by geometric object attributes, which can be overridden by face<br>
+attributes, and so on.
+</p>
+<p>
+&nbsp;&nbsp;When you define a custom attribute, you can specify that you want it to be inherited<br>
+by including an attribute inheritance method in your metahandler. (More on<br>
+metahandlers later.) Inheritance happens when you call Q3AttributeSet_Inherit:
+</p>
+<pre>TQ3Status Q3AttributeSet_Inherit(TQ3AttributeSet parent,
+                              TQ3AttributeSet child, TQ3AttributeSet
+result);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+This call takes three attribute sets: the parent, the child, and a result attribute set to<br>
+store results in, which becomes the effective attribute set after inheritance. During<br>
+inheritance, any attribute in the parent that's not in the child is copied into the result,<br>
+and all child attributes are copied into the result, as illustrated by the example in<br>
+Figure 2. As mentioned earlier, only attributes can be inherited; elements, such as the<br>
+name element "Jane" in this example, can exist in an attribute set but aren't inherited.
+</p><p class="spacer">&nbsp;</p>
+<p>
+<img src="img/230.gif" width="558 px"></img>
+</p>
+<p>
+<b>Figure 2.</b>Attribute inheritance
+</p>
+<h2>WORKING WITH CUSTOM ATTRIBUTES AND ELEMENTS</h2>
+<p>
+Now that you have a sense of how custom attributes and elements relate to each other<br>
+and to other QuickDraw 3D objects, we'll outline how you define, register, and attach<br>
+your custom data to the QuickDraw 3D objects of your choice. We'll further illustrate<br>
+the process later in our example of attaching a URL to a QuickDraw 3D object.
+</p>
+<p>
+<b>DEFINING AND REGISTERING YOUR CUSTOM DATA</b>
+</p>
+<p>
+To define a custom attribute or element type, you need to provide a definition of the<br>
+data associated with that type and write a metahandler to define a set of attribute- or<br>
+element-handling methods. Once you've defined and registered your custom attribute<br>
+or element type, you manipulate objects of that type exactly as you manipulate the<br>
+standard QuickDraw 3D attributes. For example, you create a new attribute set by<br>
+calling Q3AttributeSet_New, and you add custom attributes to the attribute set by<br>
+calling Q3AttributeSet_Add. Finally, you attach the attribute set to an object by calling<br>
+an appropriate QuickDraw 3D routine.
+</p>
+<p>
+&nbsp;&nbsp;Before you can use your custom element or attribute, you must register it with<br>
+QuickDraw 3D by calling Q3ElementClass_Register or Q3AttributeClass_Register:
+</p>
+<pre>TQ3ObjectClass Q3ElementClass_Register(TQ3ElementType elementType,
+   const char *name, unsigned long sizeOfElement, TQ3MetaHandler
+metaHandler);
+TQ3ObjectClass Q3AttributeClass_Register(TQ3AttributeType  
+attributeType,
+   const char *name, unsigned long sizeOfElement, TQ3MetaHandler
+metaHandler);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The functions take these parameters:
+</p>
+<ul>
+<li>elementType (or attributeType) -- The type constant used in the binary<br>
+metafile and in accessing your element (or attribute) from a set.</li>
+<li>name -- The string constant used to write your custom element or<br>
+attribute in a text metafile. You should register your attribute or element<br>
+types and names with Apple's Developer Support Center to prevent name space<br>
+collisions. In general, you should name your custom elements and attributes in<br>
+the form "Company:DataType"; for instance, if you work at Sun, you might<br>
+name an attribute "Sun:JavaCode."</li>
+<li>sizeOfElement -- The memory size that your element or attribute uses<br>
+internally. QuickDraw 3D needs to know this when copying your element or<br>
+attribute, because the data describing the element or attribute is copied from<br>
+the public side of the API to internal storage.</li>
+<li>metaHandler -- A pointer to the metahandler for your element or<br>
+attribute.</li>
+</ul>
+<p>
+A metahandler is an application-defined function that returns the addresses of the<br>
+methods associated with the custom attribute or element type. QuickDraw 3D calls<br>
+these methods at certain times to handle operations on sets and attribute sets that<br>
+contain your custom data. Particular methods are required for each QuickDraw 3D<br>
+object type, and QuickDraw 3D asks the metahandler repeatedly for these required<br>
+methods. Your metahandler should, by default, return NULL for unrecognized methods;<br>
+this allows Apple to add methods in the future without breaking the implementation of<br>
+old versions of elements and attributes.
+</p>
+<p>
+A metahandler can define some or all of the methods indicated by the constants listed<br>
+below. Custom elements or attributes that are to be read from and written to files<br>
+should support the I/O methods associated with objects (those methods beginning with<br>
+"kQ3MethodTypeObject" in the following list). The metahandler can also support all<br>
+the methods associated with elements (those methods beginning with<br>
+"kQ3MethodTypeElement" in the list) and attributes (those methods beginning with<br>
+"kQ3MethodTypeAttribute"). Note that the copy methods always take the source as the<br>
+first parameter (from) and the destination as the second parameter (to), although<br>
+what these point to differs for each copy method. All of the following method types are<br>
+optional. If you supply no method for a particular attribute or element type, your<br>
+attribute or element will inherit the default behavior of the parent class.
+</p>
+<ul>
+<li>kQ3MethodTypeObjectReadData -- Reads the data from a file object,<br>
+gathers any subobjects, and adds the element to a set.</li>
+<li>kQ3MethodTypeObjectTraverse -- Calculates the size of the data to be<br>
+written out, submits any subobjects, and gathers any state needed from the<br>
+view object.</li>
+<li>kQ3MethodTypeObjectWrite -- Actually writes the data to the file. Data is<br>
+written through one of the low-level calls provided by QuickDraw 3D for<br>
+basic data types. If your data size is always 0, no ObjectWrite method is<br>
+required.</li>
+<li>kQ3MethodTypeElementCopyAdd -- Called when an application calls<br>
+Q3Set_Add or Q3AttributeSet_Add on your element and the element wasn't in<br>
+the set. The <b>from</b> parameter is whatever the user passes in as the data pointer<br>
+in Q3Set_Add. The <b>to</b> parameter is a pointer to an uninitialized block of<br>
+sizeOfElement (from the Register call) bytes. If this method isn't supplied,<br>
+the default is to copy sizeOfElement bytes from the source to the destination.</li>
+<li>kQ3MethodTypeElementCopyReplace -- Called when an application calls<br>
+Q3Set_Add or Q3AttributeSet_Add on your element and the element already<br>
+exists in the set. The <b>from</b> parameter is whatever the user passes in as the<br>
+data pointer in Q3Set_Add. The <b>to</b> parameter is a pointer to a block of<br>
+sizeOfElement bytes that contains the element data to be replaced. You must<br>
+reuse or delete any data in the destination before copying over it. If this<br>
+method isn't supplied, the default is to call ElementDelete on the <b>to</b> parameter,<br>
+then CopyAdd(from, to).</li>
+<li>kQ3MethodTypeElementCopyGet -- Called when an application calls<br>
+Q3Set_Get or Q3AttributeSet_Get on your element. The <b>from</b> parameter is a<br>
+pointer to the block of element data to get. The <b>to</b> parameter is a pointer to<br>
+whatever the user passes in as the data pointer in Q3Set_Get. If this method<br>
+isn't supplied, the default is to copy sizeOfElement bytes from the source to<br>
+the destination.</li>
+<li>kQ3MethodTypeElementCopyDuplicate -- Called when an application calls<br>
+Q3Object_Duplicate on a set or attribute set, or duplicates an object<br>
+containing a set. The <b>from</b> parameter is a pointer to the block of element data<br>
+to duplicate. The <b>to</b> parameter is a pointer to an uninitialized block of<br>
+sizeOfElement bytes. If your element contains objects, call<br>
+Q3Object_Duplicate to create an identical copy. If this method isn't supplied,<br>
+the default is to copy sizeOfElement bytes from the source to the destination.</li>
+<li>kQ3MethodTypeElementDelete -- Called when an application deletes a set<br>
+containing your element, or clears your element with Q3Set_Clear or<br>
+Q3AttributeSet_Clear. It takes a pointer to the block of element data. It should<br>
+deallocate any data in your custom element. If this method isn't supplied, the<br>
+default is a no-op.</li>
+<li>kQ3MethodTypeAttributeInherit -- Your metahandler should return a<br>
+TQ3Boolean value for this method. Returning kQ3True indicates that this<br>
+attribute should be inherited in the hierarchy, kQ3False that it should not. The<br>
+default is kQ3False.</li>
+<li>kQ3MethodTypeAttributeCopyInherit -- Called when your attribute is<br>
+inherited in the view stack (during rendering) or when the user calls<br>
+Q3AttributeSet_Inherit with an attribute set containing your attribute.<br>
+The<b>from</b> parameter is a pointer to the block of attribute data to inherit. The<br>
+<b>to</b>parameter is a pointer to an uninitialized block of sizeOfElement bytes. The<br>
+semantics of this call are similar to kQ3MethodTypeElementCopyDuplicate,<br>
+although you should avoid duplicating data unless required. For example, if<br>
+your attribute contains pointers to shared objects, you should copy them by<br>
+calling Q3Shared_GetReference instead of Q3Object_Duplicate. If this method<br>
+isn't supplied, the default is to copy sizeOfElement bytes from the source to<br>
+the destination. This method should be implemented to be as fast as possible, as<br>
+it occurs during rendering.</li>
+</ul>
+<p>
+Listing 1 shows a typical metahandler for a custom element in QuickDraw 3D. Take a<br>
+look at the QuickDraw 3D header file QD3DIO.h to see the object methods and at<br>
+QD3DSet.h to see the element and attribute methods.
+</p>
+<p>
+<b>Listing 1.</b> A typical metahandler for a custom element
+</p>
+<pre>TQ3FunctionPointer MyMetaHandler(TQ3MethodType methodType)
+{
+   switch (methodType) {
+      case kQ3MethodTypeObjectTraverse:
+         return (TQ3FunctionPointer) MyElementTraverse;
+      case kQ3MethodTypeObjectWrite:  
+         return (TQ3FunctionPointer) MyElementWrite;
+      case kQ3MethodTypeObjectReadData:  
+         return (TQ3FunctionPointer) MyElementReadData;
+      case kQ3MethodTypeElementCopyAdd:  
+         return (TQ3FunctionPointer) MyElementCopyAdd;
+      case kQ3MethodTypeElementCopyReplace:
+         return (TQ3FunctionPointer) MyElementCopyReplace;
+      case kQ3MethodTypeElementCopyGet:  
+         return (TQ3FunctionPointer) MyElementCopyGet;
+      case kQ3MethodTypeElementCopyDuplicate:
+         return (TQ3FunctionPointer) MyElementCopyDuplicate;
+      case kQ3MethodTypeElementDelete:  
+         return (TQ3FunctionPointer) MyElementDelete;
+      default:
+         return (TQ3FunctionPointer) NULL;
+   }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>ATTACHING YOUR CUSTOM DATA</b>
+</p>
+<p>
+Now we'll show you how to add the custom data you've defined to a set or an attribute<br>
+set and then attach that set or attribute set to an object. Note that when you want to<br>
+attach custom data to a geometric object or some part of a geometric object, you<br>
+actually have a choice of where to attach the data. You can add the data to an attribute<br>
+set and attach it to the geometry or some part of the geometry, or you can add the same<br>
+data to a set and attach that set to a shape, since the geometry inherits from the shape.<br>
+Where and how data is attached to an object is really up to the semantics of your<br>
+application. Just be sure to consistently attach data in the same place on all objects,<br>
+and document what you've done, especially if you want your custom element or<br>
+attribute to be used by other developers.
+</p>
+<p>
+&nbsp;&nbsp;To illustrate this concept, Listing 2 creates a new attribute set, adds our custom data<br>
+to the attribute set, and attaches the attribute set to a mesh vertex. This is a fine way<br>
+to customize a geometric object or some part of a geometric object. But if you want to<br>
+add your custom data to some other subclass of the Shape class, you'll want to add the<br>
+data to a set and attach that set to the shape. Listing 3 does just that.
+</p>
+<p>
+<b>Listing 2. </b>Attaching an attribute set to a vertex
+</p>
+<pre>/* Get the existing attribute set (if any). */
+Q3Mesh_GetVertexAttributeSet(mesh, someVertex, &amp;theAttrSet);
+
+/* If there's no attribute set we get back NULL and create one. */
+if (theAttrSet == NULL) {
+   /* Create a new empty attribute set. */
+   theAttrSet = Q3AttributeSet_New();
+   if (theAttrSet == NULL)
+      return kQ3Failure;
+   Q3Mesh_SetVertexAttributeSet(mesh, someVertex, theAttrSet);
+}
+
+/* Add the custom data to the attribute set. */
+if (Q3AttributeSet_Add(theAttrSet, kMyCustomDataType, &amp;myCustomData)
+      == kQ3Failure) {
+   Q3Object_Dispose(theAttrSet);
+   return kQ3Failure;
+}
+Q3Object_Dispose(theAttrSet);
+return kQ3Success;</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 3.</b> Attaching a set to a shape
+</p>
+<pre>/* Get the existing set (if any). */
+Q3Shape_GetSet(shape, &amp;theSet);
+
+/* If there's no set, add one. */
+if (theSet == NULL) {
+   theSet = Q3Set_New();
+   if (theSet == NULL)
+      return kQ3Failure;
+   Q3Shape_SetSet(shape, theSet);
+}
+
+/* Add the custom data to the set. */
+if (Q3Set_Add(theSet, kMyCustomDataType, &amp;myCustomData)
+      == kQ3Failure) {
+   Q3Object_Dispose(theSet);
+   return kQ3Failure;
+}
+Q3Object_Dispose(theSet);
+return kQ3Success;</pre>
+<p class="spacer">&nbsp;</p>
+<h2>A CASE IN POINT: ATTACHING A URL TO AN OBJECT</h2>
+<p>
+Now we're going to illustrate how to define, register, and attach a custom element to a<br>
+QuickDraw 3D object, and how to extract and use that custom data. Our custom element<br>
+is a string containing a URL (<i>uniform resource locator</i>, a popular way of specifying<br>
+the location of an online resource on the Web); we'll attach it to a geometry object. We<br>
+make it an element rather than an attribute because it doesn't need to be inheritable.<br>
+When the object we attach the custom element to is read into one of the many viewers<br>
+that support custom elements, the viewer can communicate through Apple events with<br>
+applications like Netscape Navigator (TM) (or your favorite Web browser) to produce<br>
+3D navigation. A sample application that illustrates the idea is included on this issue's<br>
+CD. See "3D Web Content Using 3DMF and Netscape Navigator" for more details.
+</p>
+<p>
+The custom attribute we define and use here, W3Anchor, is one of the six custom<br>
+elements described later in this article.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3D WEB CONTENT USING 3DMF AND NETSCAPE<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NAVIGATOR</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BY JOHN LOUCH
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;With the advent of Netscape Navigator 2.0 and its plug-in architecture, you<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;can extend content on the Web to handle multimedia or 3D media. The ease of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;publishing 3D content will make Apple's 3DMF data format ubiquitous on the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Web. A sample Netscape plug-in, Whurlplug, on this issue's CD shows what a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3D plug-in based on QuickDraw 3D might look like.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Whurlplug uses the QuickDraw 3D Viewer shared library as its interface for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;displaying 3D Web content. The Viewer gives users of Whurlplug a seamless<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;integration with the current metaphors for handling 3D content on the Mac OS.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Whurlplug also tries to use the same human interface metaphors and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;behaviors as Netscape.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Whurlplug can be embedded in a Hypertext Markup Language (HTML) page or<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;take over the whole window (as in the URL example in this article). If the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;plug-in is embedded, it will assume the same background color as the HTML<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;page it's embedded in. Holding down the mouse button on the Viewer toolbar<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;will pop up a menu allowing you to set the Viewer options and save the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Web-based 3DMF object to disk, so it's consistent with other elements of the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Netscape browser's user interface.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;There are a number of ways to present a 3D scene to a Web user. You can<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;enable the user to fly through a 3D world, or simply to view an HTML page<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;with 3D content. To handle the different ways that Whurlplug might be used,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;we extended the HTML syntax that the plug-in understands if it's embedded in a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;page. Here's the Embed command syntax:
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;EMBED SRC="3DObject.3dmf" WIDTH=100 HEIGHT=200&gt;
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Six more arguments for this extension to HTML can be used in a description of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;a 3DMF object:
+</p>
+<ul>
+<li style="margin-left: 44px">ACTIVE -- If this is set to true, the user can examine the 3D<br>
+object through the controls provided by the QuickDraw 3D Viewer and<br>
+keyboard navigation. If it's false, the user can interact with the 3D<br>
+object only if it has URL links to other pages inside it.</li>
+<li style="margin-left: 44px">BGCOLOR -- Allows the page author to set the background color of<br>
+the plug-in or model to the color supplied. BGCOLOR="#ffffff" would<br>
+set the background color to white. The string is defined as a number<br>
+consisting of six hexadecimal digits, each pair of which describes the<br>
+red, blue, and green components (in that order).</li>
+<li style="margin-left: 44px">SPIN -- If this is set to true, the 3D object will spin about a<br>
+moving axis defined by Whurlpug; otherwise, the object won't spin.</li>
+<li style="margin-left: 44px">ROTATE -- This also allows the 3D object to spin when viewed,<br>
+but the page author defines the axis of rotation. The syntax is<br>
+ROTATE="x y z" where x, y, and z are floating-point values from<br>
+-180.0 to 180.0 defining the axis of rotation.</li>
+<li style="margin-left: 44px">TOOLBAR -- If this is set to false, the toolbar at the bottom of the<br>
+viewer isn't shown. The default is true.</li>
+<li style="margin-left: 44px">RENDER -- Tells the plug-in which renderer to use.<br>
+RENDER=interactive (the default) indicates the interactive software<br>
+renderer; RENDER=wireframe indicates the wireframe renderer that<br>
+ships with QuickDraw 3D.</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Whurlplug understands 3D models that have URL or anchor links in them. If<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the cursor moves over a 3D object that has an anchor link in it, the object<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;flashes red and the URL is displayed in Netscape's toolbar. Clicking on that<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;object causes Netscape to go to that URL, which could be anything from another<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;QuickDraw 3D object to any type of page that Netscape understands. Currently,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the only way to add anchors to a QuickDraw 3D object is through the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;applications BeWhurled (on this issue's CD), 3D World, and Studio Pro Blitz,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;but the URL example in this article shows how you can add the anchor custom<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;attribute to data in your own 3D application.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The mime type and subtype for 3DMF are x-world/x-3dmf. The extensions<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;that Whurplug understands are .3dmf, .3dm, .qd3d, and .qd3. Your Web server<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;has to either set the mime type and subtype of 3D files to x-world/x-3dmf or<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;name the files so that the extension is one of those Whurlplug understands.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Following is a trivially simple HTML description of a Web page that uses this<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;viewer. By the time you read this, there will be (we hope) a number of sites<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;with 3DMF data on their Web pages that can be viewed in Netscape. Check out<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the QuickDraw 3D Web page for more details.
+</p>
+<pre>      &lt;TITLE&gt; A 3D Web page &lt;\TITLE&gt;
+      &lt;EMBED SRC="3DObject.3dmf" WIDTH=200 HEIGHT=200
+         SPIN=true ACTIVE=false&gt;
+      &lt;P&gt;
+      &lt;A HREF="3DObject.3dmf"&gt;Click here for a full
+         view&lt;/A&gt;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>DEFINING OUR DATA STRUCTURE</b>
+</p>
+<p>
+We first need to define the internal structure of the data associated with our custom<br>
+element type. We'll use the W3AnchorData structure, defined like this:
+</p>
+<pre>typedef enum W3AnchorOptions {
+   kW3AnchorOptionNone      = 0,
+   kW3AnchorOptionUseMap   = 1
+} W3AnchorOptions;
+
+typedef struct W3AnchorData {
+   char               *url;
+   TQ3StringObject   description;
+   W3AnchorOptions   options;
+} W3AnchorData;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The<b>url</b> field is a C string consisting of the URL data. The <b>description</b> object is<br>
+information that the application must present to users to enable them to decide<br>
+whether the site or data pointed to by the URL is worth examining (since the process<br>
+could take some time). Note that since the description is a string object, it can be<br>
+specified in a script other than Roman. The <b>options</b> field specifies whether the<br>
+position (x,y) that was clicked should be passed back to the Web viewer.
+</p>
+<p>
+<b>REGISTERING OUR CUSTOM ELEMENT</b>
+</p>
+<p>
+Before we can use our custom element, we need to tell QuickDraw 3D that we've defined<br>
+it, by implementing a registration routine. There may be occasions when we want to<br>
+recognize a custom element for only a limited period of time, so an unregister routine<br>
+can also be implemented.
+</p>
+<p>
+&nbsp;&nbsp;We need to define a couple of parameters before we can register our custom element:<br>
+an object type, which is a four-character identifier packed into a long word, and a<br>
+string, which is used to help uniquely identify the element. As mentioned earlier, both<br>
+of these need to be registered with the Developer Support Center to avoid name space<br>
+collisions, and each must be unique within their respective name spaces.
+</p>
+<pre>#define kElementTypeW3Anchor \
+   ((TQ3ElementType) Q3_OBJECT_TYPE('w','w','w','a'))
+#define kElementNameW3Anchor   "W3Anchor"</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Now we register the custom element:
+</p>
+<pre>TQ3Status W3Anchor_Register(void)
+{
+   gW3AnchorClass = Q3ElementClass_Register(kElementTypeW3Anchor,
+      kElementNameW3Anchor, sizeof(W3AnchorData),
+      W3Anchor_MetaHandler);
+   return (gW3AnchorClass == NULL ? kQ3Failure : kQ3Success);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+When you register custom attributes or elements with Q3ElementClass_Register, the<br>
+name you use doesn't have to be the exact same name used by other developers for that<br>
+type. As an example, the W3Anchor type is defined as 'wwwa' and its name is<br>
+"W3Anchor." An Apple implementation of this attribute might be registered as<br>
+Q3ElementClass_Register('wwwa', "Apple:W3Anchor"), and a third party's<br>
+implementation might be registered as Q3ElementClass_Register('wwwa',<br>
+"Microspot:W3Anchor"). The name is unimportant; because both of the<br>
+implementations have the same type, data written by one will, if the implementation of<br>
+both is the same, be read by the other.
+</p>
+<p>
+<b>DEFINING OUR METAHANDLER</b>
+</p>
+<p>
+Whenever QuickDraw 3D needs to operate on the data encapsulated by our custom<br>
+element, it will call our metahandler, which we supplied a pointer to in the<br>
+registration routine. Our metahandler (Listing 4) returns the addresses of the<br>
+methods associated with our element type. We supply object I/O methods to preserve<br>
+our element during I/O, and copy methods to allocate and manage the string memory.<br>
+We return NULL by default, to indicate that unknown methods aren't supported and that<br>
+a default method should be used. The definition for each of the routines is on this<br>
+issue's CD.
+</p>
+<p>
+<b>Listing 4.</b> The metahandler for our custom element
+</p>
+<pre>static TQ3FunctionPointer W3Anchor_MetaHandler(TQ3MethodType
+methodType)
+{
+   switch (methodType) {
+      case kQ3MethodTypeObjectTraverse:
+         return (TQ3FunctionPointer) W3Anchor_Traverse;
+      case kQ3MethodTypeObjectWrite:
+         return (TQ3FunctionPointer) W3Anchor_Write;
+      case kQ3MethodTypeObjectReadData:
+         return (TQ3FunctionPointer) W3Anchor_ReadData;
+      case kQ3MethodTypeElementCopyAdd:
+      case kQ3MethodTypeElementCopyGet:
+      case kQ3MethodTypeElementCopyDuplicate:
+         return (TQ3FunctionPointer) W3Anchor_CopyAdd;
+      case kQ3MethodTypeElementCopyReplace:
+         return (TQ3FunctionPointer) W3Anchor_CopyReplace;
+      case kQ3MethodTypeElementDelete:
+         return (TQ3FunctionPointer) W3Anchor_Delete;
+      default:
+         return (TQ3FunctionPointer) NULL;
+   }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>IMPLEMENTING THE METHODS</b>
+</p>
+<p>
+Listing 5 shows how the three element methods -- W3Anchor_CopyAdd,<br>
+W3Anchor_CopyReplace, and W3Anchor_Delete -- are implemented. Note in Listing 4<br>
+that the same function, W3Anchor_CopyAdd, is used for the CopyAdd, CopyGet, and<br>
+CopyDuplicate methods. This means that the data pointer passed into Q3Set_Add and<br>
+Q3Set_Get is a pointer to the same structure as the internal structure. If you want to<br>
+see how the I/O methods are implemented, look at the source code for our custom<br>
+element on the CD.
+</p>
+<p>
+<b>Listing 5.</b> Implementing the element methods
+</p>
+<pre>/* W3Anchor_CopyAdd adds the WWW data from src to dst. */
+static TQ3Status W3Anchor_CopyAdd(W3AnchorData *src, W3AnchorData
+*dst)
+{
+   long   i;
+  
+   /* Check to see if src is a valid W3Anchor. */
+   if (src-&gt;url == NULL)
+      return kQ3Failure;
+
+   /* We need to allocate memory for the string that belongs to */
+   /* dst. */
+   i = strlen(src-&gt;url);
+   if (i == 0)
+      return kQ3Failure;
+   dst-&gt;url = (char *) malloc(i + 1);
+   if (dst-&gt;url == NULL)
+      return kQ3Failure;
+
+   /* Copy the string from src to dst. */
+   strcpy(dst-&gt;url, src-&gt;url);
+
+   /* Check to see if src had a description. */
+   if (src-&gt;description) {
+      TQ3StringObject   stringReference;
+      /* Get a reference to src's description object. */
+      stringReference = Q3Shared_GetReference(src-&gt;description);
+      if (stringReference == NULL)
+         return kQ3Failure;
+      dst-&gt;description = stringReference;
+   } else
+      dst-&gt;description = NULL;
+
+   /* Just copy the options, since they're just values. */
+   dst-&gt;options = src-&gt;options;
+   return kQ3Success;
+}
+/* W3Anchor_CopyReplace substitutes the WWW data in src for the data
+   in dst. */
+static TQ3Status W3Anchor_CopyReplace(W3AnchorData *src,
+                                       W3AnchorData *dst)
+{
+   long   i;
+   char   *c;
+  
+   /* Check to see if src is a valid W3Anchor. */
+   if (src-&gt;url == NULL)
+      return kQ3Failure;
+
+   /* We need to have enough memory for the string from src. */
+   i = strlen(src-&gt;url);
+   if (i == 0)
+      return kQ3Failure;
+   c = (char *) realloc(dst-&gt;url, i + 1);
+   if (c == NULL)
+      return kQ3Failure;
+
+   dst-&gt;url = c;
+   strcpy(dst-&gt;url, src-&gt;url);
+   if (src-&gt;description) {
+      TQ3StringObject   stringReference;
+
+      /* Get a reference to src's description object. */
+      stringReference = Q3Shared_GetReference(src-&gt;description);
+
+      if (stringReference == NULL)
+         return kQ3Failure;
+      if (dst-&gt;description)
+         Q3Object_Dispose(dst-&gt;description);
+      dst-&gt;description = stringReference;
+   } else
+      dst-&gt;description = NULL;
+   dst-&gt;options = src-&gt;options;
+   return kQ3Success;
+}
+
+/* W3Anchor_Delete cleans up the references and memory allocations. */
+static TQ3Status W3Anchor_Delete(W3AnchorData *myURLData)
+{
+   if (myURLData-&gt;url != NULL) {
+      free(myURLData-&gt;url);
+      myURLData-&gt;url = NULL;
+   }
+   if (myURLData-&gt;description != NULL) {
+      Q3Object_Dispose(myURLData-&gt;description);
+      myURLData-&gt;description = NULL;
+   }
+   return kQ3Success;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>ATTACHING THE CUSTOM ELEMENT</b>
+</p>
+<p>
+Once we've set up our metahandler and associated routines, we can use the normal set<br>
+and attribute set routines to add elements and attributes of our custom type. Listing 6<br>
+shows how we add our custom element to a set and attach the set to a shape object. Our<br>
+geometric object will then inherit the set from the shape.
+</p>
+<p>
+<b>Listing 6.</b> Adding our custom element to a set and attaching the set to an object
+</p>
+<pre>TQ3AttributeSet   theSet;
+W3AnchorData      QD3DHomePage;
+
+theSet = Q3Set_New();
+if (theSet) {
+   char   *description = "Apple QuickDraw 3D Home Page",
+         *url = "http://www.info.apple.com/qd3d";
+   QD3DHomePage.url = malloc(strlen(url) + 1);
+   if (QD3DHomePage.url) {
+      strcpy(url, QD3DHomePage.url);
+      QD3DHomePage.description = Q3CString_New(description);
+      QD3DHomePage.options = 0;
+
+      /* Add the anchor data to the set. */
+      Q3Set_Add(theSet, kElementTypeW3Anchor, &amp;QD3DHomePage);
+
+      /* The data has been copied and objects referenced, so we need
+         to clean up after ourselves. */
+      free(QD3DHomePage.url);
+      Q3Object_Dispose(QD3DHomePage.description);
+   }
+
+   /* Attach the set to a shape. */
+   Q3Shape_SetSet(aShape, theSet);
+   Q3Object_Dispose(theSet);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>GETTING THE CUSTOM DATA FROM THE OBJECT</b>
+</p>
+<p>
+At some point your application will want to extract the custom data you've attached to<br>
+an object. In our sample application, that point is reached when the user clicks on an<br>
+object or the cursor passes over an object. The W3Anchor_GetFromObject routine<br>
+(Listing 7) gets custom data from an object passed into the routine, using the<br>
+QuickDraw 3D routines Q3Set_Contains and Q3Set_Get.
+</p>
+<p>
+<b>Listing 7.</b> Getting our custom data from the object
+</p>
+<pre>TQ3Boolean W3Anchor_GetFromObject(TQ3Object object, W3AnchorData
+*data)
+{
+   TQ3SetObject   set;
+   TQ3Boolean      result;
+  
+   W3Anchor_Empty(data);
+   data-&gt;url = NULL;
+   data-&gt;description = NULL;
+   set = NULL;
+
+   /* The object passed in must be a shape or a geometry. */
+   if (Q3Object_IsType(object, kQ3ShapeTypeGeometry) == kQ3True) {
+      Q3Geometry_GetAttributeSet(object, &amp;set);
+      if (set != NULL) {
+         result = W3Anchor_GetFromSet(set, data);
+         Q3Object_Dispose(set);
+         if (result == kQ3True)
+            return result;
+         set = NULL;
+      }
+   }
+   if (Q3Object_IsType(object, kQ3SharedTypeShape) == kQ3True) {
+      Q3Shape_GetSet(object, &amp;set);
+      if (set != NULL) {
+         result = W3Anchor_GetFromSet(set, data);
+         Q3Object_Dispose(set);
+         return result;
+      }
+   }
+   return kQ3False;
+}
+
+TQ3Boolean W3Anchor_GetFromSet(TQ3SetObject set, W3AnchorData *data)
+{
+   TQ3Object         unkObj;
+   TQ3Boolean         result;
+   TQ3GroupPosition   position;
+
+   result = kQ3False;
+
+   /* Ideally, you'll find one of these. */
+   if (Q3Set_Contains(set, kElementTypeW3Anchor) == kQ3True) {
+      if (Q3Set_Get(set, kElementTypeW3Anchor, data) == kQ3Failure)
+         return kQ3False;   /* Error: Contains, but can't get! */
+      return kQ3True;
+   }
+
+   /* But due to a bug in QuickDraw 3D versions prior to 1.0.4, the
+      element may be contained within another set in the unknown
+      element. */
+   if (Q3Set_Contains(set, kQ3ElementTypeUnknown) == kQ3True) {
+      if (Q3Set_Get(set, kQ3ElementTypeUnknown, &amp;unkObj) ==
+            kQ3Failure)
+         return kQ3False;   /* Error: Contains, but can't get! */
+      if (unkObj == NULL)
+         return kQ3False;
+      /* Unknown objects may contain one object or a group. */
+      if (Q3Object_IsType(unkObj, kQ3SharedTypeSet) == kQ3True)
+         result = W3Anchor_GetFromSet(unkObj, data);
+      else if (Q3Object_IsType(unkObj, kQ3ShapeTypeGroup) ==
+             kQ3True) {
+         Q3Group_GetFirstPositionOfType(unkObj, kQ3SharedTypeSet,
+            &amp;position);
+         if (position != NULL) {
+            Q3Group_GetPositionObject(unkObj, position, &amp;set);
+            result = W3Anchor_GetFromSet(set, data);
+         }
+      }
+      Q3Object_Dispose(unkObj);
+   }
+   return result;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+W3Anchor_GetFromObject includes a workaround for an interesting problem. In<br>
+QuickDraw 3D before version 1.0.4, if an element or attribute type was unknown (in<br>
+other words, if a metahandler wasn't installed for the element or attribute), the<br>
+element or attribute would be read as an unknown object. When a set was defined as<br>
+part of an object derived from the Shape class, the set was written out to the metafile<br>
+just fine; but when the set was read from the metafile into the shape's set, it was read<br>
+as an unknown object, resulting in an additional, unnecessary level of containment, as<br>
+illustrated in Figure 3. If you're reading custom elements or attributes from 3DMF<br>
+files, you need to ensure that your users have version 1.0.4 or later, or you'll need to<br>
+work around this issue.
+</p>
+<p>
+<img src="img/231.gif" width="534 px"></img>
+</p>
+<p>
+<b>Figure 3.</b> The problem with reading a set from a metafile
+</p>
+<p>
+Similarly, if a metafile containing an object with a custom element attached to it is<br>
+read by an application that doesn't know about that custom element, when the object is<br>
+written out its associated custom element will be written out as an unknown object.<br>
+The moral of this story is that you should check inside an unknown object to see if the<br>
+type of attribute it contains is the one you're looking for.
+</p>
+<p>
+<b>SENDING THE URL TO A BROWSER</b>
+</p>
+<p>
+Once we've extracted the URL from our custom element, we want to send it to Netscape<br>
+Navigatoror a similar browser. Listing 8 shows the basics of how to do this (we've left<br>
+out the proper error handling in the interest of saving space).
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>A more complete example</b> on this issue's CD shows how to detect whether<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Netscape Navigator is running and, if not, to launch the application. It shows<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;other cool uses for custom elements and attributes as well.*
+</p>
+<p>
+<b>Listing 8. </b>Sending the URL to a browser
+</p>
+<pre>Boolean OpenURL(char *name)
+{
+   AppleEvent   theAppleEvent, theReply;
+   OSErr         err;
+
+   /* If Netscape isn't around, get out. */
+   if (Find_Netscape() == false)
+      return false;
+
+   /* Netscape is here; let's send them an Apple event. */
+   err = AECreateAppleEvent('WWW!', 'OURL', &amp;theAddressDesc,
+            kAutoGenerateReturnID, kAnyTransactionID, &amp;theAppleEvent);
+   err = AEPutParamPtr(&amp;theAppleEvent, keyDirectObject, typeChar,
+            name, strlen(name));
+   err = AESend(&amp;theAppleEvent, &amp;theReply, kAEWaitReply,
+            kAENormalPriority, kNoTimeOut, NewAEIdleProc(MyIdle),
+            NewAEFilterProc(MyFilter));
+   if (err == noErr)
+      return true;
+   else
+      return false;  
+}</pre>
+<p class="spacer">&nbsp;</p>
+<h2>NEW CUSTOM ELEMENTS AND ATTRIBUTES</h2>
+<p>
+In future releases of QuickDraw 3D, you'll be able to ship your custom elements and<br>
+attributes as a shared library that plugs into QuickDraw 3D, as opposed to having to<br>
+compile the code within your application. This will allow for the custom elements and<br>
+attributes to be valid for all QuickDraw 3D applications running on the machine.
+</p>
+<p>
+&nbsp;&nbsp;In the meantime, for your custom element or attribute to be shared and understood by<br>
+other applications, you can propose it to the Developer Support Center<br>
+(devsupport@applelink.apple.com or AppleLink DEVSUPPORT), and they'll pass the<br>
+information on to the QuickDraw 3D team. Be sure to specify the data format, describe<br>
+how the object is to be used, and include a C-based implementation. We want to avoid<br>
+the problems experienced with QuickDraw's picture comments, where the behavior or<br>
+meaning of the data was often not clear. If enough developers request similar attributes<br>
+or elements, we'll add them to the next release of QuickDraw 3D, so that they get<br>
+registered at startup time. In any case, we'll make the specifications for custom<br>
+attributes and elements available on the <i>Developer CD Series</i>, the <i>develop Bookmark</i><br>
+CD, and the Web (http://www.info.apple.com/qd3d).
+</p>
+<p>
+Following are descriptions of six new custom elements that address needs expressed by<br>
+several of our developers. Implementations for these are provided on the CD, in the<br>
+file CustomAttribute_Lib.c. (Yes, these are elements, even though we on the<br>
+QuickDraw 3D team have been in the sloppy habit of referring to them as attributes,<br>
+and both the filename and the names of some of the elements reflect that habit. Just<br>
+make sure that you're more precise in your use of the terms <i>element</i> and <i>attribute</i>,<br>
+now that you know what the difference is from reading this article.) In addition, the CD<br>
+contains a Technote describing some custom elements and attributes defined by our<br>
+developer community.
+</p>
+<p>
+<b>NAMEATTRIBUTE</b>
+</p>
+<p>
+This element contains a string object. It can be attached to any object in the Shape class<br>
+or any subclass of the Shape class. It can also be added to an attribute set and assigned<br>
+to a geometry or faces. (In future releases we'll have other subclasses to the String<br>
+class, allowing you to use non-ASCII characters.)
+</p>
+<p>
+Written out in a 3DMF text metafile, this element appears as follows:
+</p>
+<pre>Container (
+   NameAttribute ( )
+   CString ( "1 meter box" )
+)</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>SCALEATTRIBUTE</b>
+</p>
+<p>
+This element, of type double, determines the relation between one unit in the model and<br>
+one meter. For example, if one unit in your model is equivalent to 10 meters, the scale<br>
+should be set to 10.
+</p>
+<p>
+This element, and all the elements whose descriptions follow, should be attached only<br>
+to groups or geometry objects. Also, for each of these elements, traversal to find the<br>
+element should be top down; this means that if it's attached to a group, there's no need<br>
+to traverse the objects within the group.
+</p>
+<p>
+If you add objects that have a scale element to a group, make sure that the objects are<br>
+transformed (placed in a group with a transform and then added to the main group) so<br>
+that the scale for the group is uniform.
+</p>
+<pre>ScaleAttribute ( 1.0 )</pre><p class="spacer">&nbsp;</p>
+<p>
+<b>UPVECTOR AND FORWARDDIRECTION</b>
+</p>
+<p>
+These elements, of type TQ3Vector3D, specify the up vector and forward direction for<br>
+a model. They're used to ensure that the orientation of an object read from a metafile is<br>
+correct (that is, that it has the right side up and faces the right way). As for<br>
+ScaleAttribute, if you add objects that have either of these elements to a group, make<br>
+sure that the objects are transformed.
+</p>
+<pre>UpVector ( 0.0 1.0 0.0 )
+ForwardDirection ( 1.0 0.0 0.5 )</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>W3ANCHOR</b>
+</p>
+<p>
+This element contains a URL in the form of a C string (ASCII only), an option field,<br>
+which can be set to kURLReferenceOptionUseMap (meaning that the application should<br>
+attach a pointer to the URL before sending the URL to the server), and a string object<br>
+to encapsulate the description of the site pointed to by the URL (note that this allows<br>
+for non-ASCII descriptions in the future).&nbsp;&nbsp;In the following 3DMF text, the "0"<br>
+signifies that there's no map. "Apple's home page" is shown as a CString when it's<br>
+actually a TQ3StringObject, because that's how we decided to represent strings in the<br>
+metafile.
+</p>
+<pre>Container (
+   W3Anchor ( "http://www.info.apple.com" 0 )
+   CString ( "Apple's home page" )
+)</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>W3INLINE</b>
+</p>
+<p>
+This element contains a URL in the form of an C string (ASCII only). The group or<br>
+geometry that this element is attached to acts as a proxy for the data pointed to by the<br>
+URL. This allows the application to perform the URL data retrieval on a separate<br>
+thread or in the background, or delay the operation until the user expresses interest<br>
+in the proxy. Once the URL data is retrieved, the data should replace the object that<br>
+holds the element.
+</p>
+<pre>W3Inline ( "http:www.info.apple.com" )</pre>
+<h2>CUSTOMIZING YOUR WORLD</h2>
+<p>
+This article has given an overview of what you can do with custom elements and<br>
+attributes. With your imagination and a few simple routines, you can extend the rich<br>
+capabilities of QuickDraw 3D. Have fun with custom elements and attributes, and don't<br>
+forget to tell us about them if you want other developers to be able to use yours!
+</p>
+<p>
+
+
+<b>RELATED READING</b>
+<ul>
+<li>"QuickDraw 3D: A New Dimension for Macintosh Graphics" by<br>
+Pablo Fernicola and Nick Thompson, <i>develop</i> Issue 22, and "The Basics<br>
+of QuickDraw 3D Geometries" by Nick Thompson and Pablo Fernicola,<br>
+<i>develop</i> Issue 23.</li>
+<li>3D Graphics Programming With QuickDraw 3D (Addison-Wesley,<br>
+1995).</li>
+<li>http://www.info.apple.com/qd3d -- the QuickDraw 3D home page,<br>
+containing links to sites with inline 3DMF data.</li>
+</ul>
+<p>
+
+
+
+<b>NICK THOMPSON</b> (nickt@applelink.apple.com, AppleLink NICKT) is still looking for<br>
+new ways to make the rest of the QuickDraw 3D team members think about Mac OS 8.<br>
+Nick is working on integrating the award-winning QuickDraw 3D software into Mac OS<br>
+8, taking maximum advantage of the modern OS features. When not immersed in the<br>
+future of QuickDraw 3D, this former Developer Technical Support engineer is<br>
+immersed in water, surfing off the Northern California coast.*
+</p>
+<p>
+<b>PABLO FERNICOLA</b> (EscherDude@aol.com, AppleLink PFF) has been really busy<br>
+since you last heard from him. At MACWORLD San Francisco in January he was busy<br>
+explaining to developers and users what QuickDraw 3D means to them. As we write<br>
+this, he's busy planning the next three releases of QuickDraw 3D with the team. As<br>
+technical lead of the QuickDraw 3D team, he misses life without meetings, but is<br>
+totally stoked that the team has won awards from Byte, Macworld, and MacUser.*
+</p>
+<p>
+<b>KENT DAVIDSON</b> (dbunny@apple.com, AppleLink DBUNNY), a.k.a. 3DMF Dude,<br>
+Object Dude, and "The Man" (by the dudes in Marketing), is the guy who keeps the core<br>
+of QuickDraw 3D humming. Outside of commuting from San Francisco to the 'burbs of<br>
+Cupertino, he spends his time rock climbing, skiing, and hanging out. He's currently<br>
+wracking his brain over the plug-in renderer architecture, which he'll finish as soon<br>
+as everyone leaves him alone.*
+</p>
+<p>
+Thanks to our technical reviewers Rick Evans, Robin Landsbert, Philip McBride,<br>
+Klaus Strelau, and David Vasquez, and also to the entire QuickDraw 3D team.*
+</p>
+</body>
+</html>

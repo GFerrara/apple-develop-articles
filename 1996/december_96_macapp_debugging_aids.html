@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 54 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 96 - MacApp Debugging Aids</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>MacApp Debugging Aids</h1>
+<h2>Conrad Kopala</h2>
+<p>
+<img src="img/287.gif" width="324 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">While working on Twist Down Lists, a recordable MacApp</i>
+<br>
+
+<i style="font-size:125%;">implementation of hierarchical lists, I developed several useful</i>
+<br>
+
+<i style="font-size:125%;">debugging aids for detecting memory leaks and access faults and</i>
+<br>
+
+<i style="font-size:125%;">managing memory usage problems. Here I describe how to use these</i>
+<br>
+
+<i style="font-size:125%;">debugging aids for more trouble-free MacApp programming.</i>
+</p>
+<p>
+In the article "Displaying Hierarchical Lists" in <i>develop</i> Issue 18, Martin Minow<br>
+suggests that MacApp offers "flexible libraries for displaying and managing structured<br>
+data." I accepted his challenge and decided to create a Twist Down Lists application with<br>
+MacApp version 3.3.1. As complete as MacApp is, you still have to test your<br>
+application to make sure it works. Among the problems I encountered, perhaps none<br>
+were more frustrating than the insidious memory leak and the dreaded access fault.<br>
+After discovering the <i>n</i>th memory leak and the <i>m</i>th access fault in my Twist Down Lists<br>
+application, I decided that the situation was unacceptable -- there had to be a better<br>
+way!
+</p>
+<p>
+To solve these problems, I developed several debugging techniques. These techniques<br>
+were useful to me, so I decided to share them with you in this article. Here are some of<br>
+them:
+</p>
+<ul>
+<li><i>Object counting</i> lets you quickly discover memory leaks.</li>
+<li><i>Memory display</i> helps you gauge the size of a memory leak.</li>
+<li><i>Object display</i> helps you identify the cause of a memory leak and an access<br>
+fault.</li>
+<li><i>Object heap discipline</i> helps your application manage tight memory<br>
+situations by allowing you to erect a barrier to further expansion of the object<br>
+heap.</li>
+<li><i>Failure handling</i> lets you force a failure in any spot in your code.</li>
+</ul>
+<p>
+Accompanying this article on this issue's CD and <i>develop</i>'s Web siteis the complete<br>
+Twist Down Lists application, which you can look at to see the implementation of all<br>
+the debugging aids described in this article. Also provided are two engineering notes,<br>
+"EN1 - Object Counting and Display" and "EN2 - Object Heap Discipline," which go<br>
+into the gory details of implementing these debugging aids, and copies of the four<br>
+MacApp files UObject.h, UObject.cp, PlatformMemory.h, and PlatformMemory.cp,<br>
+which I modified to incorporate the debugging aids and which you can substitute for the<br>
+original files (or similarly modify them yourself).
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Most of these debugging techniques</b> are specifically for MacApp version<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.3.1. Later versions may already incorporate similar debugging features.*
+</p>
+
+
+<h2>OBJECT COUNTING</h2>
+<p>
+I've found object counting to be the fastest way to discover memory leaks. To maintain<br>
+a running count of the number of objects in existence, I use a global variable named<br>
+gObjectCount. Whenever a TObject is created or cloned, gObjectCount is incremented;<br>
+when a TObject is destroyed, gObjectCount is decremented. The variable is incremented<br>
+in the TObject constructor or TObject::ShallowClone and is decremented in the TObject<br>
+destructor. To print the current value of gObjectCount, I use a global function named<br>
+PrintObjectCount. You can call this function at any point in the application where you<br>
+think it's useful. In my experience, one of the best places to test the value of<br>
+gObjectCount is at the beginning of the function TYourApplication::DoSetupMenus. That<br>
+point represents a set of stable application states that you should always be able to<br>
+return to. By monitoring the value of gObjectCount as the application runs, you can<br>
+obtain a set of characteristic values for gObjectCount. Any variation in these values<br>
+should be investigated as a possible memory leak.
+</p>
+<p>
+For example, for Twist Down Lists, the object count just after startup is 49. After a<br>
+twistDownDocument is opened and closed, this count increases to 52. This increase is a<br>
+consequence of adding a print handler to the view; a TPrintInfo and two TDependencies<br>
+objects are created but never freed. Then, if you change the font size by choosing the<br>
+Other menu item, the object count increases to 55. In this case, the TDialogTEView,<br>
+TAdornerList, and TScroller objects are created when a new font size is entered in the<br>
+TNumberText; they're never freed. Thereafter, the quiescent value of gObjectCount<br>
+remains unchanged.
+</p>
+<p>
+By using object counting, I've discovered TObject-based memory leaks in just<br>
+minutes. To implement it, you need to make changes to UObject.h and UObject.cp, as<br>
+described in "EN1 - Object Counting and Display." Or you can include the substitute<br>
+UObject.h and UObject.cp files that I've provided.
+</p>
+
+
+<h2>MEMORY DISPLAY</h2>
+<p>
+My global function DisplayMemoryInfo displays the amount of free memory, the size of<br>
+the temporary reserve, the size of the permanent reserve, the object heap size, the<br>
+amount of memory available in the object heap, and the amount of object heap space<br>
+used. If you have a memory leak, this function can give you information about the size<br>
+of the leak. As with object counting, you can get a set of characteristic values as you<br>
+run the application. The most useful of these indicators is the amount of object heap<br>
+space used. In my experience, it makes the most sense to call this function at the<br>
+beginning of the function TYourApplication::DoSetupMenus when you also display the<br>
+object count. Realize that each time the object heap is expanded, an overhead of 20<br>
+bytes is incurred. As a result, the amount of object heap space slowly increases until<br>
+the object heap reaches its maximum size. So if you see the amount of space used in the<br>
+object heap increasing by some multiple of 20, it might just be attributable to object<br>
+heap overhead. 
+</p>
+<p>
+To implement memory display, you need to make changes to UObject.h and UObject.cp,<br>
+as described in "EN1 - Object Counting and Display." Or you can include the substitute<br>
+UObject.h and UObject.cp files that I've provided.
+</p>
+
+
+<h2>OBJECT DISPLAY</h2>
+<p>
+While object counting and memory display let you quickly discover a memory leak, it's<br>
+object display that helps you to identify the cause of the memory leak or an access<br>
+fault. Turning on object display means that when a TObject-based object is<br>
+constructed, a message -- including "who, what, and where" -- appears in the<br>
+debugging window. Likewise, when the object is destroyed, a similar message appears.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>You can use a Simple Input-Output Window (SIOW) </b>instead of your<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;debugger's log window to display this information if you prefer.*
+</p>
+<p>
+When an object is created, if object display is on, the debugger log window displays a<br>
+message similar to the following:
+</p>
+<pre>Construct TSomeMacAppObject@ 0x2D6ACA4 Id=74 Size=108 ObjCnt = 73
+#Construct TMyObject@ 0x2D6ACA4 Id=74 Size=108 ObjCnt = 73</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+When the object is destroyed, the log window displays a message like this:
+</p>
+<pre>#Destruct TMyObject@ 0x2D6ACA4 Id=74 Size=108 ObjCnt = 73
+Destruct TSomeMacAppObject@ 0x2D6ACA4 Id=74 Size=108 ObjCnt = 73</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Each line gives the class name of the object, its location in the object heap, its class<br>
+ID, its size in bytes, and the current value of gObjectCount. In addition, the message<br>
+tells you whether the object was created or destroyed.
+</p>
+<p>
+So why are there two lines for construction and destruction? When an object like<br>
+TMyObject is created, its TObject constructor is executed first, followed by the<br>
+constructors for any MacApp objects in the descendant chain, ending with the<br>
+constructor for TMyObject. In other words, objects are built from the bottom up. As<br>
+each constructor does its thing, it's given the chance to display a message identifying<br>
+itself. So when a new object is created, a series of messages is displayed that identify<br>
+each stage of the construction process.
+</p>
+<p>
+When the object TMyObject is destroyed, the process is reversed, with the destructor<br>
+for TMyObject first displaying a message identifying itself, followed by the<br>
+destructors for any MacApp objects in the descendant chain and ending with the<br>
+destructor for TObject. Objects are destroyed from the top down.
+</p>
+<p>
+Running an application with object display on provides a wealth of information about<br>
+what an application is doing -- information that you can't get any other way. It's also a<br>
+<i>great</i> way to find out what MacApp is doing. As described later in the section<br>
+"Implementing Object Display," you can use flags to specify how much information to<br>
+display.
+</p>
+<p>
+<b>DETECTING MEMORY LEAKS</b>
+</p>
+<p>
+Of course, when tracking down a memory leak, you're interested in finding an object<br>
+that was created but never destroyed. To find this object, it's necessary to match object<br>
+destructions with constructions. The leftover construction is the offending object that<br>
+wasn't destroyed. You match constructions and destructions by using the addresses<br>
+provided in the object display.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Be careful when matching </b>object destructions and constructions, because<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MacApp will reuse space in the object heap. I've often seen MacApp make a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TAppleEvent, shortly thereafter free it, and then go on to make another<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TAppleEvent and store it at exactly the same address.*
+</p>
+<p>
+If your debugger allows you to save the contents of the log window, sorting it on the<br>
+address field would bunch all items with the same address together. That would make it<br>
+much easier to match destructions with constructions. If you assign each object a<br>
+serial number in its constructor, it would be even easier to do the matching.
+</p>
+<p>
+Consider a real example. The MacApp example application IconEdit has a memory leak.<br>
+(I found the leak because I used the application as a template.) Listing 1 shows the<br>
+offending code.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 1.</b> An example of a memory leak
+</p>
+<pre>void TIconDocument::DoMenuCommand (CommandNumber aCommandNumber)
+{
+   switch (aCommandNumber) {
+      case cSetColor:
+         {
+            CRGBColor   newColor;
+            CStr255      thePrompt = "Pick a new color";
+            if (GetColor(kBestSystemLocation, thePrompt, fColor,
+                  newColor)) {
+               if (TOSADispatcher::fgDispatcher-&gt;GetDefaultTarget()
+                     -&gt;IsRecordingOn()) {
+                  TSetPropertyEvent *appleEvent =
+                      new TSetPropertyEvent;
+                  appleEvent-&gt;ISetPropertyEvent(gServerAddress,
+                                 kAENoReply, this, pColor);
+                  CTempDesc theNewColor;
+                  theNewColor.PutRGBColor(newColor);
+                  appleEvent-&gt;WriteParameter(keyAEData, theNewColor);
+                  appleEvent-&gt;Send();   // &lt;-- the problem
+               }
+               else {
+                  TSetColorCommand *aSetColorCommand =
+                                       new TSetColorCommand();
+                  aSetColorCommand-&gt;ISetColorCommand(this, newColor);
+                  PostCommand(aSetColorCommand);
+               }
+            }
+         }
+         break;
+      default:
+         Inherited::DoMenuCommand(aCommandNumber);
+         break;
+   }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+With object counting and display, it took only minutes to discover the leak and identify<br>
+the offending objects. Deciding how to eliminate the leak took a little longer. The leak<br>
+arises because TAppleEvent::Send returns a reply TAppleEvent and neither it nor the<br>
+TAppleEvent that was sent is freed. This leak is fixed by using the code snippet
+</p>
+<pre>TAppleEvent * theReply = theEvent-&gt;Send();
+FreeIfObject(theEvent);
+FreeIfObject(theReply);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+in place of
+</p>
+<pre>appleEvent-&gt;Send();</pre>
+<p>
+Listing 1 is an example of a small memory leak, only 64 bytes. Because of its small<br>
+size, it's virtually undetectable by means other than object display. These small<br>
+memory leaks are a very serious problem because they fragment the object heap.<br>
+Suppose that every time a command is executed, a 64-byte memory leak is created and<br>
+they're uniformly distributed across the object heap. Now suppose the application<br>
+needs to create an object that's too big to fit in any of the available gaps in the object<br>
+heap. Under these circumstances, the application would come to a grinding halt and the<br>
+only thing the user could do is quit and restart the application (if the computer doesn't<br>
+crash).
+</p>
+<p>
+<b>DETECTING ACCESS FAULTS</b>
+</p>
+<p>
+Discovering access faults is easy. The Power Mac Debugger loudly, almost proudly,<br>
+proclaims, "Access Fault." If luck is with you, your machine doesn't crash or lock up.<br>
+Identifying the cause of an access fault is another matter. If the access fault involves a<br>
+TObject-based object, that means the application attempted to access an object that<br>
+doesn't exist. There are two ways that can happen: Perhaps the object was created, then<br>
+destroyed, and now the application attempts to access it. Or maybe it was never created<br>
+in the first place.
+</p>
+<p>
+Object display can help you identify the offending object by providing an ordered<br>
+record of what was created and what was destroyed. If you've been testing with object<br>
+display on, you will have become familiar with what your application is doing. Then<br>
+the trick is to single step up to the point of the access fault without failing. At that<br>
+point, you should know which object the application is attempting to access. You can<br>
+carefully examine the results of the object display to determine the source of the<br>
+problem.
+</p>
+<p>
+<b>Access fault of the first kind. </b>One type of access fault, which I'll call an access<br>
+fault of the first kind, arises from creating a TObject-based object, freeing it, and<br>
+then attempting to access it. Because it was freed, it no longer exists, so attempting to<br>
+access it causes an access fault.
+</p>
+<p>
+When I was first teaching myself about MacApp's scripting capability, I made the<br>
+mistake of taking some MacApp code out of context and using it as a template in Twist<br>
+Down Lists. It was clearly the wrong thing to do because it resulted in an access fault of<br>
+the first kind. My mistake is illustrated by the following code, which I wrote in<br>
+TTwistDownApp::GetContainedObject. I show it here so that you can try it and see for<br>
+yourself how object display helps you find the first type of access fault.
+</p>
+<pre>TTwistDownDocument* theTwistDownDocument = NULL;
+theTwistDownDocument = (TTwistDownDocument*)aDocument;
+theTwistDownView = theTwistDownDocument-&gt;fTwistDownView;
+TOSADispatcher::fgDispatcher-&gt;AddTemporaryToken(theTwistDownView);
+result = theTwistDownView;
+return result;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Of course, in due time, MacApp freed the temporary token and, later on when the<br>
+application attempted to access fTwistDownView, an access fault was generated.<br>
+Running the application with object display on clearly showed twistDownView being<br>
+destroyed: you can't miss it and you know it's wrong. Then, a little bit of single<br>
+stepping led me to the culprit. I recognized that I shouldn't have told fgDispatcher to<br>
+add fTwistDownView as a temporary token. I fixed this by deleting the statement that<br>
+tells fgDispatcher to add it, and then carried on.
+</p>
+<p>
+<b>Access fault of the second kind.</b> Another kind of access fault, which I'll call an<br>
+access fault of the second kind, arises from attempting to access a TObject-based object<br>
+that was never created. The only access fault of this kind that I've encountered arose<br>
+when I ran a script that asked the application to access a document when there were no<br>
+documents. In this case, TApplication::GetContainedObject doesn't verify that the<br>
+document exists before attempting to use it.
+</p>
+<p>
+For this situation, the problem was immediately obvious. It was easily fixed by<br>
+inserting into TTwistDownApp::GetContainedObject the code shown in Listing 2, which<br>
+makes sure the document exists before attempting to access it.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 2.</b> A solution to the GetContainedObject problem
+</p>
+<pre>...
+else if (desiredType == cDocument &amp;&amp; selectionForm == formName) {
+   CStr255   theName;
+   selectionData.GetString(theName);
+   CNoGhostDocsIterator iter(this);
+
+ 
+   for (TDocument* aDocument = iter.FirstDocument(); iter.More();
+         aDocument = iter.NextDocument()) {
+      if (aDocument != NULL) {
+         CStr255 name = gEmptyString;
+         aDocument-&gt;GetTitle(name);
+         if (name == theName) {
+            theTwistDownDocument = (TTwistDownDocument*)aDocument;
+            result = theTwistDownDocument;
+            return result;
+         }
+      }
+   }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+This case demonstrates the wisdom of trying to break your application by attempting to<br>
+get it to do outlandish things that no sane person would try. That's precisely how I<br>
+stumbled on this one.
+</p>
+<p>
+<b>Access fault of the third kind.</b> All other access faults I've defined as access faults<br>
+of the third kind: they are, strictly speaking, outside the scope of MacApp. They arise<br>
+from mistakes you made when working with the system software -- for example,<br>
+failing to clear a parameter block before using it. As a result, object display isn't quite<br>
+as helpful at tracking down these access faults as it is with finding access faults<br>
+involving TObject-based objects. If you're lucky, object display will point you in the<br>
+general area of the problem.
+</p>
+<p>
+The MacApp application IconEdit gives us an example. Along with the other files that<br>
+accompany this article, I've provided a test script, a modified version of the IconEdit<br>
+source code, and many IconEdit documents to help you conduct the following<br>
+experiment:
+</p>
+<ol>
+<li>Set the partition size of IconEdit to its minimum of 1506.</li>
+<li>Make and save about 25 IconEdit documents.</li>
+<li>Quit IconEdit to quickly get rid of all the open documents.</li>
+<li>Make a script that tells IconEdit to open all the saved documents.</li>
+<li>Run the script.</li>
+</ol>
+<p>
+When IconEdit runs out of memory while being driven by the script, it will generate<br>
+an access fault of the third kind and drop into MacsBug with a bus error. This should<br>
+occur after the 22nd document has been opened and the script is telling IconEdit to<br>
+open the 24th saved document. The 23rd document has failed to open for lack of<br>
+memory, and the application is attempting to recover, yet the script has gone beyond<br>
+that point and is telling the application to open the 24th document. (Note that you'd<br>
+need to use a lot more documents to duplicate this condition if you didn't compile with<br>
+the substitute PlatformMemory files, which implement object heap discipline, as<br>
+described later.)
+</p>
+<p>
+The problem occurs when the application attempts to return an out-of-memory<br>
+message to the script. Specifically, TAppleEvent::WriteLong generates another error<br>
+when it attempts to complete the reply Apple event that's supposed to tell the script<br>
+about the out-of-memory condition.
+</p>
+<p>
+This is a case where the techniques described in this article don't help you very much<br>
+and may actually hinder you. I didn't do anything wrong, but I did spend time proving<br>
+that I didn't do anything wrong. Once I got assurance that all the TObject-descended<br>
+objects in my application appeared to be OK, I decided to see if IconEdit had the same<br>
+problem. It did.
+</p>
+<p>
+In due time, I noticed that the TServerCommand constructor sets fSuspendTheEvent to<br>
+FALSE. TServerCommand is an ancestor of TODocCommand, which is responsible for<br>
+opening existing documents. At that point, I had nothing to lose by setting its value to<br>
+TRUE. That fixed the problem.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Be warned that </b>the experts will tell you that fSuspendTheEvent should<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;never be set to TRUE because doing so can be dangerous. I've disregarded their<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;advice with no better rationale than that it appears to allow IconEdit and Twist<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Down Lists to survive without crashing when I run a script that sends open<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;document commands until the application fails for lack of memory. As of this<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;writing I haven't found a more acceptable workaround.*
+</p>
+<p>
+<b>IMPLEMENTING OBJECT DISPLAY</b>
+</p>
+<p>
+To implement object display, you can plug in the substitute UObject.h and UObject.cp<br>
+files. (Implementation details are provided in "EN1 - Object Counting and Display.")<br>
+In addition, four new methods need to be added to TObject:
+</p>
+<pre>#if qDebug
+void TObject::PrintConstructorClassInfo();
+void TObject::PrintDestructorClassInfo();
+void TObject::PrintAppConstructorClassInfo();
+void TObject::PrintAppDestructorClassInfo();
+#endif</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The constructors and destructors of all objects for which you want to be able to display<br>
+object information must be modified to call the appropriate method. For MacApp<br>
+objects, use the following code in the constructor:
+</p>
+<pre>#if qDebug
+this-&gt;PrintConstructorClassInfo();
+#endif</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+and this code in the destructor:
+</p>
+<pre>#if qDebug
+this-&gt;PrintDestructorClassInfo();
+#endif</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+You may not want to call these methods in TEvent and TToolboxEvent. The Macintosh<br>
+specializes in generating events, so displaying object information for them can be<br>
+overwhelming. In your application objects, use the following code in the constructor:
+</p>
+<pre>#if qDebug
+this-&gt;PrintAppConstructorClassInfo();
+#endif</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+and this code in the destructor:
+</p>
+<pre>#if qDebug
+this-&gt;PrintAppDestructorClassInfo();
+#endif</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+These calls should always be placed in the same relative position in constructors and<br>
+destructors. The very beginning or the very end are the two most obvious choices. Keep<br>
+in mind that although constructors don't generally make other objects, destructors<br>
+frequently free other objects. If these methods are invoked at random places in the<br>
+constructors and destructors, the resulting object information displayed in the log<br>
+window will be very hard to interpret.
+</p>
+<p>
+There are three flags that you can use to control the amount of object information<br>
+that's displayed: gPrintBaseClassInfo, gPrintMacAppClassInfo, and gPrintAppClassInfo.<br>
+These flags determine whether object information is displayed at the TObject level, for<br>
+MacApp objects, or for your application's objects, respectively. All three flags can be<br>
+set with scriptable menu commands. However, it's probably best to set<br>
+gPrintBaseClassInfo programmatically to avoid being inundated with object<br>
+information for every TToolboxEvent that's generated. Simply surround the suspect<br>
+code as follows:
+</p>
+<pre>gPrintBaseClassInfo = TRUE;
+...   // suspect code here
+gPrintBaseClassInfo = FALSE;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+In my experience, it's usually enough to display object information at the application<br>
+level and the MacApp level. However, some MacApp objects don't have constructors and<br>
+some don't have destructors. If you suspect that those objects are the source of a<br>
+problem, it may be useful to display object information at the TObject level.
+</p>
+
+
+<h2>OBJECT HEAP DISCIPLINE</h2>
+<p>
+MacApp uses its own object heap to store TObject-derived objects. The heap grows as<br>
+new objects are created -- by taking memory from free memory. Once memory has<br>
+been allocated to the object heap, it's never returned to free memory. As things stand,<br>
+the developer has little control over this situation. According to conventional wisdom,<br>
+the point of greatest memory usage occurs during printing. With Twist Down Lists,<br>
+memory usage problems occur when the application runs out of memory while loading<br>
+a hierarchical list, especially with 680x0 versions. That meant I had two problems to<br>
+deal with while testing recovery from an out-of-memory condition when loading a list:<br>
+the recovery itself and the lack of available memory in which to load required code<br>
+segments. I made the segment loading problem go away by implementing object heap<br>
+discipline, which let me concentrate on testing failure recovery. Object heap<br>
+discipline allows you to erect a barrier to further expansion of the object heap right<br>
+where you want it. At the same time, it allows you to leave as much memory as is<br>
+required to load code segments without having to fuss with 'seg!' and 'res!' resources.
+</p>
+<p>
+When the object heap runs out of space, a request for a new block of memory is made<br>
+with a call to the global function PlatformAllocateBlock(size_t size). The trick is to<br>
+force PlatformAllocateBlock to reject the request when you want it to.
+</p>
+<p>
+To do that, I created the global down-counter gOHRemainingIncrements to maintain a<br>
+count of the number of times the object heap will be allowed to expand. Each time<br>
+PlatformAllocateBlock allocates memory to the object heap, it decrements<br>
+gOHRemainingIncrements. When gOHRemainingIncrements reaches 0,<br>
+PlatformAllocateBlock will no longer honor requests for additional memory. The<br>
+revised version of PlatformAllocateBlock is shown in Listing 3.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 3.</b> Revised PlatformAllocateBlock
+</p>
+<pre>void *PlatformAllocateBlock(size_t size)
+{
+   Boolean   heapPerm;
+
+   if (gUMemoryInitialized)
+      heapPerm = PermAllocation(TRUE);
+  
+   void *ptr = NULL;                    // added
+   // void *ptr = NewPtr(size);         // commented out
+   if (gOHRemainingIncrements &gt; 0) { // added
+      ptr = NewPtr(size);               // added
+      gOHRemainingIncrements--;         // added
+   }                                    // added
+
+   if (gUMemoryInitialized)
+      PermAllocation(heapPerm);         // Reset perm flag before
+                                        // possible Failure
+   FailNIL(ptr);
+
+   return ptr;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+The initial value of gOHRemainingIncrements is set to 3 just to be safe. During<br>
+initialization, MacApp makes two allocations to the object heap; if<br>
+gOHRemainingIncrements is 0, the application doesn't start up because of lack of<br>
+memory. The second of those allocations sets up the initial size of the object heap. If<br>
+your 'mem!' resource specifies a small value for the initial size of the object heap, the<br>
+initial value of gOHRemainingIncrements might have to be larger than 3.
+</p>
+<p>
+Immediately following the call to InitUMacApp in main, the value of<br>
+gOHRemainingIncrements is set with a call to the InitMaxObjectHeapSize global<br>
+function, which is shown in Listing 4.
+</p>
+<pre>gOHRemainingIncrements = InitMaxObjectHeapSize();</pre>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 4.</b> Determining the number of times the object heap will be allowed to expand
+</p>
+<p class="spacer">&nbsp;</p>
+<pre>short InitMaxObjectHeapSize()
+{
+   long   freeMem = FreeMem();
+   Size   heapSizeIncrement = gSizeHeapIncrement;
+   short   theNumber = 0;
+
+   if (freeMem &gt; kFreeMemReserve)
+      theNumber = (freeMem - kFreeMemReserve)/heapSizeIncrement;
+   if (theNumber &gt;= 1)
+      theNumber = theNumber -1;
+   else
+      theNumber = 0;
+
+   return theNumber;    // The number of times we'll let the object
+                        // heap be expanded
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+As you can see, I use a very simple algorithm to determine the number of times the<br>
+object heap will be allowed to expand and still leave in free memory at least the<br>
+number of bytes specified by kFreeMemReserve.
+</p>
+<p>
+The changes you need to make to MacApp to implement object heap discipline are<br>
+described in detail in "EN2 - Object Heap Discipline." The substitute<br>
+PlatformMemory.h and PlatformMemory.cp files are also provided.
+</p>
+
+
+<h2>FAILURE HANDLING</h2>
+<p>
+One very good reason to use MacApp is its integrated failure handling scheme. Of<br>
+course, all failure recovery paths must be tested. In a well-crafted application,<br>
+failures should occur only while the application is attempting to create a new object<br>
+when there's insufficient space in the object heap for it. To test these situations, the<br>
+application must be forced to fail at selected points. It's not enough to adjust the<br>
+partition size and hope for a failure.
+</p>
+<p>
+Ideally, you would be able to set a failure point with a debugger in a similar manner to<br>
+setting a breakpoint. That's not presently possible. Instead, in Twist Down Lists, I<br>
+added a global flag gFailHere, which is set and cleared with a scriptable menu<br>
+command. There are several ways to use this flag:
+</p>
+<ul>
+<li>Insert the following code at an appropriate place in the application (this<br>
+is the simplest way):</li>
+</ul>
+<pre>      if (gFailHere)
+         Failure(errFailHere, 0);</pre>
+<ul>
+<li>Force a failure just after a new object has been created:</li>
+</ul>
+<pre>      TSomeObject* someObject = new TSomeObject;
+      FailNIL(someObject);
+      someObject-&gt;ISomeObject();
+      if (gFailHere)
+         Failure(errFailHere, 0);</pre>
+<ul>
+<li>Force the failure in ISomeObject:</li>
+</ul>
+<pre>      TSomeObject::ISomeObject()
+      {
+         this-&gt;IObject();
+         if (gFailHere)
+            Failure(errFailHere, 0);
+      }</pre>
+<p>
+Other ways of using this technique to force a failure require application-specific<br>
+knowledge. In the case of Twist Down Lists, it's often convenient to give the name<br>
+FailHere to a file or folder on the volume you're going to open. With the following code,<br>
+when a twistDownElement named FailHere is encountered, the failure will be<br>
+triggered:
+</p>
+<pre>if (gFailHere) {
+   CStr63 failHereText = "FailHere";
+   CStr63 displayedText = gEmptyString;
+   twistDownElement-&gt;GetDisplayedText(displayedText);
+   if (failHereText == displayedText)
+      Failure(errFailHere, 0);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+It must be possible to set and clear the gFailHere flag from a script. An application can<br>
+encounter the same failure conditions whether driven from a script or from the user<br>
+interface. The failure recovery path is, however, a little different. When the<br>
+application is being driven by a script, an Apple event must be sent to the script<br>
+telling it that a failure was encountered and what the failure was. MacApp will handle<br>
+the overhead, but you must do your part: you must test it to make sure it works and<br>
+returns appropriate error information to the script.
+</p>
+<p>
+Were it not for the fact that all the list processing methods in TTwistDownDocument<br>
+are recursive, I probably wouldn't have felt the need to implement gFailHere. Failure<br>
+can occur if the application attempts to make a twistDownElement or a<br>
+twistDownControl when there isn't enough memory in the object heap to do it and the<br>
+object heap can't be further expanded. The failure might occur several levels into the<br>
+recursion. You can't call ReSignal to handle the failure because you'll jump all the way<br>
+up to the method that started the recursion. Instead, you must save the failure<br>
+information, work your way back up the recursion, and then signal the failure.
+</p>
+<p>
+Using gFailHere turned out to be the best way to test the failure handling. Object<br>
+counting, memory display, and object display were very useful in testing recovery<br>
+from these kinds of failures. Object counting and memory display verified that<br>
+everything that needed to be freed was freed. Using object display to match<br>
+constructions with destructions gave further confirmation that the recovery was<br>
+successful.
+</p>
+
+
+<h2>HAPPY DEBUGGING</h2>
+<p>
+The debugging aids I developed illustrate the power of MacApp. By modifying the<br>
+central organizing object, TObject, you can make many new capabilities, such as<br>
+object counting, memory display, and object display, extend to the objects that inherit<br>
+from it. In addition, you can easily modify the memory management scheme of MacApp,<br>
+so implementing object heap discipline isn't hard at all. Now that I have these<br>
+debugging aids, I no longer fear the dreaded memory leak and access fault. Object<br>
+counting, memory display, and object display don't exactly sound an alarm when<br>
+there's a TObject-based memory leak, but they come pretty close. And without object<br>
+display, finding an access fault was like looking for a needle in a haystack.
+</p>
+<p>
+The faster you can fix your mistakes, the faster you can finish your applications. I<br>
+hope my debugging aids will help you get those applications out even quicker.
+</p>
+
+
+
+<p>
+<b>RELATED READING</b>
+</p>
+<ul>
+<li><i>Programmer's Guide to MacApp</i> (Apple Computer, Inc., 1996).<br>
+Available on the Web at http://www.devtools.apple.com/macapp.</li>
+<li>"Displaying Hierarchical Lists" by Martin Minow, <i>develop</i>Issue<br>
+18, and "An Object-Oriented Approach to Hierarchical Lists" by Jan<br>
+Bruyndonckx, <i>develop</i> Issue 21.</li>
+<li>"A Reassuring Progress Indicator for MacApp" by James<br>
+Plamondon,<i>FrameWorks</i> Volume 5, Number 3, June 1991, page 46.</li>
+</ul>
+
+
+
+<p>
+<b>CONRAD KOPALA</b> (ckopala@aol.com)&nbsp;&nbsp;believes you should never trust a computer<br>
+you can't program. He's been a student of MacApp for the last six years and just<br>
+recently thinks he might know a smidgen about it. In the past, Conrad was an electrical<br>
+engineering professor and held positions with IBM and MCI. Now he does whatever he<br>
+wants.*
+</p>
+<p>
+<b>Thanks to</b> our technical reviewers Tom Becker, Geoff Clapp, Mike Rossetti, Merwyn<br>
+Welcome, and Jason Yeo.*
+</p>
+</body>
+</html>

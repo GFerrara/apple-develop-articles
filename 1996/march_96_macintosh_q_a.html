@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 6 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 96 - Macintosh Q & A</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Macintosh Q &amp; A</h1>
+<b>Q</b>&nbsp;<i>I'm having problems with our caching drivers on the Power Macintosh 9500. Our</i><br>
+<i>drivers allocate a large amount of RAM (up to 4 MB) early in the boot process. If I set</i><br>
+<i>the driver's cache size to 4 MB, the computer locks up as soon as the driver is</i><br>
+<i>executed. If I set the cache size to 2 MB, the driver loads and executes properly, but</i><br>
+<i>the computer gets a bus error much later in the boot process (after MacsBug loads and</i><br>
+<i>after the Mac OS screen is displayed, but before the Finder executes). If I set the cache</i><br>
+<i>size to 1 MB, everything runs properly. What's going on here?</i><br>
+<p>
+<b>A</b>&nbsp;Because of Open Firmware requirements, the boot stack on the new Power<br>
+Macintosh 9500 CPUs was changed to 4 MB. As a result, you can't grow the system<br>
+heap past 4 MB or a system crash will occur. If possible, try to defer allocating<br>
+memory until INIT time. The 'sysz' mechanism is supported by the enabler ('boot' 3)<br>
+when INITs are being loaded.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>We want to maximize our throughput across the PCI bus between Macintosh memory</i><br>
+<i>and a block of static RAM on our card. This static RAM is also accessible from an</i><br>
+<i>on-card DSP, which constantly reads/modifies RAM. The DSP isn't directly on the PCI</i><br>
+<i>bus, so it can't easily participate in cache coherency schemes. What's the best way to</i><br>
+<i>get data across the PCI bus to and from this memory?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The PowerPC processor can only burst to and from a cacheable memory space.<br>
+Your best option is to use BlockMoveDataUncached. This doesn't use burst transfers,<br>
+but rather uses floating-point loads and stores. You may want to design your own<br>
+algorithms, using the double declaration in C to get compilers to translate<br>
+BlockMoveDataUncached into floating-point loads and stores. For more information,<br>
+see Chapter 9 of <i>Designing PCI Cards and Drivers for Power Macintosh Computers</i>, and<br>
+Technote 1008, "Understanding PCI Bus Performance."
+</p>
+<p>
+<b>Q</b>&nbsp;<i>The Power Macintosh 9500 Developer Note says that the sound-in port for the 9500</i><br>
+<i>has 4-conductor requirements. What is the 4-conductor pinout? Does the PlainTalk</i><br>
+<i>microphone work on the 9500?</i>
+</p>
+<p>
+<b>A</b>&nbsp; The 9500 has stereo in (supporting left, right, power, and ground) and requires a<br>
+mini stereo plug that you can buy today -- no wacky new pinouts. The PlainTalk<br>
+microphone works fine on the 9500.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Is there any information on writing native SCSI disk drivers for the PCI-based</i><br>
+<i>Power Macintosh computers? In particular, what's the proper way to install a native</i><br>
+<i>driver on a SCSI disk: is there a special partition type for a native driver, or should</i><br>
+<i>there be a standard SCSI disk driver that loads a PowerPC code fragment?</i>
+</p>
+<p>
+<b>A</b>&nbsp;Apple doesn't support native SCSI drivers yet (this will be a feature of Copland,<br>
+the next generation of the Mac OS). You can write a native SCSI Interface Module<br>
+(SIM). Remember that a driver is the software that handles a particular SCSI device,<br>
+while a SIM is responsible for SCSI controllers (for example, PCI or NuBus(TM)<br>
+cards).
+</p>
+<p>
+Normally, SCSI 4.3 drivers are loaded off the Apple_Driver43 partition, and SIMs are<br>
+typically loaded from the disk controller firmware (PCI card). If you want to load a<br>
+native SIM off of the disk, you'll have to encapsulate the code fragments and read and<br>
+link them in from your standard 680x0 driver.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>We have SCSI routines that transfer 64K data blocks (to get the highest transfer</i><br>
+<i>rates possible with the tape drive we're using). On the Power Macintosh (8100/80 or</i><br>
+<i>8100/100), if the mouse is moved during a 64K transfer, the cursor is jumpy.</i><br>
+<i>Lowering the cache size to 16K reduces the problem to an acceptable level but kills the</i><br>
+<i>transfer rates. We're using SCSI Manager 4.3. How do we avoid the jumpy cursor</i><br>
+<i>while maintaining maximum throughput?</i>
+</p>
+<p>
+<b>A</b>&nbsp;Your jumpy cursor is an indication that you aren't properly implementing SCSI<br>
+direct memory access (DMA). When using the 8100 (and PCI-based machines) for<br>
+DMA transfer efficiency, you should ensure the following:
+</p>
+<ul>
+<li>Your data is aligned on 8-byte block boundaries. Since the DMA hardware<br>
+can't do odd transfers, it must perform programmed I/O to handle at least part<br>
+of the transfer if the data isn't aligned.</li>
+<li>Your physical memory buffer is contiguous (which you ensure by calling<br>
+LockMemoryContiguous). Otherwise, the DMA transfer will have to be broken<br>
+up; this will especially be a problem if virtual memory is turned on.</li>
+</ul>
+<p>
+Also, if you have disconnects enabled in your device or driver, it's possible that the<br>
+transfer is getting broken up and some VBL activity is occurring. The bottom line is<br>
+that you don't want a SCSI disconnect to occur during your transfer.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Is it possible to create and resolve aliases asynchronously?</i>
+</p>
+<p>
+<b>A</b>&nbsp;No, you can't resolve aliases asynchronously because the Alias Manager uses all<br>
+synchronous File Manager and Device Manager requests.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Is there a QuickTime codec for converting QuickDraw GX pictures to QuickDraw PICT</i><br>
+<i>format? If so, can you provide this?</i>
+</p>
+<p>
+<b>A</b>&nbsp;At a session during Apple's 1995 Worldwide Developers Conference, a new<br>
+technique for exporting QuickDraw GX pictures as QuickDraw PICT files was<br>
+demonstrated. The method makes use of QuickTime and a new codec that's included in<br>
+the QuickDraw GX extension version 1.1 and later. With this codec, you can embed a<br>
+flattened QuickDraw GX picture into a PICT file (or a QuickTime movie). We<br>
+recommend that you use this method if you want to allow your QuickDraw GX<br>
+application to exchange pictures with existing QuickDraw applications. You can find<br>
+sample code demonstrating the use of this codec in the Macintosh Technical Q&amp;A<br>
+"Embedding a GX Picture into a PICT" (GX 07).
+</p>
+<p>
+One important feature of this codec is that it does not convert QuickDraw GX pictures to<br>
+QuickDraw PICTs in the traditional sense of the word "convert." What it allows is the<br>
+embedding of QuickDraw GX objects inside a PICT file. The advantage of this is that it<br>
+allows QuickDraw GX pictures to be viewed (but not edited) in any application that can<br>
+open a PICT file. Although "embedding" is very useful, it's quite different from<br>
+"conversion."
+</p>
+<p>
+Strictly speaking, it's not possible to convert QuickDraw GX pictures to QuickDraw<br>
+PICTs without loss of information, because QuickDraw GX has much greater<br>
+functionality than traditional QuickDraw. You can, of course, draw the QuickDraw GX<br>
+picture offscreen and capture the result in a QuickDraw PICT, but you'll lose much of<br>
+the information. There's no way to represent complex transfer modes, perspective,<br>
+advanced typography, and so on under the QuickDraw imaging model. By using the new<br>
+codec, you don't lose any of the QuickDraw GX features.
+</p>
+<p>
+Note that this technique is quite different from that used in the older<br>
+PicturesAndPICTLibrary.c, which embeds a QuickDraw GX shape into a PICT by using<br>
+picture comments. We recommend that you use the codec instead because picture<br>
+comments have several weaknesses, including these:
+</p>
+<ul>
+<li>They're limited to 32K.</li>
+<li>Many applications strip out any picture comments they don't recognize.</li>
+<li>DrawPicture ignores all picture comments.</li>
+</ul>
+<p>
+Using the codec to embed the QuickDraw GX picture avoids these problems.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>How can I find out which printer is selected in the Chooser?</i>
+</p>
+<p>
+<b>A</b>&nbsp;Under the old printing architecture, you can locate the driver for the currently<br>
+selected printer by accessing the 'STR ' -8192 or 'alis' -8192 resource in the System<br>
+file. The 'STR ' -8192 resource contains the name of the current driver and the 'alis'<br>
+resource contains an alias record that will take you right to the driver. Note that with<br>
+older system software the 'alis' resource doesn't appear in the System file. If the 'alis'<br>
+resource is present, resolve it; if not, look in the Extensions folder and in the System<br>
+Folder for a file with the same name as 'STR ' -8192.
+</p>
+<p>
+With QuickDraw GX installed, the 'STR ' -8192 resource still exists for backward<br>
+compatibility with applications that don't use QuickDraw GX printing. In this case the<br>
+'STR ' -8192 resource gives the name of the default desktop printer file. For<br>
+applications that are QuickDraw GX savvy, the concept of a default printer isn't<br>
+important because the user can pick any printer from the QuickDraw GX Print dialog.
+</p>
+<p>
+Once you've located the 'STR ' -8192 resource and you have the name of the current<br>
+printer, you can then determine the printer's zone and type using the 'PAPA' -8192<br>
+resource in the driver (if the traditional printing architecture is in use) or by<br>
+accessing the printer's 'comm' resource (if the QuickDraw GX printing architecture is<br>
+in use). Sample code demonstrating this can be found in the Macintosh Technical Q&amp;A<br>
+"Locating the Selected Printer" (GXPD 36).
+</p>
+<p>
+<b>Q</b>&nbsp;<i>When I call FDecompressImage during printing, it appears that the custom StdPix</i><br>
+<i>bottleneck of the LaserWriter 8.3 driver isn't called. Why not?</i>
+</p>
+<p>
+<b>A</b>&nbsp;FDecompressImage doesn't call through the StdPix bottleneck. The workaround is<br>
+to directly call the StdPix bottleneck in the current graphics port (or the StdPix<br>
+obtained from calling SetStdCProcs if there are no custom bottlenecks in the current<br>
+graphics port). For more information, see "Printing Images Faster With Data<br>
+Compression" in <i>develop</i> Issue 24.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>When I attempt to open the built-in Ethernet driver with the OpenDriver call on a</i><br>
+<i>PCI-based Macintosh, the call fails. What's the correct way to access the built-in</i><br>
+<i>driver on these new Macintosh computers?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The new PCI-based Power Macintosh computers use Open Transport for network<br>
+services. This architecture is a precursor to the changes expected for Copland. Since<br>
+Open Transport is PowerPC-native, there's no longer a dependence on the<br>
+680x0-based Device Manager and Slot Manager. To maintain compatibility for the<br>
+built-in Ethernet driver, an ENET shim was implemented so that applications that<br>
+called the Ethernet driver directly could continue to work. (Note that the ENET shim is<br>
+missing from the original Power Macintosh 9500 release, but became available with<br>
+later software updates.)
+</p>
+<p>
+The ENET shim opens when OpenSlot is called to open the Ethernet driver in NuBus slot<br>
+0. The shim intercepts this request and loads a .ENET driver entry into the driver<br>
+table. Subsequently, applications that call OpenDriver will get the driver reference<br>
+number for the shim driver, which then handles the various Control calls it receives.<br>
+The shim works only for the built-in Ethernet device, not for an installed PCI<br>
+Ethernet card.
+</p>
+<p>
+For some code demonstrating how to do this, see the Macintosh Technical Q&amp;A "Ethernet<br>
+Error on a PowerMac" (NW 14).
+</p>
+<p>
+<b>Q</b>&nbsp;<i>How can I check whether the Open Transport IP protocol stack is loaded?</i>
+</p>
+<p>
+<b>A</b>&nbsp;Open Transport provides the option to delay the complete loading of the protocol<br>
+stack. This reduces the use of system memory for the IP protocol stack until a TCP/IP<br>
+application is launched. To check whether the stack is loaded, call<br>
+OTInetGetInterfaceInfo. If it returns an IP address, the stack is loaded. If the returned<br>
+address is 0 or the call fails, the stack is not yet loaded. Note that the call to<br>
+OTInetGetInterfaceInfo doesn't force the load of the IP stack.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>When we call DirFindRecordGet, we get the message kOCEInvalidCommand (-1501).</i><br>
+<i>Is there another way to get all records from a given catalog?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The catalog about which you're attempting to get record information doesn't<br>
+support the DirFindRecordGet function (few out there actually do). To check whether a<br>
+particular catalog supports this function, you need to first call DirGetDirectoryInfo<br>
+and check the features flags that are returned. Check the kSupportsFindRecordBit (see<br>
+<i>Inside Macintosh: AOCE Application Interfaces</i>, page 8-31) to see if this call is<br>
+supported. If it's not supported, you'll have to use DirEnumerateGet instead to get all<br>
+the records from a catalog.
+</p>
+<p>
+You might want to look at the DTS Catalog Peek sample code on the Mac OS Software<br>
+Developer's Kit, which uses the DirEnumerateGet call.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Sometimes, after I copy an HFS volume one-to-one to a CD-ROM, aliases that look</i><br>
+<i>perfectly fine on the source volume are disconnected on the CD-ROM -- the Alias</i><br>
+<i>Manager claims that it can't find the volume. What should I do to detect and fix a</i><br>
+<i>possible disconnected alias before writing it to CD-ROM?</i>
+</p>
+<p>
+<b>A</b>&nbsp;Sometimes, when aliases move from hard drives to CD-ROMs, volume information<br>
+changes, rendering the alias unresolvable. The Alias Manager requires the following<br>
+pieces of information in order to identify a volume:
+</p>
+<ul>
+<li>the volume's name</li>
+<li>the volume's creation date (which should be a unique number)</li>
+<li>the volume's kind (ejectable, nonejectable, floppy disk, or foreign file<br>
+system)</li>
+</ul>
+<p>
+The Alias Manager expects all three pieces of information to match. If they don't all<br>
+match, the Alias Manager attempts to identify the volume by matching two of the three<br>
+items, trying for a volume match in this order:
+</p>
+<ul>
+<li>by name and creation date</li>
+<li>by creation date and volume kind (if the volume name changed)</li>
+<li>by name and volume kind (if the creation date is not stable, as with some<br>
+network file systems)</li>
+</ul>
+<p>
+When pressing a CD-ROM, you're moving aliases from a hard drive (nonejectable<br>
+volume kind) to an ejectable volume kind. If the volume name or creation date of the<br>
+hard drive changes after alias creation, the aliases may not resolve properly. You can<br>
+avoid this problem by ensuring that the volume name of the hard disk doesn't change<br>
+while you're building a CD-ROM's content. Also, do not back up, reformat, or restore a<br>
+hard disk while you're building a CD-ROM's content, so that the creation date doesn't<br>
+change.
+</p>
+<p>
+Sometimes, valid-looking aliases fail to resolve. Because the Finder creates alias files,<br>
+the Finder is responsible for resolving them. The Finder doesn't always check and<br>
+update aliases as carefully as you might. Additionally, the Finder always uses a<br>
+relative search path when resolving aliases.
+</p>
+<p>
+You might want to test to see whether installing QuickTime makes a difference in the<br>
+cases where perfectly valid looking aliases fail to resolve. QuickTime includes patches<br>
+that make the Alias Manager work better.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>What does holding the Shift key down at startup turn off under System 7?</i>
+</p>
+<p>
+<b>A</b>&nbsp;This information isn't documented; the following list isn't guaranteed complete or<br>
+accurate and is certain to change in the future. Under System 7.0 through System 7.5<br>
+the following files are explicitly skipped:
+</p>
+<ul>
+<li>A/ROSE</li>
+<li>Virtual memory</li>
+<li>Files of type 'scri' (Roman still works), 'cdev', 'RDEV', 'INIT', 'cbnd',<br>
+'fbnd', 'tbnd', 'adev', 'ddev', 'appe', 'fext', 'AINI', and 'thng'</li>
+<li> Finder Startup and Shutdown items (since the Finder Scripting Extension<br>
+controls these tasks)</li>
+</ul>
+<p>
+MacsBug will not load under System 7.0, but it will load under System 7.5 if both the<br>
+Option and Shift keys are held down. In addition, System 7.0 sets the disk cache to 64K,<br>
+while System 7.5 sets it to 96K.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>What does turning everything off in the Extension Manager actually turn off?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The only files the Extension Manager turns off are those that it shows. Which files<br>
+will be turned off isn't documented; the following list isn't guaranteed complete or<br>
+accurate and is certain to change in the future.
+</p>
+<p>
+There are four creator types that the Extension Manager doesn't show: 'mntr', 'DMOV',<br>
+'extE', and '8INI'. Items of type 'extE' and '8INI' aren't shown because the Extension<br>
+Manager extension has the creator of 'extE' and the Extension Manager control panel<br>
+has the creator of '8INI'. This prevents you from using the Extension Manager to<br>
+disable itself.
+</p>
+<p>
+Also, the Extension Manager won't show any items of type 'INIT', 'RDEV', or 'cdev' if<br>
+they have the "no INITs" Finder flag set.
+</p>
+<p>
+The Extension Manager shows only items of type 'INIT', 'RDEV', 'cdev', 'PRES', 'PRER',<br>
+'adev', 'fext', 'scri', 'cbnd', 'fbdn', 'tbnd', 'ddev', 'appe', 'gc24', 'adrp', 'dbgr', 'dfil',<br>
+'APPL', 'FFIL', 'pext', and 'vbnd'.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Do I always need to call PrJobDialog to print a document? Why?</i>
+</p>
+<p>
+<b>A</b>&nbsp;Yes, you do. The reason for this is that many drivers (notably LaserWriter 8)<br>
+don't initialize the job-specific settings until PrJobInit is called. Without this call,<br>
+they fall back on the default, which is usually stored in the driver in the PREC 0<br>
+resource.
+</p>
+<p>
+The normal definition of the PREC (which maps to a TPrint structure) doesn't have as<br>
+much space as LaserWriter 8 needs. Because of this, LaserWriter 8 stores some<br>
+settings in this PREC 0 resource and others in the LaserWriter 8 Prefs file. This<br>
+separation of LaserWriter settings can wreak havoc on a job run without the<br>
+PrJobDialog call.
+</p>
+<p>
+If you absolutely must avoid displaying the job dialog box, there are two ways to work<br>
+around it. Note that these are not supported methods, and by using either of them you'll<br>
+make your application hostile to QuickDraw GX and to Copland.
+</p>
+<ul>
+<li>Have users invoke the Print dialog as part of their preferences setup, and<br>
+save the resulting print record. Every time you print, merge that print<br>
+record in with a call to PrJobMerge. This way each document can have its own<br>
+page setup, accommodating things like printing on A4 paper instead of US<br>
+letter.</li>
+<li>"Display" the job dialog, but never let the user see it. You can accomplish<br>
+this by calling PrJobInit, moving the resulting dialog offscreen, patching<br>
+ModalDialog, and calling PrDlgMain. Your patched version of ModalDialog can<br>
+return 1 for the OK button immediately, and you've got the added benefit of<br>
+actually calling all the code and having a relatively normal print loop.</li>
+</ul>
+<p>
+<b>Q</b>&nbsp;<i>I'm writing a printer driver, and I've noticed that when I print a window from the</i><br>
+<i>Finder with my driver the icons don't show up. What gives?</i>
+</p>
+<p>
+<b>A</b>&nbsp;What you've uncovered is an "optimization" in the Icon Utilities. When drawing an<br>
+icon, the Icon Utilities use CopyMask rather than go through the standard bottlenecks.<br>
+This is true unless you're saving to a PICT or you set a certain low-memory global<br>
+(which isn't well documented) indicating that CopyBits should be used.
+</p>
+<p>
+The following two macros tell the Icon Utilities to use CopyBits instead of CopyMask:
+</p>
+<pre>#define setPrinting() {*((short *)0x948) = 0;}</pre>
+
+<p class="spacer">&nbsp;</p>
+<pre>#define clearPrinting() {*((short *)0x948) = -1;}</pre><p class="spacer">&nbsp;</p>
+<p>
+Call setPrinting in your PrOpenPage function and clearPrinting in your PrClosePage<br>
+function, and all should be well.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Which LaserWriter drivers are ColorSync aware?</i>
+</p>
+<p>
+<b>A</b>&nbsp;Currently, LaserWriter driver 8.3 is the only ColorSync-aware LaserWriter<br>
+driver; versions earlier than 8.3 are not.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>What does the 7.5.2 Printing Update 1.1 update? Why do I need it?</i>
+</p>
+<p>
+<b>A</b>&nbsp;This extension fixes a printing problem that may occur on Power Macintosh 7200,<br>
+7500, 8500, and 9500 computers using System 7.5.2. Without this fix, your<br>
+computer may freeze if you attempt to print on a network-based printer that's busy.
+</p>
+<p>
+The update contains a new version of the LaserWriter driver (8.3.2) and also a fix to<br>
+serial DMA. The changes fix the ATP and PAP networking protocol layers.
+</p>
+<p>
+An updated version of the PAP.WrkStation.o library will be distributed on a future<br>
+version of the Mac OS Software Developer's Kit; developers who have licensed the<br>
+library will be notified when the new library is available.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Do QuickDraw 3D mesh contours run in the same or the opposite direction as the</i><br>
+<i>face? For example, if the face runs clockwise, will the contour run counterclockwise?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The exterior face needs to be defined in a counterclockwise direction, but the<br>
+contours defining holes can run in either direction. The mesh code is able to identify<br>
+holes in a face.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>I'm using QuickDraw 3D 1.0 on a Power Macintosh 7100. If I try to launch my</i><br>
+<i>application when QuickDraw 3D is disabled with the Extension Manager, I get a</i><br>
+<i>message that the application couldn't be opened because QuickDraw 3D could not be</i><br>
+<i>found. Since the application has to run even if the user doesn't have QuickDraw 3D,</i><br>
+<i>what should I do ?</i>
+</p>
+<p>
+<b>A</b>&nbsp;You're "hard linking" to the QuickDraw 3D shared library. You need to "weak link"<br>
+to the library instead. With Metrowerks CodeWarrior this is trivial: simply select the<br>
+project window, click the small triangle to the right of the library in the window, and<br>
+choose the Import Weak option from the pop-up menu. In your code, use the Gestalt<br>
+selector for QuickDraw 3D to determine whether the library exists. If it does, you<br>
+should additionally check at least one symbol in the library against<br>
+kUnresolvedCFragSymbolAddress to be sure the library was linked successfully, as<br>
+described in <i>Inside Macintosh: PowerPC System Software</i> on page 1-25. It's possible<br>
+for Gestalt to indicate that the library is available even though the weak link failed --<br>
+for example, if there isn't enough memory available.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>I've been trying to use QuickTime to step through a movie of PICTs activated by</i><br>
+<i>keyboard input (that is, press a key and the next frame is displayed). My problem is</i><br>
+<i>that I can't consistently step one frame at a time. What's the easiest way to move to the</i><br>
+<i>next frame?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The easiest way is to use a movie controller to accomplish this. You can send<br>
+mcActionStep to the controller to bump the movie to a new frame. A little more work,<br>
+but perhaps more suitable for you if you don't want to use a controller, is to use<br>
+GetMovieNextInterestingTime to find the next frame.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Is there any way to ask QuickTime, at the operating system level, whether any</i><br>
+<i>movies are currently playing?</i>
+</p>
+<p>
+<b>A</b>&nbsp;No, there's no supported way to do this.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>We're writing a screen saver that plays QuickTime movies. Our WaitNextEvent loop</i><br>
+<i>is very basic. We've noticed that other background applications don't get any time,</i><br>
+<i>even if we use WaitNextEvent and make sure that MoviesTask doesn't spend too much</i><br>
+<i>time playing the movie. However, if we add code to track update events with</i><br>
+<i>BeginUpdate and EndUpdate the problem goes away. Why?</i>
+</p>
+<p>
+<b>A</b>&nbsp;QuickTime and other parts of the operating system are sending update events to<br>
+your application. If these events aren't handled, they're resent, resulting in no time<br>
+yield to other applications. By calling BeginUpdate and EndUpdate or otherwise taking<br>
+care of the update event inside your event loop, you allow yielding to other<br>
+applications. See Macintosh Technical Note "Pending Update Perils" (TB 37) for more<br>
+information.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>Is the data rate stored somewhere in a QuickTime movie? If not, how can I compute</i><br>
+<i>it?</i>
+</p>
+<p>
+<b>A</b>&nbsp;The data rate isn't stored in the movie, because a QuickTime movie isn't required<br>
+to have a constant data rate: it can change over the duration of the movie. Typically, in<br>
+the case of video, one sample equals one frame; in the case of sound and other media,<br>
+this one-to-one relationship doesn't necessarily hold. Additionally, none of the video<br>
+samples in a continuous stream are exactly the same size, even if in practical terms<br>
+this is often assumed.
+</p>
+<p>
+There are several possible methods of measuring the rate of samples, but the quickest<br>
+and easiest is to do what Movie Player does: for each track, get the media size and<br>
+divide by the media duration. This provides a rough estimate of the data rate that<br>
+should be suitable for most purposes and works for all types of movies, video and<br>
+otherwise.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>It's critical in my CD project to be able to load small QuickTime loop movies entirely</i><br>
+<i>into RAM. This is still not supported in QuickTime for Windows 2.0.3. Will this</i><br>
+<i>functionality be available soon, or should I focus on developing a workaround?</i>
+</p>
+<p>
+<b>A</b>&nbsp;Support for loading a movie into and playing it from RAM will not be in QuickTime<br>
+for Windows 2.1. It is, however, still on Apple's to-do list. For now, you can improve<br>
+performance by copying your small movie to a temporary file on the hard drive. From<br>
+there you can force it into the disk cache or DOS buffers by opening and reading all of<br>
+it yourself.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>How can I place blue-screen video over a QuickTime VR panorama?</i>
+</p>
+<p>
+<b>A</b>&nbsp;For starters, you need to know the exact view over which you want to place the<br>
+video. Note that if you're only warping in one dimension, it may be a bit tricky.
+</p>
+<p>
+To get a very close match, take the following steps:
+</p>
+<ul>
+<li>Push each individual frame of the video sequence through the Stitcher<br>
+(assuming that the motion fits within a single photograph) with wrap turned<br>
+off, and the same vfov set as for the panorama. The resulting images will be<br>
+warped into the same space as your complete panorama.</li>
+<li>Either turn your single-frame image into a partial panoramic movie or<br>
+replace the appropriate part in your background panorama with the single<br>
+frame.</li>
+<li>Run the image through the <b>p2mv</b> and <b>msnm</b> tools, and use QuickTime VR<br>
+to dewarp it with <b>warpMode 1</b> with the precise <b>hpan, vpan</b>, and <b>zoom</b> data<br>
+set. You may want to use <b>p2mv</b> with the "raw" compressor to maximize your<br>
+image quality.</li>
+<li>If you do this for every image (it can be automated with scripting), you<br>
+should get a completely matched motion sequence that you can turn into a<br>
+QuickTime movie with standard tools. This is where you should do your<br>
+compression (not at step 3).</li>
+</ul>
+<p>
+This should mostly take machine time, not your time. Steps 1 and 3 can be scripted in<br>
+MPW. Step 2 can be scripted in AppleScript using PhotoFlash or in DeBabelizer, and<br>
+step 4 in HyperCard or Director. Step 5 uses ConvertToMovie. Once you develop these<br>
+scripting tools the first time, each sequence should be pretty quick to fire up.
+</p>
+<p>
+<b>Q</b>&nbsp;<i>My cat exhibits a behavior I hope you can explain. Every now and again, he'll sniff</i><br>
+<i>something with particular attention and intensity -- the bend of my wrist, say, or a</i><br>
+<i>spot on the rug. So far so good. But then when he lifts his head, he holds his mouth</i><br>
+<i>open, his lower jaw hanging stupidly. It looks ridiculous! And he seems totally</i><br>
+<i>unaware of it, invariably sitting there for several seconds, mouth gaping, looking</i><br>
+<i>around blithely as if there's nothing out of the ordinary, before finally licking his</i><br>
+<i>chops and closing his mouth. What's going on? Is there any way I can curb this</i><br>
+<i>behavior? It's embarrassing.</i>
+</p>
+<p>
+<b>A</b>&nbsp;First off, don't worry. Your cat is perfectly normal. All cats do this, and there's<br>
+nothing wrong with it (except of course that it looks silly). Your cat is simply making<br>
+use of a little-known sensory organ called the vomeronasal organ, or Jacobson's organ.<br>
+It's a second scent organ, located far forward on the roof of the mouth, and is<br>
+supplemental to -- but distinct from -- the nose. It's even wired into slightly<br>
+different areas of the brain, areas dealing with feeding and complex sexual behaviors.<br>
+Many other animal species have a Jacobson's organ, from rattlesnakes to bighorn<br>
+sheep, but humans don't.
+</p>
+<p>
+The behavior you've noted is called the flehmen reaction (flehmen is a German word<br>
+with no satisfactory English translation). By holding his mouth open and not<br>
+breathing, your cat is concentrating the molecules to be sensed over his Jacobson's<br>
+organ, allowing it to do its job. The behavior is exhibited by all cats, domestic and<br>
+wild, large and small.
+</p>
+<p>
+______________________________
+</p>
+<p>
+These answers are supplied by the technical gurus in Apple's Developer Support<br>
+Center. For more answers, see the Macintosh Technical Q&amp;As on this issue's CD or on<br>
+the World Wide Web at http://dev.info.apple.com/techqa/Main.html. (Older Q&amp;As can<br>
+be found in the Macintosh Q&amp;A Technical Notes on the CD.)*
+</p>
+</body>
+</html>

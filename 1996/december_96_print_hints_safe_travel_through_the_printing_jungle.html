@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 61 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 96 - Print Hints: Safe Travel Through the Printing Jungle</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Print Hints:<br>
+Safe Travel Through the Printing Jungle</h1>
+<h2>Dave Polaschek</h2>
+<p>
+<img src="img/301.gif" width="324 px"></img>
+</p>
+<p>
+Implementing printing in a Macintosh application should be pretty straightforward,<br>
+right? There are currently 18 high-level printing calls (listed on pages 9-92 and<br>
+9-93 of <i>Inside Macintosh: Imaging With QuickDraw</i>), which is only three more than<br>
+were listed in <i>Inside Macintosh</i>Volume II. Calling them in the right order gives you a<br>
+printing port that you can treat just like a graphics port -- and every Macintosh<br>
+application knows (or at least ought to know) how to draw into a graphics port.
+</p>
+<p>
+But in spite of this apparent simplicity, there are an astounding number of Macintosh<br>
+applications that have problems printing. (Even products from Apple make the list<br>
+once in a while.) I think one of the reasons for this is that, while basic QuickDraw<br>
+printing is simple, printing is something that can be -- and has been -- made more<br>
+complex by various "extensions" to the original printing architecture. These<br>
+extensions offer greater control of the printing process, allowing you to take advantage<br>
+of special features available on some printers and to draw in more sophisticated ways<br>
+than QuickDraw allows. But they also introduce complexities that can get you in<br>
+trouble if you're not careful. In this column I'll give a few examples of places where<br>
+control comes only at the price of complexity, and therefore places where you need to<br>
+tread very carefully, if at all.
+</p>
+
+
+<h2>PICTURE COMMENTS</h2>
+<p>
+Picture comments are, on the face of it, wonderful things. They let you embed<br>
+commands in your output that can take advantage of particular printer features if<br>
+they're available, and they're automatically ignored by printer drivers that don't<br>
+support them. But there's a flip side: for every picture comment you use, you have to<br>
+provide an alternative for those printers that don't support it. There are also a<br>
+number of picture comments that should be avoided, as listed on page B-40 of <i>Inside</i><br>
+<i>Macintosh: Imaging With QuickDraw</i>. As with any complex and powerful tool, the<br>
+potential for getting things wrong with picture comments is ever-present.
+</p>
+<p>
+The SetLineWidth picture comment is a perfect example: not only is it supported by<br>
+only a few printer drivers, but it's implemented slightly differently in each of them.<br>
+On some printers the value you pass for the line width is used to modify the current<br>
+line width (for instance, passing 1/2 will halve the current line width), and on others<br>
+it's used as an "absolute" value (passing 1/2 will set the line width to 1/2 point,<br>
+regardless of the previous width). To obtain the desired results, you have to write<br>
+your code very carefully, and even then the SetLineWidth picture comment may not<br>
+work on the printer driver that the user happens to be using -- and there's no<br>
+QuickDraw alternative. The territory here is treacherous. Unless you really need<br>
+fractional line widths, it may be better to take the nice safe QuickDraw path.
+</p>
+
+
+<h2>PRGENERAL</h2>
+<p>
+The PrGeneral call added complexity to the Printing Manager -- and even more<br>
+complexity could be added by driver developers, often without accompanying<br>
+documentation. After all, since supporting the various PrGeneral opcodes (in fact,<br>
+supporting PrGeneral itself) is optional, printer drivers can define their own new<br>
+opcodes and nobody need be the wiser -- nobody, that is, except for the one developer<br>
+who needs the new opcode and the functionality it provides. Things get even more<br>
+confusing when the same added functionality is available via a different mechanism in a<br>
+different printer driver, so the application has to start using special-case code for<br>
+each printer driver it knows about. If you find yourself writing special-case code for<br>
+particular printer drivers, stop! Back up and look for another solution.
+</p>
+<p>
+One commonly used PrGeneral capability, provided by the getRslOp and setRslOp<br>
+opcodes, is finding the resolution(s) supported by the printer you're using and setting<br>
+the resolution you want to print with. There's clearly a need for this sort of capability.<br>
+An application that shows graphs of curves or of raw data gathered from some source<br>
+wants the graphs to look good. Plotting individual pixels at 72 dpi doesn't make for<br>
+smooth-looking curves, so an application might be justified in asking to print at the<br>
+highest resolution the printer is capable of. But is PrGeneral the right approach?
+</p>
+<p>
+A potential problem with using PrGeneral to get and set resolutions is that you're<br>
+depending on the printer driver to keep up with the times. The LaserWriter driver,<br>
+for example, is used for printers from the original LaserWriter all the way up to<br>
+high-end typesetters. The driver reports that the maximum physical resolution of the<br>
+printer is 300 dpi, even if you're printing to a typesetter that's capable of 1270 or<br>
+even 2540 dpi. The reason for this is that reporting a higher resolution could cause<br>
+applications that create bitmaps at the printer's resolution to run into QuickDraw's<br>
+limitations, such as the limit on rowBytes and the 32K maximum region size. This is<br>
+something that we plan to address in future versions of LaserWriter 8, but currently<br>
+an application that wants to know a PostScript(TM) printer's real maximum<br>
+resolution has to either parse the PostScript Printer Description file (PPD)<br>
+associated with it or query the printer directly, both of which are functions that the<br>
+driver should have to worry about, not the application.
+</p>
+<p>
+In this case, there's an alternative to PrGeneral: If you're going to be generating your<br>
+data in a GWorld, just make sure the GWorld's resolution is whatever you need for best<br>
+results. Then take that same GWorld and use CopyBits to copy the PixMap in it to the<br>
+printer. If you provide appropriate source and destination rectangles, the<br>
+implementation of CopyBits in the printer driver will scale the PixMap, and you'll be<br>
+taking advantage of the resolution of the printer without having to worry about new<br>
+coordinate systems.
+</p>
+<p>
+Determining just what resolution you need is, however, still a tricky issue. For<br>
+example, if you're printing a color image to a LaserWriter that can print only<br>
+black-and-white images and only at 300 dpi, the color image you're displaying<br>
+onscreen already has more detail than the printer can reproduce, so you don't need to<br>
+worry about sending a higher-resolution image at all. The way to tell for sure if you<br>
+have enough data is that your pixel density (in dpi) should be between one and two<br>
+times the "screen frequency" (in lpi) for the printer. The default screen frequency for<br>
+PostScript printers is listed in the PPD file for the printer, and in the future we'll be<br>
+providing access to the PPD file parsing code that's contained in LaserWriter 8's<br>
+PrintingLib, but for now you may just want to ask the user rather than parse it out<br>
+yourself.
+</p>
+<p>
+If you're generating line art or other data that needs to have "hard edges" in a GWorld<br>
+that's going to be sent to the printer, you've got a different problem: unless you specify<br>
+the data at the printer's resolution (or higher), it will need to be scaled up to the<br>
+printer's resolution, producing large, blocky pixels. Your users will think you're a<br>
+bozo, unless of course your product is <i>supposed</i> to make large, blocky pixels. The right<br>
+solution is to avoid sending data that needs to have hard edges as bitmapped images, if at<br>
+all possible. This is the sort of data that really should be maintained as objects. If you<br>
+want to draw the letter <i>A</i>, for instance, ask QuickDraw to draw it to the printer for you<br>
+if possible, rather than image it into a bitmap first. If you really need to generate<br>
+bitmaps of hard-edged data, be aware that you'd better have your machete sharpened<br>
+and ready, since you're heading into the brush. On the other hand, this may be a great<br>
+opportunity to generate your own PostScript code.
+</p>
+
+
+<h2>POSTSCRIPT CODE</h2>
+<p>
+Generating your own PostScript code is another powerful technique that can get your<br>
+application into trouble. In many cases, it's the right answer to a thorny dilemma; for<br>
+instance, if you need drawing primitives that QuickDraw doesn't supply, this may be<br>
+the only way to get them. After all, cubic B&#201;zier curves are neat and powerful. The<br>
+problem arises when the application developer either doesn't understand how to write<br>
+compatible PostScript code or takes shortcuts in the PostScript code.
+</p>
+<p>
+&nbsp;&nbsp;An excellent example is an old version of a certain very popular graphics program<br>
+that saved its pictures with an EPS version of the graphic embedded in the PICT data.<br>
+Unfortunately, the PostScript code in the EPS version depended on the <b>md</b> dictionary, a<br>
+private dictionary used by the LaserWriter driver. After warning developers for<br>
+years that the <b>md</b> dictionary was private, Apple Engineering felt justified in changing<br>
+it. When the new version of the LaserWriter driver shipped, suddenly many graphics<br>
+quit printing. The problem was made even worse by the fact that many of these<br>
+graphics had been shipped as clip art, and they still occasionally pop up to bedevil us<br>
+today. 
+</p>
+<p>
+The solution isn't to avoid PostScript code entirely. Just make sure that if you do<br>
+generate it, the code is compatible and portable. Obviously, it shouldn't use any of the<br>
+LaserWriter driver's private PostScript operators. If you make graphics with<br>
+PostScript code embedded in them, be sure that the PostScript code they contain<br>
+conforms to the EPS specification that's described by Adobe(TM) in the <i>PostScript</i><br>
+<i>Language Reference Manual</i>, Second Edition, Appendix H. Also, be sure to send the<br>
+PostScript code with the PostScriptBegin, PostScriptHandle, and PostScriptEnd<br>
+picture comments, as described beginning on page B-38 of <i>Inside Macintosh: Imaging</i><br>
+<i>With QuickDraw</i>.
+</p>
+<p>
+Another thing application developers have tried over the years (with mixed success)<br>
+is to do their own PostScript font management by talking directly to the printer. This<br>
+is something applications really need to avoid. The LaserWriter driver knows how to<br>
+handle the PostScript fonts needed to print a page (or series of pages). Applications<br>
+that attempt to manage the fonts themselves are more likely to get poor font<br>
+management for their efforts, since the LaserWriter driver (or the LaserWriter GX<br>
+driver) will have a much harder time recognizing which fonts are needed on which<br>
+page. When this happens, the drivers err on the side of safety: if there's any doubt<br>
+about when a font is used, it will be included for the whole job, which is usually<br>
+exactly what the developer was trying to avoid. Let the driver handle font management.
+</p>
+
+
+<h2>HAVE A SAFE TRIP</h2>
+<p>
+I've given a few of the more common examples of how printing has grown in<br>
+complexity over the years, and how application developers can sometimes get in<br>
+trouble by trying to take advantage of it. Printing doesn't need to be much harder than<br>
+drawing to the screen if you stick to the rules, and even when you want to take<br>
+advantage of particular printer capabilities, you can usually do so in safe, compatible<br>
+ways. As tempting as it sometimes is to wander off the known path and plunge headlong<br>
+into the uncharted jungle of possibilities, doing so usually just results in trouble --<br>
+for you and for your users. In printing, as in all programming, remember: keep it<br>
+simple.
+</p>
+
+
+
+<p>
+<b>RECOMMENDED READING</b>
+</p>
+<ul>
+<li>Technote PR 10, "A Printing Loop That Cares."</li>
+<li><i>Writing Solid Code</i> by Steve Maguire (Microsoft Press, 1993).</li>
+<li><i>The History of the English-Speaking Peoples</i> (4 volumes), by Sir<br>
+Winston S. Churchill (Dodd, Mead, &amp; Co., 1958 &amp; 1959).</li>
+</ul>
+
+
+
+<p>
+<b>DAVE POLASCHEK</b> (davep@best.com),&nbsp;&nbsp;formerly of Apple's Developer Technical<br>
+Support group, got so confused by the lack of weather in California that he moved back<br>
+to Minnesota. This probably won't seem like such a smart move when Celsius and<br>
+Fahrenheit show the same temperature and Dave starts singing that verse from Jimmy<br>
+Buffett's "Boat Drinks" that goes, "This morning, I shot six holes in my freezer. I<br>
+think I've got cabin fever. Somebody sound the alarm."*
+</p>
+<p>
+<b>Thanks to</b> Rich Blanchard, Paul Danbold, Dan Lipton, and Steve Simon for reviewing<br>
+this column.*
+</p>
+</body>
+</html>

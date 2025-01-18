@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 42 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 96 - Adding Speech Recognition to an Application Framework</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Adding Speech Recognition to an Application<br>
+Framework</h1>
+<h2>Tim Monroe</h2>
+<p>
+<img src="img/270.gif" width="233 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">It's easy to add speech recognition capabilities to an application</i>
+<br>
+
+<i style="font-size:125%;">built with an object-oriented framework, with minimal disruption</i>
+<br>
+
+<i style="font-size:125%;">to your existing code. To illustrate the process, this article shows</i>
+<br>
+
+<i style="font-size:125%;">one way to add basic speech recognition capabilities to an</i>
+<br>
+
+<i style="font-size:125%;">application built with PowerPlant, Metrowerks' popular C++-based</i>
+<br>
+
+<i style="font-size:125%;">application framework. You can use the same strategy with other</i>
+<br>
+
+<i style="font-size:125%;">application frameworks as well.</i>
+</p>
+<p>
+Speech recognition capabilities, such as those provided by Apple's Speech Recognition<br>
+Manager, promise to revolutionize the way people use computers. The reason for this<br>
+is simple: it's often a lot easier to say what you want done than to actually do it, even in<br>
+the "user-friendly" environment provided by the Macintosh graphical user interface.<br>
+So the time you spend making your application speakable is time very well spent.<br>
+Happily, if you've built your application with a framework such as PowerPlant or<br>
+MacApp, you can add basic speech recognition capabilities quickly and easily.
+</p>
+<p>
+To show how to add speech recognition to an application built with a framework, we'll<br>
+modify the PowerPlant DocDemo sample provided with the CodeWarrior 8 release to<br>
+add speech support for the File menu commands. Of course, there's nothing special<br>
+about DocDemo: you should be able to drop the code we provide into any PowerPlant<br>
+application. Moreover, although this code is specific to PowerPlant, you should be able<br>
+to use similar techniques with other application frameworks as well.
+</p>
+<p>
+Before reading this article, you should be familiar with the basic operations of the<br>
+Speech Recognition Manager and with the PowerPlant application framework. For an<br>
+overview of the Speech Recognition Manager, see the article "The Speech Recognition<br>
+Manager Revealed" in this issue of <i>develop</i>. As mentioned in that article, you'll find<br>
+everything you need to use the Speech Recognition Manager -- including detailed<br>
+documentation (written by yours truly) -- on this issue's CD and on Apple's speech<br>
+technology Web site. For basic information about PowerPlant, see The PowerPlant<br>
+Book or other Metrowerks documentation.
+</p>
+<h2>THE BASIC STRATEGY</h2>
+<p>
+We want to add speech support for the File menu commands in the DocDemo<br>
+application. This isn't the highest or best use of speech recognition capabilities (see<br>
+"Speakable Menus?"), but it makes a simple example for us to focus on. In a nutshell,<br>
+we'll define a custom C++ class and create a single instance of that class to handle all<br>
+the required speech recognition processing (such as installing a language model and<br>
+responding to recognition results sent to it via Apple events). Here are the steps we'll<br>
+follow:
+</p>
+<ul>
+<li>Add a few lines of code to the main application source code file,<br>
+CDocDemoApp.cp. In part, this code creates a single instance of our</li>
+<li>custom class CDocSpeech.</li>
+<li>Design a set of language models that describe the words and phrases we</li>
+<li>want to listen for.</li>
+<li>Add resources containing string representations of those words and</li>
+<li>phrases to the application's resource file.</li>
+<li>Write Apple event handlers for the two speech recognition events.</li>
+</ul>
+<p>
+The following sections explain these steps in detail, though not strictly in this order.<br>
+All the code provided here is also included on this issue's CD.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SPEAKABLE MENUS?</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;While it's fairly easy to make your application's menus speakable, this isn't<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;necessarily the best use of speech recognition technology and it's definitely not<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;what Apple's speech engineers would like to see you focus your attention on.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Most File and Edit menu commands are just too short to be easily distinguished<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;by the recognizer ("quit" sounds a lot like "cut," for example).
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;In addition, since menus can't be seen without pulling them down, novice users<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;probably won't know which menu commands are available until they click in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the menu bar; at that point, they may as well just use the menu.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;However, there is some value in knowing how to make menus speakable. For<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;one thing, the techniques used in this article can easily be extended to handle<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;more complex utterances that have nothing to do with menus. Also, there is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;real value in making tool palettes -- which are really just graphical menus<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;that happen to float on the desktop -- speakable; for an example, see the demo<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;program PlacMac on this issue's CD.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;So the moral is: make your menus speakable if you think there is value for the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;user, but don't just make your menus speakable. Do something creative and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;compelling with speech recognition.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>HOOKING UP WITH THE MAIN APPLICATION</h2>
+<p>
+All the speech recognition processing for our PowerPlant-based application will be<br>
+handled by a single custom object of type CDocSpeech. The main application code needs<br>
+only to create (and later delete) that custom object. We'll start by adding
+</p>
+<p>
+these lines of code to the beginning of the main application source code file,<br>
+CDocDemoApp.cp:
+</p>
+<pre>#include "CDocSpeech.h"
+extern CDocSpeech     *gDocSpeechObj;
+Boolean               gHasSpeechRecog;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The external reference is to an instance of the CDocSpeech class, and the Boolean global<br>
+variable indicates whether the Speech Recognition Manager is available in the current<br>
+operating environment. To set that variable and create our custom object, we add the<br>
+code in Listing 1 to the constructor CDocDemoApp::CDocDemoApp.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 1. </b>Creating a custom speech recognition object
+</p>
+<pre>// Determine whether the Speech Recognition Manager is available;
+// if it's available, create a custom speech recognition object.
+long      theVersion;
+OSErr      theErr;
+
+gHasSpeechRecog = false;
+theErr = ::Gestalt(gestaltSpeechRecognitionVersion, &amp;theVersion);
+// Version must be at least 1.5.0 to support API used here.
+if (!theErr)
+   if (theVersion &gt;= 0x00000150) {
+      gHasSpeechRecog = true;
+      gDocSpeechObj = new CDocSpeech();
+   }</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+We'll also need to delete gDocSpeechObj when our application quits. We do this by<br>
+adding the following code to the destructor CDocDemoApp::~CDocDemoApp:
+</p>
+<pre>// Shut down speech recognition, if it's running.
+if (gHasSpeechRecog)
+   delete gDocSpeechObj;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+Those are all the modifications we need to make to our existing source code! The rest of<br>
+the speech processing is handled by the custom speech recognition object created by<br>
+our main application code.
+</p>
+<h2>DEFINING A SPEECH RECOGNITION CLASS</h2>
+<p>
+The header file CDocSpeech.h, shown in Listing 2, defines a number of constants<br>
+specifying the 'STR#' resources (and indices within those resources) that contain the<br>
+names of the language models we want to create and the actual words or phrases we<br>
+want to listen for. We'll use these constants later, when we create the various language<br>
+models.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 2. </b>Specifying 'STR#' resources and declaring CDocSpeech
+</p>
+<pre>#include "SpeechRecognition.h"
+
+// Language model names
+const ResIDT   rSTR_LMNames      = 400;   // ID of STR# resource
+const short    kStr_GApplLM      = 1;     // Indices within resource
+const short    kStr_GUnivLM      = 2;
+const short    kStr_GDocuLM      = 3;
+const short    kStr_UFileLM      = 4;
+const short    kStr_DFileLM      = 5;
+
+// Universal file command phrases
+const ResIDT   kSTR_UFileCmds      = 500;  // ID of STR# resource
+const short      kStr_New          = 1;    // Indices within resource
+const short      kStr_Open         = 2;
+const short      kStr_PageSetup    = 3;
+const short      kStr_Quit         = 4;
+// Document file command phrases
+const ResIDT   kSTR_DFileCmds      = 501;  // ID of STR# resource
+const short      kStr_Close        = 1;    // Indices within resource
+const short      kStr_Save         = 2;
+const short      kStr_SaveAs       = 3;
+const short      kStr_Revert       = 4;
+const short      kStr_Print        = 5;
+const short      kStr_PrintOne     = 6;
+
+// Apple menu command phrases
+const ResIDT   kSTR_UApplCmds      = 503;  // ID of STR# resource
+const short      kStr_About        = 1;    // Indices within resource
+
+#define kEnableObj               true
+#define kDisableObj              false
+
+class CDocSpeech {
+public:
+                         CDocSpeech();
+   virtual               ~CDocSpeech();
+   static pascal OSErr   HandleSpeechBegunAppleEvent (AppleEvent
+                           *theAEevt, AppleEvent *reply, long refcon);
+   static pascal OSErr   HandleSpeechDoneAppleEvent (AppleEvent
+                           *theAEevt, AppleEvent *reply, long refcon);
+private:
+   OSErr                  MakeLanguageModels (void);
+};</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+CDocSpeech.h also contains the declaration of the custom CDocSpeech class. CDocSpeech<br>
+is extremely simple: it contains a constructor, a destructor, and two Apple event<br>
+handlers. It also defines a private method, MakeLanguageModels, that creates the<br>
+language models used by DocDemo. MakeLanguageModels is called by the constructor<br>
+when an instance of the CDocSpeech class is created.
+</p>
+<p>
+All the remaining code is found in the file CDocSpeech.cp. Listing 3 shows the<br>
+beginning of that file, which declares all the global variables and function prototypes.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 3.</b> Declaring global variables and function prototypes
+</p>
+<pre>#include "CDocSpeech.h"
+
+// Global variables
+SRRecognitionSystem     gSystem;
+SRRecognizer            gRecognizer;
+SRLanguageModel         gGApplLM, gGDocuLM;
+SRPhrase                gRevert;
+CDocSpeech              *gDocSpeechObj = nil;
+
+// Function prototypes
+void SetLanguageObjectState (SRLanguageObject inObj, Boolean
+isEnabled);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The constructor method, shown in Listing 4, performs all the necessary startup<br>
+associated with speech recognition. Much of this code should already be familiar to you<br>
+from the article "The Speech Recognition Manager Revealed."
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 4. </b>Starting up speech recognition
+</p>
+<pre>CDocSpeech::CDocSpeech()
+{
+   OSErr      theErr = noErr;
+  
+   // Open a recognition system.
+   theErr = ::SROpenRecognitionSystem
+                 (&amp;gSystem, kSRDefaultRecognitionSystemID);
+  
+   // Set recognition system properties to user-selected feedback and
+   // listening modes.
+   if (!theErr) {
+      short theModes = kSRHasFeedbackHasListenModes;
+      theErr = ::SRSetProperty(gSystem, kSRFeedbackAndListeningModes,
+                     &amp;theModes, sizeof(theModes));
+   }
+
+   // Create a recognizer with default speech source.
+   if (!theErr)
+      theErr = ::SRNewRecognizer(gSystem, &amp;gRecognizer,
+                     kSRDefaultSpeechSource);
+
+   // Set recognizer properties. We want to receive notifications
+   // when recognition begins and ends.
+   if (!theErr) {
+      unsigned long theParam =
+          kSRNotifyRecognitionBeginning | kSRNotifyRecognitionDone;
+      theErr = ::SRSetProperty(gRecognizer, kSRNotificationParam,
+                     &amp;theParam, sizeof(theParam));
+   }
+
+   // Install Apple event handlers.
+   if (!theErr) {
+      theErr = ::AEInstallEventHandler
+                  (kAESpeechSuite, kAESpeechDetected,
+                  NewAEEventHandlerProc(HandleSpeechBegunAppleEvent),
+                  0, false);
+      theErr = ::AEInstallEventHandler(kAESpeechSuite, kAESpeechDone,
+                  NewAEEventHandlerProc(HandleSpeechDoneAppleEvent),
+                  0, false);
+   }
+  
+   // Make our language models.
+   if (!theErr)
+      theErr = MakeLanguageModels();
+   // Install initial language model and release our reference to it.
+   if (!theErr) {
+      theErr = ::SRSetLanguageModel(gRecognizer, gGApplLM);
+      ::SRReleaseObject(gGApplLM);
+   }
+
+   // Have the recognizer start processing sound.
+   if (!theErr)
+      theErr = ::SRStartListening(gRecognizer);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Now we just need to write the MakeLanguageModels function called by the CDocSpeech<br>
+constructor, and the two Apple event handlers.
+</p>
+<h2>CONSTRUCTING THE LANGUAGE MODELS</h2>
+<p>
+Probably the most time-consuming part of adding speech recognition to an application<br>
+is defining the language models that describe the words and phrases you want to listen<br>
+for. The process is straightforward, but it requires careful attention to the various<br>
+states your application can be in. This is because you want the active language model to<br>
+include only utterances that make sense at any given time. For instance, if no document<br>
+window is open, it makes no sense to listen for the Close or Save command. Similarly,<br>
+if a document isn't dirty (that is, if it hasn't changed since it was most recently<br>
+saved), you probably don't want the user to be able to execute the Revert command.
+</p>
+<p>
+This should remind you, of course, of the context-specific menu enabling and disabling<br>
+that's a standard part of any good Macintosh application. For our demonstration<br>
+application, we'll handle context sensitivity by creating a number of embedded<br>
+language models that we'll enable or disable according to context.
+</p>
+<p>
+The commands in the File menu fall into two main categories: those that can be issued<br>
+at any time (such as New or Open) and those that apply to a specific document (such as<br>
+Save or Close). Accordingly, we'll construct two language models, one for each type of<br>
+command. Let's call the first variety universal file commands and the second variety<br>
+document file commands. In addition, we want to make the About DocDemo command<br>
+utterable. Here's a Backus-Naur Form (BNF) diagram of our top-level language<br>
+model:
+</p>
+<pre>&lt;Menu Commands&gt; =
+    &lt;Universal Commands&gt; | &lt;Document Commands&gt;;
+&lt;Universal Commands&gt; =
+    &lt;Universal File Commands&gt; | About DocDemo;
+&lt;Universal File Commands&gt; = New | Open | Page Setup | Quit;
+&lt;Document Commands&gt; = &lt;Document File Commands&gt;;
+&lt;Document File Commands&gt; =
+    Close | Save | Save As | Revert | Print | Print One;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+As you can see, the top-level language model Menu Commands consists of two embedded<br>
+language models, one for commands that can be issued at any time and one for<br>
+commands that require a document window to be open. Each of these embedded language<br>
+models contains other language objects. The Universal Commands language model<br>
+contains the phrase "About DocDemo" and the language model that contains the<br>
+universal file commands. The Document Commands language model contains only the<br>
+language model that contains the document file commands; you would
+</p>
+<p>
+add other document-specific models here (for instance, document-specific editing<br>
+commands). In all, we'll create five language models. (Note that the Page Setup<br>
+command is in the universal file commands language model; that's because DocDemo<br>
+allows you to choose that command even if no document window is open.)
+</p>
+<p>
+Listing 5 shows the code defining the MakeLanguageModels function (error checking<br>
+has been removed for the sake of readability). Apple provides a utility,<br>
+SRLanguageModeler, that you can use to build and test language models described with<br>
+BNF diagrams like that shown above. SRLanguageModeler can also save those language<br>
+models into resources or files, from which your application can load the models at run<br>
+time. Here, however, we build the language models on the fly to demonstrate the Speech<br>
+Recognition Manager routines for doing so.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 5. </b>Creating the language models
+</p>
+<pre>OSErr CDocSpeech::MakeLanguageModels (void)
+{
+   OSErr             theErr = noErr;
+   Str255            theStr;
+   SRLanguageModel   myGUnivLM, myUFileLM, myDFileLM;
+  
+   // Make the language models (which are initially empty).
+   ::GetIndString(theStr, rSTR_LMNames, kStr_GApplLM);
+   ::SRNewLanguageModel(gSystem, &amp;gGApplLM, &amp;theStr[1], theStr[0]);
+   ::GetIndString(theStr, rSTR_LMNames, kStr_GUnivLM);
+   ::SRNewLanguageModel(gSystem, &amp;myGUnivLM, &amp;theStr[1], theStr[0]);
+   ::GetIndString(theStr, rSTR_LMNames, kStr_UFileLM);
+   ::SRNewLanguageModel(gSystem, &amp;myUFileLM, &amp;theStr[1], theStr[0]);
+   ::GetIndString(theStr, rSTR_LMNames, kStr_GDocuLM);
+   ::SRNewLanguageModel(gSystem, &amp;gGDocuLM, &amp;theStr[1], theStr[0]);
+   ::GetIndString(theStr, rSTR_LMNames, kStr_DFileLM);
+   ::SRNewLanguageModel(gSystem, &amp;myDFileLM, &amp;theStr[1], theStr[0]);
+
+   // Make any other language objects we'll need.
+   ::GetIndString(theStr, kSTR_DFileCmds, kStr_Revert);  
+   ::SRNewPhrase(gSystem, &amp;gRevert, &amp;theStr[1], theStr[0]);
+  
+   // ****&lt;Universal File Commands&gt;****
+   ::GetIndString(theStr, kSTR_UFileCmds, kStr_New);
+   ::SRAddText(myUFileLM, &amp;theStr[1], theStr[0], cmd_New);
+   ::GetIndString(theStr, kSTR_UFileCmds, kStr_Open);
+   ::SRAddText(myUFileLM, &amp;theStr[1], theStr[0], cmd_Open);
+   ::GetIndString(theStr, kSTR_UFileCmds, kStr_PageSetup);
+   ::SRAddText(myUFileLM, &amp;theStr[1], theStr[0], cmd_PageSetup);
+   ::GetIndString(theStr, kSTR_UFileCmds, kStr_Quit);
+   ::SRAddText(myUFileLM, &amp;theStr[1], theStr[0], cmd_Quit);
+  
+   // ****&lt;Document File Commands&gt;****
+   ::GetIndString(theStr, kSTR_DFileCmds, kStr_Close);
+   ::SRAddText(myDFileLM, &amp;theStr[1], theStr[0], cmd_Close);
+   ::GetIndString(theStr, kSTR_DFileCmds, kStr_Save);
+   ::SRAddText(myDFileLM, &amp;theStr[1], theStr[0], cmd_Save);
+   ::GetIndString(theStr, kSTR_DFileCmds, kStr_SaveAs);
+   ::SRAddText(myDFileLM, &amp;theStr[1], theStr[0], cmd_SaveAs);
+   unsigned long theRefCon = cmd_Revert;
+   ::SRSetProperty(gRevert, kSRRefCon, &amp;theRefCon,
+         sizeof(theRefCon));
+   ::SRAddLanguageObject(myDFileLM, gRevert);
+   ::GetIndString(theStr, kSTR_DFileCmds, kStr_Print);
+   ::SRAddText(myDFileLM, &amp;theStr[1], theStr[0], cmd_Print);
+   ::GetIndString(theStr, kSTR_DFileCmds, kStr_PrintOne);
+   ::SRAddText(myDFileLM, &amp;theStr[1], theStr[0], cmd_PrintOne);
+  
+   // ****&lt;Document Commands&gt;****
+   ::SRAddLanguageObject(gGDocuLM, myDFileLM);
+  
+   // ****&lt;Universal Commands&gt;****
+   ::SRAddLanguageObject(myGUnivLM, myUFileLM);
+   ::GetIndString(theStr, kSTR_UApplCmds, kStr_About);
+   ::SRAddText(myGUnivLM, &amp;theStr[1], theStr[0], cmd_About);
+
+   // ****&lt;Menu Commands&gt;****
+   ::SRAddLanguageObject(gGApplLM, myGUnivLM);
+   ::SRAddLanguageObject(gGApplLM, gGDocuLM);
+
+   // Release any embedded language models we won't need later.
+   ::SRReleaseObject(myDFileLM);
+   ::SRReleaseObject(myUFileLM);
+   ::SRReleaseObject(myGUnivLM);
+
+   return theErr;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+MakeLanguageModels begins by calling SRNewLanguageModel five times to create the<br>
+five new, empty language models. (As indicated earlier, the names of the language<br>
+models are read from the application's resource fork.) Then MakeLanguageModels<br>
+creates a language object for the single word revert, as follows:
+</p>
+<pre>::GetIndString(theStr, kSTR_DFileCmds, kStr_Revert);  
+::SRNewPhrase(gSystem, &amp;gRevert, &amp;theStr[1], theStr[0]);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+We treat the Revert command specially because we want to listen for it only when an<br>
+open document has a file associated with it (and, of course, when the document is<br>
+dirty). Even when the Document Commands language model is active, the Revert<br>
+command might need to be disabled.
+</p>
+<p>
+Next, MakeLanguageModels builds the two language models Universal File Commands<br>
+and Document File Commands. In both cases, it simply adds the relevant words or<br>
+phrases, read from resources, to the language model, like this:
+</p>
+<pre>::GetIndString(theStr, kSTR_UFileCmds, kStr_New);
+::SRAddText(myUFileLM, &amp;theStr[1], theStr[0], cmd_New);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+SRAddText sets the reference constant property of the specified language object to the<br>
+value passed in its fourth parameter. In this example, the reference constant for the<br>
+New command is set to the value cmd_New, which is a constant defined by PowerPlant.<br>
+As you'll see later, we'll use that value to get PowerPlant to react appropriately to the<br>
+user's utterances. If you don't use SRAddText, you need to explicitly set an object's<br>
+reference constant property, as is done for the Revert command:
+</p>
+<pre>unsigned long theRefCon = cmd_Revert;
+::SRSetProperty(gRevert, kSRRefCon, &amp;theRefCon, sizeof(theRefCon));
+::SRAddLanguageObject(myDFileLM, gRevert);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Once the two main language models have been created, the hierarchy displayed in the<br>
+BNF diagram is established by a series of calls to SRAddLanguageObject.
+</p>
+<h2>ENABLING AND DISABLING THE LANGUAGE MODELS</h2>
+<p>
+When a user begins speaking, your application is notified via a speech-detected
+</p>
+<p>
+Apple event. In general, your speech-detected event handler should determine what<br>
+state your application is in and set the active language model accordingly. As we've<br>
+mentioned, we'll use this opportunity to enable or disable embedded language models<br>
+(or even single words) to limit the recognizable utterances to those that make sense at<br>
+the time. Listing 6 shows our speech-detected Apple event handler.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 6. </b>Handling speech-detected Apple events
+</p>
+<pre>pascal OSErr CDocSpeech::HandleSpeechDetectedAppleEvent
+            (AppleEvent *theAEevt, AppleEvent *reply, long refcon)
+{
+#pragma unused(reply, refcon)
+   long            actualSize;
+   DescType        actualType;
+   OSErr           theErr = 0, recStatus = 0;
+   SRRecognizer    theRec;
+   LWindow         *theWindow;
+           
+   // Get status and recognizer.
+   theErr = ::AEGetParamPtr(theAEevt, keySRSpeechStatus,
+              typeShortInteger, &amp;actualType, (Ptr)&amp;recStatus,
+              sizeof(recStatus), &amp;actualSize);
+   if (!theErr &amp;&amp; !recStatus)
+      theErr = ::AEGetParamPtr(theAEevt, keySRRecognizer,
+                  typeSRRecognizer, &amp;actualType, (Ptr)&amp;theRec,
+                  sizeof(theRec), &amp;actualSize);
+   if (theErr)
+      if (!theRec)
+         return theErr;
+  
+   // Figure out what state we're in; then enable or disable the
+   // appropriate language models.
+   theWindow = UDesktop::FetchTopRegular(); // Look for a doc window.
+   if (theWindow != nil) {                  // There is a doc window.
+      SetLanguageObjectState(gGDocuLM, kEnableObj);
+     
+      // Turn off "Revert" if there's no file or it isn't dirty.
+      Boolean      isEnabled, outUsesMark;
+      Char16      outMark;
+      Str255      outName;
+        
+      LCommander::GetTarget()-&gt;FindCommandStatus
+          (cmd_Revert, isEnabled, outUsesMark, outMark, outName);
+      SetLanguageObjectState(gRevert, isEnabled);
+   } else                                  // There is no doc window.
+      SetLanguageObjectState(gGDocuLM, kDisableObj);
+
+   // Now tell the recognizer to continue.
+   theErr = ::SRContinueRecognition(theRec);
+   return theErr;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The event handler, HandleSpeechDetectedAppleEvent, calls the PowerPlant utility<br>
+function UDesktop::FetchTopRegular to get the top document window. If there's an open<br>
+document window, HandleSpeechDetectedAppleEvent calls the application-defined<br>
+function SetLanguageObjectState to enable the Document Commands language model.<br>
+Otherwise, if no document window is open, the event handler calls<br>
+SetLanguageObjectState to disable that language model. Listing 7 shows the simple<br>
+function SetLanguageObjectState.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 7.</b> Enabling or disabling a language object
+</p>
+<pre>void SetLanguageObjectState (SRLanguageObject inObj,
+    Boolean isEnabled)
+{
+   Boolean      theState = isEnabled;
+
+   ::SRSetProperty(inObj, kSREnabled, &amp;theState, sizeof(theState));
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Notice that if a document window is open, we need to determine whether to enable the<br>
+Revert command. HandleSpeechDetectedAppleEvent cleverly calls the document<br>
+window's FindCommandStatus function to determine this.
+</p>
+<p>
+Instead of disabling the Revert command when it isn't relevant, we could just let the<br>
+recognizer keep listening for it but ignore it when the frontmost document, if any,<br>
+isn't dirty or has no file. This alternate strategy has some advantages. In particular, if<br>
+the user says "revert" but we aren't listening for that command, the recognizer might<br>
+think the user has uttered some other command (like "quit" or "print"). These<br>
+misfires are much less likely to occur if the recognizer is listening for "revert" in<br>
+addition to the other document file commands.
+</p>
+<p>
+If you think that a user is apt to utter a particular command at an inappropriate time,<br>
+it's probably better to ignore it than to disable it. On the other hand, we don't want to<br>
+make the active language model too big, and one way to keep its size manageable is to<br>
+enable or disable parts of it according to context. That's the strategy we've adopted for<br>
+this article. Our sample application doesn't listen for the Revert command unless it's<br>
+appropriate, to illustrate how to enable and disable language objects.
+</p>
+<h2>HANDLING RECOGNITION RESULTS</h2>
+<p>
+So far, we've defined our language models and set up the mechanism by which relevant<br>
+parts of the language models are enabled or disabled according to context.
+</p>
+<p>
+All that remains is to do the right thing when the recognizer recognizes an utterance.<br>
+Our application is informed of successful recognitions via recognition-done Apple<br>
+events. Listing 8 shows the DocDemo recognition-done event handler.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 8. </b>Handling recognition-done Apple events
+</p>
+<pre>pascal OSErr CDocSpeech::HandleRecognitionDoneAppleEvent
+              (AppleEvent *theAEevt, AppleEvent *reply, long refcon)
+{
+#pragma unused(reply, refcon)
+   long                     actualSize;
+   DescType                 actualType;
+   OSErr                    theErr = 0, recStatus = 0;
+   SRRecognitionResult      recResult = nil;
+   Size                     theLen;
+   SRPath                   thePath;
+   SRSpeechObject           theItem;
+   long                     theRefCon; // Reference constant of item
+   // Get status.
+   theErr = ::AEGetParamPtr(theAEevt, keySRSpeechStatus,
+               typeShortInteger, &amp;actualType, (Ptr)&amp;recStatus,
+               sizeof(recStatus), &amp;actualSize);
+
+   // Get result.
+   if (!theErr &amp;&amp; !recStatus)
+      theErr = ::AEGetParamPtr(theAEevt, keySRSpeechResult,
+                  typeSRSpeechResult, &amp;actualType, (Ptr)&amp;recResult,
+                  sizeof(recResult), &amp;actualSize);
+
+   // Get command from result by reading the reference constant
+   // of the relevant object.
+   if (!theErr &amp;&amp; !recStatus) {
+      ::SRGetProperty(recResult, kSRPathFormat, &amp;thePath, &amp;theLen);
+      theErr = ::SRGetIndexedItem(thePath, &amp;theItem, 0);
+      if (!theErr) {
+         theLen = sizeof(theRefCon);
+         ::SRGetProperty(theItem, kSRRefCon, &amp;theRefCon, &amp;theLen);
+         ::SRReleaseObject(theItem);
+      }
+      // Release recognition result, since we're done with it.
+      ::SRReleaseObject(recResult);
+      ::SRReleaseObject(thePath);
+   }
+   // Send the reference constant up the chain of command.
+   LCommander::GetTarget()-&gt;ObeyCommand((MessageT)theRefCon, nil);
+  
+   return theErr;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The interesting thing in this event handler is how utterly simple the important code is:<br>
+all it does is extract the reference constant value of the recognized utterance and send<br>
+that value up the PowerPlant chain of command. For example, if the recognized<br>
+utterance is the word new, the reference constant is the value cmd_New, which is sent<br>
+to a commander. In this case, the DocDemo application creates a new document. In<br>
+effect, the CDocSpeech object does its work by calling code already in the DocDemo<br>
+application.
+</p>
+<h2>THE LAST WORD</h2>
+<p>
+As you've seen, it's easy to add basic speech recognition for File menu commands to a<br>
+PowerPlant application, largely because our custom speech object can simply issue<br>
+the same commands that would be issued in response to a menu choice. You should now<br>
+be able to add speech support for Edit menu commands and for any other menu<br>
+commands supported by your application. Only one method remains to discuss, the<br>
+destructor for the CDocSpeech class. The destructor simply stops recognizing<br>
+utterances and closes down the recognition system opened by the constructor, as shown<br>
+in Listing 9.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 9. </b>Shutting down speech recognition
+</p>
+<pre>CDocSpeech::~CDocSpeech()
+{
+   ::SRStopListening(gRecognizer);
+   ::SRReleaseObject(gRecognizer);
+   ::SRReleaseObject(gGDocuLM);
+   ::SRReleaseObject(gRevert);
+   ::SRCloseRecognitionSystem(gSystem);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+'Nuff said.
+</p>
+
+
+
+<p>
+<b>RELATED READING</b>
+</p>
+<ul>
+<li>"The Speech Recognition Manager Revealed" by Matt Pallakoff and<br>
+Arlo Reeves, in this issue of <i>develop</i>.</li>
+<li>"Speech Recognition Manager," on this issue's CD and on Apple's<br>
+speech technology Web site, http://www.speech.apple.com.</li>
+<li><i>The PowerPlant Book</i> by Jim Trudeau, in Inside PowerPlant for<br>
+CW8 (Metrowerks, 1995).</li>
+</ul>
+
+
+
+<p>
+<b>TIM MONROE</b> (monroe@apple.com) is a technical writer for Apple's Developer<br>
+Relations group. He's written more <i>Inside Macintosh</i> books and chapters than he cares<br>
+to remember and is currently working with the QuickDraw 3D and QuickTime VR<br>
+teams, as well as the speech recognition team, to bring the excitement of interactive<br>
+media to Macintosh applications everywhere. He's rumored to have an office in<br>
+Cupertino but prefers to spend his time in his converted garage in Oakland living the<br>
+quiet life of a telecommuting "cybermonk." That way, he's never too far from his wife,<br>
+his kids, or his model train layout.*
+</p>
+<p>
+<b>Thanks to</b> our technical reviewers Mike Dilts, Guillermo Ortiz, Matt Pallakoff, Arlo<br>
+Reeves, and Brent Schorsch.*
+</p>
+</body>
+</html>

@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 11 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 96 - Using C++ Exceptions in C</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Using C++ Exceptions in C</h1>
+<h2>Avi Rappoport</h2>
+<p>
+<img src="img/149.gif" width="126 px"></img>
+</p>
+<p>
+<i>Exception handling in C++ offers many advantages over error handling in C. Using the</i><br>
+<i>techniques outlined here, you can implement C++ exceptions in your C code without a</i><br>
+<i>lot of effort. The payback is streamlined debugging that can result in more error-free</i><br>
+<i>code. When your program encounters errors, it jumps to the appropriate</i><br>
+<i>error-handling section, rather than dealing with the error locally. This simplifies</i><br>
+<i>your design and helps you concentrate on the normal flow of control. Centralized error</i><br>
+<i>handling also makes it easier to improve your reporting and feedback mechanisms</i><br>
+<i>incrementally.</i>
+</p>
+<p>
+I wrote a few little XCMDs in C and after the fifteenth crash of the day, I decided that I'd<br>
+better add some error handling. So I looked at Dartmouth XCMDs, but I wasn't<br>
+impressed. Each check for an error meant another indentation in the code, and I was<br>
+worried about disposing of handles correctly as I passed errors up the call chain. Since<br>
+I'd been looking at a lot of C++ lately, I wondered whether I couldn't use part of the<br>
+C++ exception-handling mechanism to avoid problems in my code. It worked pretty<br>
+well, so I thought I'd share my results.
+</p>
+<p>
+For part of my solution, I used some Metrowerks macros. Metrowerks has graciously<br>
+allowed these helpful exception and debugging source, header, and resource files to be<br>
+included on this issue's CD, so you can use them without purchasing its CodeWarrior<br>
+CD. The files contain macros that provide convenient tools for implementing exceptions<br>
+and debugging signals, as well as an alert resource that can provide information during<br>
+debugging.
+</p>
+<p>
+Although I've used C++ exception handling in my C code with great results, I'd like to<br>
+offer you one word of caution before you use them. Realize that C++ is not strictly an<br>
+extension of C; as a result, in some cases it's possible that the program may not behave<br>
+as you think it should.
+</p>
+<h2>BASIC ERROR-HANDLING REQUIREMENTS</h2>
+<p>
+All programs must respond to system and subroutine failures somehow. For example,<br>
+many Macintosh Toolbox routines return a variable of type OSErr, while others<br>
+require that you call Toolbox routines (such as MemError and ResError) to retrieve<br>
+the error. If you ignore system and subroutine failures, your program is practically<br>
+guaranteed to crash.
+</p>
+<p>
+Good error handling allows you to cope with many kinds of problems. Your checks can<br>
+trigger other code that deals with the problem (for example, by freeing memory).<br>
+During debugging, error checking should notify you that something has gone wrong.<br>
+And since you can't, unfortunately, catch all the bugs during testing, you must also set<br>
+up an error-reporting mechanism to notify your users when something has gone<br>
+wrong. In the worst case, your error handling should at least ensure that your<br>
+program exits gracefully, without losing or corrupting user data.
+</p>
+<h2>THROWING EXCEPTIONS</h2>
+<p>
+The American National Standards Institute (ANSI) has defined a mechanism for C++<br>
+compilers that allows code to "throw" exceptions. When the compiler encounters a<br>
+<b>throw</b> statement, it jumps to the nearest <b>catch</b> statement. (The "nearest" <b>catch</b><br>
+statement is the one associated with the current <b>try</b> statement, whether it's in the<br>
+current routine or farther up the call chain.) The <b>catch</b>statement can deal with the<br>
+error, pass it up the call chain, or both. A <b>throw</b>statement should appear only within<br>
+a <b>try</b> or <b>catch</b> statement or in code called from within a <b>try</b> statement. Listing 1<br>
+shows these basic components.
+</p>
+<p>
+<b>Listing 1.</b> Throwing exceptions
+</p>
+<pre>OSErr theErr = noErr;
+
+// Try block.
+try {
+   // Do something.
+   ...
+   // If error, throw an exception.
+   if (theErr != noErr)
+      throw (theErr);
+}
+// Catch blocks.
+catch (OSErr theErr) {
+   // Do something with the error.
+   ...
+}
+catch (...) {
+   // Catch anything else.
+   ...
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+As shown in Listing 1, exceptions are dealt with in <i>catch blocks</i>, which take an<br>
+appropriate action depending on the error. For serious errors, this means cleaning up<br>
+and terminating the program. For less serious errors, the catch block could continue<br>
+without making a fuss, or make changes based on the error and again call the routine<br>
+that threw the error; sometimes you might want to throw a more generic error, which<br>
+is caught and interpreted in a higher-level catch block. I also recommend using the<br>
+Metrowerks signal macros (described later) within your catch blocks to help you<br>
+locate errors during debugging.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>The three dots in catch (...)</b> are actually in the code; the other such dots<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;that appear in these listings are ellipses representing code that isn't shown.*
+</p>
+<p>
+When carefully designed, C++ exception handling in your program can deal with<br>
+problems at an appropriate level. As you may already have guessed, this feature is<br>
+both powerful and dangerous. The advantage is that you don't have to mess around with<br>
+returning errors for every routine or indenting deeply. However, if you allocate<br>
+memory, you must be careful to dispose of it at the right time or it will cause a leak.
+</p>
+<h2>ADDING C++ EXCEPTIONS TO YOUR CODE</h2>
+<p>
+To add C++ exceptions to your code, you must do the following:
+</p>
+<ul>
+<li>Force the use of the C++ compiler.</li>
+<li>Create a top-level exception handler in your main routine.</li>
+<li>Define try blocks and catch blocks, and call throw at appropriate times.</li>
+<li>Add the C++ library (CPlusPlus.lib, CPlusPlusA4.lib, or<br>
+MWCRuntime.Lib) to your project.</li>
+</ul>
+<p>
+The Metrowerks macros that you'll see in the code that follows make implementing<br>
+exception handling much easier than it would be otherwise. I'll talk about them later.
+</p>
+<p>
+<b>USING C++</b>
+</p>
+<p>
+To use C++ exceptions, you have to force the use of the C++ compiler. In Metrowerks<br>
+CodeWarrior, the easiest way is to select the Activate C++ Compiler checkbox in the<br>
+C/C++ Language panel. You should also make sure that the Enable C++ Exceptions<br>
+checkbox is selected, because it enables throwing exceptions rather than direct<br>
+destruction (one of those weird C++ things). An alternative way to invoke the<br>
+compiler is to change the extension on your source code files to ".cp" or by changing<br>
+the Target panel preferences; however, the checkbox method is the easiest.
+</p>
+<p>
+&nbsp;&nbsp;C++ is stricter about automatic parameter conversion than C, so selecting the MPW<br>
+Pointer Type Rules checkbox in the C/C++ Language panel avoids a bunch of errors (it<br>
+forces the compiler to allow some implicit char* casts). But you'll get errors for<br>
+other parameters and return values, so you have to clean them up as indicated by the<br>
+compiler. For example, the following is an error message returned by a C++<br>
+compiler:
+</p>
+<pre>HC2RTF.c line 224  textLen = strlen(textString);
+Error   : cannot convert
+'unsigned char *' to
+'char *'</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+To fix this problem, you can change the code to
+</p>
+<pre>textLen = strlen((char *) textString)</pre>
+<p><p class="spacer">&nbsp;</p>
+The CodeWarrior C++ compiler puts special C++ information into function names<br>
+(this is called <i>name mangling</i>). C doesn't do this, so header files for C functions should<br>
+be surrounded by <b>#extern "C" </b>statements to tell the compiler not to mangle these<br>
+names (see Listing 2). The Macintosh Toolbox header files take care of this already.
+</p>
+<p>
+<b>Listing 2.</b> Preventing name mangling
+</p>
+<pre>#ifdef __cplusplus
+extern "C" {
+#endif
+
+long   FindBreak(char* buffer, short len);
+// More declarations here
+...
+
+#ifdef __cplusplus
+}
+#endif</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>CREATING A TOP-LEVEL EXCEPTION HANDLER IN MAIN</b>
+</p>
+<p>
+In your main loop or function, you should specify the top-level exception handler. This<br>
+should catch serious errors, report them, and exit gracefully. Listing 3 shows the<br>
+simplest possible exception handler (which you'll understand better as you read on).
+</p>
+<p>
+<b>Listing 3.</b> Simple top-level exception handler
+</p>
+<pre>pascal void main(XCmdPtr paramPtr)
+{
+   long   oldA4 = SetCurrentA4();
+
+   try {
+      CreateFile(paramPtr);
+      WriteFile(paramPtr);
+   }
+   catch (...) {
+      ReportError("\pSerious error occurred.")
+      // XCMDs do not have to use ExitToShell.
+   }
+   SetA4(oldA4);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>DEFINING TRY BLOCKS</b>
+</p>
+<p>
+When you use a try statement, it tells the compiler that the following code might have<br>
+exceptions thrown in it. All functions that throw exceptions must be within a try<br>
+block, either in the current function or in a calling function. It's pretty easy to set up<br>
+try blocks before catch blocks. This is good, because you do have to do it: any throws<br>
+that aren't caught will automatically abort the program.
+</p>
+<p>
+<b>DEFINING CATCH BLOCKS</b>
+</p>
+<p>
+You should have catch blocks for each error type. So, for example, you might define<br>
+<b>catch (OSErr theErr), catch (errStruct errRecord),</b> and <b>catch (Str255</b><br>
+<b>theErr)</b>. You should also have a generic catch, <b>catch (...)</b>, which doesn't have any<br>
+parameters, to catch exceptions of all other types. Although it's better to use typed<br>
+catches that handle specific errors, always add at least one generic catch and have it<br>
+signal an error with an alert or break to the debugger. This will help you catch<br>
+exception mistakes during your debugging and testing phase. Listing 4 shows examples<br>
+of these types of catch blocks.
+</p>
+<p>
+<b>Listing 4. </b>Specific and generic catch blocks
+</p>
+<pre>catch (StringPtr errString) {
+   // If HandleError throws, it will be caught above this catch.
+   HandleError(errString);
+}
+catch (OSErr theErr) {
+   Str255 errString;
+   ConvertErrToString(theErr, errString);
+   ReportError(errString);
+   throw (theErr);   // Rethrow to handle error.
+}
+// Forces the application to quit after the message.
+catch (...) {
+   SignalPStr_("\pUntyped error occurred in prefs.")
+   ExitToShell();
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The compiler automatically routes the error to the appropriate <b>catch</b> statement,<br>
+depending on the parameter passed to the <b>throw</b> statement. In Listing 4, both the<br>
+StringPtr and OSErr types are caught specifically, after which they're reported. The<br>
+OSErr catch rethrows the error as well. Any other types of errors are caught by the<br>
+generic catch, which calls a signal macro to display a message and then exits the<br>
+program.
+</p>
+<p>
+You can, and often should, continue after catching an error. For example, after a disk<br>
+full error, you should allow the user to choose a different volume. Note that the<br>
+program will continue after the catch block, rather than in the location where the<br>
+exception was thrown.
+</p>
+<h2>MOVING DEEPER -- HANDLING EXCEPTIONS IN THE CALL<br>
+CHAIN</h2>
+<p>
+Many of your low-level routines may call the Macintosh Toolbox or otherwise interact<br>
+with the Mac OS. They should throw an exception if there's an error, as shown in<br>
+Listing 5.
+</p>
+<p>
+<b>Listing 5.</b> Throwing exceptions for Macintosh Toolbox errors
+</p>
+<pre>void MakeMyResFile(Str32 fileName)
+{
+   CreateResFile(fileName);
+   // Could also use the Metrowerks ThrowIfResError_ macro.
+   err = ResError();
+   if (err &lt;&gt; noErr)
+      throw (err);
+   // Continue with execution.
+   ...
+}
+
+// Call the function.
+MakeThisFile()
+{
+   ...
+   try {
+      MakeMyResFile(thisFile);
+   }
+   catch (OSErr theErr) {
+      if (theErr == dupFNErr) {
+         // Do something; file already exists.
+         ...
+      }
+      else
+         throw (theErr);   // Rethrow the error.
+   }   // End catch statement.
+   ...
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+So where do you catch these exceptions? Remember, they percolate up the call chain<br>
+until they find a catch statement, so you don't have to take care of them in the<br>
+immediate calling function (unless you've allocated memory or done other things that<br>
+need undoing). When you catch them, you can, and sometimes should, throw the error<br>
+again. You can either report errors in mid-level routines or rethrow them up to a<br>
+higher-level error reporting mechanism.
+</p>
+<p>
+In addition to these catch statements, be sure to add a catch statement in circumstances<br>
+where you need to do any of the following:
+</p>
+<ul>
+<li>Dispose of handles and otherwise deallocate memory.</li>
+<li>Shut down something you started in the try block, such as opening a file.</li>
+<li>Change the error thrown.</li>
+</ul>
+<p>
+For your own functions, you should throw errors in situations that can cause serious<br>
+problems or crash the machine. For instance, if you're providing a function that<br>
+accesses a variable-length array that contains 16 members and the caller asks for the<br>
+17th member, you can throw a range error. There's no hard-and-fast rule about when<br>
+to put the error checking into a function and when to require it before calling -- it<br>
+depends on the situation. For example, if you're calling a function inside a tight<br>
+graphics loop only and you want speed, you can probably check the parameters<br>
+sufficiently in the calling function. However, if you have a utility routine that's called<br>
+from several sections of your code, adding error checking will help you remember its<br>
+requirements, such as parameters, memory, and other system states, to avoid<br>
+problems later on.
+</p>
+<p>
+Handling exceptions in libraries is tricky because you don't know much about the<br>
+calling program. Think carefully about what you should report to the user and what<br>
+you should simply return to calling functions.
+</p>
+<p>
+As your programs become more sophisticated, you can start working around certain<br>
+errors -- for example, by using temporary memory when the application's heap is<br>
+full. You'll also need to design interactive error reporting, allowing your users to take<br>
+action (such as unlocking a locked disk) when they can. Then your application can<br>
+continue properly.
+</p>
+<h2>EXCEPTIONS AND DEBUGGING WITH THE METROWERKS<br>
+MACROS</h2>
+<p>
+The Metrowerks PowerPlant UDebugging and UException files, included on this issue's<br>
+CD, provide convenient tools for throwing common exceptions and alerting you during<br>
+debugging. To use them, put the folder in your project folder, add the sources and the<br>
+"PP DebugAlerts.rsrc" resource file to your project, and include the headers in your<br>
+source files.
+</p>
+<p>
+&nbsp;&nbsp;The UException.h file includes macros that automate common exception conditions.<br>
+The UException.cp file includes an abort function. The UDebugging.h file defines some<br>
+macros that make locating problems easier by allowing you to specify a <i>signal</i>, a<br>
+debugging string displayed when the macro is invoked.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>If your project includes an ANSI library</b> you don't need to add<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;UException.cp. The abort function will conflict.*
+</p>
+<p>
+<b>SETTING GLOBAL VARIABLES FOR DEBUGGING</b>
+</p>
+<p>
+You need to set the global variables gDebugThrow and gDebugSignal in UDebugging.h to<br>
+specify the debugging actions for throws and signals. By default, they're set to do<br>
+nothing at all. Other options include displaying a dialog, dropping into the source-level<br>
+debugger, or dropping into the low-level debugger. To activate the macros, be sure to<br>
+define Debug_Signal in your precompiled header or UDebugging.h.
+</p>
+<p>
+The following are the global variable options:
+</p>
+<ul>
+<li>debugAction_Nothing -- Do nothing.</li>
+<li>debugAction_Alert -- Display an alert box with an exception code<br>
+(described later), filename, and line number where the throw or signal was<br>
+made. For this to work, you must include the file "PP DebugAlerts.rsrc" in<br>
+your project.</li>
+<li>debugAction_SourceDebugger -- Break into the source-level debugger.<br>
+For the Metrowerks source-level debugger, execution will stop with the<br>
+arrow pointing to the line containing the throw statement. The exception code<br>
+isn't displayed. You can check the display of variable values in the<br>
+source-level debugger for that information. (I've tested this with the<br>
+Metrowerks debugger only.) If you aren't running under the source-level<br>
+debugger, debugAction_SourceDebugger will break into the low-level<br>
+debugger on PowerPC processor-based machines, but might crash on 680x0<br>
+systems.</li>
+<li>debugAction_LowLevelDebugger -- Break into MacsBug and display the<br>
+exception code as a string. In MacsBug, the console will display two lines:</li>
+</ul>
+<pre>User Break at routine + offset
+exception code</pre>
+<ul>
+<li>Note that if you don't have a low-level debugger installed, your program<br>
+will crash with an unimplemented trap error if it tries to break into the<br>
+low-level debugger.</li>
+</ul>
+<p>
+<b>THE THROW MACROS</b>
+</p>
+<p>
+UException.h defines several useful macros that automatically perform tests and throw<br>
+exceptions if a test failed. It also defines a type, ExceptionCode (a long), and two<br>
+standard exceptions, err_AssertFailed ('asrt') and err_NilPointer ('nilP'), which are<br>
+treated as type ExceptionCode. Here are the throw macros:
+</p>
+<ul>
+<li>ThrowIf_(<i>test</i>) -- Throws an exception if <i>test</i> is true, where <i>test</i> is a<br>
+Boolean or the result of a Boolean condition. The exception code will be<br>
+err_AssertFailed.</li>
+<li>ThrowIfNot_(<i>test</i>) -- Throws an exception if <i>test</i> is false. The exception<br>
+code will be err_AssertFailed.</li>
+<li>ThrowIfOSErr_(<i>err</i>) -- Throws an exception if <i>err</i> isn't equal to noErr.</li>
+<li>ThrowOSErr_ (<i>err</i>), FailOSErr_ (<i>err</i>) -- Throws an exception with <i>err</i><br>
+as the exception code.</li>
+<li>ThrowIfNULL_(<i>ptr</i>), ThrowIfNil_(<i>ptr</i>), FailNil_(<i>ptr</i>) -- If <i>ptr</i> is NULL<br>
+(or nil), throws an exception with err_NilPointer as the exception code.</li>
+<li>ThrowIfMemError_() -- Calls the Toolbox routine MemError and<br>
+throws an exception if it returns a result that's not equal to noErr; the<br>
+MemError return becomes the exception code.</li>
+<li>ThrowIfMemFail_(<i>p</i>) -- Throws an exception if <i>p</i> (a pointer or a handle)<br>
+is nil. The MemError routine is used to check the success or failure of the last<br>
+Memory Manager call. If MemError returns a result that's not equal to noErr,<br>
+the exception code is set to the return value of the MemError call. If<br>
+MemError returns noErr, the exception code is set to memFullErr, a constant<br>
+defined by Apple.</li>
+<li>ThrowIfResError_() -- Calls the Toolbox routine ResError and throws<br>
+an exception if it returns a result that's not equal to noErr; the result becomes<br>
+the exception code. ResError is used to check the success or failure of the last<br>
+Resource Manager call.</li>
+<li>ThrowIfResFail_(<i>h</i>) -- Throws an exception if <i>h</i> (a handle to a resource)<br>
+is nil. If ResError returns a result that's not equal to noErr, the exception<br>
+code is set to that result. If ResError returns noErr, the exception code is set<br>
+to resNotFound, a constant defined by Apple.</li>
+</ul>
+<p>
+You can use all of the macros within <b>if-else</b> clauses, as they're designed to be<br>
+self-contained. For example:
+</p>
+<pre>if (err != fnfErr)
+   ThrowIfOSErr_(err);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>THE SIGNAL MACROS</b>
+</p>
+<p>
+UDebugging.h defines macros for raising signals, also known as <i>asserts</i>. These will<br>
+stop the execution of the program and report errors. You can use them to check for nil<br>
+pointers, out-of-range offsets, excess length, division by zero, and other problems. If<br>
+you remove the definition of Debug_Signal, the entire set of macros is converted to<br>
+white space and takes no runtime overhead whatsoever.
+</p>
+<p>
+&nbsp;&nbsp;The macros are defined to check gDebugSignal for the action to take on execution, as<br>
+described previously.
+</p>
+<p>
+The following are the signal macros:
+</p>
+<ul>
+<li>SignalPStr_(<i>pstr</i>) takes a Pascal string argument. The string can be a<br>
+literal Pascal string (in double quotes beginning with <b>\p</b>) or a StringPtr<br>
+variable (and its variants, such as Str255).</li>
+<li>SignalCStr_(<i>cstr</i>) takes a literal C string argument. The string must be a<br>
+literal (text within double quotes) and can't be a <b>char*</b>. Because the<br>
+underlying Toolbox routines take Pascal strings, the SignalPStr_ macro is<br>
+more efficient.</li>
+<li>SignalIf_(<i>test</i>), SignalIfNot_(<i>test</i>) each take a Boolean condition as an<br>
+argument and raise a signal depending on whether the condition is true or<br>
+false.</li>
+<li>Assert_(<i>test</i>) is a synonym for SignalIfNot_(<i>test</i>).</li>
+</ul>
+<h2>STRESS REDUCTION WITH EXCEPTION HANDLING</h2>
+<p>
+C++ exceptions and these Metrowerks macros make error handling reasonably easy to<br>
+add to most programs. With a little thought, you can design a clean structure for<br>
+dealing with Mac OS errors and internal errors -- a structure that's easily extensible<br>
+to new code. You can avoid stress during testing by adding signal macro calls for<br>
+common errors throughout your code. They're much easier to debug than system<br>
+crashes. And yes, thank you, my XCMDs are much better now!
+</p>
+<p>
+
+
+
+<b>RELATED READING</b>
+</p>
+<ul>
+<li>For a more in-depth examination of exceptions in C++, consult<br>
+the article "Try C++ Exception Handling" by Kent Sandvik (<i>MacTech</i><br>
+<i>Magazine</i>, October 1995). For another view of C exceptions, see<br>
+"Living in an Exceptional World" by Sean Parent in <i>develop</i> Issue 11.</li>
+<li>For information on the return values of Macintosh Toolbox<br>
+routines and the error codes, see the <i>Inside Macintosh</i> series,<br>
+<i>Macintosh Programmer's Toolbox Assistant</i>, and <i>THINK Reference</i>. You<br>
+can also look at the header file Errors.h.</li>
+</ul>
+<p>
+Because C has no objects, when you read these publications, you can ignore all<br>
+discussions of object throwing, exception objects, construction, and<br>
+destruction.
+</p>
+<p>
+<b>AVI RAPPOPORT</b> has degrees in medieval studies and library/information studies, so<br>
+she feels well qualified to work in the Macintosh software industry. In her job as user<br>
+advocate and publications coordinator at Metrowerks, she spent her time documenting<br>
+PowerPlant, making conference calls, and frantically trying to check CodeWarrior CDs<br>
+before they were burned. Avi now works at StarNine as product manager for messaging<br>
+products. She lives in Berkeley, California, with her Mac/Web scripter husband and<br>
+their four-year-old son -- all BMUG members.*
+</p>
+<p>
+Thanks to Greg Dow, Pete Gontier, Tom Lippincott, and Jon W&auml;tte for their C++<br>
+wizardry and personal patience, and to Pete and Tom for reviewing this article.*
+</p>
+</body>
+</html>

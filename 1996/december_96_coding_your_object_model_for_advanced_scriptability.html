@@ -1,0 +1,1512 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 63 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 96 - Coding Your Object Model for Advanced Scriptability</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Coding Your Object Model for Advanced<br>
+Scriptability</h1>
+<h2>Ron Reuter</h2>
+<p>
+<img src="img/303.gif" width="180 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">Implementing an Apple event object model makes your application</i>
+<br>
+
+<i style="font-size:125%;">scriptable -- that is, it enables users to control your application</i>
+<br>
+
+<i style="font-size:125%;">with AppleScript or some other OSA-compliant language. You can</i>
+<br>
+
+<i style="font-size:125%;">provide anything from a basic implementation of the object model</i>
+<br>
+
+<i style="font-size:125%;">that handles only simple scripts to a full implementation that can</i>
+<br>
+
+<i style="font-size:125%;">handle the most complex scripts. This article will help you do the</i>
+<br>
+
+<i style="font-size:125%;">latter. It will show you how to write object accessors and</i>
+<br>
+
+<i style="font-size:125%;">handlers that process lists of objects, alert you to some common</i>
+<br>
+
+<i style="font-size:125%;">pitfalls, and suggest other features you can add for completeness.</i>
+</p>
+<p>
+You've decided to give your users an alternate interface for controlling your<br>
+application by implementing an Apple event object model. You've read Richard Clark's<br>
+article, "Apple Event Objects and You," in <i>develop</i> Issue 10 to get an overview of the<br>
+Apple event object model and how to support it. As you've begun to think about your<br>
+scripting vocabulary, you've absorbed Cal Simone's article, "Designing a Scripting<br>
+Implementation," in <i>develop</i>Issue 21 and his According to Script column in Issue 24.<br>
+You've checked out the portions of<i> Inside Macintosh: Interapplication Communication</i><br>
+that apply. You've read and understood the <i>Apple Event Registry</i>, which defines the<br>
+primary events and objects that you should support in a scriptable application, and<br>
+have paid particular attention to the Core, Text, and QuickDraw Graphics suites.
+</p>
+<p>
+With this basic knowledge, you're ready to read this article. Here you'll learn how to<br>
+structure your code to handle more complex user scripts. After a brief review of the<br>
+components of an object model implementation, I'll focus on object accessors and show<br>
+you how to handle script statements that require your code to act on a list of objects.<br>
+Then I'll describe in detail how to deal with three big "gotchas" that are bound to trip<br>
+you up unless you know about them. Finally, I'll tell you about some other goodies you<br>
+can implement for the sake of completeness. All of this is illustrated in the sample<br>
+application Sketch, which demonstrates object model support for a subset of the<br>
+QuickDraw Graphics suite. The code for Sketch, which accompanies the article on this<br>
+issue's CD and <i>develop</i>'s Web site,&nbsp;&nbsp;contains many functions that you can use when you<br>
+get ready to code the object model for your own application.
+</p>
+
+
+<h2>COMPONENTS OF AN OBJECT MODEL IMPLEMENTATION</h2>
+<p>
+The components of an object model implementation are outlined in the "Apple Event<br>
+Objects and You" article and discussed in great detail in <i>Inside Macintosh:</i><br>
+<i>Interapplication Communication</i>. Here I'll briefly review the basic terms and concepts<br>
+to refresh your memory and to show how they apply in our sample program.
+</p>
+<p>
+When a script statement asks your application to perform an action on some object,<br>
+such as closing document 1, the object specifier (document 1) must be resolved --<br>
+that is, the representation of the specified object must be located in memory. Your<br>
+application resolves the object specifier by way of an object accessor function that<br>
+converts the object specifier into a token. The token is then passed to an event<br>
+dispatcher for that object. I'll describe each of these components before reviewing the<br>
+process of resolving object specifiers and dispatching events.
+</p>
+<p>
+<i>Object accessors</i> are functions you write and install in an accessor table. These<br>
+functions are called by the Object Support Library (OSL) function AEResolve when the<br>
+Apple Event Manager needs to find some object in your application's data structures.<br>
+Object accessors receive a container, an object specifier for an object to locate inside<br>
+that container, and a result parameter into which a token is placed. When you install<br>
+accessors, you tell the Apple Event Manager that your application knows how to find a<br>
+certain kind of object in a certain kind of container. For instance, you know how to find<br>
+a rectangle object in a grouped graphic object or a word object in a paragraph object.<br>
+(More on containers in a minute.)
+</p>
+<p>
+A <i>token</i> is an application-defined data structure that is populated in your object<br>
+accessors and is passed later to your object's event dispatcher code, where it's used to<br>
+find the object that an Apple event will be applied to. The structure and content of a<br>
+token are private to the application; neither the Apple Event Manager nor the OSL<br>
+attempts to interpret or use the contents of a token. The Sketch sample application uses<br>
+a single token structure, shown below, for all of its objects. Note that some fields<br>
+aren't used for all object types and that the token doesn't contain the object's data or a<br>
+data value; it contains information about how to locate the object later. You can use a<br>
+single token structure in your implementation, or you may want to design a unique<br>
+token structure for each object you support.
+</p>
+<pre>typedef struct CoreTokenRecord {
+   DescType   dispatchClass;   // class that will handle an event
+   DescType   objectClass;     // actual class of this object
+   DescType   propertyCode;    // requested property code,
+                               // or typeNull if not a property token
+   long       documentNumber;  // unique ID for the document, or 0
+   long       elementNumber;   // unique ID for the element, or 0
+   WindowPtr  window;          // used for window objects only
+} CoreTokenRecord, *CoreTokenPtr, **CoreTokenHandle;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<i>Event dispatchers</i> are application-defined functions that you call after you've called<br>
+AEResolve and your object accessors have returned a token for the target of the Apple<br>
+event. You call your event dispatchers and pass the token you created, the original<br>
+Apple event, and the reply Apple event you received in your Apple event handler. The<br>
+event dispatcher examines the Apple event, extracts the event ID, and passes its<br>
+parameters on to a specific event handler for the token object. The token is used to<br>
+identify the object or objects that the Apple event should act on.
+</p>
+<p>
+<i>Apple event handlers</i> are functions you write and install that receive a specific Apple<br>
+event and a reply Apple event. Your event handlers extract parameters from the Apple<br>
+event, process the event using those parameters, and place the result in the reply<br>
+Apple event. A single handler can be installed to handle many events. For example, one<br>
+handler can receive all events in the Core suite, except the Create Element event, if<br>
+you specify kAECoreSuite for the event class and typeWildCard for the event ID.<br>
+Because Create Element passes an insertion location instead of an object specifier in<br>
+the direct object parameter, Sketch installs a separate handler,<br>
+AECreateElementEventHandler, to handle this event for all Core suite objects.
+</p>
+<p>
+The Sketch sample code resolves object specifiers and dispatches Core suite Apple<br>
+events by using the object-first approach. The object-first flow of control proceeds as<br>
+follows:
+</p>
+<ol>
+<li>In the Core suite event handler, extract the parameter for the direct<br>
+object of the Apple event. Except in the case of the Create Element event, this<br>
+is a reference to some object the user is trying to access or modify.</li>
+<li>Call AEResolve, which calls one or more of your object accessor<br>
+functions, each of which finds the requested object in a specified container and<br>
+then returns a token. AEResolve successively calls object accessors until one<br>
+of the following three conditions is met: you return a token for the specified<br>
+object; you return an error code; or AEResolve finds a container-element<br>
+combination for which there's no installed accessor.</li>
+<li>Examine the token to determine what kind of object it references and then<br>
+send the original event, the reply event, and the token to the event dispatcher<br>
+for that type of object.</li>
+<li>In the object's event dispatcher, extract the event ID and dispatch the<br>
+event and the token to the object's event handler.</li>
+<li>In the object's event handler, apply the event to the object or objects<br>
+referenced by the token and return the results in the direct object of the reply<br>
+Apple event. You usually just unpack the parameters in your event handler and<br>
+then call lower-level functions you've written to do the application-specific<br>
+work.</li>
+</ol>
+<p>
+Figure 1 shows how this approach is applied as Sketch processes the script statement
+</p>
+<pre>set fill color of rectangle 1 of document 1 to blue</pre>
+<p>
+<img src="img/304.gif" width="504 px"></img>
+</p>
+<p>
+<b>Figure 1.</b> How Sketch processes <b>set fill color of rectangle 1 of document 1</b><br>
+<b>to blue</b>
+</p>
+<p>
+Note that Sketch has one file for each type of scriptable object. Figure 1 shows<br>
+fragments of three files:
+</p>
+<ul>
+<li>AECoreSuite.c, which receives all Apple events from the Core suite,<br>
+resolves the direct object parameter, and dispatches the token and the Apple<br>
+event to the dispatcher for a specific object type</li>
+<li>OSLClassDocument.c, which contains accessors, a dispatcher, and event<br>
+handlers for document objects</li>
+<li>OSLClassGraphicObject.c, which contains accessors, a dispatcher, and<br>
+event handlers for all graphic objects</li>
+</ul>
+
+
+<h2>OBJECT ACCESSORS AND YOUR CONTAINMENT HIERARCHY</h2>
+<p>
+How you implement your object model will depend largely on the nature of your data<br>
+and on your containment hierarchy. Your containment hierarchy specifies the objects<br>
+you support, how script statements should address those objects, and which objects<br>
+are contained by which other objects. Contained objects are called <i>elements</i> of the<br>
+container object. Each object also usually contains one or more <i>properties</i>, which<br>
+represent that object's characteristics, such as font size or color. While an object can<br>
+contain many elements of a particular type, it contains only one of each of its<br>
+properties. A script identifies the object to inspect or change by way of an <i>object</i><br>
+<i>reference</i>, which specifies the object's location in the containment hierarchy.
+</p>
+<p>
+Sketch has the containment hierarchy shown in Figure 2. The application object can<br>
+contain both windows and documents. Documents, in turn, contain objects defined in<br>
+the QuickDraw Graphics suite, such as rectangles, ovals, graphic lines, and graphic<br>
+groups. Graphic groups can contain any object from the QuickDraw Graphics suite,<br>
+including other graphic groups.
+</p>
+<p>
+<img src="img/305.gif" width="558 px"></img>
+</p>
+<p>
+<b>Figure 2.</b> The Sketch containment hierarchy
+</p>
+<p>
+The following complete script navigates through Sketch's containment hierarchy from<br>
+top to bottom to get a property of an object:
+</p>
+<pre>tell application "Sketch"
+   tell document "Sales Chart"
+      tell rectangle 1
+         get fill color
+      end tell
+   end tell
+end tell</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Throughout the rest of this article, I'll usually show script fragments consisting of a<br>
+single statement instead of complete scripts.
+</p>
+<p>
+The desired object can be specified in one of several ways in a script statement, as<br>
+you'll see later in the discussion of key forms. Theoretically, for each<br>
+container-element combination in your containment hierarchy, you need an object<br>
+accessor function that can find the element type in its container type. In reality, you<br>
+frequently can get by with a single object accessor function that can handle many<br>
+container-element pairs, rather than having to write and install a separate function<br>
+for each one.
+</p>
+<p>
+The <i>Apple Event Registry</i> lists the elements that can be contained within each object it<br>
+defines. Recursive definitions occur frequently in the Registry. For example, the word<br>
+object in the Text suite can contain characters, words, lines, paragraphs, and text.<br>
+While it seems reasonable that a word can contain a character, when would a word<br>
+contain a line or a paragraph? Suppose the script asked to do something to words 1<br>
+through 200. This is an example of a range specifier, which we'll look at in more<br>
+detail later. Your application might resolve this range specifier into a list of 200 word<br>
+objects. Because there could be many paragraphs within that range, asking for<br>
+paragraph 2 of words 1 through 200 would make sense. It's to support range<br>
+specifiers that every text object is required to be an element of every other text<br>
+object. 
+</p>
+<p>
+The upshot of this is that to support the word object in the Text suite, you would need<br>
+to write object accessors to resolve all these possible containment scenarios:<br>
+word-from-character, word-from-word, word-from-line, word-from-paragraph,<br>
+word-from-text, and either word-from-document (for a text editor that supports one<br>
+large text object per document) or word-from-graphic-text (for a drawing<br>
+application that supports many text boxes per document). As mentioned earlier,<br>
+though, you frequently can get by with a single object accessor function that can handle<br>
+many container-element pairs. Sketch, for example, uses just two object accessors to<br>
+support all objects in the QuickDraw Graphics suite:<br>
+GraphicObjectFromDocumentAccessor and GraphicObjectFromGroupAccessor, both of<br>
+which call GraphicObjectAccessor to do the real work of finding a graphic object.
+</p>
+
+
+<h2>OBJECT ACCESSORS AND KEY FORMS</h2>
+<p>
+Script statements can ask for an object or a collection of objects in a variety of ways.<br>
+They can ask for a single object by its unique ID, by name, or by its absolute or<br>
+relative position in a container. A script can also ask not for an object, but for some<br>
+property of an object, such as the fill color of a rectangle or the font of a paragraph. A<br>
+script statement can ask for more than one object by using the word every, by<br>
+specifying a range between some object and some other object in a container, or by<br>
+specifying a test that the objects must satisfy. The method that's used to reference an<br>
+object or objects in a script determines the keyForm parameter that an object<br>
+accessor function will receive when it comes time to resolve the object specifier.
+</p>
+<p>
+&nbsp;&nbsp;When an object accessor receives one of the simple key forms and associated key data<br>
+types listed in Table 1, it returns a descriptor containing a token that references a<br>
+single object in your application. When it receives one of the complex key forms and<br>
+associated key data types listed in Table 2, it returns a descriptor containing a list of<br>
+tokens, each of which references a single object.
+</p>
+<p>
+<b>Table 1. </b>Simple key forms
+</p>
+<p><table border="0"><tr><td><b>Key form</b></td><td><b></b><b>Key data type</b></td><td><b></b><b>Key data value</b></td></tr>
+<tr><td>formUniqueID</td><td>typeLongInteger</td><td>A unique number</td></tr>
+<tr><td>formPropertyID</td><td>typeEnumerated </td><td>An identifier declared in your</td></tr>
+<tr><td></td><td></td><td>'aete' resource</td></tr>
+<tr><td>formName</td><td>typeIntlText</td><td>The name of an object, such as a</td></tr>
+<tr><td></td><td></td><td>document</td></tr>
+<tr><td>formAbsolutePosition</td><td>typeLongInteger</td><td></td></tr>
+<tr><td></td><td>typeAbsoluteOrdinal</td><td>A positive</td></tr>
+<tr><td></td><td></td><td>or negative number</td></tr>
+<tr><td></td><td></td><td>kAEFirst, kAEMiddle, kAELast,</td></tr>
+<tr><td></td><td></td><td>kAEAny</td></tr>
+<tr><td>formRelativePosition</td><td>typeEnumerated</td><td>kAENext, kAEPrevious</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Table 2.</b> Complex key forms
+</p>
+<p><table border="0"><tr><td><b>Key form</b></td><td><b></b><b>Key data type</b></td><td><b></b><b>Key data value</b></td></tr>
+<tr><td>formAbsolutePosition</td><td>typeAbsoluteOrdinal</td><td>kAEAll</td></tr>
+<tr><td>formRange</td><td>typeRangeDescriptor</td><td>See section "Handling</td></tr>
+<tr><td></td><td></td><td>formRange."</td></tr>
+<tr><td>formTest</td><td colspan="2">See section "Handling formTest and formWhose."</td>
+<tr><td>formWhose</td><td colspan="2">See section "Handling formTest and formWhose."</td></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Note that not all key forms are appropriate for all classes -- a rectangle might not<br>
+have a name, for example, and some objects, such as a word or a paragraph, might not<br>
+have a unique ID. According to <i>Inside Macintosh: Interapplication Communication</i>, if a<br>
+key form isn't supported for an object in one of your containers, you should return<br>
+errAEEventNotHandled. But you might want to return a more specific error code, such<br>
+as errAEBadKeyForm or errAENoSuchObject.
+</p>
+<p>
+<b>HANDLING SIMPLE KEY FORMS</b>
+</p>
+<p>
+Handling the simple key forms is mostly straightforward. Table 3 shows some<br>
+examples of script fragments using simple keys and their results. For these examples,<br>
+assume the script is looking at a text block that contains the words "Hi there" in<br>
+12-point Helvetica type. For the first two examples, formAbsolutePosition is the key<br>
+form; for the third example, the key form is formPropertyID, and for the fourth<br>
+example it's formRelativePosition.
+</p>
+<p>
+<b>Table 3.</b> Script fragments using simple keys and their results
+</p>
+<p><table border="0"><tr><td><b>Script fragment</b></td><td><b></b><b>Result type</b></td><td><b></b><b>Example result</b></td></tr>
+<tr><td>word 2</td><td>word</td><td>"there"</td></tr>
+<tr><td>character 1 of word 2</td><td>character</td><td>"t"</td></tr>
+<tr><td>size of word 1</td><td>number (font size)</td><td>12</td></tr>
+<tr><td>word before word 2</td><td>word</td><td>"Hi"</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Although formRelativePosition is a simple key form, there's one aspect of handling it<br>
+that might not be obvious. The container parameter that your object accessor receives<br>
+in this case is a reference not to a container but to an object inside a container in<br>
+relation to another object inside that container. In other words, if a script asks for an<br>
+object before or after another object in a container, as in
+</p>
+<pre>get name of the window after window "Sales Chart"</pre><p class="spacer">&nbsp;</p>
+<p>
+your object accessor will receive a keyForm parameter of formRelativePosition and a<br>
+keyData parameter that contains a constant, either kAENext or kAEPrevious. Your<br>
+accessor must then find the object either before or after the "contained" object. This<br>
+means that to handle formRelativePosition, you'll have to install an accessor that gets<br>
+an object of one type from another object of the same type.
+</p>
+<p>
+Although the containment hierarchy for Sketch shows that windows don't contain other<br>
+windows, you <i>will</i> need a window-from-window accessor installed to handle<br>
+formRelativePosition. If your accessors can find an object in a container, finding an<br>
+object either before or after that object should be relatively easy, as long as you<br>
+remember to install the accessor. Here's how Sketch installs the accessor for its<br>
+window object:
+</p>
+<pre>error = AEInstallObjectAccessor(cWindow, cWindow,
+   NewOSLAccessorProc(WindowFromApplicationAccessor), 0L, false);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>HANDLING EVERY</b>
+</p>
+<p>
+If a script asks for every one of a certain kind of object, your accessor will receive a<br>
+keyForm parameter of formAbsolutePosition and a keyData parameter with a<br>
+descriptor type of typeAbsoluteOrdinal and a value of kAEAll, and you'll return a<br>
+descriptor that represents a collection of objects. The Sketch application returns an<br>
+AEList of tokens that reference each object. Some examples of script fragments using<br>
+<b>every</b> and their results are shown in Table 4. Again, assume the script is looking at a<br>
+text block that contains the words "Hi there" in 12-point Helvetica type.
+</p>
+<p>
+<b>Table 4.</b> Script fragments using <b>every</b> and their results
+</p>
+<p><table border="0"><tr><td><b>Script fragment</b></td><td><b></b><b>Result type</b></td><td><b></b><b>Example result</b></td></tr>
+<tr><td>every word</td><td>List of words</td><td>{"Hi", "there"}</td></tr>
+<tr><td>character 1 of every word</td><td>List of characters</td><td>{"H", "t"}</td></tr>
+<tr><td>every character of every word</td><td>List of list of characters</td><td>{{"H", "i"}, {"t", "h",</td></tr>
+<tr><td></td><td></td><td>"e", "r", "e"}}</td></tr>
+<tr><td>font of character 1 of every word</td><td>List of strings</td>
+<td>{"Helvetica",</td></tr>
+<tr><td></td><td></td><td>"Helvetica"}</td></tr>
+<tr><td>size of every character of every word </td><td>List of list of numbers</td>
+<td>{{12, 12}, {12,</td></tr>
+<tr><td></td><td></td><td>12, 12, 12, 12}}</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Each <b>every</b> specifies another list level: one <b>every</b> will return a list, two will return<br>
+a list of lists, and so on. Consider, for instance, this statement that navigates through<br>
+the Text suite hierarchy:
+</p>
+<pre>get every character of every word of every paragraph of every
+document</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+An application could handle this statement by returning a descriptor containing a<br>
+four-level list of character tokens. Alternatively, an application could return a flat<br>
+list (a single-level list of objects all concatenated together), but I don't recommend<br>
+this practice because it assumes that the information about the deep structure that's<br>
+thrown away won't be needed for any subsequent processing in the script, and there's<br>
+really no way to know that reliably.
+</p>
+<p>
+AEResolve and your individual object accessors have no way to know how deep a list<br>
+will end up being, but your code that handles the Apple event after the object<br>
+resolution has been completed must do the right thing with a descriptor referencing a<br>
+single object and with a descriptor that contains arbitrarily deep lists of such objects.
+</p>
+<p>
+<b>HANDLING FORMRANGE</b>
+</p>
+<p>
+If the script asks for objects between some object and some other object in a<br>
+container, your object accessor for that container will receive a keyForm parameter<br>
+of formRange. There are many ways to specify a range of objects in a script:
+</p>
+<pre>get the fill color of rectangles 1 through 3
+get the location of windows from window "Hello" to window 4
+get the bounds of graphic objects from oval 1 to rectangle 3</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Note that the beginning and ending objects can be specified with different key forms<br>
+and that they might even be two different object types, as in the third example.<br>
+Regardless of how they're specified, you need to resolve the two object specifiers and<br>
+return a descriptor containing a list of tokens for the objects from the first through<br>
+the last object in the range. 
+</p>
+<p>
+Your object accessors are called three times to completely resolve a formRange<br>
+statement. On the first call to an object accessor, you receive a key form of formRange<br>
+and key data that contains a typeRangeDescriptor record. In Sketch, this information is<br>
+passed on to the ProcessFormRange function, shown in Listing 1. ProcessFormRange<br>
+begins by coercing the range record into a regular record, which will then contain two<br>
+object specifiers. Next, it extracts the first descriptor from the record and calls<br>
+AEResolve, which calls your object accessors again to get a token for the first object in<br>
+the range. Finally, ProcessFormRange extracts the second descriptor and calls<br>
+AEResolve again to get a token for the last object in the range. ProcessFormRange is<br>
+called from your object accessor, and when it returns you'll have tokens for the two<br>
+boundary objects in the range. Your object accessor then builds a list of all objects in<br>
+the range and returns that list in the result token.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 1.</b> Resolving the boundary objects for a range request
+</p>
+<pre>OSErr ProcessFormRange(AEDesc *keyData, AEDesc *start, AEDesc *stop)
+{
+   OSErr    error;
+   AEDesc   ospec = {typeNull, NULL};
+   AEDesc   range = {typeNull, NULL};
+
+   // Coerce the range record data into an AERecord.
+   error = AECoerceDesc(keyData, typeAERecord, &amp;range);
+   if (error != noErr) goto CleanUp;
+   
+   // Resolve the object specifier for the first object in the range.
+   error = AEGetKeyDesc(&amp;range, keyAERangeStart,
+               typeWildCard, &amp;ospec);
+   if (error == noErr &amp;&amp;
+         ospec.descriptorType == typeObjectSpecifier)
+      error = AEResolve(&amp;ospec, kAEIDoMinimum, start);
+   if (error != noErr) goto CleanUp;
+   AEDisposeDesc(&amp;ospec);
+
+   // Resolve the object specifier for the last object in the range.
+   error = AEGetKeyDesc(&amp;range, keyAERangeStop, typeWildCard,
+               &amp;ospec);
+   if (error == noErr &amp;&amp;
+          ospec.descriptorType == typeObjectSpecifier)
+      error = AEResolve(&amp;ospec, kAEIDoMinimum, stop);
+
+CleanUp:
+   AEDisposeDesc(&amp;ospec);
+   AEDisposeDesc(&amp;range);
+   return error;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+<b>HANDLING FORMTEST AND FORMWHOSE</b>
+</p>
+<p>
+If the script asks for objects that satisfy some test, such as
+</p>
+<pre>get the fill color of every rectangle whose rotation is 45</pre><p class="spacer">&nbsp;</p>
+<p>
+you'll return a descriptor containing a list of tokens referencing those objects.<br>
+Fortunately, once you've added support for list processing, you only need to install two<br>
+functions to gain the incredible power of <b>whose</b> statements: an object-counting<br>
+function and an object-comparison function. The object-counting function counts the<br>
+number of objects of a specified class in a specified container. Let's say that your<br>
+document has three rectangles that are rotated to 45 degrees, and another three that<br>
+aren't rotated. When the OSL calls your counting function, you return 6, the total<br>
+number of rectangles in the document container. Now the OSL knows that it has to call<br>
+your object-comparison function six times, once for each rectangle. 
+</p>
+<p>
+The object-comparison function is given two descriptors and a comparison operator<br>
+and returns true if the two descriptors satisfy the comparison operator, or false if<br>
+they don't. For the example above, one descriptor will be an object specifier, such as<br>
+rotation of rectangle 1, and the second descriptor contains the raw data, 45. You need<br>
+to resolve the first descriptor, a formPropertyID reference, to get the rotation value<br>
+for that object. Then you use the comparison operator to compare the resolved<br>
+property value with the raw comparison data. If the comparison is valid, you return<br>
+true; otherwise, you return false. When you return true, the OSL adds the token<br>
+representing the rectangle under consideration to a list of objects that satisfy the test.<br>
+To make sure the OSL handles formTest and formWhose for you in this way, be sure to<br>
+specify kAEIDoMinimum as the second parameter to AEResolve. 
+</p>
+<p>
+Because you can have only one counting function and one comparison function installed,<br>
+they need to be able to work with all of your container types and all the object types<br>
+you support. The good news is that if you've added support for basic object model<br>
+scriptability, you've already got most of the functions spread around that do most of<br>
+the work you'll need to do in your counting and comparison callbacks. Sketch includes<br>
+both an object-counting function and an object-comparison function, plus a variety of<br>
+comparison functions for different data types. 
+</p>
+<p>
+Depending on the OSL to handle <b>whose</b> clauses in this way has one drawback -- it can<br>
+be inefficient when there are a large number of objects. The OSL will call your<br>
+accessors to find each object and then it will apply the comparison to each one. If you<br>
+find that this is too slow, you can go the extra mile and handle resolution of <b>whose</b><br>
+clauses yourself. For details, see "Speeding Up<b>whose</b> Clause Resolution in Your<br>
+Scriptable Application" by Greg Anderson in<i>develop</i> Issue 24.
+</p>
+
+
+<h2>INTRODUCING THE THREE BIG GOTCHAS</h2>
+<p>
+Handling the key forms and the lists your object accessors can return goes a long way<br>
+toward making an object model implementation capable of handling complex user<br>
+scripts. But there's more you need to do -- namely, you have to know about the three<br>
+big gotchas so that you can avoid getting into trouble with them.
+</p>
+<p>
+I first encountered the gotchas while I was taking the "Programming Apple Events"<br>
+course at Apple Developer University. The instructor, James Sulzen, was showing us<br>
+some slides when he boldly exclaimed, "And here is the most important slide in the<br>
+course!" It was the slide listing the gotchas I'm about to describe. But I didn't discover<br>
+just how correct his pronouncement was until sometime later, when I'd read the<br>
+Registry several times over and had started implementing an object model for a<br>
+high-end graphics package. Simply stated, the gotchas are these:
+</p>
+<ul>
+<li>Any Apple event parameter can be an object specifier.</li>
+<li>Any resolution can return either a descriptor containing a token for a<br>
+single object or a descriptor containing a list of tokens.</li>
+<li>The meaning of a token's contents must be preserved during the execution<br>
+of an Apple event that uses that token.</li>
+</ul>
+<p>
+I'll explain each of these and describe what you need to do in your code to deal with<br>
+them.
+</p>
+<p>
+<b>GOTCHA #1: THE "ANY PARAMETER" GOTCHA</b><br>
+
+
+<i style="font-size:125%;">Any Apple event parameter can be an object specifier.</i>
+</p>
+<p>
+To help you grasp the implications of this gotcha, let's look first at a script that<br>
+results in sending your application a keyData parameter that's not an object specifier:
+</p>
+<pre>set stroke size of rectangle 1 of graphic group 2 to 3</pre><p class="spacer">&nbsp;</p>
+<p>
+In your 'aete' resource, you've included the QuickDraw Graphics suite that defines a<br>
+rectangle object and its stroke size property. When a script sends the above statement<br>
+to your application, your accessors will be called to find rectangle 1. In this example,<br>
+accessors for document-from-application, group-from-document, and<br>
+rectangle-from-group will be called. The last accessor, the one that actually finds the<br>
+rectangle, returns a token that will allow your event handler to find this specific<br>
+rectangle later. Next, since AEResolve has done its work, your Core suite dispatcher<br>
+examines the type of object the token refers to and dispatches it to the appropriate<br>
+object's event dispatcher. 
+</p>
+<p>
+Your event dispatcher looks at the Apple event ID and determines that it's a Set Data<br>
+event, so it calls the object's Set Data event handler, passing in the token returned<br>
+from your object accessor, the original event, and the reply event. In the object's<br>
+event handler, you examine the token to determine that it references the stroke size<br>
+property of a particular rectangle, and you examine the Apple event to extract the<br>
+keyData parameter, which contains the value 3. Finally, you update the data structure<br>
+that represents that rectangle, setting the stroke size to 3, and probably do something<br>
+to generate an update event so that the screen is redrawn to show the rectangle's new<br>
+visual appearance.
+</p>
+<p>
+Now, suppose the user typed a slightly different statement:
+</p>
+<pre>set stroke size of rectangle 1 to the stroke size of oval 2</pre><p class="spacer">&nbsp;</p>
+<p>
+This time the keyData parameter isn't a simple number like 3 but is instead an object<br>
+specifier, stroke size of oval 2. There's only one way to convert this to a value to use to<br>
+set the stroke size of rectangle 1 -- you have to resolve the keyData parameter. You<br>
+first have to resolve the object specifier to acquire a token that references the stroke<br>
+size of oval 2, and then, since you need the actual value of that property for the Set<br>
+Data event, you must use that token and emulate a Get Data event to extract that value<br>
+from oval 2.
+</p>
+<p>
+<b>How to deal with gotcha #1.</b> Again, gotcha #1 says <i>any</i> parameter to an Apple<br>
+event can be an object specifier. Since this is the case, we might as well write a<br>
+generic function that extracts parameters from an Apple event and that can handle<br>
+parameters that contain raw data as well as parameters that contain object specifiers.<br>
+Sketch uses this approach, calling its ExtractKeyDataParameter function from its Set<br>
+Data event handlers.
+</p>
+<p>
+The ExtractKeyDataParameter function, shown in Listing 2, extracts the key data from<br>
+the Apple event without changing its form. It then passes that data to the ExtractData<br>
+function (Listing 3), which looks at the descriptor type and calls AEResolve if it<br>
+determines that the source parameter contains an object specifier. ExtractData can<br>
+receive an object specifier, an object token, a property token, or raw data (text,<br>
+number, and so on); it converts whatever it receives into raw data and returns that.<br>
+Besides being called from ExtractKeyDataParameter, it's also called by the<br>
+OSLCompareObjectsCallback function, which is used to resolve <b>whose</b> clauses.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 2.</b> Extracting the keyData parameter from an Apple event
+</p>
+<pre>OSErr ExtractKeyDataParameter(const AppleEvent *appleEvent,
+   AEDesc *data)
+{
+   OSErr    error = noErr;
+   AEDesc   keyData = {typeNull, NULL};
+
+   error = AEGetKeyDesc(appleEvent, keyAEData, typeWildCard,
+               &amp;keyData);
+   if (error == noErr)
+      error = ExtractData(&amp;keyData, data);
+  
+   AEDisposeDesc(&amp;keyData);
+   return error;
+}</pre>
+<p class="spacer">&nbsp;</p>
+
+
+
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 3.</b> Extracting raw data from a descriptor
+</p>
+<pre>OSErr ExtractData(const AEDesc *source, AEDesc *data)
+{
+   OSErr       error = noErr;
+   AEDesc      temp = {typeNull, NULL};
+   DescType    dispatchClass;
+     
+   if ((source-&gt;descriptorType == typeNull) ||
+       (source-&gt;dataHandle == NULL)) {
+      error = errAENoSuchObject;
+      goto CleanUp;
+   }
+  
+   // If it's an object specifier, resolve it into a token;
+   // otherwise just copy it.
+   if (source-&gt;descriptorType == typeObjectSpecifier)
+      error = AEResolve(source, kAEIDoMinimum, &amp;temp);
+   else error = AEDuplicateDesc(source, &amp;temp);
+   if (error != noErr) goto CleanUp;
+  
+   // Next, determine which object should handle it, if any.
+   // If it's a property token, get the dispatch class.
+   // Otherwise, it's either an object token or raw data.
+   if (temp.descriptorType == typeProperty)
+      dispatchClass = ExtractDispatchClassFromToken(&amp;temp);
+   else dispatchClass = temp.descriptorType;
+  
+   // If it's a property token, get the data it refers to;
+   // otherwise just duplicate it.
+   switch (dispatchClass) {
+      case cApplication:
+         error = errAEEventNotHandled;
+         break;
+      case cDocument:
+         error = GetDataFromDocumentObject(&amp;temp, NULL, data);
+         break;
+      case cWindow:
+         error = GetDataFromWindowObject(&amp;temp, NULL, data);
+         break;
+      case cGraphicObject:
+         error = GetDataFromGraphicObject(&amp;temp, NULL, data);
+         break;
+      default:
+         // This is raw data or a nonproperty token.
+         error = AEDuplicateDesc(&amp;temp, data);
+         break;
+   }
+
+CleanUp:
+   AEDisposeDesc(&amp;temp);
+   return error;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+There are some circumstances where extracting raw data isn't the correct thing to do,<br>
+as in
+</p>
+<pre>set selection of application "Sketch" to oval 2</pre><p class="spacer">&nbsp;</p>
+<p>
+In this case, we just want to return the token for oval 2, not some property data as in<br>
+the previous example. To handle this case, ExtractData checks to make sure that the<br>
+token's propertyCode field doesn't contain typeNull before we dispatch the token to one<br>
+of the GetDataFrom functions. If it isn't a property token, we just return the token<br>
+itself and not its data.
+</p>
+<p>
+<b>GOTCHA #2: THE "ANY RESOLUTION" GOTCHA</b><br>
+
+
+<i style="font-size:125%;">Any resolution can return either a descriptor containing a token for</i><br>
+
+
+<i style="font-size:125%;">a single object or a descriptor containing a list of tokens.</i>
+</p>
+<p>
+As noted earlier, the presence of <b>every</b> in a script statement, or a range request, or a<br>
+<b>whose</b> statement all require that you generate and return a descriptor containing a<br>
+list of tokens. Let's look at a script statement and follow the resolution process as it<br>
+calls each of our accessors in turn. Here's the statement:
+</p>
+<pre>get every character of word 2 of every line of paragraph 2 of
+document 1</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Let's assume document 1 looks like this:
+</p>
+<p>
+Hello there!&#182;<br>
+This text block contains three lines<br>
+and two of them are long but one<br>
+is not.&#182;
+</p>
+<p>
+In the Core suite, AEResolve works from the top of the containment hierarchy down to<br>
+the requested object, so in our example it first calls the document-from-application<br>
+accessor, which returns a token identifying the frontmost document. I'll introduce a<br>
+notation here, where a letter refers to the object type, and a number refers to an<br>
+index, so "D1" means "document 1."
+</p>
+<pre>resolve "document 1" =&gt; D1</pre><p class="spacer">&nbsp;</p>
+<p>
+Next, AEResolve asks us to find a paragraph by calling our paragraph-from-document<br>
+accessor, which returns a token for paragraph 2:
+</p>
+<pre>resolve "paragraph 2 of document 1" =&gt; D1P2</pre><p class="spacer">&nbsp;</p>
+<p>
+Next, AEResolve calls our line-from-paragraph accessor. Because of the <b>every</b><br>
+keyword, we must return a list of tokens:
+</p>
+<pre>resolve "every line of paragraph 2 of document 1" =&gt;
+   {D1P2L1, D1P2L2, D1P2L3}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Next, AEResolve asks for word 2 and calls our word-from-line accessor. In this case,<br>
+however, our accessor must be able to find a word in each token in a list of line tokens.<br>
+The accessor's result is a list of word tokens. The list depth doesn't change, because the<br>
+statement doesn't ask for every word.
+</p>
+<pre>resolve "word 2 of every line of paragraph 2 of document 1" =&gt;
+   {D1P2L1W2, D1P2L2W2, D1P2L3W2}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The final resolution asks for every character of each of those three words. Because this<br>
+is our second every in the statement, we know we're going to return a list of lists:
+</p>
+<pre>resolve "every character of word 2 of every line of paragraph 2 of
+document 1" =&gt;
+   {{D1P2L1W2C1, D1P2L1W2C2, D1P2L1W2C3, D1P2L1W2C4},
+    {D1P2L2W2C1, D1P2L2W2C2, D1P2L2W2C3},
+    {D1P2L3W2C1, D1P2L3W2C2, D1P2L3W2C3}}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+or, as it would be displayed as an AppleScript result:
+</p>
+<pre>{{"t", "e", "x", "t"}, {"t", "w", "o"}, {"n", "o", "t"}}</pre><p class="spacer">&nbsp;</p>
+<p>
+A list of tokens can also be accumulated by the OSL in the course of handling a<b>whose</b><br>
+clause. For example, consider the following statement:
+</p>
+<pre>resolve "every word of paragraph 2 of document 1 that contains
+"e"" =&gt;
+   {"text", "three", "lines", "them", "are", "one"}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+When this statement is resolved, the OSL will call your object accessors for word 1<br>
+through word 16 of the token for paragraph 2 of document 1 and pass each word token<br>
+to your object-comparison function. Those tokens that match (words that contain the<br>
+letter e in this example) are copied into an AEList with AEPutDesc, and the original is<br>
+disposed of with AEDisposeDesc. Tokens that don't match are disposed of with your<br>
+token disposal callback if you've installed one, or with AEDisposeDesc otherwise. 
+</p>
+<p>
+There's a corollary to gotcha #2: <i>Any token list can be or can contain an empty list or</i><br>
+<i>lists.</i> Given the statement
+</p>
+<pre>get every character of word 3 of every line of paragraph 2 of
+document 1</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+we must deal with the fact that line 3 (the last line) of paragraph 2 contains only two<br>
+words. What then should we do with "word 3 of line 3"? If this were a standalone<br>
+statement, we'd feel justified in returning an errAEIllegalIndex error to let the user<br>
+know that the requested word doesn't exist. However, since we're returning lists in the<br>
+more complex statement, we might want to return an empty list as part of our result<br>
+instead. For example:
+</p>
+<pre>{{"b", "l", "o", "c", "k"}, {"o", "f"}, {}}</pre><p class="spacer">&nbsp;</p>
+<p>
+Another example, again from the Text suite, involves words from paragraphs. Suppose<br>
+paragraph 2 is empty, as in the following block of text:
+</p>
+<p>
+Hello there!&#182;<br>
+&#182;<br>
+How are you?&#182;
+</p>
+<p>
+What will you do with "get every word of every paragraph" in this case? If you decide<br>
+to support empty lists or empty sublists, all of your handlers will need to be able to<br>
+deal not only with a single token and arbitrarily deep lists of tokens, but also with an<br>
+empty list.
+</p>
+<p>
+<b>How to deal with gotcha #2.</b> Designing your object accessors and your event<br>
+handlers to be list savvy enables your code to fully respond to script statements that<br>
+require you to return lists of objects or to apply Apple events to lists of objects.
+</p>
+<p>
+To handle lists, an object accessor must be able to return a descriptor containing a<br>
+token that references a single object or a descriptor that contains a list of tokens. For<br>
+example, a property-from-object accessor must be able to receive a list of object<br>
+tokens and return a list of property tokens for those objects. For each object you<br>
+support, you need one of these property-from-object accessors. In Sketch, these<br>
+basically duplicate the token for the object and then stuff the requested property ID<br>
+into the token's propertyCode data field.
+</p>
+<p>
+An object's event handler must also be able to receive a descriptor that contains a<br>
+single token or a descriptor that contains a list of tokens. It must then apply the event<br>
+to the object referenced by each token. In addition, the event handler must apply the<br>
+event to each object in a manner that addresses gotcha #3, discussed later.
+</p>
+<p>
+If you've installed a token disposal callback function, it too must be able to handle an<br>
+AEList of tokens.
+</p>
+<p>
+The Sketch sample handles this gotcha by implementing recursion in both its object<br>
+accessors and its event handlers. The basic structure of an accessor then consists of<br>
+three functions. For example, for the QuickDraw Graphics suite, the<br>
+property-from-object accessor uses these three functions, as shown in Listing 4:
+</p>
+<ul>
+<li>PropertyFromGraphicObjectAccessor -- installed function that calls one<br>
+of the following two static functions, depending on whether it receives a token<br>
+or a token list</li>
+<li>PropertyFromListAccessor -- always receives a list, and calls itself<br>
+recursively until it finds a token that doesn't contain a list, when it calls<br>
+PropertyFromObjectAccessor</li>
+<li>PropertyFromObjectAccessor -- always receives a token for a single<br>
+object, and returns a token representing a property of that object</li>
+</ul>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 4.</b> Functions used by our property-from-object accessor
+</p>
+<pre>pascal OSErr PropertyFromGraphicObjectAccessor(
+   DescType desiredClass,
+   const AEDesc* containerToken, DescType containerClass,
+   DescType keyForm, const AEDesc* keyData, AEDesc* resultToken,
+   long refcon)
+{
+   OSErr  error;
+
+   if (containerToken-&gt;descriptorType != typeAEList)
+      error = PropertyFromObjectAccessor(desiredClass,
+         containerToken, containerClass, keyForm, keyData,
+         resultToken, refcon);
+   else {
+      error = AECreateList(NULL, 0L, false, resultToken);
+      if (error == noErr)
+         error = PropertyFromListAccessor(desiredClass,
+            containerToken, containerClass, keyForm, keyData,
+            resultToken, refcon);
+   }
+   return error;
+}
+static OSErr PropertyFromListAccessor(DescType desiredClass,
+   const AEDesc* containerToken, DescType containerClass,
+   DescType keyForm, const AEDesc* keyData, AEDesc* resultToken,
+   long refcon)
+{
+   OSErr       error = noErr;
+   long        index, numItems;
+   DescType    keyword;
+   AEDesc      srcItem = {typeNull, NULL);
+   AEDesc      dstItem = {typeNull, NULL};
+
+   error = AECountItems((AEDescList*)containerToken, &amp;numItems);
+   if (error != noErr) goto CleanUp;
+
+   for (index = 1; index &lt;= numItems; index++) {
+      error = AEGetNthDesc(containerToken, index, typeWildCard,
+         &amp;keyword, &amp;srcItem);
+      if (error != noErr) goto CleanUp;
+     
+      if (srcItem.descriptorType != typeAEList) {
+         error = PropertyFromObjectAccessor(desiredClass, &amp;srcItem,
+            containerClass, keyForm, keyData, &amp;dstItem, refcon);
+      }
+      else {
+         error = AECreateList(NULL, 0L, false, &amp;dstItem);
+         if (error == noErr)
+            error = PropertyFromListAccessor(desiredClass, &amp;srcItem,
+               containerClass, keyForm, keyData, &amp;dstItem, refcon);
+      }
+      if (error != noErr) goto CleanUp;
+
+      error = AEPutDesc(resultToken, index, &amp;dstItem);
+      if (error != noErr) goto CleanUp;
+           
+      AEDisposeDesc(&amp;srcItem);
+      AEDisposeDesc(&amp;dstItem);
+   }
+  
+CleanUp:
+   AEDisposeDesc(&amp;srcItem);
+   AEDisposeDesc(&amp;dstItem);
+   return error;
+}
+
+static OSErr PropertyFromObjectAccessor(DescType desiredType,
+   const AEDesc* containerToken, DescType containerClass,
+   DescType keyForm, const AEDesc* keyData, AEDesc* resultToken,
+   long refcon)
+{
+   OSErr    error = noErr;
+   DescType requestedProperty = **(DescType**)(keyData-&gt;dataHandle);
+   if (CanGetProperty(containerClass, requestedProperty)
+    || CanSetProperty(containerClass, requestedProperty)) {
+      error = AEDuplicateDesc(containerToken, resultToken);
+      if (error == noErr) {
+         resultToken-&gt;descriptorType = desiredType;
+         (**(CoreTokenHandle)(resultToken-&gt;dataHandle)).propertyCode
+            = requestedProperty;
+         (**(CoreTokenHandle)(resultToken-&gt;dataHandle)).objectClass
+            = containerClass;
+      }
+   }
+   else error = errAEEventNotHandled;
+   return error;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+The event handlers use this same three-tiered mechanism to apply events to<br>
+descriptors that contain either a single token or a list of tokens. For example, the Get<br>
+Data event will eventually receive the property token returned by the<br>
+property-from-object accessor above and deal with it as shown in Listing 5.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 5. </b>How a Get Data event handles a property token
+</p>
+<pre>static OSErr HandleGetData(AEDesc *token,
+   const AppleEvent *appleEvent,
+   AppleEvent *reply, long refcon)
+{
+   OSErr    error = noErr;  
+   AEDesc   data = {typeNull, NULL};
+   AEDesc   desiredTypes = {typeNull, NULL};  
+
+   AEGetParamDesc(appleEvent, keyAERequestedType, typeAEList,
+      &amp;desiredTypes);
+      // "as" is an optional parameter; don't check for error.
+   error = GetDataFromGraphicObject(token, &amp;desiredTypes, &amp;data);
+   if (error == noErr &amp;&amp; reply != NULL)
+      error = AEPutKeyDesc(reply, keyDirectObject, &amp;data);
+     
+   AEDisposeDesc(&amp;data);
+   AEDisposeDesc(&amp;desiredTypes);
+   return error;
+}
+
+OSErr GetDataFromGraphicObject(AEDesc *tokenOrTokenList,
+   AEDesc *desiredTypes, AEDesc *data)
+{
+   OSErr   error = noErr;
+  
+   if (tokenOrTokenList-&gt;descriptorType != typeAEList)
+      error = GetDataFromObject(tokenOrTokenList, desiredTypes,
+                  data);
+   else {
+      error = AECreateList(NULL, 0L, false, data);
+      if (error == noErr)
+         error = GetDataFromList(tokenOrTokenList, desiredTypes,
+                     data);
+   }
+   return error;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+Again, the event handler passes the first parameter on to GetDataFromGraphicObject,<br>
+which calls GetDataFromList if the parameter contains a list of tokens, or<br>
+GetDataFromObject if it contains a token for a single object. Both the object accessor<br>
+and the event handler use the same three-tiered mechanism to deal with either lists or<br>
+single tokens. Most of the work is done, in both cases, in the third tier, and if you've<br>
+already implemented simple object model scriptability, you've already written most of<br>
+the code for the third tier. To support lists, you just have to add the switching code for<br>
+the first and second tier, which is almost identical for all object accessors and all<br>
+event handlers. Using this mechanism, fully supporting lists of any depth is nearly<br>
+trivial.
+</p>
+<p>
+<b>Flattening lists.</b> Sometimes, after your object resolution code has built an<br>
+arbitrarily deep list of lists to satisfy the tail end of a script statement, the final<br>
+resolution might require you to flatten it back into a single-level list. Sketch includes<br>
+the FlattenAEList function to perform this duty:
+</p>
+<pre>OSErr FlattenAEList(AEDescList *deepList, AEDescList *flatList);</pre><p class="spacer">&nbsp;</p>
+<p>
+Here's an example of when you might use it, again from the Text suite:
+</p>
+<pre>get text of every character of every word of every paragraph ~
+   of every document</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Since the Text class isn't required to handle either formRange or the every construct,<br>
+you can return a string that spans from the first character in the list to the last<br>
+character in the list. A function to flatten a typeAEList token from an arbitrary depth<br>
+to a single list is useful for this purpose, and for use in your Apple event handlers,<br>
+such as the handlers for Count and Delete. For example, the statement
+</p>
+<pre>count every character of every word of every line of every
+paragraph</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+is allowed, and your accessors will return a four-deep list of characters. The Count<br>
+event handler doesn't care about the structure of the list, only about the number of<br>
+objects in its sublists, so rather than deal with recursion to step through the list<br>
+structure you can just flatten the list and then call AECountItems to get the number of<br>
+elements. This example is somewhat contrived, and although this script fragment<br>
+would be processed correctly, such processing might be very slow for a large number<br>
+of objects. This is a side effect of a strict object-first implementation. For some<br>
+events, such as Count, you may want to write custom counting code that short-circuits<br>
+your standard object resolution and dispatching mechanism.
+</p>
+<p>
+<b>GOTCHA #3: THE "PRESERVE A TOKEN'S MEANING" GOTCHA</b><br>
+
+
+<i style="font-size:125%;">The meaning of a token's contents must be preserved during the</i><br>
+
+
+<i style="font-size:125%;">execution of an Apple event that uses that token.</i>
+</p>
+<p>
+You're most likely to come up against this gremlin when one of your handlers receives<br>
+a list of tokens and some action needs to be performed on the objects referenced by the<br>
+tokens in the list. Consider, for example, the following statement:
+</p>
+<pre>delete character 2 of every word</pre><p class="spacer">&nbsp;</p>
+<p>
+Let's say all of your text tokens are implemented by storing a beginning offset and a<br>
+length, where the offset is measured from the beginning of a text block. Resolving the<br>
+above statement will return a list of tokens, with offsets for character 2 of each word<br>
+in the text block. Next, your handler iterates through the list of objects referenced by<br>
+the tokens and deletes the character referenced in each object. The first deletion works<br>
+just fine; you use the offset contained in the first token and delete character 2 of word<br>
+1. This causes every following character to move one position to the left to fill the spot<br>
+vacated by the deleted character. Uh oh! Now the offsets for the remainder of your<br>
+objects are all off by 1! The next deletion will use the now incorrect offsets, and<br>
+character 3 of word 2 will be deleted. The next call will delete character 4 of word 3,<br>
+and so on. This implementation has violated gotcha #3 -- you received a single Delete<br>
+event, but that single event operates on multiple objects, and although your object<br>
+accessors computed the object tokens correctly at the time they were called, your<br>
+handler causes the meaning of the tokens to be inaccurate each time it processes<br>
+another object.
+</p>
+<p>
+<b>How to deal with gotcha #3.</b> Here are several ways to solve the problem resulting<br>
+from processing the script statement above:
+</p>
+<ul>
+<li>You could construct your tokens as offsets from the end of the text block<br>
+instead of from its beginning. Then, as characters are deleted from the first<br>
+word to the last, since the end of the list is shrinking also, the offsets will<br>
+still be correct.</li>
+<li>You could have your handler keep track of the number of characters<br>
+deleted so far and adjust the offsets in your tokens as you go.</li>
+<li>You could step through the list in reverse order, from the last token down<br>
+to the first.</li>
+</ul>
+<p>
+These methods all produce the correct results for the script statement above, but they<br>
+might produce incorrect results for other valid statements. For instance, suppose your<br>
+user built the word list herself and then reversed the list and sent it to your Delete<br>
+handler. With the last solution above, you cleverly work from the end of the list to the<br>
+beginning, but since the user has already reversed the list, you're really back to<br>
+deleting from the beginning of the text block toward its end, and you experience the<br>
+very problem you were trying to avoid!
+</p>
+<p>
+If you're implementing the Text suite, pay particular attention to gotcha #3. Test your<br>
+implementation with many different scripting constructs, and have people who write<br>
+scripts very differently from you test it also. If necessary, you may need to first<br>
+manipulate the order of the tokens in the list you receive to make sure you can<br>
+preserve the meaning of those tokens until the event has been applied to each one of<br>
+them.
+</p>
+
+
+<h2>OTHER GOODIES FOR COMPLETENESS</h2>
+<p>
+Now you know how to handle lists and some ways to avoid the big gotchas. But there are<br>
+still a few more things you can do to make your object model implementation more<br>
+complete. Specifically, you can implement a "properties" property, implement a<br>
+property-from-property accessor, provide your own coercions, and return<br>
+meaningful error codes.
+</p>
+<p>
+<b>IMPLEMENTING A "PROPERTIES" PROPERTY</b>
+</p>
+<p>
+You should implement a "properties" property and return a record containing all the<br>
+properties for an object. This provides a real boon for the scripter, who can then set<br>
+or get several properties with a single statement, and it speeds up execution as well<br>
+since it avoids the need to send many events to get or set properties one at a time.
+</p>
+<p>
+For instance, if the script says
+</p>
+<pre>get the properties of rectangle 1</pre><p class="spacer">&nbsp;</p>
+<p>
+the Get Data event should return a record containing the name and value of each<br>
+property for that object:
+</p>
+<pre>{bounds: {0, 0, 100, 200}, fill color: red, stroke size: 10, ...}</pre><p class="spacer">&nbsp;</p>
+<p>
+The script could also say something like
+</p>
+<pre>set properties of rectangle 1 ~
+   to {stroke size: 3, fill color: blue, location: {20, 40}}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+In Sketch, the Set Data event handler looks at the property token it receives. If the<br>
+token references a single property, it packages it into a record containing that<br>
+property and passes the record on to the SetProperties function. If, instead, it receives<br>
+a record, it just passes that record on to SetProperties. The SetProperties function<br>
+always receives a record; it examines the record for each property of the object and<br>
+then applies the value of each property it finds in the record to the object.
+</p>
+<p>
+<b>IMPLEMENTING A PROPERTY-FROM-PROPERTY ACCESSOR</b>
+</p>
+<p>
+If you implement the "properties" property, you should also implement a<br>
+property-from-property accessor. If you don't, you won't be able to get a single<br>
+property out of the property record you've already built. The first statement below<br>
+will work, but the second one will generate an error:
+</p>
+<pre>get fill color of rectangle 1
+get fill color of properties of rectangle 1 -- won't work</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+To get around this, the script writer will need to first assign the results to a variable<br>
+and then depend on AppleScript to extract the property out of that variable:
+</p>
+<pre>set myProps to properties of rectangle 1
+get fill color of myProps</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+But since one of our goals should be to make scripting intuitive and not force the script<br>
+author into particular programming constructs when not absolutely necessary, both<br>
+methods of asking for the property should be handled in your code.
+</p>
+<p>
+Another reason you may need a property-from-property accessor arises when, in the<br>
+process of defining your object containment hierarchy, you define two classes, make<br>
+one class an element of the other class, and then realize that the container can contain<br>
+one and only one instance of that element. For example, imagine a very limited drawing<br>
+program that allows many graphic objects but only one text block, an instance of the<br>
+QuickDraw Graphics graphic text class. If you stick with a straight containment<br>
+metaphor, the script author will need to use a statement like
+</p>
+<pre>graphic text 1 of document "Graphic Chart"</pre><p class="spacer">&nbsp;</p>
+<p>
+to reference the one and only text block. But why should the scripter have to specify<br>
+the index of 1 when there can be only one per document? This also invites the scripter<br>
+to ask for graphic text 2, for which you would need to return an errAENoSuchObject<br>
+error.
+</p>
+<p>
+One way to handle this case is to implement the singleton object as a property of an<br>
+object rather than a contained class. In your 'aete' resource, define a property (say<br>
+"label" for the above example) of type graphic text, which is a class defined elsewhere<br>
+in your 'aete' resource. Now, the script statement
+</p>
+<pre>get the label of document "Graphic Chart"</pre><p class="spacer">&nbsp;</p>
+<p>
+doesn't need to specify an index, since "label" is a property. What will that statement<br>
+return? You decide. You might just return the contents of the graphic text as a string.<br>
+But since the "label" property also references a class, you could return the properties<br>
+of the text object as a record, such as:
+</p>
+<pre>{contents: "Financial Results", font: "Times", size: 12, ...}</pre><p class="spacer">&nbsp;</p>
+<p>
+By implementing a property-from-property accessor, you can also properly resolve<br>
+a statement like this:
+</p>
+<pre>get font of label of document "Graphic Chart"</pre><p class="spacer">&nbsp;</p>
+<p>
+There's an ongoing debate in the developer community about the best way to design for<br>
+this single-element situation. Some developers believe that the design discussed above<br>
+leads to intuitive script statements that make it easier for users to script your<br>
+application. Others contend that elements and properties serve very different<br>
+purposes, and that intermixing them in this way both corrupts the object design and<br>
+confuses the beginning script writer. You'll have to decide for yourself how you want<br>
+to handle this in your application; there may not be one best design. In any case, if you<br>
+find yourself in this situation, take the advice Cal Simone gives in his According to<br>
+Script columns: write down script statements as part of your design and make sure<br>
+that they seem natural and intuitive before you write your code.
+</p>
+<p>
+<b>PROVIDING APPLICATION-SPECIFIC COERCIONS</b>
+</p>
+<p>
+Provide your own coercions. There are several places where these come in handy.<br>
+First, the Get Data event can take an optional parameter, keyAERequestedType, a list of<br>
+types that the user would like for the returned data. For instance, a fill color might be<br>
+represented as one of the following:
+</p>
+<ul>
+<li>typeEnumerated, such as <b>red</b></li>
+<li>typeChar or typeIntlText, such as "red"</li>
+<li>typeRGBColor, such as {32767, 0, 0}</li>
+</ul>
+<p>
+Thus, a scripter might ask for
+</p>
+<pre>fill color of rectangle 1 as constant
+fill color of rectangle 1 as string
+fill color of rectangle 1 as RGB color</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The Registry defines the type of the as parameter as typeAEList, indicating that the<br>
+first item in the list is the user's preferred data type, the second is the user's next<br>
+most preferred type, and so on. However, I haven't been able to persuade AppleScript<br>
+to accept a list for this parameter. It seems as though<b>get fill color of rectangle 1</b><br>
+<b>as string</b> (or <b>RGB color</b> or <b>constant</b>) should work, but it won't compile.
+</p>
+<p>
+Note that there's a bug in AppleScript 1.1 that generates an error when you implement<br>
+both lists and the kAERequestedType parameter. The following statement will expose<br>
+the error:
+</p>
+<pre>get fill color of every rectangle as string</pre><p class="spacer">&nbsp;</p>
+<p>
+The <b>every</b> statement causes you to generate a list of property tokens, which is then<br>
+passed to your graphic object's Get Data event handler. There, you examine each token,<br>
+get the fill color from its rectangle, and convert it to a string (presumably the name of<br>
+the color), as specified in the <b>as string</b> part of the statement. Since you received a<br>
+list of tokens, you return a list of strings, as you should. You've done the right thing,<br>
+but AppleScript isn't satisfied! It doesn't realize that you've already handled the <b>as</b><br>
+<b>string</b> coercion, so it tries to coerce the list of strings you returned into a string and<br>
+it reports a coercion error. There's really nothing you can do in your application to<br>
+work around this bug; you'll have to wait for it to be fixed in a future version of<br>
+AppleScript. There is a way that scripts can handle the error, however:
+</p>
+<pre>tell document 1 of application "Sketch"
+   try
+      set colorNames to fill color of every rectangle as string
+   on error number -1700 from offendingVariable
+          set colorNames to offendingVariable
+   end try
+end tell</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>RETURNING USEFUL ERROR CODES</b>
+</p>
+<p>
+One last suggestion: Return a meaningful error code and error message if you don't or<br>
+can't handle an event, an object, or a data type. Table 5 presents a list of some of the<br>
+most common return codes, when to use them, and the error message that AppleScript<br>
+generates when one of these errors occurs. 
+</p>
+<p>
+<b>List 5. </b>Common error codes and examples of when you might return them
+</p>
+<p>
+errAEEventNotHandled (-1708)
+</p>
+<ul>
+<li>This isn't just a catch-all error; it has specific side effects in certain <br>
+situations. If your code doesn't handle an event, this is a signal for the&nbsp;&nbsp;Apple<br>
+Event Manager to give any system handlers a shot at the event.</li>
+<li>&lt;object-reference&gt; doesn't understand the &lt;event&gt; message.</li>
+</ul>
+<p>
+errAECoercionFail (-1700)
+</p>
+<ul>
+<li>When you can't coerce some data to the requested type.</li>
+<li>Can't make some data into the expected type.</li>
+</ul>
+<p>
+errAENoSuchObject (-1728)
+</p>
+<ul>
+<li>When the requested object doesn't exist.</li>
+<li>Can't get &lt;object reference&gt;.</li>
+</ul>
+<p>
+errAENotASingleObject (-10014)
+</p>
+<ul>
+<li>When a handler that doesn't handle lists receives a list.</li>
+<li>Handler only handles single objects.</li>
+</ul>
+<p>
+errAENotAnElement (-10008)
+</p>
+<ul>
+<li>When you get a request to delete a property.</li>
+<li>The specified object is a property, not an element.</li>
+</ul>
+<p>
+errAENotModifiable (-10003)
+</p>
+<ul>
+<li>When the object can never be modified, such as a read-only property.  See<br>
+also errAEWriteDenied.</li>
+<li>Can't set &lt;property&gt; to &lt;value&gt;. Access not allowed.</li>
+</ul>
+<p>
+errAEWriteDenied (-10006)
+</p>
+<ul>
+<li>When the object can't <i>currently</i> be modified, such as a locked rectangle <br>
+that can't be changed until it's unlocked. See also errAENotModifiable.</li>
+<li>Can't set &lt;property&gt; to &lt;value&gt;.</li>
+</ul>
+<p>
+errAECantHandleClass (-10010)
+</p>
+<ul>
+<li>When an event handler can't handle objects of this class, or when an <br>
+object-counting callback receives an object type it can't count.</li>
+<li>Handler can't handle objects of this type.</li>
+</ul>
+<p>
+errAEIllegalIndex (-1719)
+</p>
+<ul>
+<li>When the scripter asks for an index greater than the number of objects <br>
+or less than 1. Remember that negative indexes are legal, so convert&nbsp;&nbsp;them to a<br>
+positive index before performing a range check.</li>
+<li>Can't get &lt;object-reference&gt;. Invalid index.</li>
+</ul>
+<p>
+errAEImpossibleRange (-1720)
+</p>
+<ul>
+<li>When you process formRange and you can't return a list of objects <br>
+between the boundary objects -- for example, when two rectangles are <br>
+specified and are in different documents.</li>
+<li>Invalid range.</li>
+</ul>
+<p>
+errAEWrongDataType (-1703)
+</p>
+<ul>
+<li>When a descriptor contains an unexpected data type, or when an <br>
+object-comparison callback doesn't know how to compare one of the data types.</li>
+<li>&lt;value&gt; is the wrong data type.</li>
+</ul>
+<p>
+errAETypeError (-10001)
+</p>
+<ul>
+<li>When you receive a Set Data event, and the descriptor isn't of the <br>
+expected type and can't be coerced into that type.</li>
+<li>&lt;value&gt; is the wrong type.</li>
+</ul>
+<p>
+errAEBadKeyForm (-10002)
+</p>
+<ul>
+<li>When an object is requested by a key form that your accessor doesn't <br>
+support -- for example, rectangle by name.</li>
+<li>Invalid key form.</li>
+</ul>
+<p>
+errAECantSupplyType (-10009)
+</p>
+<ul>
+<li>When you can't return the type of data specified in the <b>as</b> parameter  of a<br>
+Get Data event.</li>
+<li>Can't supply the requested type for the data.</li>
+</ul>
+<p>
+Some error codes have a very generic error message as a default, but you can supply<br>
+additional parameters in the reply event so that the error message will be more<br>
+specific. For example, an errAECoercionFail message usually says, "Can't make some<br>
+data into the expected type," but if you add kOSAErrorOffendingObject and<br>
+kOSAErrorExpectedType parameters to the reply event, you'll get a much more<br>
+informative message, such as "Can't make fill color of rectangle 1 into a string." These<br>
+parameters can also be added to errAEWrongDataType and errAETypeError replies.<br>
+For more detail on giving better error messages using this technique, see Developer<br>
+Notes in the AppleScript Software Development Toolkit. You may want to define<br>
+additional error codes for your application, and if so you should be sure to also set the<br>
+error text in the reply event. Take a look at the PutReplyErrorNumber and<br>
+PutReplyErrorMessage functions in the Sketch source code to see how to do this.
+</p>
+
+
+<h2>EXERCISING YOUR IMPLEMENTATION</h2>
+<p>
+This article has described some things you can do to implement an Apple event object<br>
+model in your application so that it can handle complex scripts. Take a close look at the<br>
+code for the Sketch application to see how it uses the object-first method to handle<br>
+events and scriptable objects. Carefully examine the dictionaries of several<br>
+applications that are fully scriptable, such as QuarkXPress, the Scriptable Text<br>
+Editor, or PhotoFlash. Pay attention to how their 'aete' resources are constructed, and<br>
+read the <i>develop</i> columns by Cal Simone ("According to Script") to gain further insight<br>
+into how to organize both your 'aete' resource and your object model.
+</p>
+<p>
+Then give your implementation a thorough workout to see if you can spot any<br>
+problems. Write AppleScript test cases to exercise the most complex AppleScript<br>
+scripts that you want to support. Use the key forms that return lists, and mix them<br>
+unmercifully in your test scripts. Exercise every gotcha. If your application stands up<br>
+to the test, shout "Ship it!"
+</p>
+
+
+
+<p>
+<b>RECOMMENDED READING</b>
+</p>
+<ul>
+<li>"Apple Event Objects and You" by Richard Clark, <i>develop</i> Issue 10.</li>
+<li>"Speeding Up <b>whose</b> Clause Resolution in Your Scriptable<br>
+Application" by Greg Anderson, <i>develop</i> Issue 24.</li>
+<li>"Designing a Scripting Implementation" by Cal Simone, <i>develop</i><br>
+Issue 21. Also, look for Cal's According to Script columns starting<br>
+with <i>develop</i> Issue 22.</li>
+<li><i>Inside Macintosh: Interapplication Communication</i> by Apple<br>
+Computer, Inc. (Addison-Wesley, 1993).</li>
+<li><i>Apple Event Registry: Standard Suites</i> (Apple Computer, Inc.,<br>
+1992).</li>
+<li><i>AppleScript Language Guide</i> by Apple Computer, Inc.<br>
+(Addison-Wesley, 1993). This book is included in the AppleScript<br>
+Software Development Toolkit.</li>
+</ul>
+
+
+
+<p>
+<b>RON REUTER</b> (rlreute@uswest.com) is a software developer for USWEST Media<br>
+Group, "a leading provider of Yellow Pages and interactive multimedia information<br>
+services" or, as it used to be known, the phone company. He's spent the last two years<br>
+as technical lead on a team that's developing a graphics package to be used across a<br>
+fourteen-state region to build ads for USWEST Yellow Page directories. Programming<br>
+is Ron's sixth career; he's also been a offset press operator, a furniture maker, a<br>
+luthier, a traveling jewelry salesman, and a Zen student -- but he'd rather be dancing<br>
+beneath the diamond sky with one hand waving free.*
+</p>
+<p>
+<b>Thanks to</b> our technical reviewers Greg Anderson, Andy Bachorski, Greg Friedman,<br>
+C. K. Haun, and Jon Pugh for reviewing this article.*
+</p>
+</body>
+</html>

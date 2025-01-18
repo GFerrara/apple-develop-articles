@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 14 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 96 - Country Stringing: Localized Strings for the Newton</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Country Stringing: Localized Strings for the<br>
+Newton</h1>
+<h2>Maurice Sharp</h2>
+<p>
+<img src="img/181.gif" width="126 px"></img>
+</p>
+<p>
+<i>Newton products are currently available localized for English, French, German, and</i><br>
+<i>Swedish. Thus, to take full advantage of the market, Newton applications must be</i><br>
+<i>developed for four languages. As of Newton Toolkit version 1.5, there's a mechanism</i><br>
+<i>for localizing strings at compile time but no built-in support for organizing all the</i><br>
+<i>categories of strings across the different languages (unlike on the Macintosh, where</i><br>
+<i>you can use resources). This article presents a couple of ways to organize localized</i><br>
+<i>strings in your Newton application.</i>
+</p>
+<p>
+Until Newton Toolkit 1.5, developing an application for English, French, German, and<br>
+Swedish required four different application projects or many skanky contortions. This<br>
+was tedious, to say the least, but necessary for those who wanted to take full advantage<br>
+of the worldwide market for Newton products.
+</p>
+<p>
+Newton Toolkit 1.5 provides support (with the SetLocalizationFrame and LocObj calls)<br>
+for localizing your applications from just one project. But this is useful only at<br>
+compile time, and it doesn't provide an infrastructure for organizing and categorizing<br>
+the localized objects. In other words, you can have different strings for four locales,<br>
+but how you keep track of what strings you have and which ones need localizing is up to<br>
+you. Macintosh developers don't have this problem because all strings can reside in<br>
+resources; changing the strings in the resources changes them in the application.
+</p>
+<p>
+This article presents two ways to organize your localized strings. Both methods are<br>
+meant to be used at compile time, but there's also information on changing strings at<br>
+run time. Before reading this article, you should be familiar with the information in<br>
+the <i>Newton Programmer's Guide</i> on localizing Newton applications.
+</p>
+<h2>STRINGING YOU ALONG WITHOUT RESOURCES</h2>
+<p>
+In a Macintosh application you can keep localized strings in the 'STR#' resource of the<br>
+resource fork. This isn't an option in a Newton application for two reasons: ResEdit<br>
+doesn't directly support Unicode strings, and, more important, a Newton application<br>
+doesn't have a resource fork. All your strings have to reside somewhere in your<br>
+application package.
+</p>
+<p>
+&nbsp;&nbsp;A first cut at a solution to the problem of how to organize localized strings in your<br>
+Newton application would be to have a viewSetupFormScript or TextSetup method<br>
+(where applicable) that sets a particular string based on some application-global<br>
+setting. This solution has several disadvantages, such as spreading localized strings<br>
+throughout the code (resulting in multiple copies of strings) and requiring all strings<br>
+for all countries to be included.
+</p>
+<p>
+If you've programmed the Newton for a while, you might think of taking advantage of<br>
+dead code stripping and using an if statement that switches on a compile-time constant.<br>
+This would eliminate unused localized strings but is still awkward.
+</p>
+<p>
+The best idea is a technique that lets you keep all your strings together. You can do this<br>
+by defining a frame in your Project Data with one slot per string that you want to<br>
+localize. You can even use nested frames. For example:
+</p>
+<pre>constant kUSStrings := '{
+   AppName:      "World Ready!",
+   ExtrasName:   "World!",
+   HelloWorld:   "Hello World",
+   Dialogs: {
+      OK:      "OK",
+      Cancel:   "Cancel",
+      Yes:      "Yes",
+      No:      "No",
+   },
+};
+constant kFrenchStrings := ...</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+In Newton Toolkit 1.5 and later, you can use this frame with SetLocalizationFrame.<br>
+Unfortunately, there's no specification for how to build up the frame, which is<br>
+essential to organizing your strings in a sane way. Also, SetLocalizationFrame is meant<br>
+only for compile-time localizations. With some extra effort you can organize the<br>
+strings in a way that allows them to be localized at run time as well. As the next<br>
+section shows, the key is using the Load command in combination with a few constant<br>
+functions.
+</p>
+<h2>LINGUA FRAMA -- CREATING THE LANGUAGES FRAME</h2>
+<p>
+In the previous section, we defined a frame that can be used for each target language.<br>
+Each of those target language frames can be nested into an outer frame, called the<br>
+<i>languages frame</i>. Each target language subframe contains the localized strings in that<br>
+language. These subframes can in turn contain other subframes, enabling you to group<br>
+strings into logical categories such as strings used in filing, strings used in searching,<br>
+and so on. Each of the frames at the top level of the languages frame must have the same<br>
+structure. If you have a path in the USEnglish frame of Entries.Names.Phones.Home,<br>
+that path will also need to exist in French, German, and any other languages your<br>
+application supports.
+</p>
+<p>
+&nbsp;&nbsp;The overall structure of the languages frame is as follows:
+</p>
+<pre>{USEnglish: {
+   AppName:   "World Ready!",
+   Dialogs: {
+      Cancel:   "Cancel",
+      OK:      "OK",
+      // ... and so on
+   },
+ French: {
+   AppName:   "Pr&amp;ecirc;t pour le Monde!",
+   Dialogs: {
+      OK:      "OK",
+      Cancel:   "Annuler",
+      // ... and so on
+   },
+ German: {
+   AppName:   "Welt Ready!",
+   Dialogs: {
+      OK:      "OK",
+      Cancel:   "Absagen",
+      // ... and so on
+   },
+ // ... and so on
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+This is the format of the frame you would pass to SetLocalizationFrame as well as of a<br>
+constant that can be used in runtime localization. Typically, the languages frame would<br>
+be kept in a text file or in your Project Data. The problem with this is that the frame<br>
+is rather large, and adding or changing an entry in a language subframe can be<br>
+difficult. Also, several entries are identical (such as the string for OK).
+</p>
+<p>
+A better solution is to separate the localized strings by category. This article uses the<br>
+target languages as the categories, though you could also employ similar techniques<br>
+with other categories. Once the strings are split, you can use the Load command to<br>
+assemble the languages frame.
+</p>
+<p>
+There are two main schemes for organizing the strings. One uses simple text files and<br>
+works on both the Mac OS and Windows platforms. The other uses compile-time<br>
+functions to read the strings from some other format; on the Macintosh platform, this<br>
+method can be used to construct the languages frame from a resource file. We'll look at<br>
+each of these methods in turn.
+</p>
+<p>
+<b>LOADING FROM TEXT FILES</b>
+</p>
+<p>
+In the first scheme, you separate each language into a different text file. Remember<br>
+that Load will return the result of the last statement it executes in the specified file.<br>
+This means that each text file will specify one frame. For example, the contents of<br>
+your French text file might look like this:
+</p>
+<pre>{
+   AppName:   "Pr&amp;ecirc;t pour le Monde!",
+   Dialogs: {
+      OK:      "OK",
+      Cancel:   "Annuler",
+      // ... and so on
+   }
+};</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+You could then modify your Project Data to build the localization frame:
+</p>
+<pre>SetLocalizationFrame({French: Load(HOME &amp; "FrenchStrings.f"), ...</pre><p class="spacer">&nbsp;</p>
+<p>
+It's also helpful to have some string constants that can be used in multiple places. A<br>
+good example is the string for OK, which is the same in some languages. To do this, you<br>
+should load some general constants before constructing the individual languages that<br>
+make up the languages frame. So the overall process for building the languages frame<br>
+would be as follows:
+</p>
+<ul>
+<li>Load a file of string constants.</li>
+<li>Construct an empty languages frame.</li>
+<li>For each language, build the individual target language frame and add it to<br>
+the languages frame.</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>You only need predefined constants</b> if you aren't using object<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;combination. Object combination, a feature that exists as of Newton Toolkit<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;version 1.6, would solve the problem of multiple instances of a single string<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(such as "OK").*
+</p>
+<p>
+The above description smells of an algorithm. Since you can run NewtonScript at<br>
+compile time, you can call a function to load a languages frame from text files (see<br>
+Listing 1). The main trick of this function is that it uses the language symbol to create<br>
+a pathname for Load.
+</p>
+<p>
+<b>Listing 1. </b>CreateLanguagesFrameFromText
+</p>
+<pre>global CreateLanguagesFrameFromText(GlobalsFilePath,
+    LanguagesSymArray)
+begin
+   if GlobalsFilePath then
+      Load(GlobalsFilePath);
+  
+   local langFrame := {};
+
+   foreach sym in LanguagesSymArray do
+      langFrame.(sym) := Load(HOME &amp; sym &amp; "Strings.f");
+   langFrame;
+end;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+You can define this function in a text file (say, WorldStrings.f) that you add to your<br>
+project. Note that you must compile this file before you load your international<br>
+strings.
+</p>
+<p>
+You could use the languages frame directly as the argument to SetLocalizationFrame;<br>
+however, as we'll see later in this article, there are better ways to use the frame.
+</p>
+<p>
+<b>LOADING FROM RESOURCES</b>
+</p>
+<p>
+The second scheme creates the languages frame from a resource file. You can apply the<br>
+methodology to other non-text file sources as well. To take advantage of the code below,<br>
+you'll need Newton Toolkit 1.6 or later. One important point: all of this code works<br>
+only for Roman-based languages.
+</p>
+<p>
+To make life easier, we'll define a template in ResEdit that shows all the localized<br>
+versions of a particular string. The template defines a resource of type 'LOC#', which<br>
+is loosely based on the 'STR#' resource (see Table 1). Because we're using a template,<br>
+the number of languages must be defined in advance; we'll choose 5 as a nice arbitrary<br>
+number. You can find the 'LOC#' template in the sample code on this issue's CD.
+</p>
+<p>
+You can now use the 'LOC#' resource to enter all of your strings, grouped into<br>
+categories that make sense to you. The advantage of this resource is that the path<br>
+expression in the languages frame and all localized strings for that path expression are<br>
+grouped together.
+</p>
+<p>
+<img src="img/182.gif" width="294 px"></img>
+</p>
+<p>
+You may be wondering why the 'LOC#' template contains an English string. If you use<br>
+LocObj, the first argument is a string that's taken as the English localization. For the<br>
+case where you're only localizing at compile time, the English string is redundant. But<br>
+if you want to localize at run time, you'll need the English string around.
+</p>
+<p>
+If you're familiar with the resource calls in the Newton Toolkit, you will have spotted<br>
+a potential problem: there's no way to query for the available resource IDs of a<br>
+particular resource. The basic solution to this problem is to try reading a resource<br>
+and to catch the exception that the Newton Toolkit throws if the resource isn't present.<br>
+Unfortunately, iterating through all possible resource IDs while catching exceptions<br>
+takes several minutes.
+</p>
+<p>
+So we impose these restrictions: there can be any number of 'LOC#' resources but they<br>
+must be numbered consecutively, and the first resource ID must be either 0 (because<br>
+programmatically generated resources are likely to start with 0) or 128 (because<br>
+those created in ResEdit will start with 128). The code in Listing 2 generates an array<br>
+of resources of a given type based on these criteria.
+</p>
+<p>
+<b>Listing 2.</b> GetAllResources
+</p>
+<pre>global GetAllResources(ResType, NewtType)
+begin
+   local result := [];
+   local atID := 0;
+
+   // See if we can read in resource ID 0. If so, increment the
+   // next resource ID; if not, set the ID to 128.
+   try
+      AddArraySlot(result, GetResource(ResType, atID, NewtType));
+      atID := 1;
+   onexception |evt.ex.msg| do
+      atID := 128;
+     
+   // Start at the current resource ID (either 1 or 128) and
+   // continue reading in resources until an exception occurs.
+   loop
+   begin
+      try
+         AddArraySlot(result, GetResource(ResType, atID, NewtType));
+         atID := atID + 1;
+      onexception |evt.ex.msg| do
+         break;
+   end;
+   result;
+end;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Once you have an array of 'LOC#' resources, you need to parse these resources into<br>
+NewtonScript path expressions and strings. The code in Listing 3 gets all the 'LOC#'<br>
+resources and generates a languages frame.
+</p>
+<p>
+<b>Listing 3. </b>CreateLanguagesFrameFromRsrc
+</p>
+<pre>global CreateLanguagesFrameFromRsrc(ResFilePath, LanguagesSymArray)
+begin
+   // Throw if there aren't exactly 5 languages.
+   if Length(LanguagesSymArray) &lt;&gt; 5 then
+      Throw('|evt.ex.msg|,
+         "The LanguagesSymArray must be exactly 5 elements long.");
+
+   // The languages frame array that will be returned
+   local langFrame := {};
+   foreach sym in LanguagesSymArray do
+      langFrame.(sym) := {};
+     
+   // Could use a constant since currently must be exactly 5
+   // languages.
+   local numLanguages := Length(LanguagesSymArray);
+   local r := OpenResFileX(ResFilePath);
+   local locResourceArray := GetAllResources("LOC#", 'binaryObject);
+
+   /* Process the LOC# resources. The format of the resource is:
+      16-bit count of number of string sets
+      string set 1
+      string set 2...
+      string set n
+      string set:
+         pathexpression as C string
+         English as C string
+         French as C string
+         German as C string
+         other1 as C string
+         other2 as C string
+   */
+  
+   local numStringSets;
+   local pathExpr;
+   local tempString;
+   local atIndex;
+  
+   foreach locResource in locResourceArray do
+   begin
+      // Get the number of string sets.
+      numStringSets := ExtractWord(locResource, 0);
+     
+      atIndex := 2;
+
+      // Grab each string set.
+      for stringSet := 1 to numStringSets do
+      begin
+         // Grab the C string that is the path.
+         pathExpr := ExtractCString(locResource, atIndex);
+
+         // Update index counter.
+         atIndex := atIndex + StrLen(pathExpr) + 1;
+
+         // Create path expression for following strings.
+         pathExpr := call Compile("'" &amp; pathExpr) with ();
+
+         // Get the language strings and jam them.
+         // WARNING: This code will ignore zero-length strings.
+         // There are rare cases where you actually want an empty
+         // string for a particular translation; in this case, you
+         // could modify the code to throw an evt.ex.msg with the
+         // appropriate error.
+         foreach langSym in LanguagesSymArray do
+         begin
+            tempString := ExtractCString(locResource, atIndex);
+            if StrLen(tempString) &gt; 0 then
+               langFrame.(langSym).(pathExpr) := tempString;
+            atIndex := atIndex + Length(tempString) + 1;
+         end;
+      end;
+   end;
+
+   CloseResFileX(r);
+   langFrame;
+end;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Unlike the text method, the resource method has to assume a certain number of base<br>
+languages. The first thing the code does is to check that there are exactly five language<br>
+symbols. If not, the code throws an exception. The result is a typical Newton Toolkit<br>
+error dialog with the string specified in the code.
+</p>
+<p>
+In reality, we could be a bit more forgiving. The code won't create entries in the<br>
+languages array for items that are empty strings. So if a developer were careful not to<br>
+fill out entries for particular languages, the restriction could be relaxed to <i>no more</i><br>
+<i>than</i> five languages. You could also make the code a bit more complex and just not add<br>
+strings for undefined languages. This is left as an exercise for the masochistic reader.
+</p>
+<p>
+An even better approach would be to create some other resource (say 'LOCi') that<br>
+contains information on how many languages are defined by the 'LOC#' template and the<br>
+language symbols. It would require slightly more complex code for<br>
+CreateLanguagesFrameFromRsrc, but it would provide more flexibility later on. The<br>
+CD contains modified code that uses an 'LOCi' resource.
+</p>
+<p>
+As you can see, this is considerably more complex than the function used for text files.<br>
+Also note that this methodology can't use constants for common strings. There are ways<br>
+to massage the data to use constants, but that's left as another exercise for the reader.
+</p>
+<h2>PUTTING IT ALL TOGETHER</h2>
+<p>
+Once you've created the languages frame, you can use SetLocalizationFrame and LocObj<br>
+in your project to localize your strings. The sample on this issue's CD (Compile Time<br>
+Strings) uses the code shown in Listing 4. This code is more general than you may<br>
+need, in that it creates the frame from either text files or resources. The last line sets<br>
+up a constant for the English (that is, the default) language frame. You can use the<br>
+constant English strings as part of the first argument to LocObj.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>The LocObj mechanism can be used</b> with any object, not just strings.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;This article looks only at strings, though the text-based method will work for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;most types of objects.*
+</p>
+<p>
+<b>Listing 4.</b> Calling SetLocalizationFrame
+</p>
+<pre>// Create the languages frame, either by text or by resource.
+constant kFromText := nil;
+
+// Create the kLanguagesArray constant for the languages.
+// The text method requires only as many languages as there are
+// text files; the resource method requires a 5-element array.
+DefConst('kLanguagesArray,
+   call func(isText)
+      if isText then
+         '[English, French, German];
+      else
+         '[English, French, German, Other1, Other2]
+      with (kFromText));
+
+if kFromText then
+   DefConst('kLangFrame,
+      CreateLanguagesFrameFromText(
+         HOME &amp; "StringsCommon.f", kLanguagesArray));
+else
+   DefConst('kLangFrame,
+      CreateLanguagesFrameFromRsrc(
+         HOME &amp; "strings.rsrc", kLanguagesArray));
+
+SetLocalizationFrame(kLangFrame);
+
+// Define a constant for the English language frame.
+constant kStrings := kLangFrame.English;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+You're probably wondering why we don't create a wrapper function to generate the<br>
+correct LocObj call. Unfortunately, LocObj is a special type of call in the Newton<br>
+Toolkit; it's evaluated as soon as the compiler hits it and it must return a constant<br>
+value.
+</p>
+<h2>CHANGING STRINGS AT RUN TIME</h2>
+<p>
+The LocObj mechanism is designed for compile-time customization of your application.<br>
+In other words, the LocObj function exists only in the compile-time environment of<br>
+the Newton Toolkit; you can use it only in places that will be evaluated at compile time.<br>
+In some circumstances you may want to change localized strings at run time. One<br>
+example would be a language translator application where you want the interface<br>
+strings to be displayed in the current source language.
+</p>
+<p>
+The raw data for the runtime strings exists in the languages frame. The frame can be<br>
+included in your package so that you have access to all the localized strings. This will<br>
+add a significant amount of space to your package; at worst, it will take up two bytes<br>
+per character in the unique strings, plus the storage occupied by the symbols and<br>
+frame structure.
+</p>
+<p>
+You'll need to add some runtime support for switching language elements of the<br>
+interface. The main task is to decide what views need to be updated when a language is<br>
+switched. The simplest way to do this is to recursively propagate a conditional message<br>
+send through the application's view children:
+</p>
+<pre>// In application base view ...
+myApp.PropagateLanguageChange := func()
+begin
+   // ... conditionally recur through all the kids.
+   foreach child in :ChildViewFrames() do
+      // "x.y exists" only checks for y using proto inheritance.
+      if child.PropagateLanguageChange exists then
+         child:PropagateLanguageChange();
+end;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+This code won't send to all children. To do that you would remove the <b>exists</b> test and<br>
+just send the message, which will always be found since the top-level parent defines<br>
+it. If you make this change, you should add some sort of conditional check for a message<br>
+that does the real work of updating (like "if child.DoLanguageChange exists then ...").
+</p>
+<p>
+An alternative is to keep track of which views need updates. How you do it depends on<br>
+your application's structure. Typically, you would maintain an array of the declared<br>
+views that need updating. If the views that need updating are well known, you're better<br>
+off using the latter method.
+</p>
+<p>
+Each view that requires an update will need to perform three tasks: change the text<br>
+based on the source language; usually change the viewBounds based on the new text; and<br>
+redraw or refresh based on the new viewBounds and text. Since it's very likely that the<br>
+viewBounds will change, most of the work can be done in the viewSetupFormScript<br>
+method of the view. Remember that redisplaying with a new viewBounds requires<br>
+sending a SyncView, which has the side effect of sending all viewSetup messages.
+</p>
+<p>
+This means that you can use the SyncView call as your message to indicate that the<br>
+source language has changed. When a view opens by normal means it will also use the<br>
+correct source language. Note that in some cases you may want to use RedoChildren,<br>
+which has the same basic effect as SyncView sent to all children.
+</p>
+<p>
+One caveat is that both SyncView and RedoChildren are expensive calls. You should<br>
+limit the places where the language can change. An example of runtime customization<br>
+(Run Time Strings) is provided on the CD.
+</p>
+<h2>READY TO ROCK AND ROLL</h2>
+<p>
+With the code from this article, you can now make all your applications world ready. If<br>
+you're just starting an application, take the time and use LocObj where you should. If<br>
+you already have a project, retrofit it. Then take the code samples, customize them to<br>
+your heart's content, and code away. Today English, tomorrow the world.
+</p>
+<p>
+<b>Maurice Sharp</b> is a truly multinational person. He was born in England, naturalized<br>
+to Canada, and now lives in California. He hopes to visit the United States someday as<br>
+well. His multinational background makes him a bit psychotic when it comes to beer.<br>
+He's never sure if he should order it warm or cold, or just have water. This is why he<br>
+prefers sake. Maurice is one of the original members of Newton Developer Technical<br>
+Support and is still there (remember, we said he was a bit psychotic).*
+</p>
+<p>
+Thanks to our technical reviewers Bob Ebert, Mike Engber, David Fedor, and Martin<br>
+Gannholm.*
+</p>
+</body>
+</html>

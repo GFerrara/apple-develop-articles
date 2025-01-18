@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 27 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 96 - Newton Q & A: Ask the Llama</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Newton Q &amp; A: Ask the Llama</h1>
+<p><b>Q&nbsp;</b><i>I have a slip in my application that edits part of my application preferences. I use</i><br>
+<i>GetAppPrefs to get the preferences frame, and then set a pointer to a subframe in my</i><br>
+<i>slip:</i><br></p>
+<pre>myAppPref.viewSetupFormScript := func()
+begin
+   local prefs := GetAppPrefs(kAppSymbol, kDefaultPrefFrame);
+   self.target := prefs.defaultNames;
+   inherited:?viewSetupFormScript();
+end</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<i>The user makes the change and I use EntryChangeXmit, but sometimes I lose the change.</i><br>
+<i>Any hints?</i>
+</p>
+<p><b>A&nbsp;</b>It looks as if you're encountering an interaction between soup entries and garbage<br>
+collection. In your viewSetupFormScript, you use GetAppPrefs to load the soup entry<br>
+corresponding to your application preferences into the NewtonScript heap. Then you<br>
+set a target slot in your preferences slip to the defaultNames slot in that preferences<br>
+frame. I assume that some time later, probably in the viewQuitScript, you reload your<br>
+preferences frame (with GetAppPrefs again) and call EntryChangeXmit on the frame<br>
+returned by that call.<br></p>
+<p>
+The problem occurs because you use a local variable to point to your preferences<br>
+entry. Once the viewSetupFormScript is completed, this local goes away, so the<br>
+preferences entry is subject to garbage collection. This may seem unintuitive since<br>
+soups are where you store persistent data. However, there's a difference between the<br>
+data that comprises an entry in a soup and an actual entry in the NewtonScript heap.<br>
+When you request a soup entry, the data from the soup is swapped into the heap so that<br>
+you can access it as a frame. The entry on the heap is a copy of the data in the soup, not<br>
+the real data. Changes to that heap copy aren't written to the soup until you call<br>
+EntryChangeXmit.
+</p>
+<p>
+After your call to GetAppPrefs, the heap looks like Figure 1. Then your<br>
+viewSetupFormScript returns and the <b>prefs</b> local goes away, so your heap looks like<br>
+Figure 2.
+</p>
+<p>
+<img src="img/210.gif" width="192 px"></img>
+</p>
+<p>
+<b>Figure 1.</b> Heap after GetAppPrefs
+</p>
+<p>
+<img src="img/211.gif" width="192 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>Heap after viewSetupFormScriptNotice in Figure 2 how there is nothing<br>
+referencing the preferences entry, but there is something referencing the<br>
+defaultNames subobject. As far as the system is concerned, the preferences entry<br>
+frame is now available for garbage collection. The next time the preferences entry is<br>
+loaded in, an entire new copy of that entry is made, including the defaultNames<br>
+subobject. So<b>self.target</b> points to a valid NewtonScript array that's different from<br>
+the new copy of your preferences entry.
+</p>
+<p>
+This explains why the information doesn't get updated, but not why this doesn't happen<br>
+every time. It doesn't happen every time because the soup system will cache the frame<br>
+representation of a requested entry. When you request an entry, the first thing the<br>
+soup system does is check for a cached entry. If it exists, it's used, in which case the<br>
+defaultNames subobject is the same one that<b>self.target</b> is referencing -- that is, no<br>
+new copy of the preferences entry is loaded into the heap.
+</p>
+<p>
+So, what happens is that once the user finishes editing the entry, you call GetAppPrefs,<br>
+which may return the cached preferences entry. If garbage collection has occurred,<br>
+your target slot will point to the edited version of the defaultNames structure, but not<br>
+to the defaultNames slot value from the new preferences frame. Figure 3 shows the<br>
+heap after garbage collection has occurred. After your call to GetAppPrefs, you get the<br>
+situation shown in Figure 4. Your local prefs variable points to a new heap copy of the<br>
+preferences entry, but your target slot points to the old defaultNames value. The<br>
+EntryChangeXmit call will affect the new copy of the soup entry, leaving it apparently<br>
+unchanged.
+</p>
+<p>
+<img src="img/212.gif" width="192 px"></img>
+</p>
+<p>
+<b>Figure 3.</b> Heap after garbage collection
+</p>
+<p>
+<img src="img/213.gif" width="384 px"></img>
+</p>
+<p>
+<b>Figure 4. </b>Heap after GetAppPrefsThere are two ways to fix this: you could put the<br>
+edited defaultNames structure into the preferences frame before calling<br>
+EntryChangeXmit, or you could hold a reference to the application preferences in your<br>
+slip (or in your base view) for the duration of the edit. The first way is more memory<br>
+efficient.
+</p>
+<p>
+The lesson is that keeping around references to objects inside soup entries is a<br>
+dangerous practice. The safe thing to do is read in your entry, do the modifications,<br>
+save the entry, and set the reference to nil.
+</p>
+<p><b>Q&nbsp;</b><i>I have an application that may print or fax many pages of information. I need to</i><br>
+<i>draw a lot of the content of those pages. I know that in 1.x viewDrawScripts, faxing</i><br>
+<i>needed to be fast. How about in 2.0? Are there better ways to go?</i><br></p>
+<p><b>A&nbsp;</b>The main thing missing in Newton 1.x OS is a method that gets called before the<br>
+fax connection is made. In Newton 2.0 OS, the formatInitScript method of your print<br>
+format will be called before the connection is made. You can use this script to do<br>
+time-consuming drawing and cache the results for later use.<br></p>
+<p>
+An extension of this technique is to render all your pages into a Virtual Binary Object<br>
+and then access the appropriate place in that object during printing or faxing. The<br>
+advantage of this is that you save heap space, since a VBO is paged in to a system heap<br>
+(not the NewtonScript heap). For some devices this is the only way to print large<br>
+numbers of pages.
+</p>
+<p><b>Q&nbsp;</b><i>The setup application uses some nifty embedded keyboards. I checked the beta</i><br>
+<i>version of the Newton Programmer's Guide for a prototype, but there doesn't appear to</i><br>
+<i>be one. Is this an oversight? How can I make these keyboards?</i><br></p>
+<p><b>A&nbsp;</b>There are several, as yet undocumented, ROM prototypes for embedded keyboards.<br>
+They will appear in the final Newton Programmer's Guide, but for now they're in the<br>
+Newton Toolkit platform file:<br></p>
+<ul>
+<li>protoAlphaKeys -- alphanumeric keypad</li>
+<li>protoNumericKeys -- numeric keypad</li>
+<li>protoTouchtonePad -- minimal phonepad</li>
+<li>protoPhonePad -- phonepad plus punctuation and arrow keys</li>
+</ul>
+<p>
+All of these embedded keyboards will send input to the current key view. All you have<br>
+to do is draw one in your layout and make sure the target view is the current key view.<br>
+See the Newton DTS Q&amp;A document on the Newton Developer CD for instructions on how<br>
+to use an afterScript to set the proto of a view.
+</p>
+<p><b>Q&nbsp;</b><i>I'm porting my code from Newton 1.x OS to Newton 2.0 OS. When I build my</i><br>
+<i>project using Newton Toolkit 1.6 and the 2.0 platform file, I get an error telling me</i><br>
+<i>that k&lt;insertNameHere&gt;Func is undefined. What's the problem?</i><br></p>
+<p><b>A&nbsp;</b>The chances are that your 1.x code is using one of the platform file functions that<br>
+either have been incorporated into ROM or are obsolete. However, developers may<br>
+want to write code that works on both Newton 2.0 and 1.x devices. To enable this, we<br>
+provide the old functions but we mark them as deprecated, which means they shouldn't<br>
+be used in Newton 2.0-savvy applications, but can be used for compatibility reasons.<br></p>
+<p>
+For example, in 1.x platform files there's a kRegisterCardSoupFunc function; in the<br>
+2.0 platform file, this is called kRegisterCardSoupDeprecatedFunc since there's a new<br>
+and better way to register soups in Newton 2.0 OS. See the platform file release notes<br>
+for a list of deprecated functions, protos, and so on.
+</p>
+<p><b>Q&nbsp;</b><i>How are reals represented in the package format? The data field for 12.345 is</i><br>
+<i>represented as 0x4028B0A3D70A3D71, for example.</i><br></p>
+<p><b>A&nbsp;</b>NewtonScript uses the Apple SANE <b>double</b> format (basically the IEEE format)<br>
+for floating-point numbers. These are implemented as 8-byte binary objects of class<br>
+real and contain a sign bit, 11 bits of biased exponent, and 52 bits of fraction.<br></p>
+<p>
+0x4028B0A3D70A3D71 is the binary data (8 bytes) of the SANE representation of<br>
+12.345. It's the same data that's used to hold the number on the Newton itself.
+</p>
+<p>
+<b>Q&nbsp;</b><i>I would like to add a separator line followed by some new application-specific</i><br>
+<i>actions. I proceeded to register a frame with the title as the symbol pickSeparator. It</i><br>
+<i>worked, except that the separator was selectable. All I'm trying to achieve is an</i><br>
+<i>eye-pleasing separation between the system actions and my actions. I also tried</i><br>
+<i>returning in the GetTitle routine a frame with</i>
+</p>
+<pre>{item: 'pickSeparator, pickable: nil}</pre><p class="spacer">&nbsp;</p>
+<p>
+<i>but that resulted in a blank entry. Is there a way to do what I'm trying to do -- that is,</i><br>
+<i>to have a pickSeparator that isn't selectable in the action button?</i>
+</p>
+<p><b>A&nbsp;</b>In the routeScripts array, you can use a nil value instead of a frame. That will<br>
+add another pickSeparator at that position in the routeScripts. Note that the system<br>
+will fill in the separator between the items that are routing transports (like Print)<br>
+and the items that are actions (such as Delete). If you need to add this separator<br>
+dynamically, you can provide your own GetRouteScripts method that dynamically<br>
+returns the routeScripts frame.<br></p>
+<p>
+That said, please check the latest <i>Newton 2.0 User Interface Guidelines</i> to make sure<br>
+that you're putting a separator in a valid spot.
+</p>
+<p><b>Q&nbsp;</b><i>I'm profiling my application to see why it takes so long to open. However, of the</i><br>
+<i>time it takes to open, only a small percentage is spent in my code. I'm measuring from</i><br>
+<i>the start of the viewSetupFormScript to the end of the viewSetupDoneScript in my</i><br>
+<i>base view.</i><br></p>
+<p><b>A&nbsp;</b>There are a few things you can do. The first is to make sure you're profiling<br>
+system functions to see if that's where the time is going. It may be that you're doing<br>
+things in your startup process that would be better done at a later time.<br></p>
+<p>
+You may also be running into low-memory conditions. Run the HeapShow utility that<br>
+comes with Newton Toolkit and look at the frames heap and free system space (handles<br>
+and pointers). You can do this in combination with NS Debug Tools to step through your<br>
+code and track memory usage. Note that the Newton Toolkit inspector will use a fair bit<br>
+of system space, so you may want to get a baseline memory usage without the inspector<br>
+connected.
+</p>
+<p><b>Q&nbsp;</b><i>I'm having two problems with a protoPicker view. First, when I open a</i><br>
+<i>protoPicker view (whose vFloating flag I haven't turned off) it's obscured by a</i><br>
+<i>textButton in the main view. I can't figure out why it doesn't float over this plain</i><br>
+<i>vanilla textButton.</i><br></p>
+<p>
+<i>Also, I can't select some of the items in the picker. The inaccessible items appear last</i><br>
+<i>in the list, from the portion of the picker view that extends beyond the picker's parent</i><br>
+<i>view or the slip's main view.</i>
+</p>
+<p>
+<i>The only unusual thing I can see here is that the protoPicker view is not a sibling of</i><br>
+<i>the textButton. The view hierarchy looks like this:</i>
+</p>
+<pre>slipMainView
+   clusterView
+   protoPicker
+   textButton</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<i>Can you help?</i>
+</p>
+<p><b>A&nbsp;</b>It looks like the protoPicker is being opened as a child of the clusterView. This<br>
+means that the active (tappable) area of the protoPicker will be clipped to the bounds<br>
+of the clusterView. It also sounds like the clipping viewFlag of the clusterView isn't<br>
+set. That allows the protoPicker to be drawn outside of its parent, so you may think it's<br>
+clickable even when it isn't.<br></p>
+<p>
+There are three possible solutions:
+</p>
+<ul>
+<li>Resize the protoPicker so that it's no larger than the clusterView.</li>
+<li>Make the protoPicker a child of a view higher up in the hierarchy (for<br>
+example, the slipMainView).</li>
+<li>If your protoPicker is larger than the application base view, use<br>
+BuildContext to attach it to the root view.</li>
+</ul>
+<p><b>Q&nbsp;</b><i>How do I reset a protoTextList so that when I change the listItems and redisplay,</i><br>
+<i>the display starts at the first item again? Right now if I've scrolled the text list and</i><br>
+<i>then I reset it, the top item is wrong.</i><br></p>
+<p><b>A&nbsp;</b>The documentation mentions a SetupList method that you call when you initialize<br>
+the view. However, this is not enough if you're changing the listItems after you've<br>
+opened the textList. Since the current implementation of textList scrolls by offsetting<br>
+the origin, you also need to reset the origin.<br></p>
+<p>
+Here's a method that you can add to your own protoTextList that will add a text item and<br>
+redraw the list correctly:
+</p>
+<pre>myProtoTextList.AddItem := func()
+begin
+   // make sure listItems is an array
+   if NOT listItems then
+      listItems := [];
+
+   local newItem := GetRandomWord(5, 10);
+   // insert in sorted order for strings
+   BInsert(listItems, newItem, '|Str&lt;|, nil, nil);
+
+   // redisplay based on new data
+   // this will reset the list to the top item
+   :SetOrigin(0, 0);
+   :SetupList();
+   :RedoChildren();
+end;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Q&nbsp;</b><i>Can you write a funny Q&amp;A ?</i>
+</p>
+<p><b>A&nbsp;</b>Yes.<br></p>
+<p>
+The llama is the unofficial mascot of the Developer Technical Support group in Apple's<br>
+Newton Systems Group. Send your Newton-related questions<br>
+todr.llama@applelink.apple.com (AppleLink DR.LLAMA). The first time we use a<br>
+question from you, we'll send you a T-shirt.*
+</p>
+<p>
+Thanks to Xopher Bell, Henry Cate, Bob Ebert, Mike Engber, David Fedor, Ryan<br>
+Robertson, Jim Schram, Maurice Sharp, and Bruce Thompson for these answers.<br>
+Special thanks to Bob Ebert for the answer on the format of reals.*
+</p>
+<p>
+If you need more answers, check out http://dev.info.apple.com/newton on the World<br>
+Wide Web or look at Newton Developer Info on Applelink.*
+</p>
+
+
+
+</body>
+</html>

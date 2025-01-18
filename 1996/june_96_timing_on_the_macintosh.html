@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 25 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 96 - Timing On The Macintosh</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Timing on the Macintosh</h1>
+<h2>MARTIN MINOW</h2>
+<p>
+<img src="img/208.gif" width="180 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">The Macintosh offers a rich and flexible set of timing operations</i>
+<br>
+
+<i style="font-size:125%;">that allow you to measure elapsed time, record the time an event</i>
+<br>
+
+<i style="font-size:125%;">occurs, and schedule actions for future times. This article pulls</i>
+<br>
+
+<i style="font-size:125%;">together all the available timing options, including the extended</i>
+<br>
+
+<i style="font-size:125%;">Time Manager and Microseconds routine added with System 7 and</i>
+<br>
+
+<i style="font-size:125%;">new routines that are available with the PCI-based Macintosh and</i>
+<br>
+
+<i style="font-size:125%;">Mac OS 8.</i>
+</p>
+<p>
+You've probably heard the expression, "Time is nature's way of keeping everything<br>
+from happening at once." Well, keeping things from happening at the same time is<br>
+especially important on computers, and they're particularly good at keeping close<br>
+track of time -- both "clock" time and relative time. This article shows you how to<br>
+take advantage of the timing options provided on the Macintosh, including new routines<br>
+that are available on the PCI-based Macintosh and will also work under Mac OS 8.
+</p>
+<p>
+There are three common situations in which applications need to keep track of time:
+</p>
+<ul>
+<li>measuring elapsed time -- for example, for performance analysis or to<br>
+see how long it takes the user or some other external entity to perform an<br>
+action</li>
+<li>recording an event -- for example, to time-stamp a record in a database<br>
+or to inform the user when an action occurs</li>
+<li>scheduling an event -- for example, to start or complete a<br>
+time-dependent task</li>
+</ul>
+<p>
+Several timing-related routines are available on the Macintosh, and each is useful in<br>
+certain situations. In general, you should:
+</p>
+<ul>
+<li>Use GetDateTime (or GetTime) if you need to maintain information across<br>
+system restarts or need to relate an event to the calendar.</li>
+<li>Use TickCount if you need only a relatively crude measure of time or need<br>
+to run under System 6.</li>
+<li>Use the Time Manager's Microseconds routine or Time Manager tasks if<br>
+you need improved precision or some attention to drift-free timing. Because<br>
+the Time Manager is part of all versions of System 7, it provides the best<br>
+service to most clients.</li>
+<li>Use UpTime if you want the highest-precision timing available and run<br>
+only on PCI-based Macintosh systems or under Mac OS 8.</li>
+</ul>
+<p>
+This article presents the basics of some standard approaches to the three types of<br>
+timing, along with code examples using many of the timing tools at your disposal.<br>
+There's also a discussion of factors that can affect the precision of your timing<br>
+operations. A simple example of using Microseconds is included on thisissue's CD.
+</p>
+<h2>MEASURING ELAPSED TIME</h2>
+<p>
+The Macintosh provides several functions that can be used to measure elapsed time.<br>
+Your choice of routine depends on the degree of precision you require and the system<br>
+software you're running under.
+</p>
+<p>
+The GetDateTime function returns the current clock time as the number of seconds<br>
+since January 1, 1904, and the GetTime function returns the clock time in year,<br>
+month, day, hour, minute, and second format (in a date-time record). With their<br>
+one-second resolution, however, these functions aren't well suited to measuring<br>
+elapsed code performance or the duration of user actions.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>January 1, 1904, was chosen</b> as the base for the Macintosh clock<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;because it was the first leap year of the twentieth century. 1900 wasn't a leap<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;year because leap years are skipped every 100 years for three centuries. On<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the fourth century, which will be the year 2000, the leap year isn't skipped.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;This means that by starting with 1904, Macintosh system programmers could<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;save a half dozen instructions in their leap-year checking code, which they<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;thought was way cool.*
+</p>
+<p>
+One of the functions available for finer timing resolution is TickCount, which returns<br>
+the time elapsed since the system last started up in units of about 1/60 second. Until<br>
+System 7, this was the only reasonable way to measure sub-second intervals. With<br>
+System 7, the Microseconds routine became available. (Using the extended Time<br>
+Manager is another possible method on System 7, but it's more complicated and so isn't<br>
+commonly used for that purpose.) Furthermore, the PCI-based Macintosh (and Mac OS<br>
+8) provide UpTime, a replacement for Microseconds.
+</p>
+<p>
+<b>THE MICROSECONDS ROUTINE</b>
+</p>
+<p>
+The Microseconds routine returns the number of microseconds that have elapsed since<br>
+system startup as an unsigned 64-bit integer and offers a convenient way of timing<br>
+events and operations. Theoretically, it can resolve intervals of about 20<br>
+microseconds, although in practice it can't time intervals that small (for reasons<br>
+given later, in the section on timing accuracy).
+</p>
+<p>
+The value returned by Microseconds has the UnsignedWide structure, shown in Listing<br>
+1. A signed wide structure is used for the result of subtracting two Microseconds<br>
+values to calculate elapsed time. UnsignedWide is defined in Types.h of the universal<br>
+headers, but is also shown in Listing 1 for convenience.
+</p>
+<p>
+<b>Listing 1.</b> Microseconds structures
+</p>
+<pre>struct UnsignedWide {
+   unsigned long       hi;
+   unsigned long       lo;
+};
+typedef struct UnsignedWide UnsignedWide;
+
+struct wide {
+   signed long       hi;
+   unsigned long      lo;
+};
+typedef struct wide wide;
+
+/*
+ * The sample code defines a SignedWide structure for consistency.
+ */
+typedef wide SignedWide;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+To time a routine, your application would do the following:
+</p>
+<pre>UnsignedWide    startTime;
+UnsignedWide    endTime;
+
+Microseconds(&amp;startTime);
+DoMyOperation();
+Microseconds(&amp;endTime);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Subtracting startTime from endTime will yield the elapsed time. However, the 64-bit<br>
+Microseconds values are rather unwieldy to deal with. The simplest solution is to<br>
+convert them to double-precision floating-point numbers. MicrosecondToDouble,<br>
+shown in Listing 2, converts a Microseconds value to double-precision floating point.<br>
+Using double precision will retain accuracy for all practical purposes. You can also<br>
+use integer subtraction to get the difference between the two times and convert the<br>
+result to floating point (or whatever you need) afterward. MicrosecondDelta, also in<br>
+Listing 2, computes the difference between two Microseconds result values, returning<br>
+a signed 64-bit integer to retain precision.
+</p>
+<p>
+<b>Listing 2.</b> Microseconds routine support functions
+</p>
+<pre>#define kTwoPower32 (4294967296.0)      /* 2^32 */
+
+double MicrosecondToDouble(register const UnsignedWide *epochPtr)
+{
+   register double    result;
+
+   result = (((double) epochPtr-&gt;hi) * kTwoPower32) + epochPtr-&gt;lo;
+   return (result);
+}
+
+void MicrosecondDelta(register const UnsignedWide   *startPtr,
+                      register const UnsignedWide    *endPtr,
+                      register SignedWide          *resultPtr)
+{
+   if (endPtr-&gt;lo &gt;= startPtr-&gt;lo)
+      resultPtr-&gt;hi = endPtr-&gt;hi - startPtr-&gt;hi;
+   else
+      resultPtr-&gt;hi = (endPtr-&gt;hi - 1) - startPtr-&gt;hi;
+     
+   resultPtr-&gt;lo = endPtr-&gt;lo - startPtr-&gt;lo;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>If you prefer using only integer arithmetic</b>, the sample code on this<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;issue's CD includes a very simple -- and very inefficient -- 64-bit integer<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;library with add, subtract, multiply, and divide functions that can be used to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;calculate time values. For a more complete 64-bit integer math library, see<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the article "64-Bit Integer Math on 680x0 Machines" in develop Issue 26.*
+</p>
+<p>
+<b>THE UPTIME ROUTINE</b>
+</p>
+<p>
+PCI-based Macintosh systems and the Mac OS 8 operating system provide a new<br>
+routine, UpTime, that returns the value of the PowerPC internal clock. The value<br>
+that's returned has the data type AbsoluteTime and cannot be interpreted directly by<br>
+applications, because the units are system dependent and not defined by the API. A<br>
+library is provided to convert values of type AbsoluteTime into formats whose units<br>
+are known. This approach allows the system to maximize precision and performance.
+</p>
+<p>
+&nbsp;&nbsp;The time values returned by UpTime start at 0 at system startup and increase<br>
+monotonically for as long as it's running. To time a routine with UpTime, your<br>
+application might do the following:
+</p>
+<pre>AbsoluteTime    startTime;
+AbsoluteTime  endTime;
+AbsoluteTime  elapsedTime;
+Nanoseconds   elapsedNanoseconds;
+              /* This is an UnsignedWide integer */
+
+startTime = UpTime();
+DoMyOperation();
+endTime = UpTime();
+elapsedTime = SubAbsoluteFromAbsolute(endTime, startTime);
+elapsedNanoseconds = AbsoluteToNanoseconds(elapsedTime);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+These functions and others used to process AbsoluteTime values are described<br>
+in<i>Designing PCI Cards and Drivers for Power Macintosh Computers</i>.
+</p>
+<h2>RECORDING EVENT OCCURRENCE</h2>
+<p>
+If you need to record when an event occurred (for example, when a record was added to<br>
+a database), you can use the value returned by GetDateTime or GetTime. In most<br>
+situations, GetDateTime is easier to deal with, being more compact and saving you from<br>
+converting days, months, years, and so on into seconds for computations.
+</p>
+<p>
+&nbsp;&nbsp;Keep in mind that GetDateTime returns the local clock time, which means that you<br>
+can't always use its value to determine which of two records is earlier, as they could<br>
+have been created in different time zones or under different daylight saving time rules.<br>
+If being able to compare times across time zones is important, your application should<br>
+call the ReadLocation routine and store its MachineLocation result at the time you<br>
+record the event so that the application can compute a location-independent value by<br>
+converting the local time to GMT (Greenwich Mean Time).
+</p>
+<p>
+Unfortunately, the local time value returned by GetDateTime isn't coordinated with the<br>
+more precise values returned by Microseconds and UpTime. This makes it difficult to<br>
+record local times with fractional second resolution. Listing 3 shows one way to work<br>
+around this problem. It's adapted from the LogConvertTimestamp function in my PCI<br>
+device driver sample library, which was first published in <i>develop</i> Issue 22<br>
+("Creating PCI Device Drivers"). Listing 3 also illustrates my simple 64-bit support<br>
+library.
+</p>
+<p>
+<b>Listing 3.</b> Time of day with fractional second resolution
+</p>
+<pre>void LogConvertTimestamp(
+    AbsoluteTime   eventTime,              /* Value to convert   */
+    DateTimeRec    *eventDateTime,         /* Result goes here   */
+    UInt32         *residualNanoseconds    /* Fractional second  */
+   )
+{
+   Nanoseconds                eventNanoseconds;
+   UnsignedWide               eventSeconds, temp;
+   static const UnsignedWide  kTenE9 = { 0, 1000000000L };
+   static UInt32              gUpTimeNumerator;
+   static UnsignedWide        gUpTimeDenominator;
+   static Nanoseconds         gNanosecondsAtStart = { 0, 0 };
+
+   /*
+    * If this is the first call, compute the offset between
+    * GetDateTime and UpTime.
+    */
+   if (gNanosecondsAtStart.lo == 0 &amp;&amp; gNanosecondsAtStart.hi == 0) {
+      UnsignedWide      secondsAtStart;
+      AbsoluteTime      absoluteTimeAtStart;
+      Nanoseconds         upTimeAtStart, nanosecondsAtStart;
+
+      secondsAtStart.hi = 0;
+      GetDateTime(&amp;secondsAtStart.lo);
+      upTimeAtStart = AbsoluteToNanoseconds(UpTime());
+      Multiply64(&amp;secondsAtStart, kTenE9.lo, &amp;nanosecondsAtStart);
+      Subtract64(&amp;nanosecondsAtStart, &amp;upTimeAtStart,
+            &amp;gNanosecondsAtStart);
+   }
+   /*
+    * Convert the event time (UpTime value) to nanoseconds and add
+    * the local time epoch.
+    */
+   eventNanoseconds = AbsoluteToNanoseconds(eventTime);
+   Add64(&amp;gNanosecondsAtStart, &amp;eventNanoseconds, &amp;eventNanoseconds);
+   /*
+    * eventSeconds = eventNanoseconds /= 10e9;
+    * residualNanoseconds = eventNanoseconds % 10e9;
+    * Finally, compute the local time (seconds) and fraction.
+    */
+   Divide64(&amp;eventNanoseconds, &amp;kTenE9, &amp;eventSeconds);
+   *residualNanoseconds = eventNanoseconds.lo;
+   SecondsToDate(eventSeconds.lo, eventDateTime);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<h2>SCHEDULING FUTURE ACTIONS</h2>
+<p>
+Actions can be scheduled at a specific time -- such as 3 P.M. -- or at a relative time<br>
+-- like "15 minutes from now." Here we'll look at how an application can schedule an<br>
+action for a specific time by polling from its event loop and how to use the extended<br>
+Time Manager to initiate an action after a specific amount of time passes.
+</p>
+<p>
+<b>POLLING FROM THE EVENT LOOP</b>
+</p>
+<p>
+The simplest way for an application to schedule an action for a specific time is to call<br>
+GetDateTime every so often from the event loop and compare the returned value with<br>
+the time set for the scheduled event. (If all your application is doing is polling for the<br>
+right time to arrive, be nice and set the WaitNextEvent sleep time to something long<br>
+-- 15 seconds, perhaps.) When the set time matches (or is earlier than) the returned<br>
+value, the event occurs. Of course, you can use this solution only if your program is an<br>
+application (normal or faceless-background). Code resources should use an extended<br>
+Time Manager task with a completion routine instead (as described in the next<br>
+section).
+</p>
+<p>
+The event-loop approach works best when you want to schedule an action for a specific<br>
+time because the specified time will be observed even if the user changes the system's<br>
+date or time. (Note that under this approach, an event that just occurred could occur<br>
+again if the user changes the time backwards.) However, if it's important that the<br>
+action happen at some relative amount of time in the future, you're better off polling<br>
+with TickCount, Microseconds, or UpTime or using an extended Time Manager task<br>
+with a completion routine.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;APPLICATION COMPATIBILITY</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Macintosh applications need to check whether particular operating system<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;functions are available before using them. For example (as you'll see later in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Listing 5), the Gestalt function can be used to check for the presence of the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;extended Time Manager and the Process Manager. This technique lets your<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;application configure itself to your customer's exact hardware and system.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;If you want to add UpTime support to an application that must also run on<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Macintosh systems that lack this function, you'll have to use a different<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;approach, because your PowerPC application uses the Code Fragment Manager<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to link to the shared library that provides this service. If the shared library<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;is not present on the customer system, your application will not launch (and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the user will be quite perplexed). The simplest way to work around this<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;problem is to use your development environment's "weak link" or "soft<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;import" capability. By weak-linking these functions, your application will<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;start even if the necessary shared library isn't present. This technique is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;described in detail in <i>Inside Macintosh: PowerPC System Software</i>, page 1-25.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>USING THE EXTENDED TIME MANAGER</b>
+</p>
+<p>
+The extended Time Manager was introduced in System 7 as a way to schedule accurate<br>
+periodic actions. Precise timing and real-time synchronization was becoming more<br>
+important with increasing use of sound and multimedia. In addition, the extended Time<br>
+Manager is the preferred way to schedule an action for a code resource. Scheduling an<br>
+action with the extended Time Manager is suitable for waits of moderate duration (up<br>
+to a day or so).
+</p>
+<p>
+The following example uses the extended Time Manager to awaken a process 30 seconds<br>
+after the timer is started. As shown in Listing 4, the first step is to define an extended<br>
+Time Manager task record that includes the timer task, the process serial number of<br>
+the process to awaken when the timer expires, and (on 680x0 systems) a pointer to<br>
+the application's globals. (Throughout this example we assume an application context,<br>
+so this value is A5; for THINK and Metrowerks nonapplication code, it should be A4<br>
+instead.) Listing 4 also defines the interface for the Time Manager completion routine<br>
+-- notice that it varies for 680x0 and PowerPC compilations.
+</p>
+<p>
+<b>Listing 4.</b> Extended Time Manager definitions
+</p>
+<pre>#include &lt;Types.h&gt;
+#include &lt;Timer.h&gt;
+#include &lt;OSUtils.h&gt;
+#include &lt;GestaltEqu.h&gt;
+#include &lt;Processes.h&gt;
+
+/* Define an extended task record. */
+struct ExtendedTimerRec {
+   TMTask               tmTask;
+   ProcessSerialNumber   taskPSN;
+#if GENERATINGPOWERPC
+   /* Nothing needed for PowerPC */
+#else
+   long                  applicationA5;
+#endif
+};
+typedef struct ExtendedTimerRec ExtendedTimerRec, *ExtendedTimerPtr;
+
+/* Define the interface for a completion function. */
+#if GENERATINGPOWERPC
+   pascal void TimerCallbackProc(TMTaskPtr tmTaskPtr);
+#else      /* 680x0 */
+   pascal void TimerCallbackProc(void);
+   /*
+    * This inline function returns the extended Time Manager task
+    * pointer, which is passed to the completion routine in register
+A1.
+    */
+   pascal TMTaskPtr GetTMTaskPtr(void) = 0x2E89;
+#endif</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Before you can use your extended task record, you need to be sure the extended Time<br>
+Manager and Process Manager are present on the system. Listing 5 shows code that<br>
+checks for their presence. If they're present, the code initializes the extended task<br>
+record (gExtendedTimerRec), installs the task in the extended Time Manager's event<br>
+queue, and starts the timer.
+</p>
+<p>
+<b>Listing 5.</b> Starting the timer
+</p>
+<pre>   long         gestaltResponse;
+
+   if (Gestalt(gestaltTimeMgrVersion, &amp;gestaltResponse) != noErr
+         || (gestaltResponse &lt; gestaltExtendedTimeMgr))
+      goto failure;   /* The extended Time Manager is not present. */
+   if (Gestalt(gestaltOSAttr, &amp;gestaltResponse) != noErr
+         || (gestaltResponse &amp; (1L << gestaltLaunchControl)) == 0)
+      goto failure;   /* The Process Manager is not present. */
+   /*
+    * Configure the global structure that stores the timing
+    * information.
+    */
+   gExtendedTimerRec.tmTask.qLink = NULL;
+   gExtendedTimerRec.tmTask.qType = 0;
+   gExtendedTimerRec.tmTask.tmAddr = NewTimerProc(TimerCallbackProc);
+   gExtendedTimerRec.tmTask.tmCount = 0;
+   gExtendedTimerRec.tmTask.tmWakeup = 0;
+   gExtendedTimerRec.tmTask.tmReserved = 0;
+#if GENERATINGPOWERPC
+   /* Nothing needed for PowerPC. */
+#else
+   gExtendedTimerRec.applicationA5 = SetCurrentA5();
+#endif
+   GetCurrentProcess(&amp;gExtendedTimerRec.taskPSN);
+   InsXTime((QElemPtr) &amp;gExtendedTimerRec.tmTask);
+   /*
+   * Start the timer -- 30-second stall.
+   */
+   PrimeTime((QElemPtr) &amp;gExtendedTimerRec.tmTask, 30000L);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+You also need to define the extended Time Manager completion routine that's called<br>
+when the timer expires (see Listing 6).
+</p>
+<p>
+<b>Listing 6.</b> Extended Time Manager completion routine
+</p>
+<pre>/*
+ * Define an extended Time Manager completion routine that awakens
+ * the specified application.
+ */
+#if GENERATINGPOWERPC
+   pascal void TimerCallbackProc(TMTaskPtr tmTaskPtr)
+   {
+#else
+   pascal void TimerCallbackProc(void)
+   {
+      TMTaskPtr      tmTaskPtr;
+      long            oldA5;
+
+      tmTaskPtr = GetTMTaskPtr();
+      oldA5 = SetA5(((ExtendedTimerPtr) tmTaskPtr)-&gt;applicationA5);
+#endif
+      gTimerFired = TRUE;
+      WakeUpProcess(&amp;((ExtendedTimerPtr) tmTaskPtr)-&gt;taskPSN);
+#if GENERATINGPOWERPC
+      /* Nothing needed at completion routine exit. */
+#else
+      SetA5(oldA5);
+#endif
+   }</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The completion routine is a one-shot timer that awakens the process and exits. You can<br>
+easily extend this to perform a periodic wake-up action. Again, note the use of A5 (use<br>
+A4 for nonapplication code written in THINK or Metrowerks).
+</p>
+<h2>TIMING ACCURACY, PRECISION, AND OVERHEAD</h2>
+<p>
+If you're measuring performance, remember that you can't trust a single<br>
+measurement, as it can be affected by a number of system-related asynchronous<br>
+events that you can't always control. Instead, you should take a number of samples and<br>
+use a statistical package to understand the variation that may affect the accuracy and<br>
+precision of your timing measurement.
+</p>
+<p>
+On current Macintosh systems, the Microseconds routine uses the hardware VIA timer<br>
+as a basis for its calculation. This decrements at a rate of 783360 Hz and,<br>
+consequently, limits resolution to about 1.28 microseconds. (Of course, the<br>
+mechanism and resolution may change on future systems.) Due to implementation<br>
+limitations, however, the Microseconds routine can't time intervals shorter than<br>
+about 20 microseconds. If you're using Microseconds to time a very short interval<br>
+(such as the execution time of a small code segment), your analysis may need to adjust<br>
+the measurements to take into account the computational overhead of the Microseconds<br>
+routine itself. This varies from machine to machine -- and depends, in part, on the<br>
+influence of other systemwide processes. An informal measurement of one machine<br>
+showed that the following sequence could take as little as zero time up to several<br>
+hundred milliseconds:
+</p>
+<pre>Microseconds(&amp;startTime);
+Microseconds(&amp;endTime);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The reason for this dispersion is that the internal timer is updated as a result of<br>
+system interrupts, such as VIA timer and extended Time Manager task completion.<br>
+Also, other asynchronous operations on the Macintosh, such as mouse-movement<br>
+handlers, file sharing, I/O completion, virtual memory page faults, and network<br>
+operations, will interrupt applications (and, on Mac OS 8, preemptive multitasking).<br>
+Thus, if you're using Microseconds to time application program execution, it should be<br>
+part of a more extensive statistical data analysis, since any single measurement may<br>
+result in incorrect data. As a rule of thumb, to minimize the overhead of calling the<br>
+routine itself, the smallest measurement interval should be on the order of one<br>
+millisecond.
+</p>
+<p>
+A similar warning needs to be given regarding the long-term accuracy of the<br>
+Microseconds routine: The crystal oscillator used to generate the underlying time base<br>
+varies slightly, depending primarily on the ambient temperature. Here, too, you<br>
+should measure the actual behavior of your system. Given a 0.01% normal drift rate<br>
+for the clock, a drift of 8 seconds per day is not uncommon (0.01% equals 1 second in<br>
+10,000 or about 8 seconds per day). For long-term accuracy, you may need to rely on<br>
+an external time source, such as a network time service as specified in Internet RFC<br>
+1305, or a radio receiver tuned to a national standard, such as WWV or WWVL.
+</p>
+<p>
+With all the processes competing on a Macintosh, it's possible, even likely, that<br>
+several wait loops will end at the same instant, particularly on the boundaries of<br>
+seconds or minutes. This can cause unpredictable delays. While the occasional long<br>
+delay is not a problem for most ordinary desktop tasks, it can be devastating for<br>
+systems that record or play live audio or QuickTime video. The developer of such a<br>
+system must be very careful to avoid regular scheduling: all delay values (such as the<br>
+sleep time passed to WaitNextEvent) should be varied by a small random value to<br>
+minimize the chance of several wait loops ending at the same instant.
+</p>
+<h2>TIMING IS EVERYTHING</h2>
+<p>
+Whether you're trying to analyze the performance of your code, schedule a reminder<br>
+for later, measure how long it takes users to complete a task, or remember exactly<br>
+when they completed it, there's a straightforward method for doing it on the Macintosh.<br>
+So go on, hook your programs up to the ever-flowing stream of time. No matter what<br>
+you like to do with your time -- spend it or kill it, assess its quality or lose track of it<br>
+-- your code will be able to keep pace.
+</p>
+
+
+
+<p>
+<h2>FURTHER READING</h2>
+</p>
+<ul>
+<li>For information on measuring performance, see <i>The Art of Computer</i><br>
+<i>Systems Performance Analysis</i> by Raj Jain (John Wiley &amp; Sons, Inc., 1991).</li>
+<li>TickCount, an Event Manager function, is described in <i>Inside Macintosh:</i><br>
+<i>Toolbox Essentials</i> (Addison-Wesley, 1992), Chapter 2, "Event Manager,"<br>
+page 2-112. Other time-measurement routines (including ReadLocation) are<br>
+described in <i>Inside Macintosh: Operating System Utilities</i> (Addison-Wesley,<br>
+1994), Chapter 4, "Date, Time, and Measurement Utilities."</li>
+<li>The extended Time Manager is described in <i>Inside Macintosh:</i><br>
+<i>Processes</i>(Addison-Wesley, 1992), Chapter 3, "Time Manager."</li>
+<li>UpTime and other new routines are described in <i>Designing PCI Cards and</i><br>
+<i>Drivers for Power Macintosh Computers</i> (Apple Computer, Inc., 1995).</li>
+<li>The soft import capability is described in <i>Inside Macintosh: Power PC</i><br>
+<i>System Software</i> (Addison-Wesley, 1994), Chapter 1, "Introduction to<br>
+PowerPC System Software."</li>
+</ul>
+
+
+
+<p>
+Thanks to our technical reviewers Mark Baumwell, Gene Garbutt, C. K. Haun, Matt<br>
+Mora, and Wayne Meretsky.
+</p>
+<p>
+<b>MARTIN MINOW</b> (minow@apple.com, AppleLink MINOW) appreciates a colleague's<br>
+e-mail signature: "Objects in calendars are closer than they appear." Martin is<br>
+writing the SCSI plug-in for Mac OS 8.
+</p>
+</body>
+</html>

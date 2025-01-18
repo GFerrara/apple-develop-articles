@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 15 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 96 - GRAPHICAL TRUFFLES: The Display Manager</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>GRAPHICAL TRUFFLES: The Display Manager</h1>
+<h2>Mike Marinkovich</h2>
+<p>
+<img src="img/183.gif" width="126 px"></img>
+</p>
+<p>
+A major change is taking place on the screen, which your application might not even<br>
+know about! With the help of the Display Manager, the user can use the Monitors<br>
+control panel to rearrange displays, make resolution switches, add or remove a<br>
+display, and move the menu bar from one display to another -- all without rebooting.<br>
+However, the ease of changing a display for the user poses new challenges for the<br>
+developer if an application relies on a graphics device's bounding rectangle to position,<br>
+zoom, and grow its windows.
+</p>
+<p>
+To meet this challenge, the Display Manager provides several new functions that make<br>
+it easier to gather information about the display environment and implement changes.<br>
+I'll describe some of the more commonly used functions in this column. I'll also discuss<br>
+how to use a notification event to find out when a display has changed (an example is<br>
+included on this issue's CD).
+</p>
+<p>
+Two versions of the Display Manager are currently implemented in the system<br>
+software. The information in this column applies to both versions. Display Manager<br>
+version 1.0 is available on all PowerPC(TM) processor-based Macintosh computers<br>
+and Color QuickDraw-capable Macintosh computers running System 7.5. Display<br>
+Manager 2.0 is available on PCI-based computers running System 7.5.2. To determine<br>
+whether the Display Manager is available, call Gestalt with the selector<br>
+gestaltDisplayMgrAttr and check the gestaltDisplayMgrPresent bit of the response. To<br>
+determine which version you have, call Gestalt with the selector<br>
+gestaltDisplayMgrVers.
+</p>
+<h2>MORE FUNCTIONS, LESS CODE</h2>
+<p>
+The Display Manager includes several new functions that greatly simplify tasks that<br>
+used to take a lot of code. For example, many applications need to query screen devices<br>
+for bounding rectangles, pixel depths, and a variety of other things. Prior to the<br>
+Display Manager, an application could use the GetDeviceList function to retrieve the<br>
+first graphics device record in the device list and call GetNextDevice for subsequent<br>
+devices in the list. The application would then need to use the Device Manager to<br>
+determine whether the device was a screen device and whether it was active. With the<br>
+Display Manager, you can do all this with two functions: DMGetFirstScreenDevice and<br>
+DMGetNextScreenDevice.
+</p>
+<pre>GDHandle      aDevice;
+
+aDevice =
+   DMGetFirstScreenDevice(dmOnlyActiveDisplays);
+while (aDevice != nil) {
+   // Do something with the device.
+   ...
+   // Get the next device in the list.
+   aDevice = DMGetNextScreenDevice(aDevice,
+                        dmOnlyActiveDisplays);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The Display Manager also introduces two functions that make it easier to retrieve<br>
+information about the attached displays and to change their characteristics:<br>
+DMCheckDisplayMode and DMSetDisplayMode.
+</p>
+<p>
+DMCheckDisplayMode determines whether a specific display mode and pixel depth are<br>
+supported by the supplied graphics device. (A display mode is a combination of several<br>
+interrelated display characteristics, such as resolution and scan timing.) This<br>
+function has two output parameters: modeOk and switchFlags. If the Boolean modeOk<br>
+parameter is true, the screen device supports the requested display mode. The<br>
+switchFlags parameter contains two flag bits that should be checked with the constants<br>
+kNoSwitchConfirmBit and kDepthNotAvailableBit.
+</p>
+<ul>
+<li>    If kNoSwitchConfirmBit isn't set, the requested mode is an optional<br>
+mode and is only shown in the mode list of the Monitors control panel when the<br>
+Option key is pressed (an optional mode requires confirmation from the user<br>
+before it's allowed).</li>
+<li> kDepthNotAvailableBit indicates whether the requested pixel depth is<br>
+available with the requested display mode.</li>
+</ul>
+<p>
+Once your application knows that the requested display mode and pixel depth are<br>
+available, you can use the DMSetDisplayMode function to reconfigure the video display.<br>
+If you pass 0 for the mode parameter, the Display Manager uses the device's current<br>
+display mode.
+</p>
+<p>
+If you like to change the display mode and pixel depth often, you can save the<br>
+configuration and retrieve it at startup with the DMSaveScreenPrefs function. This<br>
+function requires three parameters, which all take the value of NULL since they're<br>
+private to the Display Manager. (Go figure.)
+</p>
+<p>
+<b>Identifying displays.</b> Many of the Display Manager functions require a display ID<br>
+(type DisplayIDType) as a parameter. A display ID is a long integer that uniquely<br>
+identifies a screen display. Affiliating a display ID with a graphics device can be useful<br>
+in cases where the graphics device might change or isn't available. You can obtain a<br>
+display ID with the function DMGetDisplayIDByGDevice, which requires a graphics<br>
+device as a parameter. Or you can retrieve the graphics device corresponding to a<br>
+given display ID by calling DMGetGDeviceByDisplayID. Both functions require the<br>
+Boolean parameter failToMain.
+</p>
+<ul>
+<li>    If you set failToMain to true and the routine can't find what it's looking<br>
+for (either the graphics device or the display ID), the routine returns<br>
+information about the main graphics device rather than returning an error.</li>
+<li> If you set failToMain to false and the routine can't find what it's looking<br>
+for, it will return kDMDisplayNotFoundErr. (For example, when a PowerBook<br>
+goes to sleep, the display might be removed.)</li>
+</ul>
+<h2>KEEPING UP WITH THE CHANGES</h2>
+<p>
+Now that the user is able to change a screen display without restarting, your<br>
+application may want to reposition and resize its windows, update internal<br>
+display-related data structures, or update nonstandard window definitions on the fly.
+</p>
+<p>
+&nbsp;&nbsp;If desired, the Display Manager can automatically adjust the positions of the windows<br>
+that were onscreen before the change to keep them onscreen after the change, but it<br>
+may not put them in the best possible positions. However, if you want to reposition and<br>
+resize your windows yourself, you need to set the isDisplayManagerAware flag in your<br>
+application's SIZE resource and install a callback procedure or an Apple event handler<br>
+in your application so that you'll know when a display has changed.
+</p>
+<p>
+Your application registers a callback procedure with the Display Manager function<br>
+DMRegisterNotifyProc. The display notification procedure takes a Display Notice Apple<br>
+event parameter describing the changes that were made to the display. The notification<br>
+callback is especially useful for control panels and other instances where high-level<br>
+event handling in an event loop isn't possible. Another benefit of the notification<br>
+callback is that your application is informed on a more timely basis than through a<br>
+high-level event, thus giving the appearance of seamless integration with the Display<br>
+Manager.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>If you're using Display Manager 1.0,</b> you're not notified about depth<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;changes, and A5 isn't restored when you receive the notification callback.*
+</p>
+<p>
+You can also receive and process Display Notice events through an Apple event handler.<br>
+Display Notice event handlers are installed like any other Apple event handlers, with<br>
+the AEInstallEventHandler function:
+</p>
+<pre>err = AEInstallEventHandler(kCoreEventClass,
+   kAESystemConfigNotice,
+   NewAEEventHandlerProc(DoAEDisplayConfigChange),
+   0, false);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+To enable high-level events in your application, you need to set the<br>
+isHighLevelEventAware flag in the SIZE resource. (You'll also need to support the<br>
+required Apple events described in <i>Inside Macintosh: Interapplication</i><br>
+<i>Communication.</i>)
+</p>
+<p>
+Whether your application uses a notification callback or a high-level event handler, a<br>
+Display Notice Apple event is passed to your routine. You can obtain a list of descriptor<br>
+records (an AEDescList) from the Display Notice event with the AEGetParamDesc<br>
+function. Each descriptor record holds two additional keyword-specific descriptor<br>
+records:
+</p>
+<ul>
+<li>    keyDisplayOldConfig, which is a record of the display's previous state</li>
+<li> keyDisplayNewConfig, which is a record of the display's current state</li>
+</ul>
+<p>
+You can obtain these records one at a time with the function AEGetNthDesc.
+</p>
+<p>
+To move and resize your application's windows, you need to know which graphics<br>
+device was affected, the old and new bounding rectangles of the device, and possibly the<br>
+pixel depth. All the information about the affected graphics device can be obtained from<br>
+the descriptor list with keyword-specific descriptor constants, which are defined in<br>
+the Displays.h universal header file. You call AEGetKeyPtr with the various descriptor<br>
+constants to extract the information you need. In particular, the constant<br>
+keyDeviceRect extracts the bounding rectangle, and keyDisplayID extracts the display<br>
+ID. As previously mentioned, you can convert a display ID to a graphics device with the<br>
+function DMGetGDeviceByDisplayID.
+</p>
+<p>
+Listing 1 shows an example of what to do after receiving a Display Notice event from a<br>
+notification callback or a high-level event handler.
+</p>
+<p>
+<b>Listing 1.</b> Handling the Display Notice event
+</p>
+<pre>OSErr HandleNotification(AppleEvent *event)
+{
+   OSErr           err;
+   GrafPtr         oldPort;
+   AEDescList      displayList, aDisplay;
+   AERecord        oldConfig, newConfig;
+   AEKeyword       tempWord;
+   DisplayIDType   displayID;
+   unsigned long   returnType;
+   long            count;
+   Rect            oldRect, newRect;
+
+   GetPort(&amp;oldPort);
+
+   // Get a list of the displays from the Display Notice Apple event.
+   err = AEGetParamDesc(event, kAEDisplayNotice, typeWildCard,
+             &amp;DisplayList);
+
+   // How many items in the list?
+   err = AECountItems(&amp;displayList, &amp;count);
+
+   while (count &gt; 0) {
+      // Loop through the list.
+      err = AEGetNthDesc(&amp;displayList, count, typeWildCard,
+               &amp;tempWord, &amp;aDisplay);
+
+      // Get the old rect.
+      err = AEGetNthDesc(&amp;aDisplay, 1, typeWildCard, &amp;tempWord,
+               &amp;oldConfig);
+      err = AEGetKeyPtr(&amp;oldConfig, keyDeviceRect, typeWildCard,
+               &amp;returnType, &amp;oldRect, 8, nil);
+
+      // Get the display ID so that we can get the GDevice later.
+      err = AEGetKeyPtr(&amp;oldConfig, keyDisplayID, typeWildCard,
+               &amp;returnType, &amp;displayID, 8, nil);
+
+      // Get the new rect.
+      err = AEGetNthDesc(&amp;aDisplay, 2, typeWildCard, &amp;tempWord,
+               &amp;newConfig);
+      err = AEGetKeyPtr(&amp;newConfig, keyDeviceRect, typeWildCard,
+               &amp;returnType, &amp;newRect, 8, nil);
+
+      // If the new and old rects are not the same, we can assume
+      // that the GDevice has changed, and the windows need to be
+      // rearranged.
+      if (err == noErr &amp;&amp; !EqualRect(&amp;newRect, &amp;oldRect))
+         HandleDeviceChange(displayID, &amp;newRect);
+
+      count--;
+      err = AEDisposeDesc(&amp;aDisplay);
+      err = AEDisposeDesc(&amp;oldConfig);
+      err = AEDisposeDesc(&amp;newConfig);
+   }
+
+   err = AEDisposeDesc(&amp;displayList);
+   SetPort(oldPort);
+
+   return err;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<h2>WHAT TO DO NOW</h2>
+<p>
+The sample code on this issue's CD should provide a starting point for how to handle<br>
+display notification events in your application. Additional documentation and sample<br>
+code for the Display Manager are provided in the Display Manager Development Kit,<br>
+which is also on the CD.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>The Mac OS Software Developer's Kit</b> incudes the Display Manager<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Development Kit along with a lot of other development software. The Mac<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OSSDK is now part of the Developer CD Series (included in the Apple<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Developer Mailing, which is available through the Apple Developer Catalog).*
+</p>
+<p>
+To learn more about what the Display Manager can do for you, you should also take a<br>
+look at the Displays.h universal header file.
+</p>
+<p>
+Now there's no excuse for your application to be in the dark about changes taking place<br>
+on the screen. So why not keep your users happy and take advantage of the help that the<br>
+Display Manager can give you?
+</p>
+<p>
+<b>MIKE MARINKOVICH</b> (marink@apple.com) is a member of the Printing, Imaging,<br>
+and Graphics (PIGS) group in Developer Technical Support at Apple. He's been whiling<br>
+away his days (and many of his evenings) coming to grips with the Display Manager<br>
+and other QuickDraw-related esoterica. When not indulging in his hobby, which also<br>
+happens to be playing around with the Toolbox and programming his Macintosh, Mike<br>
+spends his time exploring the San Francisco Bay Area in his trusty Subaru. Mike's<br>
+from Seattle and misses the rain.*
+</p>
+<p>
+Thanks to Eric Anderson, David Hayward, and Ian Hendry for reviewing this column.*
+</p>
+</body>
+</html>

@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 55 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 96 - QuickDraw GX Line Layout:</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>QuickDraw GX Line Layout: Bending the Rules</h1>
+<h2>Daniel I. Lipton</h2>
+<p>
+<img src="img/288.gif" width="324 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">Many high-end drawing applications provide the user with a way to</i>
+<br>
+
+<i style="font-size:125%;">draw text along an arbitrary path. Some of them even provide the</i>
+<br>
+
+<i style="font-size:125%;">means to edit this text in place. The methods discussed here will</i>
+<br>
+
+<i style="font-size:125%;">illustrate how to do both in a QuickDraw GX-based application. In</i>
+<br>
+
+<i style="font-size:125%;">fact, I'll show you how QuickDraw GX enables your application to</i>
+<br>
+
+<i style="font-size:125%;">provide better line layout capabilities than those currently</i>
+<br>
+
+<i style="font-size:125%;">available in mainstream graphics arts applications.</i>
+</p>
+<p>
+One of the things that makes QuickDraw GX interesting is its amazing typography --<br>
+whatever else has been said about GX, its type capabilities are universally<br>
+acknowledged as the best. Besides aesthetics, a distinguishing attribute of QuickDraw<br>
+GX typography is not what is graphically possible, but the ease with which visual<br>
+content can be created. A user can create documents that are kerned or tracked or have<br>
+swashes, ligatures, and so on without QuickDraw GX, but achieving these effects<br>
+requires a great deal of manual labor, with lots of Shift-Option-Command key<br>
+combinations and switching to special fonts -- assuming the developer has made the<br>
+effort to provide such a level of functionality. With QuickDraw GX, these effects are<br>
+features designed into the font itself, so all the user needs to do is type and the text<br>
+comes out beautifully. For different effects, the user just picks font features from a<br>
+dialog or palette. The time saved by the user can be 90% over a non-GX interface! It<br>
+simply has to be experienced to be appreciated.
+</p>
+<p>
+All of this great typography is easy for the user to use because it's easy for the<br>
+developer to implement. How many pre-GX drawing and illustration packages support<br>
+the same level of typographic quality as their pre-GX publishing package<br>
+counterparts? Not many, and of those that do, how much more memory do those<br>
+applications require than they would without the typography code? Thanks to<br>
+QuickDraw GX, we're beginning to see drawing and illustration programs that<br>
+incorporate high-end <i>typographic</i> features and page layout programs that incorporate<br>
+high-end <i>graphics</i> features -- all with lower overall memory requirements (when<br>
+compared with traditional non-GX applications) because the code is in the system and<br>
+is shared between applications.
+</p>
+<p>
+Let me get to the real topic of this article. A favorite feature in illustration and page<br>
+layout programs is to enable the user to lay a line of text along an arbitrary path, be it<br>
+straight or curved. My goal here is to provide the developer with a way to do this,<br>
+using QuickDraw GX, that's familiar to those who have been using GX and enticing to<br>
+those who haven't tried it yet. If you've written code to handle text on a path in a<br>
+non-GX application, consider the amount of code needed to do the editing on the screen<br>
+and the amount of code you had to write to make it print on a PostScript printer. Then<br>
+compare it to what's presented here -- I think the QuickDraw GX advantage will be<br>
+clear!
+</p>
+<p>
+I'll assume you have some knowledge of typography and a working knowledge of<br>
+QuickDraw GX throughout my discussion. If you need to brush up on GX, there are the<br>
+<i>Inside Macintosh: QuickDraw GX</i> books; the <i>Programmer's Overview</i> and<i>Typography</i><br>
+volumes are most relevant here.
+</p>
+<p>
+Accompanying this article on this issue's CD and <i>develop</i>'s Web site is a library of code<br>
+called CurveLayout which very closely parallels the QuickDraw GX line layout<br>
+mechanism but with support for <i>curved</i> layouts. The functions of this library will be<br>
+described later.
+</p>
+
+
+<h2>SIMPLE INTERFACE TO DRAW TEXT ON A PATH</h2>
+<p>
+It turns out that QuickDraw GX provides an extremely simple method for drawing text<br>
+along a curve, since it lets us make any shape a dash outline for any other shape -- to<br>
+<i>dash a shape</i> means to draw another shape in a repeating pattern along the perimeter of<br>
+the first shape (see Figure 1). The PostScript language, by comparison, allow only<br>
+simple dashing.
+</p>
+<p>
+<img src="img/289.gif" width="552 px"></img>
+</p>
+<p>
+<b>Figure 1.</b> Dashing a shape
+</p>
+<p>
+Since QuickDraw GX text is a shape, you can draw text along a path by using dashing, as<br>
+shown in Listing 1.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 1.</b> Drawing text on a curve using dashing
+</p>
+<pre>void PutTextOnCurve(gxShape myPath)
+{
+   gxDashRecord   aDash;
+   gxShape         textShape = GXNewText(5, "Hello", nil);
+
+   // Call primitive shape to convert text to glyph.
+   GXPrimitiveShape(textShape);   // All dashes must be primitive.
+   aDash.dash = textShape;
+   aDash.attributes = gxBreakDash;// Dash each letter separately.
+   aDash.advance = 0;             // 0 advance means single repeat.
+
+   GXSetShapeDash(myPath, &amp;aDash);
+   GXDisposeShape(textShape);       // Dash is now sole owner of it.
+   GXSetShapeFill(myPath, gxFrameFill);
+                                    // Dash only for framed shapes.
+}   // PutTextOnCurve</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+Listing 1 demonstrates just how simple it can be to put text on a path in QuickDraw GX.<br>
+This method would also work with layout shapes in addition to text shapes (although<br>
+there's a bug in GX 1.1.3 and earlier that may cause a crash if you do try to dash with a<br>
+layout). While dashing may be a simple interface for drawing text along a curve, it<br>
+isn't an efficient solution for editing because of the overhead incurred by constantly<br>
+rebuilding the dash every time the text changes. Additionally, the dashing solution puts<br>
+you at the mercy of the algorithms used for dashing -- they weren't specifically<br>
+designed for text or layout manipulation.
+</p>
+
+
+<h2>BEHIND CURVELAYOUT</h2>
+<p>
+The CurveLayout library discussed here provides the illusion of a new shape type for<br>
+QuickDraw GX which I affectionately call the "curve layout." I wanted to continue the<br>
+object-oriented philosophy of GX by providing an API for drawing and editing text<br>
+along a curved path. The idea is to provide an efficient mechanism for adding curve<br>
+layouts to your application without forcing you to learn too much new stuff. While the<br>
+article will go into great detail concerning the algorithms used, you need not<br>
+understand them to incorporate curve layouts into your application using the<br>
+CurveLayout library.
+</p>
+<p>
+<b>THE GLYPH SHAPE</b>
+</p>
+<p>
+Before we go too much further, it's worth discussing some things about our friend the<br>
+glyph shape. There are three different kinds of shapes for drawing text: the text shape,<br>
+the glyph shape, and the layout shape. Text shapes are the most familiar to those of us<br>
+who have used QuickDraw or PostScript. When a text shape is drawn, its appearance is<br>
+the same as the result of the DrawString call in QuickDraw or the show operator in<br>
+PostScript: simply the text itself.
+</p>
+<p>
+The relationship between glyph and layout shapes can be compared to programming.<br>
+The layout shape is like a high-level language such as LISP -- a very high-level,<br>
+powerful way of drawing text that produces beautiful results, but it makes specific<br>
+manipulations difficult. The glyph shape is more like assembly language -- you can<br>
+control every aspect of how the text draws, but even simple things require a good deal<br>
+of programming effort. Nevertheless, it's the direct control possible with the glyph<br>
+shape that enabled me to write CurveLayout.
+</p>
+<p>
+A glyph shape allows the specification of individual positions and tangent vectors (and<br>
+even typographic style) of every typographic element drawn in a shape.
+</p>
+<p>
+Figure 2 illustrates the power of the glyph shape for our purposes. At left is a typical<br>
+straight piece of text. The arrows represent the tangent vectors stored in the glyph<br>
+shape and the dots at the ends of the arrow lines show the positions. (Note that both<br>
+here and in Figure 3, the tangent vectors are drawn as <i>normals</i> -- rotated 90 degrees<br>
+counterclockwise from their actual positions -- since otherwise they would run<br>
+together and make a mess of the figures.) Beside that is the same text with different<br>
+tangents and positions showing how these attributes might be manipulated to draw text<br>
+along a path. The tangent vector specifies the scale and rotation of the glyph and is<br>
+stored in the glyph shape as a point. The x and y values of this point are used to<br>
+construct the mapping shown at the right in the figure. This mapping is applied to the<br>
+glyph to reposition it as desired.
+</p>
+<p>
+<img src="img/290.gif" width="474 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>Glyph shape tangents, positions, and mapping matrix
+</p>
+<p>
+But wait -- while glyph shapes give us the control we need to flow our glyphs along a<br>
+path (by setting positions and tangents for each glyph in the shape), they're still like<br>
+assembly language, and we don't want to position every glyph ourselves if we don't need<br>
+to. The good news is that QuickDraw GX provides a "compiler" to convert layout shapes<br>
+to glyph shapes, so we can use the high-level language (layout shape) instead. Our<br>
+compiler is the routine GXPrimitiveShape, which allows us to deal mostly in the<br>
+beautiful world of layouts and then convert them into glyph shapes that can have their<br>
+positions and tangents modified to flow along a path. Layout shapes also provide us with<br>
+the high-level abilities required for interactive editing (more on this later).
+</p>
+<p>
+Now we've seen how we can convert a line layout shape into a glyph shape, and how the<br>
+glyph shape can have its positions and tangents modified so that the glyphs draw along a<br>
+path, but how do we <i>generate</i> those positions and tangents?
+</p>
+<p>
+<b>POINTS ALONG A PATH</b>
+</p>
+<p>
+QuickDraw GX can evaluate points along paths. GXShapeLengthToPoint accepts a<br>
+distance and a polygon or path and returns the point along that polygon or path that's<br>
+the specified distance along its perimeter. In addition to the point, the tangent vector at<br>
+that point (slope of the path or polygon) is returned, which is <i>exactly</i> what we need!<br>
+With this information, we can lay glyph shapes along a path by simply modifying the<br>
+tangents and positions appropriately.
+</p>
+<p>
+The x coordinate of each glyph's position represents the current linear offset of the<br>
+glyph in the layout (as if it were along a straight line). A glyph's position can be<br>
+determined with the GXGetGlyphMetrics function and can be used as the length along the<br>
+path for GXShapeLengthToPoint. The returned point and tangent can then be inserted<br>
+into the glyph shape. The results of this technique are <i>almost</i> what we want, but<br>
+consider the example shown in Figure 3.
+</p>
+<p>
+<img src="img/291.gif" width="198 px"></img>
+</p>
+<p>
+<b>Figure 3.</b> Glyphs positioned on a curve using x position as length along curve
+</p>
+<p>
+In Figure 3, the arrows show the positions and tangents of glyphs that have been<br>
+rotated around their positions, which are typically on the bottom left (at least for<br>
+Roman fonts) rather than around their centers. Because of this, the text doesn't look<br>
+quite right -- some of the wider glyphs even seem to leap off the curve! We can do<br>
+better than this. We can use the horizontal centers of the glyphs (that is, the center of<br>
+the glyph along its baseline) as the input rather than their positions. Unfortunately,<br>
+the point we put back in the glyph shape must be for the position of the glyph, not its<br>
+center, so we have a little work to do translating back and forth.
+</p>
+<p>
+Given a glyph shape, the function GXGetGlyphMetrics gave us the position information<br>
+that we needed to compute the points and tangents for our first attempt. This function<br>
+can also be used to obtain the bounding box of a glyph, and from the bounding box we<br>
+can determine the horizontal center points of each glyph.
+</p>
+<p>
+In Figure 4, we see the glyphs for the word "Pig." The dots represent the glyph<br>
+positions obtained from GXGetGlyphMetrics and the starbursts represent the<br>
+horizontal center of each glyph along the x axis, determined by the bounding boxes,<br>
+which I've bisected for clarity. (Note that the position of a glyph doesn't necessarily<br>
+fall on the left edge of the glyph's bounding box.)
+</p>
+<p>
+<img src="img/292.gif" width="228 px"></img>
+</p>
+<p>
+<b>Figure 4. </b>Glyph shape positions and horizontal centers
+</p>
+<p>
+Listing 2 shows the loop for repositioning glyphs from CurveLayout. It illustrates how<br>
+to compute the new glyph position given the location and tangent returned from<br>
+GXShapeLengthToPoint, using the horizontal center to adjust the input length rather<br>
+than merely using the glyph's x position. Before looping through the glyphs, we get<br>
+some necessary information about the glyph shapes: the tangents (the glyph shape may<br>
+have rotated glyphs to begin with, and we'd like to preserve them), the positions, and<br>
+the bounding boxes. Then, for each glyph we do the following:
+</p>
+<ol>
+<li>Compute the horizontal center of the glyph's bounding box.</li>
+<li>Compute a vector that describes the glyph's position relative to the<br>
+horizontal center of the bounding box (we'll use this in step 4).</li>
+<li>Find out the position and tangent on the curve using the horizontal center<br>
+of the glyph as the length along the curve.</li>
+<li>Compute the new glyph position. Since earlier we described the glyph<br>
+position as a vector relative to the horizontal bounding box center, and the<br>
+point returned from GXShapeLengthToPoint is on the curve at the place where<br>
+we want the horizontal bounding box center, we can compute the new glyph<br>
+position as the vector we saved translated to the new position and rotated by<br>
+the angle described by the tangent.</li>
+<li>Compute the new tangent. This is the composition of the glyph's original<br>
+tangent vector and the one from the path.</li>
+</ol>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 2. </b>The CurveLayout glyph loop
+</p>
+<pre>// Get the positions, tangents, and bounding boxes of all glyphs.
+GXGetGlyphs(theGlyphs, nil, nil, nil, nil, tangents, nil, nil, nil);
+GXGetGlyphMetrics(theGlyphs, positions, glyphBoxes, nil);
+
+// For each glyph, move its position to the correct place on the
+// curve.
+for (idx = 0; idx &lt; glyphCount; ++idx) {
+   // Compute glyph's horizontal center.
+   pointToMapOnCurve.x = glyphBoxes[idx].left +
+      (glyphBoxes[idx].right - glyphBoxes[idx].left) / 2;
+   pointToMapOnCurve.y = 0;
+  
+   // Compute new glyph position relative to horizontal center.
+   relativePosition.x = positions[idx].x - pointToMapOnCurve.x;
+   relativePosition.y = positions[idx].y - pointToMapOnCurve.y;
+
+   // Find the new location and tangent for horizontal center.
+   GXShapeLengthToPoint(thePath, 0, pointToMapOnCurve.x, &amp;newPoint,
+      &amp;newTangent);
+
+   // New position will be the glyph's position relative to the
+   // horizontal center rotated by the tangent. First rotate.
+   ResetMapping(&amp;aMapping);
+   aMapping.map[0][0] = newTangent.x;
+   aMapping.map[1][0] = -newTangent.y;
+   aMapping.map[0][1] = newTangent.y;
+   aMapping.map[1][1] = newTangent.x;
+   MapPoints(&amp;aMapping, 1, &amp;relativePosition);
+   // Now position this relative to the new point.
+   positions[idx].x = newPoint.x + relativePosition.x;
+   positions[idx].y = newPoint.y + relativePosition.y;
+
+   // Concatenate the new tangent with the old.
+   oldTangent.x = tangents[idx].x;
+   oldTangent.y = tangents[idx].y;
+   tangents[idx].x = FixedMultiply(oldTangent.x, newTangent.x) -
+      FixedMultiply(oldTangent.y, newTangent.y);
+   tangents[idx].y = FixedMultiply(oldTangent.x, newTangent.y) +
+      FixedMultiply(oldTangent.y, newTangent.x);
+}   // end for</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+The results of applying this algorithm are seen in Figure 5, where the round end of the<br>
+line denotes the horizontal center of the bounding box and the square end of the line<br>
+denotes the glyph position. On the left is a glyph with a line illustrating the relative<br>
+location of the glyph's position and its horizontal bounding box center before wrapping.<br>
+On the right is that same glyph positioned on a curve using our algorithm. You can see<br>
+how the glyph here is positioned more naturally on the curve than was the case in<br>
+Figure 3.
+</p>
+<p>
+<img src="img/293.gif" width="390 px"></img>
+</p>
+<p>
+<b>Figure 5. </b>CurveLayout repositioning of a glyph
+</p>
+<p>
+I've hand-drawn all the pictures so far using a QuickDraw GX-savvy draw program<br>
+(LightningDraw GX) to illustrate the development of CurveLayout. Figure 6 is a<br>
+picture generated with CurveLayout itself (see the test application that accompanies<br>
+this article). The baseline curve is shown for clarity. Notice that the "te" ligature --<br>
+a particularly wide glyph -- in the word "pasteboard" is naturally tangent to the<br>
+curve. Also, since this is QuickDraw GX, we can apply a number of transforms to the<br>
+wrapped layout, such as the one shown in Figure 7.
+</p>
+<p>
+<img src="img/294.gif" width="462 px"></img>
+</p>
+<p>
+<b>Figure 6. </b>Output of the CurveLayout routine
+</p>
+<p>
+<img src="img/295.gif" width="372 px"></img>
+</p>
+<p>
+<b>Figure 7. </b>CurveLayout output with perspective transform applied
+</p>
+
+
+<h2>DRAWING ISN'T ENOUGH -- WE WANT TO EDIT</h2>
+<p>
+QuickDraw GX's ability to draw high-quality typographic content is only half of what's<br>
+interesting about its line layout capabilities -- GX also provides a number of routines<br>
+to facilitate writing code to do <i>editing</i> of these beautiful lines of text, as follows:
+</p>
+<ul>
+<li>GXHitTestLayout for hit testing, to find out which character a given<br>
+location is nearest. It's typically used for converting mouse clicks during<br>
+editing. A point is converted to a character index.</li>
+<li>GXGetLayoutCaret for computing the caret shape for a position between<br>
+two characters. This is used for drawing the insertion point caret. A character<br>
+index is converted into the caret shape.</li>
+<li>GXGetLayoutHighlight to compute the highlight shape for a run of<br>
+characters, used for selecting text. A starting index and ending index are<br>
+converted into a shape describing the highlight for the characters in the run.</li>
+</ul>
+<p>
+CurveLayout wouldn't be complete if we couldn't provide these abilities. It's important<br>
+for the user to be able to edit a layout on a curve in true WYSIWYG fashion. These three<br>
+functions implement much of what's needed for a basic line editor. Editing whole blocks<br>
+of text is left as an exercise for the programmer and is not a subject for this article!
+</p>
+<p>
+<b>HIT TESTING</b>
+</p>
+<p>
+The first part of editing involves being able to convert a mouse click into a character<br>
+index. Since the function GXHitTestLayout does this for a normal line layout, we'd like<br>
+to use as much of it as possible. The input to that function is a point relative to the<br>
+layout. The important value of the point is the horizontal component. Provided that the<br>
+position is within the layout, the horizontal component determines which character is<br>
+nearest that value.
+</p>
+<p>
+&nbsp;&nbsp;So, given a point on the curve, we want to undo the curvature to determine a value to<br>
+pass to GXHitTestLayout. If GXShapeLengthToPoint converts a distance into a location,<br>
+we need an inverse function that converts a location back to a distance. Unfortunately,<br>
+QuickDraw GX has no such function. Additionally, the location of the mouse click may<br>
+not be exactly <i>on</i> the shape.
+</p>
+<p>
+Given a point, we can find the closest point on a curve. Knowing a point on a curve, we<br>
+can determine the distance that point falls along the curve by doing a binary search of<br>
+GXShapeLengthToPoint:
+</p>
+<ol>
+<li>    Find the length of the shape (GXGetShapeLength).</li>
+<li> Do a binary search for the point on the curve closest to the hit point by<br>
+calling GXShapeLengthToPoint, passing in lengths between 0 and the total<br>
+length of the curve, and systematically reducing the distance to the point you<br>
+seek until it's as close as you choose.</li>
+</ol>
+<p>
+The length determined by this method can then be passed into GXHitTestLayout.
+</p>
+<p>
+It's important to note that the algorithm above is simplified for the sake of brevity: it<br>
+works on a single quadratic curve or line segment. The code included in the<br>
+CurveLayout library implements the full functionality using the ShapeWalker library<br>
+described in my Graphical Truffles column in <i>develop</i> Issue 27. The ShapeWalker<br>
+library is used to determine each individual line or curve segment of a shape; the<br>
+distance from a hit point to each segment is determined and the smallest of them is<br>
+chosen (code comments illustrate the method more completely).
+</p>
+<p>
+<b>COMPUTING THE CARET IN CURVELAYOUT</b>
+</p>
+<p>
+To compute the caret of a line layout, we call GXGetLayoutCaret. This returns a shape<br>
+describing the insertion position. If we take the resulting shape and use it to dash the<br>
+curve (with only one repetition), the result is the curve layout caret. It's that simple<br>
+(see Listing 3).
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 3. </b>Computing the curve layout caret
+</p>
+<pre>theFill = GXGetShapeFill(thePath);
+realCaret = GXGetLayoutCaret(layout, offset, highlightType,
+   caretType, nil);
+
+// Copy into caret passed in (if it's nil, the right thing happens).
+result = GXCopyToShape(caret, thePath);
+
+GXSetShapePen(result, ff(1))      // We don't want dashes to scale.
+theDash.attributes = gxBreakDash;
+theDash.dash = realCaret;
+theDash.advance = 0               // We want only one repeat.
+theDash.phase = ff(0);
+theDash.scale = ff(1);
+GXSetShapeDash(result, &amp;theDash);
+
+// Make sure we have a framed shape for the path.
+if ((theFill != gxFrameFill) &amp;&amp; (theFill != gxClosedFrameFill))
+   GXSetShapeFill(result, gxClosedFrameFill);
+
+// Now apply the dash to get the caret on the path.
+GXPrimitiveShape(result);
+GXSetShapeDash(result, nil);
+GXDisposeShape(realCaret);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+<b>USING DASHING TO HIGHLIGHT IN CURVELAYOUT</b>
+</p>
+<p>
+We can also use QuickDraw GX's dashing ability to highlight the individual characters<br>
+in a curve layout. If we call GXGetLayoutHighlight for each individual character in a<br>
+specified range, each resulting shape can be used to build up a dash shape. The dash<br>
+shape built will have one contour per character, each contour representing the<br>
+highlight of that character. If we then dash the curve with these contours, we get the<br>
+desired effect.
+</p>
+<p>
+&nbsp;&nbsp;Well, we <i>almost</i> get the desired effect -- while the result does highlight the curved<br>
+layout's text, the highlight has gaps. Achieving a contiguous highlight is a more<br>
+difficult problem. In fact, popular PostScript-based drawing applications highlight<br>
+text on a path with noncontiguous regions. Figure 8 compares noncontiguous<br>
+highlighting similar to that of many popular non-GX-based applications with the<br>
+contiguous highlighting obtainable by QuickDraw GX using CurveLayout. The library<br>
+supports both methods.
+</p>
+<p>
+<img src="img/296.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 8. </b>Two ways to highlight
+</p>
+<p>
+The code in Listing 4 achieves the noncontiguous highlight of a curve layout. But we can<br>
+do better: the CurveLayout library implements contiguous highlighting using<br>
+QuickDraw GX's ability to do hairline dashing or bend dashing. Rather than going on and<br>
+on, I'll let the code in the library speak for itself.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 4. </b>Creating the highlight with dashing
+</p>
+<pre>oneCharHighlight = nil;
+newHighlight = GXNewShape(gxEmptyType);
+
+for (idx = startOffset; idx &lt; endOffset; ++idx) {
+   oneCharHighlight = GXGetLayoutHighlight(theLayout, idx, idx + 1,
+      hilightType, oneCharHighlight);
+   if (oneCharHighlight != nil) {
+      // Add highlight for individual character to highlight shape.
+      GXSetShapeParts(newHighlight, 0, 0, oneCharHighlight,
+         gxBreakLeftEdit);
+   }  // end if        
+}   // end for
+
+GXDisposeShape(oneCharHighlight);
+theShape = GXCopyToShape(highlight, thePath);
+GXSetShapePen(theShape, ff(1));    // We don't want dashes to scale.
+GXSetShapeFill(theShape, gxFrameFill);     
+theDash.attributes = gxBreakDash;
+theDash.dash = newHighlight;
+theDash.advance = 0;                  // We want only one repeat.
+theDash.phase = ff(0);
+theDash.scale = ff(1);
+GXSetShapeDash(theShape, &amp;theDash);
+GXDisposeShape(newHighlight);
+GXPrimitiveShape(theShape);
+GXSetShapeDash(theShape, nil);
+
+// Change the fill of the result to winding. Since when bent around,
+// contours can overlap, we want the overlaps to fill, too. With
+// even-odd, they wouldn't be filled and the highlight would look
+// funny.
+GXSetShapeFill(theShape, gxWindingFill);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<h2>USING THE CURVELAYOUT LIBRARY</h2>
+<p>
+CurveLayout is designed to look very much like the line layout functions you're used to<br>
+-- we want a curve layout to look as if it really were a new QuickDraw GX shape type.<br>
+All of the editing routines take the same parameters as the corresponding line layout<br>
+routines, so I won't spend too much time describing those. See <i>Inside Macintosh:</i><br>
+<i>QuickDraw GX Typography</i> for more information. The most important functions in the<br>
+CurveLayout library are as follows:
+</p>
+<pre>gxShape ClNewCurveLayout(gxShape theText, gxShape theShape);
+void ClDisposeCurveLayout(gxShape curveLayout);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The ClNewCurveLayout function creates the curve layout shape. The input is a normal<br>
+line layout shape and a curve. Actually, the second parameter can be any kind of shape:<br>
+a line, a polygon, or a path. The resulting curve layout shape is the one that will be<br>
+passed to the other library functions for editing. It's also the shape you'd draw and to<br>
+which you can attach transforms for achieving rotation or other effects. The<br>
+ClDisposeCurveLayout function destroys the shape.
+</p>
+<p>
+Modification of the text in the layout (such as for editing) should be done on the layout<br>
+shape passed in. The path can be changed as well. If either of the two input shapes is<br>
+modified, you should call the ClChangedCurveLayout function before redrawing. For<br>
+example, this function should be called for each character inserted or deleted from the<br>
+original line layout shape.
+</p>
+<p>
+The code accompanying this article also includes an application that demonstrates using<br>
+the CurveLayout library. While I'll certify the actual CurveLayout library as ready<br>
+for prime time, the test application is just a test application -- not a model of coding<br>
+perfection! Also, as an extra bonus I've included the CurveLayoutGX control panel. This<br>
+control panel adds the basic curve layout feature to all of your <i>existing</i> drawing<br>
+applications by defining a key combination to activate it. (This is a bit of a hack; use it<br>
+at your own risk.)
+</p>
+<p>
+All of the functions of the library are documented (as is the CurveLayout code itself)<br>
+in the header file, CurveLayout.h, so I won't go further into the API. See "Curve<br>
+Measurement" for a few other details about the implementation.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CURVE MEASUREMENT</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The current version of QuickDraw GX uses a numerical approximation for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;certain&nbsp;&nbsp;functions that are relevant here. The particular functions relate to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the&nbsp;&nbsp;measurement of quadratic B&#200;zier curve segments and are used by<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXShapeLengthToPoint,&nbsp;&nbsp;by GXGetShapeLength, and&nbsp;&nbsp;for dashing as invoked by<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;either GXDrawShape or GXPrimitiveShape. The&nbsp;&nbsp;implementation of these was <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;done as a numerical approximation to ensure sufficient performance on<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;680x0&nbsp;&nbsp;machines, where the use of a closed mathematical equation would have<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;been too&nbsp;&nbsp;slow. The bad news is that while this method is accurate enough for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the original&nbsp;&nbsp;use intended (primarily dashing), it&#960;s not accurate enough to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;produce good-looking&nbsp;&nbsp;text along a curve.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;As you've seen in this article, the functions mentioned above are heavily used <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;in the CurveLayout library. The inaccuracies will manifest themselves as<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;characters&nbsp;&nbsp;being spaced a little too far apart. To ensure high-quality text<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;layout, a library&nbsp;&nbsp;has been included with this article that reimplements the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;low-level quadratic segment&nbsp;&nbsp;measurement functions using a floating-point<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;closed equation. On top of that code,&nbsp;&nbsp;I&#960;ve built my own versions of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GXShapeLengthToPoint, GXGetShapeLength, and&nbsp;&nbsp;GXPrimitiveShape, called<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AccurateShapeLengthToPoint, AccurateGetShapeLength,&nbsp;&nbsp;and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AccuratePrimitiveShape. Within AccuratePrimitiveShape is an<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;implementation of&nbsp;&nbsp;all cases of dashing that the CurveLayout library requires.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;All other cases of&nbsp;&nbsp;PrimitiveShape are dispatched to GXPrimitiveShape; hence<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;this call isn&#960;t a complete&nbsp;&nbsp;replacement for GXPrimitiveShape. The<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CurveLayout.c file contains a compile-time&nbsp;&nbsp;conditional that can be defined to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;use the library code instead of the built-in&nbsp;&nbsp;QuickDraw GX code.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The low-level math used by my library was written by Joseph Maurer. He<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wrote&nbsp;&nbsp;measurement routines that operate on individual quadratic curve<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;segments. I built&nbsp;&nbsp;the shape measurement and dashing functions by using the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ShapeWalker library&nbsp;&nbsp;described in my Graphical Truffles column in <i>develop</i><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Issue 27 to extract individual&nbsp;&nbsp;segments from QuickDraw GX shapes.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>LAYING IT ALL ON THE LINE</h2>
+<p>
+The library provided with this article should enable anybody writing a QuickDraw GX<br>
+application to add high-quality typography drawn along an arbitrary curve. If you've<br>
+already written code to edit QuickDraw GX line layouts, you'll find the API in this<br>
+library very familiar. For those of you who haven't thought about writing a GX-based<br>
+application, perhaps the simplicity of using CurveLayout as well as the quality<br>
+demonstrated by the output of this code will make you give GX another look. Without<br>
+QuickDraw GX, an application would have to include code similar to what's in the<br>
+CurveLayout library in <i>addition</i> to the code the application would need to do ordinary<br>
+line layout, not to mention all of the additional code that would be required in the<br>
+application to print something like a curve layout shape.
+</p>
+<p>
+CurveLayout provides developers with a way to provide distinctly superior user value<br>
+in their applications, while reducing code size and complexity at the same time --<br>
+what could be easier?
+</p>
+
+
+
+<p>
+<b>RELATED READING</b>
+</p>
+<ul>
+<li>"Graphical Truffles: A Library for Traversing Paths" by Daniel<br>
+Lipton, <i>develop</i> Issue 27.</li>
+<li><i>Inside Macintosh: QuickDraw GX Programmer's Overview</i> and<br>
+Inside Macintosh: QuickDraw GX Typography by Apple Computer, Inc.<br>
+(Addison-Wesley, 1994).</li>
+</ul>
+
+
+
+<p>
+<b>DANIEL I. LIPTON</b> (lipton@apple.com)<br>
+Although he's a member of the QuickDraw GX team, Daniel has been secretly developing<br>
+a next-generation PostScript printer (based on the latest in artificial intelligence<br>
+technology) that will achieve sentience on August 29, 1997. When not sleeping, Daniel<br>
+can be found lost in San Francisco traffic or buying critters at his local aquarium<br>
+shop.*
+</p>
+<p>
+<b>Thanks to</b> our technical reviewers Alex Beaman, Brian Chrisman, Dave Hersey, and<br>
+Ingrid Kelly. Special thanks to Joseph Maurer for the low-level curve measurement<br>
+routines that made accurate text layout on curves possible.*
+</p>
+</body>
+</html>

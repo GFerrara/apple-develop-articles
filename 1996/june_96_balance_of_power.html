@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 20 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 96 - Balance of Power</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Balance of Power:&nbsp;&nbsp;Sleuthing Through Your Code</h1>
+<h2>DAVE EVANS</h2>
+<p>
+<img src="img/187.gif" width="270 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">The night was well advanced, but the bright glow of fluorescent</i>
+<br>
+
+<i style="font-size:125%;">lamps misrepresented time. As I sat back in my comfortable chair,</i>
+<br>
+
+<i style="font-size:125%;">rubbing tired eyes, I wondered what the venerable but fictional Mr.</i>
+<br>
+
+<i style="font-size:125%;">Sherlock Holmes would offer me as advice. Perhaps because I was</i>
+<br>
+
+<i style="font-size:125%;">so weary from the long hours of debugging, I easily imagined Mr.</i>
+<br>
+
+<i style="font-size:125%;">Holmes sitting near me in a tweed suit smoking his pipe. Certainly</i>
+<br>
+
+<i style="font-size:125%;">he would address me as he once addressed his compatriot Dr.</i>
+<br>
+
+<i style="font-size:125%;">Watson, with a slightly condescending tone, and he would tell me</i>
+<br>
+
+<i style="font-size:125%;">that in my debugging I was missing the key iota of information.</i>
+</p>
+<p>
+At that moment, a solitary number seemed brighter on my monitor. Perhaps I have an<br>
+overactive imagination, but it seemed as if MacsBug were magically illuminating that<br>
+crucial, overlooked information. My computer was at interrupt level 2, yet it was<br>
+waiting for a driver request to complete. How could I have missed the interrupt level<br>
+earlier? It was no wonder that the computer froze. My software had most likely called<br>
+the driver synchronously at exactly the wrong time. The voice of Mr. Holmes rang<br>
+again in my ears. This time he quoted from that unfortunate story "A Case of Identity"<br>
+when he said, "It has long been an axiom of mine that the little things are infinitely the<br>
+most important."
+</p>
+<p>
+Sir Arthur's famous detective was unsurpassed as an observer of detail. He believed<br>
+that keen attention to all things -- even the mundane -- was the key to good detective<br>
+work. In debugging software, I've found this advice is also true. Although many<br>
+software bugs can be solved quite easily, the most challenging problems demand more<br>
+attention. This is especially true of crashes or freezes in your software. To find the<br>
+detail we need for those, we often have to go below source-level tools and get<br>
+comfortable with lower-level aids.
+</p>
+<p>
+In this column I'll take you through some low-level debugging techniques. I'll start<br>
+with basic strategy and then discuss particular methods and examples. Although many<br>
+details will be PowerPC-specific, much of the information here is useful on all<br>
+Macintosh computers.
+</p>
+<h2>THE STRATEGY OF A SLEUTH</h2>
+<p>
+The experienced engineer starts with a basic strategy when faced with a troublesome<br>
+software crash or freeze. The strategy is similar to Mr. Holmes's approach to solving<br>
+difficult crimes. Using the scientific method, he starts by collecting key information<br>
+and details. When he has finished researching, he begins to analyze the information and<br>
+eliminates hypothesis after hypothesis. Once close to a solution, he seeks out more<br>
+detail to narrow his suspects to a single culprit. Similarly, your strategy for<br>
+debugging software should start with careful observation and research. Then you<br>
+should hypothesize, test your theories, and collect more detail. This narrowing<br>
+approach will draw you closer to the pernicious coding error in your software.
+</p>
+<p>
+&nbsp;&nbsp;It's tempting when faced with a difficult crash to experiment instead of researching it<br>
+first. But beware! Don't just reimplement your code with new approaches until it<br>
+stops crashing. Though some may cynically suggest that that's the Macintosh way to<br>
+program, don't be lulled into this strategy. I've found that it usually produces unstable<br>
+code and ultimately takes longer than researching the original problem.
+</p>
+<p>
+In researching a crash or a freeze, the private bug detective should first ask these few<br>
+basic questions:
+</p>
+<ul>
+<li>What kind of crash or freeze is this?</li>
+<li>What code did the computer stop in?</li>
+<li>How did I get to that code?</li>
+</ul>
+<p>
+For these, you'll need a low-level debugger (such as MacsBug). Let's look at each one<br>
+in turn.
+</p>
+<h2>GET YOUR BEARINGS</h2>
+<p>
+The first step is to determine the kind of problem you've got. For crashes there are a<br>
+number of possible problems, including the all-too-familiar illegal instruction and<br>
+bus errors. Note that PowerPC exception handlers don't currently distinguish between<br>
+these or other types. In MacsBug the correct type will be reported, but your debugger<br>
+may instead describe all crashes as general spurious interrupts or type 11 errors.
+</p>
+<p>
+If your crash is from an illegal instruction error, it's possible that the processor<br>
+jumped to an invalid address or the intended code moved in memory. In this case you'll<br>
+notice (in a disassembly where execution stopped) that most instructions are invalid<br>
+or nonsense. This can also occur if the emulator tries to emulate PowerPC code, or if<br>
+the processor tries to execute 680x0 code as PowerPC code. Try disassembling<br>
+memory as both PowerPC code (using <b>ipp pc</b>) and 680x0 code (using ip pc).
+</p>
+<p>
+If your crash is from a bus error, the most likely cause is an invalid address in some<br>
+register. Disassemble memory where execution stopped and examine the instructions.<br>
+If there are instructions that dereference registers, inspect those registers for<br>
+addresses that aren't in a valid range. If you're debugging 680x0 code on a Power<br>
+Macintosh, you'll need to look at all the instructions near the crash, because the<br>
+680x0 emulator won't tell you exactly which instruction caused the error.
+</p>
+<p>
+Researching a freeze requires a different approach. If the freeze prevents you from<br>
+using any debugging tools, you must isolate the offending code by watching the<br>
+computer execute up to the freeze. Setting breakpoints, tracing, and stopping execution<br>
+at known locations will bring you closer. This approach is slow but will lead you to the<br>
+code that caused the error or to the state that prompted it. If the computer is frozen<br>
+but you can still use debugging tools, it's very possible that you're in an infinite loop.
+</p>
+<h2>THE LAYOUT OF THE CRIME SCENE</h2>
+<p>
+Sherlock Holmes sometimes astonished readers by deducing crimes just from hearing<br>
+second-hand details. He was also known, however, to walk the back alleys of London and<br>
+gumshoe the scene of a crime when necessary. Learning the layout of the crime scene<br>
+was crucial for a number of his deductions. When staring at your newly crashed<br>
+software, do you recognize the code that your debugger is displaying? Disassemble<br>
+memory near the location of the crash and snoop around for clues. Check for the<br>
+following to determine how your computer came to this final resting place:
+</p>
+<ul>
+<li>If you're using MacsBug, use the <b>wh pc</b> command to check where the code<br>
+is.</li>
+<li>Display memory and disassemble from the beginning of the code's block of<br>
+memory.</li>
+<li>Does the code nearby reference strings or Gestalt selectors?</li>
+<li>Look for text symbols and strings in the code.</li>
+</ul>
+<p>
+If you've crashed in PowerPC code, most low-level debuggers will give great<br>
+information about where you are. This is because most PowerPC code is registered and<br>
+linked using the Code Fragment Manager, which these debuggers can access for hints.<br>
+For example, if you use the <b>wh pc </b>command in MacsBug, after crashing in PowerPC<br>
+code you'll see something like this:
+</p>
+<pre> Address 000BAE34 is in the System heap
+    at 00002800 at NQDColor2Index+00018
+ The address is in a CFM fragment "NQD"
+
+ It is 0001AD28 bytes into this heap block:
+     Start    Length      Tag  Mstr Ptr Lock
+  * 000A00F0 0003DB00+04   R   00002AC4   L</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Here we see that the computer crashed at a location 24 bytes from the beginning of the<br>
+NQDColor2Index routine. This routine is in the NQD (or Native QuickDraw) code<br>
+fragment. Since this address is close to the beginning of the routine, we can<br>
+disassemble from its start and examine the six instructions that executed before the<br>
+crash for more clues:
+</p>
+<pre>Disassembling PowerPC code from bae00
+  NQDColor2Index
+    +00000 000BAE00   li      r5,0x0000
+    +00004 000BAE04   lwz     r4,TheGDevice(r0)
+    +00008 000BAE08   sth     r5,QDErr(r0)
+    +0000C 000BAE0C   stw     r31,-0x0004(SP)
+    +00010 000BAE10   lwz     r5,0x0000(r4)
+    +00014 000BAE14   addi    r31,r3,0x0000
+    +00018 000BAE18  *lwz     r3,0x000C(r5)</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+A bus error at NQDColor2Index+00018 would occur if register R5 contained an<br>
+invalid address. Look at the register display to validate that hypothesis. Notice in the<br>
+code that R5 is a dereference of R4, which comes from the low-memory global<br>
+TheGDevice. Here we crashed because TheGDevice had become invalid, so now your<br>
+investigation turns toward that global.
+</p>
+<p>
+A freeze will typically occur because of a double page fault or exception or because of<br>
+an infinite loop. Synchronous driver calls will also freeze if called when the interrupt<br>
+level is above 0. A double fault or exception is common only if you're writing driver<br>
+software. Your computer can handle only one page fault or exception at a time. A double<br>
+fault or exception occurs when software that services a fault subsequently causes a<br>
+second fault. For example, disk drivers are sometimes called by the Virtual Memory<br>
+Manager to help service page faults; therefore, if you develop a disk driver you must<br>
+take care not to cause page faults since you may be asked to service one as well.
+</p>
+<p>
+A good way to detect infinite loops is to trace for a few instructions using your<br>
+debugger. If you notice the same set of instructions being repetitively executed, you<br>
+could be in an infinite loop. Look at branch instructions for clues to why the loop isn't<br>
+completing. A special case of these loops is the vSyncWait routine. It looks like this:
+</p>
+<pre>MOVE.W      $0010(A0),D0
+BGT.S         *-6</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+This tight loop is waiting for the two-byte value located 16 bytes from register A0 to<br>
+become 0 or negative. This is a standard sequence to wait for a driver request to<br>
+complete. The driver request is described in an IOParam record pointed to by register<br>
+A0. When the driver is done servicing the request, it will interrupt the loop and<br>
+modify the ioResult field 16 bytes into that record. It will then return from the<br>
+interrupt, and the loop will complete normally. A freeze in this loop means the driver<br>
+isn't servicing the request. If you typed <b>dm a0</b> iopb in MacsBug, you might see<br>
+something like this:
+</p>
+<pre> Displaying IOParamBlockRec at 000003A4
+  000003A4  qLink              NIL
+  000003A8  qType              0002
+  000003AA  ioTrap             A003
+  000003AC  ioCmdAddr          NIL
+  000003B0  ioCompletion       NIL
+  000003B4  ioResult           0001
+  000003B6  ioNamePtr          NIL
+  000003BA  ioVRefNum          0008
+  000003BC  ioRefNum           FFDF
+  000003BE  ioVersNum          #0
+  000003BF  ioPermssn          #23
+  000003C0  ioMisc             NIL
+  000003C4  ioBuffer           01C7E2B0
+  000003C8  ioReqCount         00010000
+  000003CC  ioActCount         00010000
+  000003D0  ioPosMode          0001
+  000003D2  ioPosOffset        1B84AA00</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Take note of the ioTrap and ioRefNum fields. In this case, ioTrap is $A003, which is<br>
+the synchronous Read trap. Using the <b>drvr</b> dcmd in MacsBug, you'll find that the<br>
+driver with refNum $FFDF is .ASYC00, which is the SCSI driver. This hang, then,<br>
+occurs during a synchronous Read call to the SCSI driver. Perhaps I should next check<br>
+the current interrupt level.
+</p>
+<h2>HOW DID WE GET THERE?</h2>
+<p>
+After a long, ponderous silence, while sharply focused on the current enigma, Holmes<br>
+might startle you by saying, "Let us reconstruct, Watson." Then he would describe the<br>
+probable series of events that preceded that particular criminal act. If the<br>
+reconstruction wasn't adequate to identify a perpetrator, at least it would review the<br>
+crucial discoveries so far. It would show Holmes's appreciable progress toward a<br>
+solution. Similarly, while in the midst of a difficult debugging task, you should<br>
+reconstruct the turn of events to gain extremely helpful information.
+</p>
+<p>
+Figuring out what happened, once the computer is stopped cold in a crash or a freeze,<br>
+isn't easy. In effect, you're looking for footsteps in the sand that are often obscured or<br>
+covered with other false marks. For this task, the technique we most often use is the<br>
+stack crawl.
+</p>
+<p>
+Procedural programming on the Macintosh uses a stack. For each procedure call, the<br>
+stack is added to, and vital clues such as return addresses and stack frame pointers are<br>
+left for us to find. In PowerPC code, the link register adds to our clues and is<br>
+guaranteed to point back to the penultimate procedure of interest. Your low-level<br>
+debugger will certainly have a stack crawl tool to use as well.
+</p>
+<p>
+In MacsBug, the <b>sc</b> and <b>sc7</b> commands are your basic stack-crawling aids. Start your<br>
+search with the sc command, which looks for stack frames. Frames are structures<br>
+found on the stack containing both the return address and a pointer to the previous<br>
+frame. In PowerPC code the frames also contain a standard area to preserve basic<br>
+registers. Fortunately, frames are required in PowerPC code and follow a standard<br>
+format. Most 680x0 compilers will generate stack frames as well, although much of<br>
+the 680x0 system software was written in assembly language without frames. If<br>
+during your crash you have a valid stack frame address in register A6 or R1, the sc<br>
+command will show you a history of which code execution preceded your software's<br>
+demise. Listing 1 shows a basic <b>sc</b>command's result.
+</p>
+<p>
+<b>Listing 1.</b> Display from the <b>sc</b> command
+</p>
+<pre> Calling chain using A6/R1 links
+  Back chain  ISA  Caller
+  01C8A0AC    68K  01C139CA  'CODE 0001 0F6E Main'+03A1A
+  01C8A0A0    68K  01C132EA  'CODE 0001 0F6E Main'+0333A
+  01C89F4A    68K  00058748  'scod BFB1 011C'+01A38
+  01C89E6A    68K  00064090  'scod BFB1 011C'+0D380
+  01C89E40    68K  408787FC  CHECKUPDATESEARCH+0003E
+  01C89E16    68K  40878426  __GETSUBWINDOWS+000D6</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+In this example the first two links are in a CODE resource from file number $0F6E.<br>
+Use the MacsBug file command to determine which file they were loaded from. It's<br>
+likely that they're from the current application, and the return addresses displayed in<br>
+the Caller column (01C139CA and 01C132EA) are most likely in the application's<br>
+binary. The return addresses listed are crucial to your sleuthing. They not only point<br>
+out where execution would have returned to but, more important, they show which<br>
+instructions were recently executed: the ones just before the return address. Those<br>
+addresses are your footprints in the sand. They are clues in your reconstruction, and<br>
+they hint to the turn of events that led to the crash or freeze.
+</p>
+<p>
+Note the third and fourth lines in Listing 1, which show return addresses in an 'scod'<br>
+resource. Those 'scod' resources implement the Process Manager. It's possible that the<br>
+application binary, probably at the instruction just before address 1C132EA, made a<br>
+call to the Process Manager.
+</p>
+<p>
+The fifth and sixth lines of the display show return addresses in the Macintosh ROM.<br>
+The symbols are shown because I've installed a ROM map file in my MacsBug<br>
+Preferences folder. You should use the provided ROM map file for your computer,<br>
+because it will often give you better stack crawl information. You can also deduce that<br>
+these return addresses are in the ROM from the addresses themselves. Most Macintosh<br>
+ROMs begin at memory address $40800000. PCI-based Macintosh ROMs currently<br>
+begin at $FFC00000, and PowerPC processor-based PowerBook ROMs at<br>
+$40000000. You can determine the beginning address of your ROM by looking at the<br>
+ROMBase low-memory global. In MacsBug, for example, type<b>dl ROMBase</b> to display<br>
+the beginning ROM address.
+</p>
+<p>
+The <b>sc7</b> command in MacsBug gives you less precise information. In cases when you<br>
+don't have stack frames, you can ask your debugger to display all possible return<br>
+addresses on the stack. Your debugger will intelligently guess which values on the<br>
+stack are possible return addresses, but most of the information displayed will be<br>
+extraneous. You must pick through this information for clues -- an arduous task. The<br>
+stack frame-based crawl is neat and tidy, whereas the same situation would produce<br>
+the <b>sc7</b> display shown in Listing 2. I've added an asterisk (*) on each line that's also<br>
+in the <b>sc</b> command's display.
+</p>
+<p>
+<b>Listing 2. </b>Display from the sc7 command
+</p>
+<pre>Return addresses on the stack
+ Stack Addr Frame Addr ISA  Caller
+  01C8A0B0             68K  01C16D62 'CODE 0001 0F6E Main'+06DB2c
+  01C8A0A4   01C8A0A0  68K  01C139CA 'CODE 0001 0F6E Main'+03A1A    *
+  01C8A094             68K  40849116 UNLOADSEG+00046
+  01C8A06A   01C8A066  68K  409CFFFC DISPTABLE+8D0BC
+  01C8A018             68K  4087EAF0 GETRESOURCE+000B2
+  01C8A00E             68K  408806F6
+  01C8A008             PPC  00094BE8 EmToNatEndMoveParams+00014
+  01C89FF8             68K  0011ACDA
+  01C89FE0             68K  4087ECFE VRMGRSTDENTRY+000B0
+  01C89FDC             68K  4087ECFE VRMGRSTDENTRY+000B0
+  01C89FD8             68K  0011A5B4
+  01C89F4E   01C89F4A  68K  01C132EA 'CODE 0001 0F6E Main'+0333A    *
+  01C89F4A             68K  01C8A09E
+  01C89F22   01C89F1E  68K  00058748 'scod BFB1 011C'+01A38         *
+  01C89F1E             68K  01C89F48
+  01C89EDE   01C89EDA  68K  00163E30
+  01C89EDA             68K  01C89F1C
+  01C89E62             68K  01C8AFBE
+  01C89E44   01C89E40  68K  00064090 'scod BFB1 011C'+0D380         *
+  01C89E1A   01C89E16  68K  408787FC CHECKUPDATESEARCH+0003E        *
+  01C89DF4   01C89DF0  68K  40878426 __GETSUBWINDOWS+000D6          *
+  01C89DE2             68K  4087876E CALCANCESTORRGNS+0002A
+  01C89DDE             68K  001191E6</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+In this example, there were a number of values on the stack that might have been valid<br>
+return addresses. The six we saw in the <b>sc</b> command's display are there. Many of the<br>
+other lines will not be relevant return addresses, because many procedures reserve<br>
+space on the stack but don't always use it or initialize it. There will often be old return<br>
+addresses in that unused part of the stack. These old return addresses are like very<br>
+faint footprints in the sand -- from some previous execution -- and they may tell you<br>
+what occurred much earlier in time. More often, though, they'll just be distracting and<br>
+irrelevant to your search.
+</p>
+<p>
+Be very wary of an <b>sc7</b> command when tracing through PowerPC code. PowerPC code<br>
+typically has large stack frames, at least 56 bytes for each procedure, and the code<br>
+often doesn't use all those bytes. This will cause many old return addresses to stay in<br>
+the unused parts of the stack frame, and those old addresses will appear in your <b>sc7</b><br>
+command's display.
+</p>
+<p>
+Sometimes you'll notice that the <b>sc</b> and <b>sc7</b> commands fail to work. In MacsBug, you<br>
+may see the error
+</p>
+<pre>Bad stack: stack pointer must be even and
+   &lt;= stack base</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+There's more than one stack that the system uses, but the stack base that MacsBug<br>
+refers to in this error is the application stack's base or top address. The sc and sc7<br>
+commands first check to see if the A6, A7, and R1 registers point to locations below<br>
+the application stack's base. If they don't, MacsBug returns this error. The executing<br>
+code may be using a different stack, however. Many parts of the Mac OS system<br>
+software use separate stacks. To force MacsBug to execute a stack crawl anyway,<br>
+specify the register to use and the amount of memory to search through. For example,<br>
+the MacsBug commands <b>sc7 a7 4000</b> and <b>sc a6 4000</b> will execute a stack crawl<br>
+even if the A6 and A7 registers point above the application stack's base.
+</p>
+<p>
+System stacks vary in size from about 8000 bytes up to 48000 bytes. There's no easy<br>
+way to determine the base of a system stack that's in use. If you don't get interesting<br>
+clues from 16384 bytes ($4000 in hex), vary the number of bytes you specify and<br>
+compare your results.
+</p>
+<h2>ELEMENTARY, OF COURSE</h2>
+<p>
+Don't be pacified by source-level debuggers. Lower-level tools give you a much better<br>
+understanding of the Mac OS and your code. These tools also give you the ability to<br>
+research the most complicated problems. Strive to be a software sleuth, and you'll gain<br>
+some truly useful expertise.
+</p>
+<p>
+<b>DAVE EVANS</b> still works at Apple in the Mac OS System Software group. He always<br>
+enjoyed Sherlock Holmes stories while he was growing up, and he was excited to learn<br>
+that most of the stories are no longer protected under copyright and are easily<br>
+accessible on the Internet (see the 221B Baker Street Web page at<br>
+http://www.contrib.andrew.cmu.edu/u/mset/holmes.html).*
+</p>
+<p>
+Thanks to Geoff Chatterton, Doug Clarke, Michael Dautermann, and Tim Maroney for<br>
+reviewing this column.*
+</p>
+</body>
+</html>

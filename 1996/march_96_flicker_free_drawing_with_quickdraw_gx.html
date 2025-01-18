@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 4 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 96 - Flicker-Free Drawing With QuickDraw GX</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Flicker-Free Drawing With QuickDraw GX</h1>
+<h2>Hugo Ayala</h2>
+<p>
+<img src="img/129.gif" width="120 px"></img>
+</p>
+<p>
+<i>Does your QuickDraw GX application have a look reminiscent of the old silent movies?</i><br>
+<i>If so, it suffers from flicker. But don't despair -- help is as near as this issue's CD,</i><br>
+<i>where you'll find a ready-to-use library for doing memory-efficient, flicker-free</i><br>
+<i>drawing inside a window. This article explores the problem of flicker and its solutions</i><br>
+<i>and walks you through the code.</i>
+</p>
+<p>
+My first encounter with the idea of flicker-free drawing happened when I was a<br>
+12-year-old kid reading my father's copy of <i>Nibble</i>, a journal about programming the<br>
+Apple II. A review of new products mentioned a program that had impeccable animation<br>
+and guessed that the programmer was most likely using "page switching" to produce<br>
+flicker-free drawing. Page switching (or page flipping) took advantage of the fact that<br>
+the Apple II could use more than one location in memory (more than one <i>page</i>) to hold<br>
+the screen image. Given enough memory, a programmer could set things up so that<br>
+there was a second "offscreen" page to draw into while the first was being shown on the<br>
+screen. Switching back and forth between these two pages made flicker-free drawing<br>
+possible.
+</p>
+<p>
+Today's hardware bears little resemblance to the Apple II, but the technique for doing<br>
+flicker-free drawing is essentially the same. It involves <i>double buffering</i> (also known<br>
+as <i>screen buffering</i>) -- causing all objects to be drawn first into an offscreen buffer<br>
+and then copying that entire buffer to the front buffer (the window). Both this and the<br>
+Apple II method eliminate the need to erase the old position of a moving image directly<br>
+on the screen before drawing its new position, which is the primary cause of flicker.
+</p>
+<p>
+The library that accompanies this article manages an offscreen buffer for a QuickDraw<br>
+GX view port. Using it will enable you to give your QuickDraw GX application a more<br>
+professional feel by removing flicker. You could use the offscreen library provided<br>
+with QuickDraw GX to do screen buffering, but because it's a much more<br>
+general-purpose tool, you would have to handle most of the minutiae of examining<br>
+screen devices, filling out the bitmap data structures, and allocating and releasing the<br>
+memory yourself. The library provided on this issue's CD does all of that for you.
+</p>
+<p>
+I'll walk you through the library code, illustrated by the sample application called<br>
+Flicker Free on the CD, but first I'll give some background on the problem of flicker<br>
+and its solutions. This article assumes that you already know a thing or two about<br>
+QuickDraw GX; if you don't, see the article "Getting Started With QuickDraw GX" in<br>
+<i>develop</i> Issue 15. The essential references are<i>Inside Macintosh: QuickDraw GX Objects</i><br>
+<i>and Inside Macintosh: QuickDraw GX Graphics.</i>
+</p>
+<h2>FLICKER -- ITS CAUSES AND SOLUTIONS</h2>
+<p>
+For a dramatic illustration of flicker, run the sample application Flicker Free (you'll<br>
+need a color Macintosh with QuickDraw GX installed). You'll see a window filled with<br>
+fifty circles bouncing around in different directions (see Figure 1).
+</p>
+<p>
+<img src="img/130.gif" width="510 px"></img>
+</p>
+<p>
+<b>Figure 1.</b> The startup screen from the sample application Flicker Free
+</p>
+<p>
+The Drawing menu in the Flicker Free application offers a choice of buffering methods:<br>
+full screen buffering, no screen buffering, and half and half. The program starts up in<br>
+half-and-half mode: the left side of the window (the side with the Apple menu, for<br>
+those like me who can't tell left from right) is being buffered, while the other side<br>
+isn't. Switch among the buffering choices to get a sense of the difference that flicker or<br>
+its absence makes in how you experience the animation.
+</p>
+<p>
+What causes flicker? In our case, the shapes on the right are being erased and then<br>
+redrawn over and over again as they move across the screen. And although the<br>
+rendering of the shapes is very fast (your mileage may vary according to CPU speed),<br>
+the act of constantly drawing and erasing them makes the whole thing look like an old<br>
+silent movie. In places where circles overlap, pixels are made to take on different<br>
+colors as each shape is drawn. In the resulting blur of colors, it's hard to see which<br>
+shape is in front.
+</p>
+<p>
+The key to avoiding flicker is to avoid erasing pixels on the screen needlessly between<br>
+two stages of a drawing and to change only the color of those pixels that need to change.<br>
+The left side of our sample application window is being double buffered, meaning that<br>
+each circle is drawn into an offscreen buffer and then the whole scene is transferred<br>
+onto the screen. Because at each step in the animation only the pixels that need to<br>
+change color do, the movement of the circles is rendered flicker free. With double<br>
+buffering there's no problem telling which circles are in front. Shapes move neatly<br>
+past each other.
+</p>
+<p>
+Figure 2 shows two frame-by-frame drawing sequences illustrating the difference<br>
+between an update full of flicker and a flicker-free update.
+</p>
+<p>
+The upper set of frames in Figure 2 shows what happens without double buffering. The<br>
+screen is erased (in frame 2 and then again, out of view, in frame 7) and then each<br>
+circle is added to the screen in its new position. The whole assembly of circles appears<br>
+on the screen only briefly before they're erased and the process is started again. The<br>
+lower set of frames in the figure shows the update process during double buffering.<br>
+The offscreen image is transferred to the screen in a sweep replacing the previous<br>
+image. You can see the sweep line as a very subtle horizontal break in the frame.
+</p>
+<p>
+<img src="img/131.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 2.</b> An update full of flicker vs. a flicker-free update
+</p>
+<p>
+The sample application gives a dramatic demonstration of how flicker affects<br>
+animation. But even if your QuickDraw GX application isn't an animation package, it<br>
+probably suffers from some form of flicker when update events are serviced. The most<br>
+common and most annoying flicker occurs when applications engage in some form of<br>
+user interaction --&nbsp;&nbsp;for example, dragging marquees, manipulating shapes, and editing<br>
+text.
+</p>
+<h2>BUFFERING TRADEOFFS</h2>
+<p>
+When you're considering using screen buffering, it's important to understand the<br>
+tradeoff with drawing speed. In the sample application, the speed at which the circles<br>
+travel is a function of the number of circles in the window, the size of the window, and<br>
+your choice of screen buffering. Given the same window size and number of shapes,<br>
+<i>drawing with screen buffering is always slower than with no screen buffering.</i> Screen<br>
+buffering involves the same amount of work as screen drawing plus the additional step<br>
+of transferring the offscreen image onto the screen.
+</p>
+<p>
+&nbsp;&nbsp;When the window contains one circle, the unbuffered performance is at least three<br>
+times faster than that of the buffered case (again, your mileage may vary depending on<br>
+your CPU speed). As more shapes are added, the performance in both cases goes down,<br>
+but so does the performance gap between the two: the unbuffered performance doesn't<br>
+have as much of an advantage over the buffered performance. This is because the speed<br>
+at which the offscreen buffer is transferred to the screen is independent of the<br>
+complexity of the shape it contains; it's purely a function of its size. As the complexity<br>
+of the shape being buffered increases, the relative cost of shape buffering decreases.
+</p>
+<p>
+Now, this doesn't mean that you should buffer only complex shapes that take a long<br>
+time to draw. What it means is that when you add screen buffering to your application,<br>
+you have to be mindful of what constitutes a reasonable tradeoff between buffering and<br>
+drawing performance. You should try things out and see if screen buffering is the<br>
+technique best suited to your needs. Alternatives to screen buffering that enable<br>
+flicker-free drawing include the use of transfer modes and geometric operations. I<br>
+hope to discuss these in a future <i>develop</i>article.
+</p>
+<p>
+Meanwhile, we'll take a look at the screen buffering library that accompanies this<br>
+article, which is ready for you to incorporate into your QuickDraw GX application. I<br>
+wrote the library with performance issues in mind. Thus, it takes advantage of the fact<br>
+that in the QuickDraw GX graphics object model, information that's needed to render a<br>
+shape can be computed once, stored in a drawing cache, and reused every time that<br>
+shape is drawn. The library is very careful to check before making calls that<br>
+invalidate drawing caches, so the overhead of offscreen drawing is kept to a minimum.
+</p>
+<h2>A LOOK AT THE SCREEN BUFFERING LIBRARY</h2>
+<p>
+Everything you need in order to use the screen buffering library is defined in the<br>
+interface file. The library consists of four major routines: the routine that creates the<br>
+view port buffer object, the one that disposes of it, the one that updates it, and the one<br>
+that uses it to actually buffer screen drawing. The four corresponding calls should<br>
+parallel the drawing loop inside your application.
+</p>
+<p>
+&nbsp;&nbsp;The include file defines only one data type:
+</p>
+<pre>typedef struct viewPortBufferRecord **viewPortBuffer;</pre>
+<p>
+The internals of the data type are private to the "screen buffering.c" file and are as<br>
+follows:
+</p>
+<pre>struct viewPortBufferRecord    {
+    gxViewGroup     group;       /* The offscreen's view group. */
+    gxViewDevice    device;      /* The offscreen's view device. */
+    gxViewPort      view;        /* The offscreen's view port. */
+    gxShape         buffer;      /* The bitmap of the offscreen's */
+                                 /* view device. */
+    gxBitmap        bits;        /* Source structure for the */
+                                 /* buffer shape. */
+    Handle          storage;     /* A temp handle to the bits of */
+                                 /* the bitmap. */
+
+    gxTransform     offxform;    /* This draws into the offscreen. */
+    gxTransform     on_xform;    /* This draws onscreen. */
+    gxShape         eraser;      /* Erases offscreen to background */
+                                 /* color. */
+    gxShape         marker;      /* Used to draw into the */
+                                 /* offscreen. */
+    gxShape         updatearea;  /* Represents the area to update. */
+
+    short           usehalftone; /* True if screen has a halftone. */
+    WindowPtr       window;      /* The window of the view port. */
+    gxViewPort      parent;      /* The parent's view port. */
+    gxViewPort      screenview;  /* The view port to buffer. */
+    gxShape         page;        /* The shape that we're asked to */
+                                 /* draw. */
+
+    gxRectangle     bounds;      /* The offscreen's bounds. */
+    gxMapping       invmap;      /* The inv offscreen view port */
+                                 /* map. */
+    gxPoint         viewdelta;   /* The last delta for the */
+                                 /* offscreen. */
+};
+
+typedef struct viewPortBufferRecord viewPortBufferRecord;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+You don't need to understand all of the fields in the viewPortBufferRecord data<br>
+structure to use the library. However, if you start having problems getting things to<br>
+work inside your application and find that you need to modify the screen buffering<br>
+library, see "The viewPortBufferRecord Data Structure" for some additional helpful<br>
+information.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>THE VIEWPORTBUFFERRECORD DATA STRUCTURE</b>
+</p>
+<p>
+The following is an accounting of all of the fields of the viewPortBufferRecord data<br>
+structure.
+</p>
+<ul>
+<li><b>group, device, view</b> -- These are the three elements of an offscreen<br>
+drawing environment in QuickDraw GX. We need one of each to draw offscreen.</li>
+<li><b>buffer, bits, storage</b> -- These objects represent the bits of the<br>
+offscreen device in decreasing order of abstraction. The field <b>buffer</b> is a<br>
+bitmap shape that represents the "screen" of the view device. The field<br>
+<b>bits</b>parallels the contents of <b>buffer</b> and is used to keep information about the<br>
+offscreen bitmap around between invocations of DrawShapeBuffered, the<br>
+routine that draws the buffered shape. Finally, the <b>storage</b> field is the handle<br>
+in Temp Mem (the MultiFinder temporary memory heap) that contains the<br>
+offscreen data.</li>
+<li><b>  offxform, on_xform</b> -- These are QuickDraw GX transform<br>
+objects.<b>offxform</b> has a view port list that contains just the view port for<br>
+the offscreen device. <b>on_xform</b> has a view port list for the parent of the view<br>
+port that's being buffered. You may expect that the view port list would be the<br>
+view port being buffered and not its parent, but when drawing onscreen we've<br>
+already taken into account all of the transformation and clips of the view port<br>
+we're buffering, and we just need to copy the end result to the screen. This is<br>
+why we use the view port's parent and not the view port proper.</li>
+<li><b>eraser, marker</b> -- These are the auxiliary shapes used to erase the<br>
+offscreen buffer and to draw the incoming shapes. The shape <b>eraser</b> is of type<br>
+gxFullType (a "full" shape) and is the color of the background. The <b>marker</b><br>
+(so named to complement <b>eraser</b>) is a picture shape that will be used to draw<br>
+into the offscreen buffer. The reason for using the <b>marker</b> rather than<br>
+swapping in the transform of the incoming shape to be <b>offxform</b> (thereby<br>
+causing the shape to draw offscreen) is that the swapping operation would<br>
+invalidate the caches for the incoming shape. Instead we use the property of<br>
+picture shapes of redirecting any drawing to their view port list instead of the<br>
+shape's own in order to cause incoming shapes to render offscreen.<br>
+Furthermore, if the incoming shape is the same for every invocation of<br>
+DrawShapeBuffered, we can test for it and not change the contents of the<br>
+<b>marker</b>.</li>
+<li><b>updatearea</b> -- This is a rectangle shape used to compute the size of the<br>
+offscreen buffer that is to be generated and what devices it falls on.</li>
+<li><b>usehalftone</b> -- This is a Boolean indicating whether to use a halftone in<br>
+the offscreen buffer.</li>
+<li><b>window, parent, screenview, page</b> -- These fields hold incoming<br>
+parameters to the library. The <b>window</b> field is the window in which drawing<br>
+will occur. The <b>parent</b> field is a cache for the parent of the view port being<br>
+buffered (see page 7-18 of <i>Inside Macintosh: QuickDraw GX Objects</i> to learn<br>
+more about view port hierarchies). The <b>screenview</b> field indicates the view<br>
+port that will be buffered. The <b>page</b> field is a reference to the last shape<br>
+passed to DrawShapeBuffered.</li>
+<li><b>bounds</b> -- This field indicates the visible area of the <b>screenview</b> in the<br>
+coordinate space of that view port.</li>
+<li><b>invmap</b> -- This is a mapping for translating between the coordinate<br>
+system of the shapes being drawn in the window and the space of the window<br>
+itself. If your view is zoomed in at 2x magnification, this mapping will be at<br>
+1/2 scale.</li>
+<li><b>viewdelta</b> -- This is the position of the upper left corner of the area<br>
+being buffered, in the local coordinate system of the window. This parameter<br>
+is used to adjust the drawing in the offscreen buffer so that only the correct<br>
+part of the shape being buffered is drawn, and to position the content of the<br>
+offscreen buffer when it's being transferred onto the screen.</li>
+</ul>
+<p>
+______________________________
+</p>
+<p>
+In general terms, the code works by allocating a number of QuickDraw GX objects and<br>
+reusing them as required. Memory for the offscreen buffer is allocated from the<br>
+MultiFinder temporary memory heap (Temp Mem). Allocation of the storage block is<br>
+postponed until the last possible moment, and the block is kept locked and<br>
+nonpurgeable only during the drawing operation. That is, after the resulting image has<br>
+been transferred to the screen, the block is unlocked and marked purgeable but <i>not</i><br>
+<i>disposed of</i>. This permits the same block to be reused in case the memory for the<br>
+buffer isn't purged.
+</p>
+<p>
+While most users will keep their windows entirely within the bounds of one screen,<br>
+it's important to handle the case where a window spans more than one device. Each time<br>
+the DrawShapeBuffered routine is called (as described later), the code walks the<br>
+device list checking to see if the area that needs to be buffered intersects a given<br>
+screen. If it does, the code creates a buffer with the right settings and draws into that<br>
+device. The process is repeated for each screen.
+</p>
+<p>
+<b>CREATING AN OFFSCREEN BUFFER</b>
+</p>
+<p>
+You'll need one view port buffer for each window in your program. To create a view<br>
+port buffer, use the NewViewPortWBuffer routine.
+</p>
+<pre>viewPortBuffer NewViewPortWBuffer(WindowPtr window,
+    gxViewPort view, const gxColor *backgroundColor);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Look at the Initialize routine in the file "flicker free.c" for an example of how to use<br>
+NewViewPortWBuffer. Here's a description of the parameters:
+</p>
+<p>
+window<br>
+The window that the buffering code should draw into.
+</p>
+<p>
+view<br>
+The view port created by your application to draw into the given window. Note that this<br>
+is different from the object obtained by calling GXNewWindowViewPort, in that this<br>
+view port should have the window view port set to be its parent.
+</p>
+<p>
+backgroundColor<br>
+A pointer to a gxColor data structure indicating which color should be drawn to erase<br>
+the offscreen buffer. Passing nil is equivalent to specifying white as the background<br>
+color.
+</p>
+<p>
+Let's look at what it takes to create an offscreen buffer in the NewViewPortWBuffer<br>
+routine (Listing 1). In QuickDraw GX, the place where drawing occurs (for example,<br>
+the screen or an offscreen buffer) is described by a view device, so the primary<br>
+purpose of the routine is to create a view device and store it in the device field of the<br>
+viewPortBufferRecord data structure. Because we want the offscreen device that we<br>
+specify to be as close as possible to the one into which we will eventually be drawing,<br>
+you might think that we would go ahead and set all of the attributes of the view device<br>
+now. But in fact, all that we want to concern ourselves with right now is allocating the<br>
+gxViewDevice object. Later, when we get to the drawing part, we'll check the screen<br>
+and our offscreen device and update the gxViewDevice object accordingly.
+</p>
+<p>
+<b>Listing 1.</b> NewViewPortWBuffer
+</p>
+<pre>viewPortBuffer NewViewPortWBuffer(WindowPtr window, gxViewPort view,
+        const gxColor *backgroundColor)
+{
+    Handle  sbHdl;
+   
+    if (sbHdl = NewHandleClear(sizeof(viewPortBufferRecord))) {
+        gxInk                       background;
+        gxHalftone                  halftone;
+        viewPortBufferRecord        *sbPtr;
+       
+        HLock(sbHdl);
+        sbPtr = * (viewPortBufferRecord **) sbHdl;
+        sbPtr-&gt;window = window;
+        sbPtr-&gt;screenview = view;
+        sbPtr-&gt;parent = GXGetViewPortParent(view);
+       
+        /* We don't allocate storage until we need it. */
+        sbPtr-&gt;storage = nil;   
+        sbPtr-&gt;buffer = GXNewShape(gxBitmapType);
+        sbPtr-&gt;group = GXNewViewGroup();
+        sbPtr-&gt;view = GXNewViewPort(sbPtr-&gt;group);
+        sbPtr-&gt;device = GXNewViewDevice(sbPtr-&gt;group,
+                           sbPtr-&gt;buffer);
+        if (sbPtr-&gt;usehalftone =
+               GXGetViewPortHalftone(view, &amp;halftone))
+            GXSetViewPortHalftone(sbPtr-&gt;view, &amp;halftone);
+        sbPtr-&gt;offxform = GXNewTransform();
+        GXSetTransformViewPorts(sbPtr-&gt;offxform, 1,
+            &amp;sbPtr-&gt;view);
+        sbPtr-&gt;on_xform = GXNewTransform();
+        GXSetTransformViewPorts(sbPtr-&gt;on_xform, 1,
+            &amp;sbPtr-&gt;parent);
+
+        background = GXNewInk();
+        if (backgroundColor)
+            GXSetInkColor(background, backgroundColor);
+        else {
+            gxColor backcolor;
+
+            backcolor.space = gxRGBSpace;
+            backcolor.profile = nil;
+            backcolor.element.rgb.red =
+                backcolor.element.rgb.green =
+                backcolor.element.rgb.blue = 0xFFFF;
+            GXSetInkColor(background, &amp;backcolor);
+        }
+        sbPtr-&gt;eraser = GXNewShape(gxFullType);
+        GXSetShapeInk(sbPtr-&gt;eraser, background);
+        GXDisposeInk(background);
+
+        /* The initial bounds for the offscreen is the entire */
+        /* window. */
+        sbPtr-&gt;bounds.left = ff(window-&gt;portRect.left);
+        sbPtr-&gt;bounds.top = ff(window-&gt;portRect.top);
+        sbPtr-&gt;bounds.right = ff(window-&gt;portRect.right);
+        sbPtr-&gt;bounds.bottom = ff(window-&gt;portRect.bottom);
+        sbPtr-&gt;updatearea = GXNewRectangle(&amp;sbPtr-&gt;bounds);
+        GXSetShapeViewPorts(sbPtr-&gt;updatearea, 1, &amp;sbPtr-&gt;parent);
+        sbPtr-&gt;marker = GXNewShape(gxPictureType);
+        GXSetShapeTransform(sbPtr-&gt;eraser, sbPtr-&gt;offxform);
+        GXSetShapeTransform(sbPtr-&gt;marker, sbPtr-&gt;offxform);
+        GXSetShapeTransform(sbPtr-&gt;buffer, sbPtr-&gt;on_xform);
+        ResetMapping(&amp;sbPtr-&gt;invmap);
+
+        /* The rest of the fields in the block are initialized to */
+        /* 0 by the "Clear" in the NewHandleClear used to allocate */
+        /* this block. */
+
+        HUnlock(sbHdl);
+    }
+    return ((viewPortBuffer) sbHdl);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+To create a view device we need a view group and a bitmap. Eventually we'll want to fill<br>
+in all of the values of the gxBitmap object to match the screen, but for now the default<br>
+values assigned to the bitmap by calling GXNewShape are sufficient.
+</p>
+<p>
+The NewViewPortWBuffer routine also allocates a number of auxiliary objects that<br>
+will be needed during the operation of the offscreen buffer. These include the following:
+</p>
+<ul>
+<li>a gxShape object to be used to erase the offscreen buffer</li>
+<li>a pair of gxTransform objects to direct drawing of incoming shapes to the<br>
+offscreen buffer and of the content of the offscreen buffer to the screen</li>
+</ul>
+<p>
+Because we'll use these objects throughout the life of the offscreen buffer, we'll do<br>
+best by allocating them now and releasing them at the end. Whenever possible, you'll<br>
+want to allocate objects that you'll use throughout the life of your application up front,<br>
+work with them by changing their attributes, and dispose of them at the end.
+</p>
+<p>
+<b>DISPOSING OF THE BUFFER</b>
+</p>
+<p>
+When you've finished using the window and want to deallocate the memory being used<br>
+by the view port buffer, you should call DisposeViewPortWBuffer.
+</p>
+<pre>void DisposeViewPortWBuffer(viewPortBuffer sb);</pre>
+<p><table border="0"><tr><td>sb</td><td>The object previously returned from NewViewPortWBuffer.</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p>
+As shown in Listing 2, DisposeViewPortWBuffer just runs through the<br>
+viewPortBufferRecord data structure and disposes of all of the objects allocated by<br>
+NewViewPortWBuffer.
+</p>
+<p>
+<b>Listing 2.</b> DisposeViewPortWBuffer
+</p>
+<pre>void DisposeViewPortWBuffer(viewPortBuffer sb)
+{
+    viewPortBufferRecord        *sbPtr;
+   
+    HLock((Handle) sb);
+    sbPtr = *sb;
+
+    /* We need to dispose of all of the things that we allocated. */
+    GXDisposeShape(sbPtr-&gt;marker);
+    GXDisposeShape(sbPtr-&gt;eraser);
+    GXDisposeTransform(sbPtr-&gt;on_xform);
+    GXDisposeTransform(sbPtr-&gt;offxform);
+    GXDisposeViewDevice(sbPtr-&gt;device);
+    GXDisposeViewPort(sbPtr-&gt;view);
+    GXDisposeViewGroup(sbPtr-&gt;group);
+    GXDisposeShape(sbPtr-&gt;buffer);
+    if (sbPtr-&gt;storage) DisposeHandle(sbPtr-&gt;storage);
+   
+    HUnlock((Handle) sb);
+    DisposeHandle((Handle) sb);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>UPDATING THE BUFFER</b>
+</p>
+<p>
+When some aspect of the window in which you're drawing changes, you need to call<br>
+UpdateViewPortWBuffer. In particular, if you change the clip shape or the mapping of<br>
+the viewPort object that you originally passed to NewViewPortWBuffer, you need to<br>
+call UpdateViewPortWBuffer. Typically, you'll need to change the clip shape of the<br>
+view port to keep QuickDraw GX from drawing shapes over the scroll bar area, and<br>
+you'll need to change the mapping in order to zoom in or scroll.
+</p>
+<pre>void UpdateViewPortWBuffer(viewPortBuffer sb, gxShape clip,
+                            gxMapping *displaymap);</pre>
+<p class="spacer">&nbsp;</p>
+<p><table border="0"><tr><td>sb</td><td>The object previously returned from NewViewPortWBuffer.</td></tr>
+<tr><td>clip</td><td>The clip shape that should be applied when drawing into the</td></tr>
+<tr><td></td><td>window previously passed to NewViewPortWBuffer. Passing</td></tr>
+<tr><td></td><td>nil leaves the current clip shape untouched. The initial</td></tr>
+<tr><td></td><td>setting is for drawing to occur in the entire contents of the</td></tr>
+<tr><td></td><td>window (including the area typically assigned to scroll bars).</td></tr>
+<tr><td>displaymap</td><td>The parameter used to update the view port buffer if you</td></tr>
+<tr><td></td><td>change the mapping of your window view port in order to</td></tr>
+<tr><td></td><td>zoom in or scroll. If nil, the current mapping is left</td></tr>
+<tr><td></td><td>untouched. The initial setting is the identity mapping.</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>DRAWING ON THE SCREEN</b>
+</p>
+<p>
+Now we get to the real substance of the library -- the buffering routine and its<br>
+supporting code.
+</p>
+<p>
+&nbsp;&nbsp;When you want to draw on the screen, you'll call DrawShapeBuffered instead of<br>
+GXDrawShape. If the memory is available to double buffer your drawing,<br>
+DrawShapeBuffered will result in a flicker-free update; otherwise the routine will<br>
+simply call GXDrawShape.
+</p>
+<pre>void DrawShapeBuffered(viewPortBuffer sb, gxShape page,
+        const gxRectangle *updatebounds);</pre>
+<p class="spacer">&nbsp;</p>
+<p><table border="0"><tr><td>sb</td><td>The object previously returned from NewViewPortWBuffer.</td></tr>
+<tr><td>page</td><td>The shape that you want to draw inside the window. This is</td></tr>
+<tr><td></td><td>typically a QuickDraw GX picture shape into which all of the</td></tr>
+<tr><td></td><td>shapes that make up a document have been collected.</td></tr>
+<tr><td>updatebounds</td><td>A pointer to a QuickDraw GX rectangle indicating what area of</td></tr>
+<tr><td></td><td>the document is to be updated. The location of the rectangle is</td></tr>
+<tr><td></td><td>given in the coordinate system of the window's portRect. If</td></tr>
+<tr><td></td><td>nil, the code draws the area inside the clip shape passed to</td></tr>
+<tr><td></td><td>UpdateViewPortWBuffer.</td></tr></table></p>
+
+<p>
+As shown in Listing 3, the first thing that the buffering routine does is to compute the<br>
+global bounds of the view port that's being buffered. Optionally, you could specify what<br>
+area inside the view port you want to have buffered. Otherwise the routine attempts to<br>
+draw all of the view port that's visible on the screen.
+</p>
+<p>
+<b>Listing 3.</b> DrawShapeBuffered
+</p>
+<pre>void DrawShapeBuffered(viewPortBuffer sb, gxShape page,
+        const gxRectangle *updatebounds)
+{
+    viewPortBufferRecord        *sbPtr;
+    gxRectangle                 bounds;
+   
+    HLock((Handle) sb);
+    sbPtr = *sb;
+       
+    if (updatebounds) {
+        gxMapping   map;
+           
+        GXGetViewPortMapping(sbPtr-&gt;screenview, &amp;map);
+        bounds = *updatebounds;
+        bounds.left = bounds.left &amp; 0xFFFF0000;
+        bounds.right = (bounds.right + 0xFFFF) &amp; 0xFFFF0000;
+        bounds.top = bounds.top &amp; 0xFFFF0000;
+        bounds.bottom = (bounds.bottom + 0xFFFF) &amp; 0xFFFF0000;
+        MapPoints(&amp;map, 2, (gxPoint *) &amp;bounds);
+        bounds.left = bounds.left &amp; 0xFFFF0000;
+        bounds.right = (bounds.right + 0xFFFF) &amp; 0xFFFF0000;
+        bounds.top = bounds.top &amp; 0xFFFF0000;
+        bounds.bottom = (bounds.bottom + 0xFFFF) &amp; 0xFFFF0000;
+
+        /* We remove the fractional part BEFORE the call to */
+        /* MapPoints because we're rounding to enclose all pixels */
+        /* intersected by the rectangle. Pixels are integers. */
+        /* Coordinates are fractional. */
+    }
+    else
+        bounds = sbPtr-&gt;bounds;
+    /* The above given bounds is in the window space - just right. */
+    GXSetRectangle(sbPtr-&gt;updatearea, &amp;bounds);
+    /* Check to see that the shape is actually visible on the */
+    /* screen and then proceed to draw. */
+    if (bounds.left &lt; bounds.right &amp;&amp; bounds.top
+            &lt; bounds.bottom) {
+        GDHandle        screen;
+       
+        if (sbPtr-&gt;page != page) {
+            GXSetPicture(sbPtr-&gt;marker, 1, &amp;page, nil, nil, nil);
+            sbPtr-&gt;page = page;
+        }
+
+        if (screen = GetDeviceList()) {
+            do {
+                gxViewDevice device = GXGetGDeviceViewDevice(screen);
+
+                /* Note that we reuse the bounds in here. */
+                if (GXGetShapeDeviceBounds(sbPtr-&gt;updatearea,
+                        sbPtr-&gt;parent, device, &amp;bounds))
+                    BufferDrawing(sbPtr, &amp;bounds, device);
+            } while (screen = GetNextDevice(screen));
+        }
+    }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+If you haven't caught on to the fact that you can connect multiple screens to your<br>
+Macintosh, the last part may be a little confusing. Once the routine has figured the<br>
+global bounds of the visible part of the view port that it's buffering, it walks the<br>
+device list checking to see if those bounds intersect each of the devices connected to the<br>
+CPU and then calls the routine that performs the drawing (BufferDrawing, shown in<br>
+Listing 4). Since most of the time a window will be completely contained within one<br>
+screen, the BufferDrawing routine will be called only once per invocation of<br>
+DrawShapeBuffered. The nice thing about breaking up the code this way is that the<br>
+BufferDrawing routine can assume that it's drawing to a single device and therefore<br>
+it's safe to make assumptions about the device's capabilities.
+</p>
+<p>
+<b>Listing 4. </b>BufferDrawing
+</p>
+<pre>static void BufferDrawing(viewPortBufferRecord *sbPtr,
+        const gxRectangle *boundsPtr, gxViewDevice target)
+{
+    gxRectangle     bounds = *boundsPtr;
+    long                depth, size, gxstatus;
+    gxMapping       map, savemap;
+    gxShape         devsh;
+    gxBitmap            devbits;
+    OSErr               status;
+    gxPoint         viewloc;
+    gxBitmap            oldbits = sbPtr-&gt;bits;
+
+    /* Fill in all the values of sbPtr-&gt;bits. */
+    ...
+
+    viewloc.x = bounds.left;    /* These numbers are already in */
+    viewloc.y = bounds.top;     /* local space. */
+
+    /* Compute the onscreen location of the buffer. */
+    ...
+
+    /* This is the important part, allocating the actual bits. */
+    size = sbPtr-&gt;bits.rowBytes * sbPtr-&gt;bits.height;
+    check(size &gt; 0);
+    if (sbPtr-&gt;storage) {
+        if ((* (sbPtr-&gt;storage)) != nil)
+            SetHandleSize(sbPtr-&gt;storage, size);
+        else {
+            ReallocHandle(sbPtr-&gt;storage, size);
+            nrequire(status = MemError(), TempBufferFailed);
+        }
+    }
+    else
+        require(sbPtr-&gt;storage = TempNewHandle(size, &amp;status),
+                        TempBufferFailed);
+    HNoPurge(sbPtr-&gt;storage);
+    HLock(sbPtr-&gt;storage);
+    sbPtr-&gt;bits.image = * ((void **) sbPtr-&gt;storage);
+   
+    /* See if we need to invalidate all of the world when we do */
+    /* this. */
+    if (oldbits.image != sbPtr-&gt;bits.image ||
+         oldbits.width != sbPtr-&gt;bits.width ||
+         oldbits.height != sbPtr-&gt;bits.height ||
+         oldbits.rowBytes != sbPtr-&gt;bits.rowBytes ||
+         oldbits.pixelSize != sbPtr-&gt;bits.pixelSize ||
+         oldbits.space != sbPtr-&gt;bits.space ||
+         (oldbits.set != sbPtr-&gt;bits.set &amp;&amp; oldbits.set &amp;&amp;
+            GXEqualColorSet(oldbits.set, sbPtr-&gt;bits.set) == false) ||
+         (oldbits.profile != sbPtr-&gt;bits.profile &amp;&amp;
+            oldbits.profile &amp;&amp;
+            GXEqualColorProfile(oldbits.profile, sbPtr-&gt;bits.profile)
+                                == false)) {
+        GXSetBitmap(sbPtr-&gt;buffer, &amp;sbPtr-&gt;bits, nil);
+        GXSetViewDeviceBitmap(sbPtr-&gt;device, sbPtr-&gt;buffer);
+    }
+    else {                          /* We test this one instead */
+        sbPtr-&gt;bits.set = oldbits.set;  /* of the disposed one. */
+        sbPtr-&gt;bits.profile = oldbits.profile;      /* Ditto */
+    }
+   
+    /* Erase the offscreen bitmap, draw the shape into it, and */
+    /* then copy it onscreen. */
+    GXDrawShape(sbPtr-&gt;eraser);      /* Erase. */
+    GXDrawShape(sbPtr-&gt;marker);      /* Buffer. */
+    GXDrawShape(sbPtr-&gt;buffer);      /* Transfer -- done. */
+    HUnlock(sbPtr-&gt;storage);
+    HPurge(sbPtr-&gt;storage);
+    if (devsh)
+        GXDisposeShape(devsh);    /* Dispose of the device bitmap. */
+    GXGetGraphicsError(&amp;gxstatus);
+    ncheck(gxstatus);
+    if (gxstatus)
+        goto DrawingFailed;
+    return;
+   
+TempBufferFailed:  
+    GXDisposeShape(devsh);        /* Dispose of the device bitmap. */
+
+DrawingFailed:
+    GXDrawShape(sbPtr-&gt;updatearea);
+    GXDrawShape(sbPtr-&gt;page);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+This approach of walking the device list is preferred to maintaining a buffer for each<br>
+screen and having a routine to update the buffer list every time a window is moved. The<br>
+latter approach would result in only minor performance improvements, and only when<br>
+the window intersected more than one device. Since this is a rare case, the additional<br>
+housekeeping isn't worth the trouble.
+</p>
+<p>
+The key to understanding DrawShapeBuffered is the equivalence between the<br>
+QuickDraw data type GDHandle and a QuickDraw GX view device. To walk the device list,<br>
+the code uses the QuickDraw routines GetDeviceList and GetNextDevice. The<br>
+GXGetShapeDeviceBounds routine converts a GDHandle to a view device. From the view<br>
+device we can find out which area of the screen intersects the area that we're being<br>
+asked to update.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>The Display Manager can help you</b> walk the device list, as discussed in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the Graphical Truffles column in this issue of develop.*
+</p>
+<p>
+In BufferDrawing, all of the parameters needed to create an offscreen bitmap as<br>
+required by the given device are finally computed. Note that in the BufferDrawing<br>
+routine there are no calls that create new objects; there are only calls that modify<br>
+objects that were created when NewViewPortWBuffer was called. The modifications are<br>
+done only if needed. For example, before calling GXSetTransformMapping, the library<br>
+checks to see if the mapping has changed and merits updating. Without this check, the<br>
+transform cache would be needlessly invalidated some of the time. Similarly, the code<br>
+checks to see if any of the parameters of the bitmap for the offscreen view device have<br>
+changed before calling GXSetBitmap and GXSetViewDeviceBitmap.
+</p>
+<p>
+Changing the bitmap for the view device is one of the most expensive operations in<br>
+QuickDraw GX because it invalidates most of the drawing caches. Fortunately, the check<br>
+to see if the bitmap needs to be updated executes very quickly in spite of its length, and<br>
+the cost of rebuilding all of the shape caches is avoided if possible.
+</p>
+<p>
+The most confusing thing in the BufferDrawing routine is the call to the<br>
+GXGetDeviceBitmap routine (omitted from Listing 4; see the full code on the CD for<br>
+details) and the subsequent call to GXDisposeShape for the same object. This routine<br>
+obtains a <i>copy</i> of the read-only object in QuickDraw GX that represents the bitmap for<br>
+a given screen. There are two important points about this. The first is that since we're<br>
+being given a copy and not the object itself, we have to dispose of the object after we're<br>
+finished with it. You may think that it would be more efficient to get the object during<br>
+the initialization routine and then dispose of it when we're all done. But that's the<br>
+other important point. Since the object that we have is a <i>copy</i> of the original, our copy<br>
+would not be updated if the depth of the monitor was changed or the color table for the<br>
+device had been updated. As a result of these two points, we're forced to allocate an<br>
+object every time through our drawing loop, something that should be avoided in<br>
+general.
+</p>
+<p>
+<b>THE REST OF THE ROUTINES</b>
+</p>
+<p>
+The rest of the routines in the offscreen buffering library provide support and access<br>
+to some of the internal fields of the viewPortBufferRecord data structure. If you need<br>
+more information on how to use these, look at the sample code included on this issue's<br>
+CD.
+</p>
+<p>
+&nbsp;&nbsp;I'll mention one other routine here. Because the internal view port created by the<br>
+library is inaccessible from the outside, the routine SetViewPortWBufferDither is<br>
+provided to change the dither level of the view port. If you need to change other<br>
+attributes of the offscreen view port, use the SetViewPortWBufferDither routine as a<br>
+template.
+</p>
+<pre>void SetViewPortWBufferDither(viewPortBuffer sb,
+        const long ditherlevel);</pre>
+<p class="spacer">&nbsp;</p>
+<p><table border="0"><tr><td>sb</td><td>The object previously returned from NewViewPortWBuffer.</td></tr>
+<tr><td>ditherlevel</td><td>The dithering level to set the offscreen view port to.</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<h2>THINGS TO TRY IN THE CODE</h2>
+<p>
+If the code presented so far doesn't meet your particular needs, you may want to try<br>
+changing or fine tuning it. Here are some suggestions and observations about things<br>
+that you may want to try.
+</p>
+<p>
+<b>BITMAP ALLOCATION</b>
+</p>
+<p>
+Currently the code looks for memory in the MultiFinder temporary memory heap<br>
+(Temp Mem) and will back down in case it can't obtain the memory for the offscreen<br>
+buffer. If you need to guarantee that your drawing will be screen buffered, you'll need<br>
+to change the memory allocation code inside the BufferDrawing routine.
+</p>
+<p>
+<b>INTEGRATED ERROR HANDLING</b>
+</p>
+<p>
+There are two places where memory allocation can trip the screen buffering library.<br>
+If the library fails to allocate enough memory to hold its data structures, it will<br>
+return nil from NewViewPortWBuffer. You may need to change this to better fit in<br>
+with your application's error model.
+</p>
+<p>
+The library will handle a failure to allocate the offscreen bitmap by resorting to<br>
+drawing with GXDrawShape. If you want something different, see "Bitmap Allocation"<br>
+above.
+</p>
+<p>
+<b>DEEP POCKETS</b>
+</p>
+<p>
+If the original data that you'll be working with requires more bits than are on the<br>
+display that you're running on, you may want to create an offscreen buffer that's<br>
+deeper than the screen and then take advantage of the dithering or halftoning<br>
+mechanisms in QuickDraw GX to allow user manipulation. The code that checks for<br>
+changes in the screen view port's halftone should give you a good idea of how to do that.
+</p>
+<h2>STEADY, NOW</h2>
+<p>
+Now you understand how to use double buffering to prevent flicker in your QuickDraw<br>
+GX application. You may need to do some fine tuning of the screen buffering library to<br>
+fit your purposes, but the result will be worth it. Users will appreciate the more<br>
+professional look of your application and their eyes won't tire as quickly as they peer<br>
+at a flicker-free screen.
+</p>
+<p>
+
+
+
+<b>RELATED READING</b>
+</p>
+<ul>
+<li>"Getting Started With QuickDraw GX" by Pete "Luke" Alexander,<br>
+<i>develop</i>Issue 15.</li>
+<li><i>Inside Macintosh: QuickDraw GX Objects and Inside Macintosh:</i><br>
+<i>QuickDraw GX Graphics</i> (Addison-Wesley, 1994).</li>
+</ul>
+<p>
+<b>HUGO M. AYALA</b> (hugo@mit.edu, http://web.mit.edu/hugo/www) spent five<br>
+years working on QuickDraw GX as a development engineer at Apple before<br>
+returning to MIT to pursue a Ph.D. in mechanical engineering. His current<br>
+research interest is how to design the undercarriage of large earth-moving<br>
+equipment so that it doesn't get thrashed so fast by rocks and dirt. To pay for<br>
+the Ph.D., he moonlights doing computer graphics work, which has been his<br>
+hobby since he was a lad. After finishing his Ph.D., Hugo plans to branch off<br>
+into drawing comic strips, like the one that he's been drawing for his school<br>
+newspaper. If you ever try to give Hugo directions, you need to know that he's<br>
+directionally challenged -- he really can't tell his left from his right.*
+</p>
+<p>
+Thanks to our technical reviewers Dave Bice, Brian Chrisman, Tom Dowdy,<br>
+David Hayward, and Ingrid Kelly.*
+</p>
+</body>
+</html>

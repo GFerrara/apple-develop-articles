@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 23 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 96 - Graphical Truffles: Dynamic Display Dilemmas</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Graphical Truffles: Dynamic Display Dilemmas</h1>
+<h2>CAMERON ESFAHANI and KENT "LIDBOY" MILLER</h2>
+<p>
+<img src="img/205.gif" width="198 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">In the Dark Ages, an application could examine the graphics</i>
+<br>
+
+<i style="font-size:125%;">environment once and gather all the information it needed to know.</i>
+<br>
+
+<i style="font-size:125%;">After the System 7.1.2 Renaissance, the Display Manager made the</i>
+<br>
+
+<i style="font-size:125%;">graphics environment dynamic, which provided many new features</i>
+<br>
+
+<i style="font-size:125%;">(and introduced a few implementation issues). In Issue 24 of</i>
+<br>
+
+<i style="font-size:125%;">develop, the Graphical Truffles column described some important</i>
+<br>
+
+<i style="font-size:125%;">features of the Display Manager. Here we'll discuss some common</i>
+<br>
+
+<i style="font-size:125%;">pitfalls that can cause an application to fail in a dynamic display</i>
+<br>
+
+<i style="font-size:125%;">environment -- and ways you can overcome them.</i>
+</p>
+<p>
+If you use QuickDraw routines in an existing application, your application may already<br>
+support some aspects of the Display Manager without requiring any extra work on<br>
+your part. An example we touch on in this column is the graphics mirroring feature,<br>
+which allows users to make two graphics devices display the same image. QuickDraw,<br>
+whose routines have already been updated to support the Display Manager,<br>
+accomplishes graphics mirroring by overlapping the gdRects (global bounds) of the<br>
+graphics devices. QuickDraw's internal version of DeviceLoop behaves correctly by<br>
+detecting when devices overlap, then rendering the image properly for each device.<br>
+This allows overlapping devices to have different color tables or bit depths and still be<br>
+imaged correctly.
+</p>
+<p>
+On this issue's CD, we've included a sample application, SuperFly, which illustrates<br>
+several techniques you can use to support a dynamic environment in your application.<br>
+Some of the sample code in this column is excerpted from SuperFly.
+</p>
+<h2>COMMON ERRORS</h2>
+<p>
+When we were integrating the Display Manager into new system software releases, we<br>
+encountered some common problems that existing applications had when running in a<br>
+dynamic display environment. Here's a list of suggestions regarding things that might<br>
+have worked in the past but won't work now; we'll examine each error in turn and<br>
+suggest a solution.
+</p>
+<ul>
+<li>Don't forget to account for mirrored graphics devices when walking the<br>
+device list.</li>
+<li>Don't assume that just because your application uses only one logical<br>
+display, it's drawing on only one physical device.</li>
+<li>Don't cache the graphics devices and their state on application startup.</li>
+<li>Don't assume that the menu bar will never move.</li>
+<li>Don't assume that menus will be drawn on only one display.</li>
+<li>Don't draw directly to the screen and bypass QuickDraw without checking<br>
+for the mirrored case.</li>
+<li>Don't assume that certain 680x0 registers will contain the same values<br>
+inside a DeviceLoop drawing procedure as when DeviceLoop was called.</li>
+</ul>
+<p>
+<b>Don't forget to account for mirrored graphics devices when walking the</b><br>
+<b>device list.</b>When writing applications in the past, some programmers assumed that<br>
+graphics devices would never overlap. For example, you might assume that if a certain<br>
+rectangle is fully contained within a gdRect, it isn't on any other device. To implement<br>
+highlighting, your application might walk the device list and invert the selection if the<br>
+global rectangle of what you want to highlight intersects the gdRect of that device.<br>
+However, when there are two displays with the same gdRect in the device list, the first<br>
+inversion accomplishes the highlighting but the second inversion restores the<br>
+highlighted area to the original -- unhighlighted --&nbsp;&nbsp;state.
+</p>
+<p>
+Solution: Use DeviceLoop for your drawing. If you want to write your own version of<br>
+DeviceLoop for some reason, make sure that it handles overlapping displays. You could<br>
+solve the inverting problem by designing an algorithm to guarantee that each rectangle<br>
+in global space is highlighted only once. The MyHiliteRect routine in Listing 1 is an<br>
+example of a suitable algorithm.
+</p>
+<p>
+The code in Listing 1 solves the highlighting problem by keeping track of the global<br>
+area that has been highlighted. When DMGetNextScreenDevice returns a mirrored<br>
+device (which will already have been highlighted by the first QuickDraw call), the<br>
+SectRgn will fail and that device will not be highlighted again.
+</p>
+<p>
+<b>Listing 1.</b> Highlighting a global rectangle only once
+</p>
+<pre>OSErr MyHiliteRect(Rect* hiliteRect)
+{
+   RgnHandle    hiliteRgn, gdRectRgn, tempRgn;
+   GDHandle    theGDevice;
+  
+   hiliteRgn = NewRgn();
+   if (hiliteRgn == nil)
+      return (QDError());
+   gdRectRgn = NewRgn();
+   if (gdRectRgn == nil)
+      return (QDError());
+   tempRgn = NewRgn()
+   if (tempRgn == nil)
+      return (QDError());
+     
+   // Make hiliteRect into a region.
+   RectRgn(hiliteRgn, hiliteRect);
+  
+   // Get the first screen device from the Display Manager.
+   // Tell it to return only active screen devices so that we won't
+   // have to check here.
+   theGDevice = DMGetFirstScreenDevice(true);
+  
+   // Loop until we run out of hiliteRgn or GDevices.
+   while ((theGDevice) &amp;&amp; (!EmptyRgn(hiliteRgn)) {
+      // Does this device's rect intersect hiliteRgn?
+      RectRgn(&amp;(**theGDevice).gdRect, gdRectRgn);
+      SectRgn(hiliteRgn, gdRectRgn, &amp;tempRgn);
+      // If it does, highlight it.
+      if (!EmptyRgn(tempRgn)) {
+         // Highlight the area described by tempRgn.
+         ...
+         // Take the area we just highlighted out of the region to
+         // highlight.
+         DiffRgn(hiliteRgn, tempRgn, hiliteRgn);
+      }
+      theGDevice = DMGetNextScreenDevice(theGDevice, true);
+   }  
+   DisposeRgn(hiliteRgn);
+   DisposeRgn(gdRectRgn);
+   DisposeRgn(tempRgn);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Another solution is given in the sample code in the GDeviceUtilities.cp file on this<br>
+issue's CD. The function BuildAListOfUniqueDevices builds a list of all graphics devices<br>
+but eliminates mirrored devices. An application could cache this list and use it for<br>
+highlighting. However, the list could be invalidated if the user changes the device<br>
+configuration. The application should register with the Display Manager so that it will<br>
+be notified (through a notification callback or an Apple event) if the graphics world<br>
+has changed.
+</p>
+<p>
+<b>Don't assume that just because your application uses only one logical</b><br>
+<b>display, it's drawing on only one physical device.</b>Some applications assume<br>
+that they're using only one piece of graphics hardware when they're actually using<br>
+multiple physical devices. An example of this is a multimedia player that searches<br>
+through graphics devices and uses the first device it finds that meets its criteria for<br>
+bit depth or size. This technique causes a problem when the application uses Toolbox<br>
+calls specific to one physical graphics device, such as using SetEntries to animate the<br>
+color table. If mirroring is turned on, this changes the color table of only one device;<br>
+the second physical device still has the old color table.
+</p>
+<p>
+<i>Solution</i>: If you use Toolbox calls specific to one physical graphics device, make sure<br>
+you do it for all devices that overlap your application's windows and not just the first<br>
+one you find. As shown in Listing 2, you could use DeviceLoop to accomplish this by<br>
+calling SetEntries in your DeviceLoop drawing procedure. Or you could use the Palette<br>
+Manager instead of SetEntries.
+</p>
+<p>
+<b>Listing 2. </b>Calling SetEntries for overlapping devices
+</p>
+<pre>OSErr MySavvySetEntries(WindowRef aWindow, CTabHandle newColorTable)
+{
+   RgnHandle              tempWindowStructRgn;
+   DeviceLoopDrawingUPP   setEntriesDeviceLoopRD;
+   OSErr                  theErr = noErr;
+
+   tempWindowStructRgn = NewRgn();
+   // Was there a problem making the region?
+   if ((theErr = QDError()) != noErr)
+      return (theErr);
+   GetWindowStructureRgn(aWindow, tempWindowStructRgn);
+  
+   // We want to get called for every display that intersects our
+   // window.
+   setEntriesDeviceLoopRD =
+       NewDeviceLoopDrawingProc(SetEntriesDeviceLoop);
+   DeviceLoop(tempWindowStructRgn, setEntriesDeviceLoopRD,
+       (long) newColorTable, singleDevices);
+   DisposeRoutineDescriptor(setEntriesDeviceLoopRD);
+   DisposeRgn(tempWindowStructRgn);
+   return (theErr);
+}
+
+static pascal void SetEntriesDeviceLoop(short depth,
+      short deviceFlags, GDHandle targetDevice, long userData)
+{
+#pragma unused(depth, deviceFlags)
+   CTabHandle   newColorTable = (CTabHandle) userData;
+   GDHandle      savedCurrentGDevice;
+
+   // Since we'll be changing the current GDevice, we need to save
+   // and restore it.
+   savedCurrentGDevice = GetGDevice();
+
+   // SetEntries applies to the current GDevice, so make targetDevice
+   // the current GDevice.
+   SetGDevice(targetDevice);
+
+   // Insert the entire table into targetDevice. Do it in indexed
+   // mode.
+   SetEntries(-1, 255, &amp;(**newColorTable).ctTable[0]);
+
+   // Restore the old current GDevice.
+   SetGDevice(savedCurrentGDevice);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Don't cache the graphics devices and their state on application</b><br>
+<b>startup.</b>With the Display Manager, many things about the graphics world can change,<br>
+such as the following:
+</p>
+<ul>
+<li>Users can change resolutions on multiple-scan displays.</li>
+<li>Users can deactivate displays with the Monitors &amp; Sound control panel<br>
+(system software version 7.5.2 and later).</li>
+<li>Graphics mirroring could be off when the application is launched and<br>
+turned on while it's running.</li>
+<li>Users can put their PowerBooks to sleep and attach or remove an external<br>
+display.</li>
+</ul>
+<p>
+If your application doesn't respond to these changes, it might present an inconsistent<br>
+interface to the user. For example, the MPW Shell used to cache the gdRect of the main<br>
+display and pass it to SizeWindow and MoveWindow. So if users changed the resolution<br>
+of a display, they couldn't grow or move windows beyond the previous size of the<br>
+display.
+</p>
+<p>
+<i>Solution:</i> If the Display Manager is present, you should watch for Display Manager<br>
+notifications to detect changes in the graphics world. (See "Receiving and Responding to<br>
+Display Manager Events.") Specialized pieces of code, such as extensions or<br>
+components, can register a callback procedure with the Display Manager. To avoid<br>
+problems, you should use this method instead of patching to determine when the<br>
+display environment changes. (Display Manager 2.0 and later even notifies you when<br>
+the bit depth changes.) Better yet, don't cache device information at all unless your<br>
+code absolutely needs the extra ounce of performance.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;RECEIVING AND RESPONDING TO DISPLAY MANAGER<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;EVENTS</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The Display Manager has been available since System 7 and is built into<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;system software version 7.1.2 and later. If the Display Manager isn't around,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the application can count on devices not moving around and changing sizes.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;An application must set the isDisplayManagerAware flag in its 'SIZE' resource<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to receive Display Manager events in its main event loop. If your application<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sets this flag, it's responsible for moving its windows if the graphics world<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;changes, making sure that the windows all remain visible. If it doesn't set this<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;flag, the Display Manager will automatically move windows for your<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;application. Even if your application lets the Display Manager handle its<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;windows automatically, it can still register for Display Manager events by<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;using a callback procedure. The callback procedure is passed an Apple event<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;that the application has to parse.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The Graphical Truffles column in <i>develop</i> Issue 25 describes this in more<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;detail.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+&nbsp;&nbsp;The Display Manager passes all the information about the old and new display<br>
+configurations to the application when the world changes. The Apple event-handling<br>
+code on this issue's CD shows some ways to handle Display Manager events. For<br>
+instance, to detect whether any of the graphics devices have moved, we parse the Apple<br>
+event and compare the old and new gdRects:
+</p>
+<pre>AEGetNthDesc(&amp;DisplayID, 1, typeWildCard,
+   &amp;tempWord, &amp;OldConfig);
+AEGetKeyPtr(&amp;OldConfig, keyDeviceRect,
+   typeWildCard, (UInt32 *) &amp;returnType,
+   &amp;oldRect, sizeof(Rect), nil);
+AEGetNthDesc(&amp;DisplayID, 2, typeWildCard,
+   &amp;tempWord, &amp;NewConfig);
+AEGetKeyPtr(&amp;NewConfig, keyDeviceRect,
+   typeWildCard, (UInt32 *) &amp;returnType,
+   &amp;newRect, sizeof(Rect), nil);     
+if (!EqualRect(&amp;oldRect, &amp;newRect))
+   HandleGDevicesMoved();</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Don't assume that the menu bar will never move.</b>This is especially a problem<br>
+with games or multimedia applications that would like to hide the menu bar. Most<br>
+applications hide the menu bar by adding the menu bar area to the gray region. (The<br>
+pointer to the gray region is stored in the GrayRgn global variable and can be retrieved<br>
+with the Window Manager function GetGrayRgn.) When the user moves the menu bar<br>
+from one display to another (using the Monitors or Monitors &amp; Sound control panel),<br>
+the Display Manager reconstructs the gray region. If the application wants to show the<br>
+menu bar again, it removes the old menu bar area from the rebuilt gray region, but<br>
+this will not accurately reflect the available screen real estate. This top strip, where<br>
+the menu bar was, would be lost.
+</p>
+<p>
+As shown in Figure 1, the menu bar was on the display on the left before the<br>
+application was launched. The application saved the menu bar location and added it to<br>
+the gray region so that it could draw there. As shown in Figure 2, when the application<br>
+quit, it subtracted the old menu bar area back out of the gray region. Since the menu<br>
+bar was moved, this part of the gray region is now lost. No desktop is drawn where the<br>
+menu bar used to be (the black rectangle).
+</p>
+<p>
+<img src="img/206.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>Original location of menu bar
+</p>
+<p>
+<img src="img/207.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 2.</b> Gray region lost because menu bar moved<i>Solution:</i> Become Display<br>
+Manager-aware and get notified by the Display Manager when the menu bar moves.
+</p>
+<p>
+<b>Don't assume that menus will be drawn on only one display.</b>In the past, it<br>
+was a safe assumption that the menu bar would be drawn on only one device at a time,<br>
+so anything that wanted to draw in the menu bar (such as an MDEF) needed to know<br>
+about only one display and a single bit depth. Since developers typically don't use<br>
+DeviceLoop to draw menus or draw in the menu bar, sometimes images are drawn<br>
+incorrectly when there are overlapped displays, especially on displays with different<br>
+bit depths. An example would be a menu that contains color, like the Label menu in the<br>
+Finder.
+</p>
+<p>
+<i>Solution:</i> If you draw directly to the menu bar or to your menus and bypass<br>
+QuickDraw, use DeviceLoop. Note that drawing in the menu bar with standard<br>
+QuickDraw calls works fine in the mirrored case because QuickDraw takes care of the<br>
+overlapping case for you.
+</p>
+<p>
+<b>Don't draw directly to the screen and bypass QuickDraw without</b><br>
+<b>checking for the mirrored case.</b>Obviously, if an application draws directly to the<br>
+screen and mirroring is on, the other displays will not reflect any of the drawing.
+</p>
+<p>
+<i>Solution:</i> Always allow the user to go back to a more "compatible" mode that uses<br>
+QuickDraw. If the application detects that mirroring is on (by calling<br>
+DMIsMirroringOn), consider falling back to CopyBits to get your data to the screen.
+</p>
+<p>
+<b>Don't assume that certain 680x0 registers will contain the same values</b><br>
+<b>inside a DeviceLoop drawing procedure as when DeviceLoop was</b><br>
+<b>called.</b>We discovered this bug when we made DeviceLoop PowerPC-native for<br>
+mirroring performance. Some developers who write their DeviceLoop drawing<br>
+procedure in 680x0 assembly language rely on the fact that the value of A6 when the<br>
+drawing procedure was called is the same as when DeviceLoop was called. Application<br>
+developers relied on this to enable them to share stack frames between the caller of<br>
+DeviceLoop and the DeviceLoop drawing procedure. This will not work if a<br>
+PowerPC-only version of DeviceLoop is present, so it will not work under Mac OS 8. If<br>
+you write your DeviceLoop drawing procedure in a high-level language like C,<br>
+however, you don't have to worry about this problem.
+</p>
+<p>
+<i>Solution:</i> If you want to share data with your DeviceLoop drawing procedure, use the<br>
+userData refCon supplied with DeviceLoop. If you need to rely on A6 remaining<br>
+constant, one solution would be to pass in the A6 of the DeviceLoop caller in the<br>
+userData parameter and set that to the A6 of the DeviceLoop drawing procedure. Be<br>
+sure to save and restore the original A6 of the DeviceLoop drawing procedure.
+</p>
+<p>
+<b>SUCCEEDING IN A CHANGING GRAPHICS WORLD</b>
+</p>
+<p>
+The Display Manager offers many new features that enable users to configure their<br>
+graphics devices dynamically. However, this dynamic display environment invalidates<br>
+certain assumptions that developers might have made when programming in a static<br>
+graphics environment. This column should start you thinking about these issues.<br>
+Although the Display Manager does attempt to preserve compatibility with existing<br>
+applications by moving windows around and preserving graphics device information, it<br>
+can't fix everything. Your application needs to be able to function in a changing<br>
+graphics world.
+</p>
+<p>
+<b>KENT "LIDBOY" MILLER,</b> in a recent attempt to reshape the course of history, has<br>
+renounced the use of caffeine on a by-minute basis. Lidboy hails from the halls of<br>
+Apple, where he can be seen pacing in his fuzzy bear slippers. He considers the<br>
+pinnacle of western culture to have been achieved by the rock group known as Rancid,<br>
+although he occasionally reads from literary quarterlies on the sly. Were Lidboy to be<br>
+granted one wish, a side of rice from Taco Bell would no doubt be involved. The single<br>
+most used word in his vocabulary is "Salsa!"*
+</p>
+<p>
+<b>CAMERON ESFAHANI</b> (cameron_esfahani@powertalk.apple.com, AppleLink DIRTY)<br>
+began his career in the spaghetti westerns of Sergio Leone. Industry analysts felt that<br>
+by going off into that area he would cut himself off from the mainstream and ruin his<br>
+career, but Cameron felt it was more important to follow his dreams. Now at Apple<br>
+Computer and looking back, he feels that his spaghetti western period was one of the<br>
+most exciting and rewarding of his life. He therefore dedicates this column to the<br>
+memory of Sergio Leone.*
+</p>
+<p>
+Thanks to Tom Dowdy, Ian Hendry, Mike Marinkovich, and Mike Puckett for reviewing<br>
+this column.*
+</p>
+</body>
+</html>

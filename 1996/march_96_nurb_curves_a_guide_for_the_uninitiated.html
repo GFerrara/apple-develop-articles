@@ -1,0 +1,2165 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 12 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 96 - NURB Curves: A Guide for the Uninitiated</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>NURB Curves: A Guide for the Uninitiated</h1>
+<h2>Philip J. Schneider</h2>
+<p>
+<img src="img/150.gif" width="126 px"></img>
+</p>
+<p>
+<i>QuickDraw 3D supports a mathematical model for arbitrary curves and surfaces</i><br>
+<i>known as NURB (nonuniform rational B-splines). NURB curves are flexible and</i><br>
+<i>powerful, but using them effectively requires some understanding of the underlying</i><br>
+<i>mathematical theory. This article presents an intuitive introduction to the</i><br>
+<i>mathematical concepts of the NURB model and how to use them in your QuickDraw 3D</i><br>
+<i>programs.</i>
+</p>
+<p>
+One of the more powerful features of QuickDraw 3D is its ability to work with curves<br>
+and surfaces of arbitrary shape. The mathematical model it uses to represent them is<br>
+known as <i>NURB</i>, for <b>n</b>on<b>u</b>niform <b>r</b>ational <b>B</b>-splines. The NURB model is flexible and<br>
+powerful, but for those unfamiliar with the mathematics, it can appear dauntingly<br>
+complex. The existing books and articles on the subject tend to be rigorous, lengthy,<br>
+and theoretical, and often seem to require that you already understand the subject in<br>
+order to follow the explanations.
+</p>
+<p>
+The mathematics really aren't so frightening, though, once you understand them. The<br>
+aim of this article is to give you an intuitive understanding of how NURBcurves work.<br>
+Later in the article, we'll look at some code to show you how you can start using NURB<br>
+curves in your own programs -- but you really do need to understand the theory<br>
+before you can start putting it to practical use. So please be patient while we slog<br>
+through the mathematical concepts: I promise we'll get around to some actual<br>
+programming before we're through. Note also that this article is only about NURB<br>
+<i>curves</i>; perhaps a future article will cover NURB <i>surfaces</i> and how to use curves and<br>
+surfaces together.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Some writers also use </b>the s from "spline," resulting in the acronym<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NURBS -- but most avoid this usage because phrases like "a NURBS curve"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sound awkward, and "a NURBS surface" sounds perfectly hideous.*
+</p>
+<h2>WHY NURB CURVES?</h2>
+<p>
+Like any graphics package, QuickDraw 3D offers low-level geometric primitives for<br>
+objects such as lines, points, and triangles. Because the representations of these<br>
+objects are mathematically exact -- lines being defined by their two endpoints,<br>
+triangles by their three vertices, and so forth -- they're resolution independent and<br>
+unaffected by changes in position, scale, or orientation.
+</p>
+<p>
+&nbsp;&nbsp;The low-level primitives can also be used to define arbitrarily shaped objects, such<br>
+as a football or an automobile hood, but at the cost of these desirable mathematical<br>
+properties; for example, a circle that's approximated by a sequence of line segments<br>
+will change its shape when rotated. One of the advantages of NURB curves is that they<br>
+offer a way to represent arbitrary shapes while maintaining mathematical exactness<br>
+and resolution independence. Among their useful properties are the following:
+</p>
+<ul>
+<li>They can represent virtually any desired shape, from points, straight<br>
+lines, and polylines to conic sections (circles, ellipses, parabolas, and<br>
+hyperbolas) to free-form curves with arbitrary shapes.</li>
+<li>They give you great control over the shape of a curve. A set of <i>control</i><br>
+<i>points </i>and <i>knots</i>, which guide the curve's shape, can be directly manipulated to<br>
+control its smoothness and curvature.</li>
+<li>They can represent very complex shapes with remarkably little data. For<br>
+instance, approximating a circle three feet across with a sequence of line<br>
+segments would require tens of thousands of segments to make it look like a<br>
+circle instead of a polygon. Defining the same circle with a NURB<br>
+representation takes only seven control points!</li>
+</ul>
+<p>
+In addition to drawing NURB curves directly as graphical items, you can use them in<br>
+various other ways that exploit their useful mathematical properties, such as for<br>
+guiding animation paths or for interpolating or approximating data. You can also use<br>
+them as a tool to design and control the shapes of three-dimensional surfaces, for<br>
+purposes such as
+</p>
+<ul>
+<li>surfaces of revolution (rotating a two-dimensional curve around an axis<br>
+in three-dimensional space)</li>
+<li>extruding (translating a curve along a curved path)</li>
+<li>trimming (cutting away part of a NURB surface, using NURB curves to<br>
+specify the cut)</li>
+</ul>
+<h2>CURVES 101</h2>
+<p>
+Before we go into the specifics of NURB curves, let's review some of the basics of<br>
+curve representation in general.
+</p>
+<p>
+&nbsp;&nbsp;Although QuickDraw 3D supports three-dimensional NURB curves, we'll limit all of<br>
+our examples and discussions here to two dimensions. But everything we say about<br>
+two-dimensional curves applies in three dimensions as well -- the two-dimensional<br>
+versions are just easier to visualize and easier to draw.
+</p>
+<p>
+<b>A BIT OF HISTORY</b>
+</p>
+<p>
+Back in the days before computers, architects, engineers, and artists would draw their<br>
+designs for buildings, roads, machine parts, and the like by using pencil, paper, and<br>
+various drafting tools. These tools included rulers and T-squares for drawing straight<br>
+lines, compasses for drawing circles and circular arcs, and triangles and protractors<br>
+for making precise angles.
+</p>
+<p>
+&nbsp;&nbsp;Of course, a lot of interesting-shaped objects couldn't be drawn with just these<br>
+simple tools, because they had curved parts that weren't just circles or ellipses.<br>
+Often, a curve was needed that went smoothly through a number of predetermined<br>
+points. This problem was particularly acute in shipbuilding: although a skilled artist<br>
+or draftsman could reliably hand-draw such curves on a drafting table, shipbuilders<br>
+often needed to make life-size (or nearly life-size) drawings, where the sheer size of<br>
+the required curves made hand drawing impossible. Because of their great size, such<br>
+drawings were often done in the loft area of a large building, by a specialist known as a<br>
+loftsman. To aid in the task, the loftsman would employ long, thin, flexible strips of<br>
+wood, plastic, or metal, called splines. The splines were held in place with lead<br>
+weights, called <i>ducks</i> because of their resemblance to the feathered creature of the<br>
+same name (see Figure 1).
+</p>
+<p>
+<img src="img/151.gif" width="324 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>A draftsman's spline
+</p>
+<p>
+The resulting curves were smooth, and varied in curvature depending on the position<br>
+of the ducks. As computers were introduced into the design process, the physical<br>
+properties of such splines were investigated so that they could be modeled<br>
+mathematically on the computer.
+</p>
+<p>
+<b>DIRECT FUNCTIONS</b>
+</p>
+<p>
+Our goal is to represent curves in a mathematically precise fashion. One simple way is<br>
+to think of the curve as the graph of a function:
+</p>
+<p>
+<math><mi>y</mi><mo>=</mo><mi>f</mi><mo>(</mo><mi>x</mi><mo>)</mo></math>
+</p>
+<p>
+Take a simple one like the trigonometric sine function:
+</p>
+<p>
+<math><mi>y</mi><mo>=</mo><mi>sin</mi><mi>x</mi></math>
+</p>
+<p>
+By plotting the value of the function for various values of x and connecting them<br>
+smoothly, we obtain the curve shown in Figure 2.
+</p>
+<p>
+<img src="img/152.gif" width="378 px"></img>
+</p>
+<p>
+<b>Figure 2.</b> Plot of sine function values
+</p>
+<p>
+In the case of curves drawn by the spline method, it turned out that with some<br>
+reasonable simplifying assumptions, they could be mathematically represented by a<br>
+series of cubic (third-degree) polynomials, each having the form
+</p>
+<p>
+<math><mi>y</mi><mo>=</mo><mrow><mi>A</mi><mo>&it;</mo><msup><mi>x</mi><mn>3</mn></msup></mrow><mo>+</mo><mrow><mi>B</mi><mo>&it;</mo><msup><mi>x</mi><mn>2</mn></msup></mrow><mo>+</mo><mrow><mi>C</mi><mo>&it;</mo><mi>x</mi></mrow><mo>+</mo><mi>D</mi></math>
+</p>
+<p>
+At this point, the standard references typically go into a long, involved development of<br>
+this idea into what are known as <i>cubic spline curves</i>, eventually leading to the theory<br>
+of NURB curves. Such explanations are interesting, but not terribly intuitive. If<br>
+you're interested in pursuing this subject further, you'll find a good discussion in<br>
+<i>Mathematical Elements for Computer Graphics</i>. (Complete information on this and<br>
+other literature references in this article can be found in the bibliography at the end.)
+</p>
+<p>
+<b>PARAMETRIC FUNCTIONS</b>
+</p>
+<p>
+Using direct functions to represent a curve fits our criterion of being mathematically<br>
+exact, but it has one serious drawback: since we can have only one value of <i>y</i> for each<br>
+value of <i>x</i>, our curves can't loop back on themselves. Thus, although we can make some<br>
+nice smooth curves this way, there are a lot of interesting curves we <i>can't</i> make --<br>
+not even something as simple as a circle.
+</p>
+<p>
+&nbsp;&nbsp;An alternative method, and the one we'll be using, is to define the curve with a<br>
+<i>parametric function</i>. In general, such functions have the form
+</p>
+<p>
+<math><mi>Q</mi><mo>(</mo><mi>t</mi><mo>)</mo><mo>=</mo><mo>{</mo><mi>X</mi><mo>(</mo><mi>t</mi><mo>)</mo><mo>,</mo><mi>Y</mi><mo>(</mo><mi>t</mi><mo>)</mo><mo>}</mo></math>
+</p>
+<p>
+where X(t) and Y(t) are functions of the parameter t (hence <i>parametric</i>). Given a<br>
+value of t, the function X(t) gives the corresponding value of x, and Y(t) the value of y.<br>
+One way to understand such functions is to imagine a particle traveling across a sheet<br>
+of paper, tracing out a curve. If you think of the parameter t as representing time, the<br>
+parametric function Q(t) gives the {x, y} coordinates of the particle at time t. For<br>
+example, defining the functions X(t) and Y(t) as
+</p>
+<p>
+<math><mi>X</mi><mo>(</mo><mi>t</mi><mo>)</mo><mo>=</mo><mi>cos</mi><mi>t</mi></math>
+<br>
+
+<math><mi>Y</mi><mo>(</mo><mi>t</mi><mo>)</mo><mo>=</mo><mi>sin</mi><mi>t</mi></math>
+</p>
+<p>
+produces a circle, as you can verify by plugging in some values of t between 0 and<br>
+2&pi; and plotting the results.
+</p>
+<p>
+<b>SMOOTHNESS</b>
+</p>
+<p>
+One very important motivation for using NURB curves is the ability to control<br>
+smoothness. The NURB model allows you to define curves with no kinks or sudden<br>
+changes of direction (such as an airplane-wing cross section) or with precise control<br>
+over where kinks and bends occur (sharp corners of machined objects, for instance).
+</p>
+<p>
+We all know (or think we do) what a nice, smooth curve looks like: it has no kinks or<br>
+corners. If we were to sit on that moving particle as it traces out a parametric curve,<br>
+we would experience a nice smooth ride with no stopping, restarting, or sudden<br>
+changes in speed or direction: we wouldn't be heading north, say, and then turn<br>
+completely east in an instant. This intuitive notion can be expressed in precise<br>
+mathematical terms: Imagine an arrow that always points in the direction in which our<br>
+hypothetical particle is traveling as it moves along the curve. Mathematically, the<br>
+direction arrow corresponds to the tangent of the curve, which can be computed as the<br>
+derivative of the curve's defining function with respect to the time parameter <i>t</i>:
+</p>
+<p>
+<math><mi>Q</mi><mo>'</mo><mo>(</mo><mi>t</mi><mo>)</mo></math>
+</p>
+<p>
+In Figure 3, for example, the point on the curve corresponding to time <math><msub><mi>t</mi><mpadded depth="10%"><mi>A</mi></mpadded></msub></math> is labeled as<br>
+<math><mi>Q</mi><mo>(</mo><msub><mi>t</mi><mpadded depth="10%"><mi>A</mi></mpadded></msub><mo>)</mo></math>, and the direction vector (tangent) at that point as <math><mi>Q</mi><mo>'</mo><mo>(</mo><msub><mi>t</mi><mpadded depth="10%"><mi>A</mi></mpadded></msub><mo>)</mo></math>. If the tangent doesn't<br>
+jump suddenly from one direction to another, the curve's function is said to have<br>
+<i>first-derivative continuity</i>, denoted by <math><msup><mi>C</mi><mpadded voffset="-0.5em"><mn>1</mn></mpadded></msup></math>: this corresponds to our intuitive notion of<br>
+smoothness.
+</p>
+<p>
+<img src="img/153.gif" width="402 px"></img>
+</p>
+<p>
+<b>Figure 3.</b> Tangent (derivative) of a curve
+</p>
+<p>
+Now look at the point marked <math><mi>Q</mi><mo>(</mo><msub><mi>t</mi><mpadded depth="10%"><mi>B</mi></mpadded></msub><mo>)</mo></math>, where there's a visible kink in the curve. The<br>
+direction vector just a tiny bit to the left of that point, <math><mi>Q</mi><mo>'</mo><mo>(</mo><mrow><msub><mi>t</mi><mpadded depth="10%"><mi>B</mi></mpadded></msub><mo>-</mo><mi>&alpha;</mi></mrow><mo>)</mo></math>, is wildly<br>
+different from the one just a tiny bit to the right, <math><mi>Q</mi><mo>'</mo><mo>(</mo><mrow><msub><mi>t</mi><mpadded depth="10%"><mi>B</mi></mpadded></msub><mo>+</mo><mi>&alpha;</mi></mrow><mo>)</mo></math>. In fact, the<br>
+direction vector jumps instantaneously from one direction to another at point <math><mi>Q</mi><mo>(</mo><msub><mi>t</mi><mpadded depth="10%"><mi>B</mi></mpadded></msub><mo>)</mo></math>.<br>
+Mathematically, this is called a<i>discontinuity</i>.
+</p>
+<p>
+Many of you will recall from your college calculus that the derivative of a function is<br>
+also a function, whose degree is one less than that of the original function. For<br>
+example, the derivative of a fourth-degree function is a third-degree function. The<br>
+derivative of the derivative, called the second derivative, will then be of degree 2. This<br>
+second derivative may or may not be continuous: if it is, we say that the original<br>
+function has <i>second-derivative continuity,</i> or <math><msup><mi>C</mi><mpadded voffset="-0.5em"><mn>2</mn></mpadded></msup></math>. As the first derivative describes the<br>
+direction of the curve, the second derivative describes how fast that direction is<br>
+changing. The second derivative thus characterizes the curve's degree of curvature,<br>
+and so a <math><msup><mi>C</mi><mpadded voffset="-0.5em"><mn>2</mn></mpadded></msup></math>-continuous curve is said to have <i>curvature continuity</i>. We'll come back to<br>
+these important concepts after we've introduced NURB curves themselves.
+</p>
+<h2>NURB CURVES</h2>
+<p>
+Now that we know how parametric functions work, let's see how we can use them to<br>
+build up a definition for NURB curves. If we call our function Q, the left side of our<br>
+equation will look like this:
+</p>
+<p>
+<math><mi>Q</mi><mo>(</mo><mi>t</mi><mo>)</mo><mo>=</mo></math>
+</p>
+<p>
+where t is a parameter representing time. By evaluating this function at a number of<br>
+values of t, we'll get a series of {x, y} pairs that we can use to plot our curve, as<br>
+shown in Figure 4. Now all we have to do is define the right-hand side.
+</p>
+<p>
+<img src="img/154.gif" width="300 px"></img>
+</p>
+<p>
+<b>Figure 4. </b>Plotting a parametric function
+</p>
+<p>
+<b>CONTROL POINTS</b>
+</p>
+<p>
+One of the key characteristics of NURB curves is that their shape is determined by<br>
+(among other things) the positions of a set of points called <i>control points</i>, like the ones<br>
+labeled <math><msub><mi>B</mi><mpadded depth="10%"><mi>i</mi></mpadded></msub></math> in Figure 5. As in the figure, the control points are often joined with<br>
+connecting lines to make them easier to see and to clarify their relationship to the<br>
+curve. These connecting lines form what's known as a<i>control polygon</i>. (It would<br>
+actually make more sense to call it a "control polyline," but the other is the<br>
+conventional term.)
+</p>
+<p>
+<img src="img/155.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 5. </b>Defining a curve with control points
+</p>
+<p>
+The second curve in Figure 5 is the same curve, but with one of the control points<br>
+(<math><msub><mi>B</mi><mpadded depth="10%"><mi>7</mi></mpadded></msub></math>) moved a bit. Notice that the curve's shape isn't changed throughout its entire<br>
+length, but only in a small neighborhood near the changed control point. This is a very<br>
+desirable property, since it allows us to make localized changes by moving individual<br>
+control points, without affecting the overall shape of the curve. Each control point<br>
+influences the part of the curve nearest to it but has little or no effect on parts of the<br>
+curve that are farther away.
+</p>
+<p>
+One way to think about this is to consider how much influence each of the control<br>
+points has over the path of our moving particle at each instant of time. At any time t,<br>
+the particle's position will be a weighted average of all the control points, but with the<br>
+points closer to the particle carrying more weight than those farther away. We can<br>
+express this intuitive notion mathematically this way:
+</p>
+<p>
+
+        <p>
+            <math display="block" style="text-align: left">
+                <mrow>
+                    <mrow>
+                        <mi>Q</mi>
+                        <mo>(</mo>
+                        <mi>t</mi>
+                        <mo>)</mo>
+                    </mrow>
+                    <mo>=</mo>
+                    <munderover>
+                        <mo>&sum;</mo>
+                        <mpadded height="110%">
+                            <mrow>
+                                <mi>i</mi>
+                                <mo>=</mo>
+                                <mn>0</mn>
+                            </mrow>
+                        </mpadded>
+                        <mpadded depth="110%">
+                            <mrow>
+                                <mi>n</mi>
+                                <mo>-</mo>
+                                <mn>1</mn>
+                            </mrow>
+                        </mpadded>
+                    </munderover>
+                    <msub>
+                        <mi>B</mi>
+                        <mpadded depth="10%">
+                            <mi>i</mi>
+                        </mpadded>
+                    </msub>
+                    <mo>&it;</mo>
+                    <msub>
+                        <mi>N</mi>
+                        <mpadded depth="10%">
+                            <mrow>
+                                <mi>i</mi>
+                                <mo>,</mo>
+                                <mi>k</mi>
+                            </mrow>
+                        </mpadded>
+                    </msub>
+                    <mo>(</mo>
+                    <mi>t</mi>
+                    <mo>)</mo>
+                </mrow>
+            </math>
+        </p>
+    
+</p>
+<p>
+In other words, to find the position of the moving particle at a particular time, add up<br>
+the positions of all the control points (<math><msub><mi>B</mi><mpadded depth="10%"><mi>i</mi></mpadded></msub></math>) but vary the strength of each point's<br>
+contribution over time (<math><msub><mi>N</mi><mpadded depth="10%"><mi>i</mi></mpadded></msub><mo>,</mo><mi>k</mi><mo>(</mo><mi>t</mi><mo>)</mo></math>). We'll explain the meaning of the subscript k<br>
+shortly.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The bounding volume returned by QuickDraw 3D for all other geometric<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;primitives is a volume that encloses the primitive itself. For NURB curves,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;however, the returned bounding volume encloses the curve's control points,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rather than the curve itself. This is done for historical reasons, and is the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;normal practice in 3D graphics packages.*
+</p>
+<p>
+<b>BASIS FUNCTIONS</b>
+</p>
+<p>
+The function <math><msub><mi>N</mi><mpadded depth="10%"><mi>i</mi></mpadded></msub><mo>,</mo><mi>k</mi><mo>(</mo><mi>t</mi><mo>)</mo></math>, which determines how strongly control point <math><msub><mi>B</mi><mpadded depth="10%"><mi>i</mi></mpadded></msub></math> influences the<br>
+curve at time t, is called the basis function for that control point. In fact, the B in<br>
+"B-splines" stands for "basis." The value of this function is a real number such as<br>
+0.5, so that a particular point <math><mi>Q</mi><mo>(</mo><mi>t</mi><mo>)</mo></math> can be defined as, say, 25% of one control point's<br>
+position, plus 50% of another's, plus 25% of yet a third's. To complete our NURB<br>
+equation, we have to specify the basis function for each control point.
+</p>
+<p>
+&nbsp;&nbsp;So how do we go about defining the basis functions? Remember that we want each<br>
+region of the NURB curve to be a <i>local</i> average of some small number of control points<br>
+close to that region. When the moving particle is far away from a given control point,<br>
+that control point has little influence on it; as the particle gets closer, the control<br>
+point affects it more and more. Then the effect diminishes again as the particle recedes<br>
+past the control point.
+</p>
+<p>
+Up to now, we've been using the words "near" and "far" in a rather vague way, but the<br>
+time has come to pin them down more rigorously. Because we've defined our curve<br>
+parametrically with respect to time, we can regard what we've been calling a "part" or<br>
+"region" of the curve as a portion of the time interval the curve covers. For example,<br>
+if our curve goes from time t = 0.0 to t = 10.0, we can specify a particular region as<br>
+extending from, say, t = 3.3 to t = 7.5. So we can say, for instance, that a control point<br>
+Bi is centered at time t = 5.0 and has an effect in the range from t = 3.3 to t = 7.5.
+</p>
+<p>
+Figure 6 shows a typical example of what a basis function might look like: it has its<br>
+maximum effect at some definite point in time and tapers off smoothly as it gets<br>
+farther away from that point. If you were awake during your college statistics course,<br>
+you might recognize this as the familiar "bell curve" that we all learned to know and<br>
+loathe. The curve <math><msub><mi>N</mi><mpadded depth="10%"><mi>i</mi></mpadded></msub><mo>,</mo><mi>k</mi><mo>(</mo><mi>t</mi><mo>)</mo></math> in the figure shows that control point <math><msub><mi>B</mi><mpadded depth="10%"><mi>i</mi></mpadded></msub></math> has its greatest<br>
+effect (about 95%) at time t = 3.0 and tapers off to about 50% at t = 1.7 and t = 4.3.
+</p>
+<p>
+<img src="img/157.gif" width="360 px"></img>
+</p>
+<p>
+<b>Figure 6.</b> Basis function for a control point
+</p>
+<p>
+Since each control point has its own basis function, a NURB curve with, say, five<br>
+control points will have five such functions, each covering some region of the curve<br>
+(that is, some interval of time). At time t = 2.3 in Figure 7, for example, control<br>
+point <math><msub><mi>B</mi><mpadded depth="10%"><mn>0</mn></mpadded></msub></math> has a weight of about 0.2, <math><msub><mi>B</mi><mpadded depth="10%"><mn>1</mn></mpadded></msub></math> about 0.7, and <math><msub><mi>B</mi><mpadded depth="10%"><mn>2</mn></mpadded></msub></math> about 0.05. As t goes from<br>
+0.0 to 7.0, each control point's effect on the shape of the curve is initially 0,<br>
+increases gradually to a maximum, and then gradually tapers off again to 0 as we reach<br>
+the end of its effective range.
+</p>
+<p>
+<img src="img/158.gif" width="516 px"></img>
+</p>
+<p>
+<b>Figure 7. </b>Uniform basis functions for a set of control points
+</p>
+<p>
+<b>KNOTS</b>
+</p>
+<p>
+Notice that all of the basis functions in Figure 7 have exactly the same shape and cover<br>
+equal intervals of time. In general, we'd like to be able to vary the width of the<br>
+intervals (so that some control points affect a larger region of the curve and others a<br>
+smaller region) and the maximum height of the curves (so that some control points<br>
+affect the shape of the curve more strongly than others). That's where the <i>NU</i> in <i>NURB</i><br>
+comes from: it stands for <b>n</b>on<b>u</b>niform.
+</p>
+<p>
+&nbsp;&nbsp;The solution is to define a series of points that partition the time into intervals,<br>
+which we can then use in the basis functions to achieve the desired effects. By varying<br>
+the relative lengths of the intervals, we can vary the amount of time each control point<br>
+affects the particle. The points demarcating the intervals are known as <i>knots</i>, and the<br>
+ordered list of them is a knot vector (Figure 8). The knot vector for the basis<br>
+functions shown in Figure 7 is {0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0}. This is an<br>
+example of a <i>uniform knot vector,</i> which is why all the functions in the figure cover<br>
+equal intervals of time. Figure 9 shows an example of a curve created with such a knot<br>
+vector.
+</p>
+<p>
+<img src="img/159.gif" width="552 px"></img>
+</p>
+<p>
+<b>Figure 8. </b>A knot vector
+</p>
+<p>
+<img src="img/160.gif" width="348 px"></img>
+</p>
+<p>
+<b>Figure 9. </b>NURB curve with uniform knot vector
+</p>
+<p>
+If we change the knot vector to {0.0, 1.0, 2.0, 3.75, 4.0, 4.25, 6.0, 7.0}, we get a set<br>
+of nonuniform basis functions like the ones shown in Figure 10, and a curve that looks<br>
+like Figure 11 (using the same set of control points as in Figure 9). Notice that the<br>
+basis functions <math><msub><mi>N</mi><mpadded depth="10%"><mrow><mn>2</mn><mo>,</mo><mn>3</mn></mrow></mpadded></msub><mo>(</mo><mi>t</mi><mo>)</mo></math> and <math><msub><mi>N</mi><mpadded depth="10%"><mrow><mn>3</mn><mo>,</mo><mn>3</mn></mrow></mpadded></msub><mo>(</mo><mi>t</mi><mo>)</mo></math>, associated with control points <math><msub><mi>B</mi><mpadded depth="10%"><mn>2</mn></mpadded></msub></math> and <math><msub><mi>B</mi><mpadded depth="10%"><mn>3</mn></mpadded></msub></math>,<br>
+respectively, are taller and narrower than the others. If you compare Figures 9 and<br>
+11, you'll see that the curve in Figure 11 is pulled more strongly toward control<br>
+points <math><msub><mi>B</mi><mpadded depth="10%"><mn>2</mn></mpadded></msub></math> and <math><msub><mi>B</mi><mpadded depth="10%"><mn>3</mn></mpadded></msub></math> than the one in Figure 9. This is because the basis functions for these<br>
+control points have a greater maximum value. Also, the curve rapidly approaches<br>
+these control points and rapidly moves away: compare how tightly curved it is near<br>
+these points, relative to the curve in Figure 9. This is a result of the narrower basis<br>
+functions for these two control points: intuitively, our moving particle has to traverse<br>
+more space in relatively less time. Looking at the knot vector, you can see that the knot<br>
+intervals for these two control points are narrower than the others -- {3.75, 4.0}<br>
+and {4.0, 4.25} -- meaning that their effects on the curve are concentrated in shorter<br>
+time intervals.
+</p>
+<p>
+<img src="img/161.gif" width="516 px"></img>
+</p>
+<p>
+<b>Figure 10. </b>Nonuniform basis functions for a set of control points
+</p>
+<p>
+<img src="img/162.gif" width="360 px"></img>
+</p>
+<p>
+<b>Figure 11.</b> NURB curve with nonuniform knot vector
+</p>
+<p>
+<b>DEFINING THE BASIS FUNCTIONS</b>
+</p>
+<p>
+We're now ready to complete our definition of a NURB curve by giving an exact<br>
+specification of the basis functions. In some respects, we're free to use any sort of<br>
+functions we'd like, but by choosing them carefully, we can get certain desirable<br>
+effects. The definitions we'll be using are as follows:
+</p>
+<p>
+
+        <p>
+            <math>
+                <msub>
+                    <mi>N</mi>
+                    <mpadded depth="10%">
+                        <mrow>
+                            <mi>i</mi>
+                            <mo>,</mo>
+                            <mn>1</mn>
+                        </mrow>
+                    </mpadded>
+                </msub>
+                <mo>(</mo>
+                <mi>t</mi>
+                <mo>)</mo>
+                <mo>=</mo>
+                <mrow>
+                    <mo>{</mo>
+                    <mtable columnalign="left">
+                        <mtr>
+                            <mtd>
+                                <mn>1</mn>
+                            </mtd>
+                            <mtd>
+                                <mrow>
+                                    <mtext>if&nbsp;</mtext>
+                                    <msub>
+                                        <mi>x</mi>
+                                        <mpadded depth="10%">
+                                            <mi>i</mi>
+                                        </mpadded>
+                                    </msub>
+                                    <mo>&le;</mo>
+                                    <mi>t</mi>
+                                    <mo>&lt;</mo>
+                                    <msub>
+                                        <mi>x</mi>
+                                        <mpadded depth="10%">
+                                            <mrow>
+                                                <mi>i</mi>
+                                                <mo>+</mo>
+                                                <mn>1</mn>
+                                            </mrow>
+                                        </mpadded>
+                                    </msub>
+                                </mrow>
+                            </mtd>
+                        </mtr>
+                        <mtr>
+                            <mtd>
+                                <mn>0</mn>
+                            </mtd>
+                            <mtd>
+                                <mtext>otherwhise</mtext>
+                            </mtd>
+                        </mtr>
+                    </mtable>
+                </mrow>
+            </math>
+        </p>
+        <p>
+            <math>
+                <mrow>
+                    <msub>
+                        <mi>N</mi>
+                        <mpadded depth="10%">
+                            <mrow>
+                                <mi>i</mi>
+                                <mo>,</mo>
+                                <mi>k</mi>
+                            </mrow>
+                        </mpadded>
+                    </msub>
+                    <mo>(</mo>
+                    <mi>t</mi>
+                    <mo>)</mo>
+                </mrow>
+                <mo>=</mo>
+                <mrow>
+                    <mfrac>
+                        <mstyle mathsize="100%">
+                            <mpadded height="10%">
+                            <mrow>
+                            <mo>(</mo>
+                            <mi>t</mi>
+                            <mo>-</mo>
+                            <msub>
+                                <mi>x</mi>
+                                <mpadded depth="10%">
+                                    <mi>i</mi>
+                                </mpadded>
+                            </msub>
+                            <mo>)</mo>
+                            <mo>&it;</mo>
+                            <msub>
+                                <mi>N</mi>
+                                <mpadded depth="10%">
+                                    <mrow>
+                                        <mi>i</mi>
+                                        <mo>,</mo>
+                                        <mrow>
+                                            <mi>k</mi>
+                                            <mo>-</mo>
+                                            <mn>1</mn>
+                                        </mrow>
+                                    </mrow>
+                                </mpadded>
+                            </msub>
+                            <mo>(</mo>
+                            <mi>t</mi>
+                            <mo>)</mo>
+                        </mrow>
+                        </mpadded>
+                        </mstyle>
+                        <mstyle mathsize="100%">
+                            <mpadded depth="10%">
+                            <mrow>
+                            <msub>
+                                <mi>x</mi>
+                                <mpadded depth="10%">
+                                    <mrow>
+                                        <mi>i</mi>
+                                        <mo>+</mo>
+                                        <mi>k</mi>
+                                        <mo>-</mo>
+                                        <mn>1</mn>
+                                    </mrow>
+                                </mpadded>
+                            </msub>
+                            <mo>-</mo>
+                            <msub>
+                                <mi>x</mi>
+                                <mpadded depth="10%">
+                                    <mi>i</mi>
+                                </mpadded>
+                            </msub>
+                        </mrow>
+                        </mpadded>
+                        </mstyle>
+                    </mfrac>
+                    <mo>+</mo>
+                    <mfrac>
+                        <mstyle mathsize="100%">
+                            <mpadded height="10%">
+                            <mrow>
+                            <mo>(</mo>
+                            <msub>
+                                <mi>x</mi>
+                                <mrow>
+                                    <mi>i</mi>
+                                    <mo>+</mo>
+                                    <mi>k</mi>
+                                </mrow>
+                            </msub>
+                            <mo>-</mo>
+                            <mi>t</mi>
+                            <mo>)</mo>
+                            <mo>&it;</mo>
+                            <msub>
+                                <mi>N</mi>
+                                <mrow>
+                                    <mi>i</mi>
+                                    <mo>+</mo>
+                                    <mn>1</mn>
+                                    <mo>,</mo>
+                                    <mi>k</mi>
+                                    <mo>-</mo>
+                                    <mn>1</mn>
+                                </mrow>
+                            </msub>
+                            <mo>(</mo>
+                            <mi>t</mi>
+                            <mo>)</mo>
+                        </mrow>
+                        </mpadded>
+                        </mstyle>
+                        <mstyle mathsize="100%">
+                            <mpadded depth="10%">
+                            <mrow>
+                            <msub>
+                                <mi>x</mi>
+                                <mpadded depth="10%">
+                                    <mrow>
+                                        <mi>i</mi>
+                                        <mo>+</mo>
+                                        <mi>k</mi>
+                                    </mrow>
+                                </mpadded>
+                            </msub>
+                            <mo>-</mo>
+                            <msub>
+                                <mi>x</mi>
+                                <mpadded depth="10%">
+                                    <mrow>
+                                        <mi>i</mi>
+                                        <mo>+</mo>
+                                        <mn>1</mn>
+                                    </mrow>
+                                </mpadded>
+                            </msub>
+                        </mrow>
+                        </mpadded>
+                        </mstyle>
+                    </mfrac>
+                </mrow>
+            </math>
+        </p>
+    
+</p>
+<p>
+where <math><msub><mi>x</mi><mpadded depth="10%"><mi>i</mi></mpadded></msub></math> is the conventional notation for the <i>i</i>th knot in the knot vector.
+</p>
+<p>
+This definition has a lot of stuff in it, and lots of subscripts -- we're getting into the<br>
+real theoretical aspects of NURB curves here. Notice that the functions for higher<br>
+values of the subscript <i>k</i> (called the <i>order</i> of the basis function) are built up<br>
+recursively from those of lower orders. If<i> k</i> is the highest order of basis function we<br>
+define, the resulting NURB curve is said to be of order<i> k </i>or of <i>degree k</i>-1. At the very<br>
+bottom of the hierarchy, the functions of order 1 are simply 1 if <i>t</i> is between the <i>i</i>th<br>
+and (<i>i</i>+1)st knots, and 0 otherwise.
+</p>
+<p>
+The specifics of this particular set of basis functions, and how they came to be this<br>
+way, are beyond the scope of this article; if you're interested in learning more, you'll<br>
+find all the detail you could possibly want (and then some) in <i>An Introduction to</i><br>
+<i>Splines for Use in Computer Graphics and Geometric Modeling.</i> However, we can at<br>
+least mention a number of important characteristics that this choice of basis functions<br>
+exhibits:
+</p>
+<ul>
+<li>At any time <i>t</i>, the values of all the basis functions add up to exactly 1.</li>
+<li>If all control points have positive weights, the curve is contained within a<br>
+bounding region known as the <i>convex hull</i>. (See the book cited above for<br>
+details.)</li>
+<li>At any time<i> t</i>, no more than <i>k</i> basis functions affect the curve, where <i>k</i>is<br>
+the order of the curve.</li>
+<li>A curve of order <i>k</i> is defined only where <i>k</i> of the basis functions are<br>
+nonzero.</li>
+</ul>
+<p>
+This last characteristic is of more than theoretical interest: a cubic (degree-3 or<br>
+order-4) NURB curve with a knot vector of, say, {0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0,<br>
+7.0} only goes from <i>t</i> = 3.0 to<i>t</i> = 4.0! The rule is that the curve begins at the kth knot<br>
+from the beginning of the knot vector and ends at the <i>k</i>th knot from the end.
+</p>
+<p>
+<b>KNOTS AND KINKS</b>
+</p>
+<p>
+I should point out here that nonuniform knot vectors aren't really very useful for<br>
+controlling the shape of a curve. (In fact, moving control points around directly isn't<br>
+that useful, either -- but we'll get to that later.) Instead, nonuniform knot vectors<br>
+have two important uses:
+</p>
+<ul>
+<li>You've probably noticed that all of our NURB curves so far have had their<br>
+endpoints just "floating in space"; that is, the curve's endpoints don't coincide<br>
+with any control point. In real life, though, we generally want to be able to<br>
+control the exact placement of the endpoints, and most often we want them to<br>
+coincide exactly with the first and last control points.</li>
+<li>You may also have noticed that the curves displayed so far are quite<br>
+smooth. While this is usually a good thing, we sometimes need to create a<br>
+curve with a kink or corner.</li>
+</ul>
+<p>
+We can accomplish both of these goals by using a rather extreme case of<br>
+nonuniformity: giving several consecutive knots the same value of <i>t</i>! For example, a<br>
+knot vector like {0.0, 0.0, 0.0, 3.0, 4.0, 5.0, 6.0, 7.0} produces a set of basis<br>
+functions like those in Figure 12 and a curve (using the same control points as before)<br>
+that looks like Figure 13. Looking at Figure 12, you can see that at <i>t</i> = 0, the basis<br>
+functions associated with all but the first control point have a 0 value -- so basis<br>
+function <math><msub><mi>N</mi><mpadded depth="10%"><mrow><mn>0</mn><mo>,</mo><mn>3</mn></mrow></mpadded></msub><mo>(</mo><mi>t</mi><mo>)</mo></math> (the one for control point <math><msub><mi>B</mi><mpadded depth="10%"><mn>0</mn></mpadded></msub></math>) has total control over the curve. Thus<br>
+the curve at t = 0 coincides with the first control point.
+</p>
+<p>
+<img src="img/164.gif" width="510 px"></img>
+</p>
+<p>
+<b>Figure 12.</b> Basis functions for a curve with multiple identical knots at the beginning
+</p>
+<p>
+<img src="img/165.gif" width="354 px"></img>
+</p>
+<p>
+<b>Figure 13.</b> NURB curve with multiple identical knots at the beginning
+</p>
+<p>
+If we bunch up some knots in the middle of the knot vector {0.0, 1.0, 2.0, 3.0, 3.0,<br>
+5.0, 6.0, 7.0}, we get the basis functions shown in Figure 14 and the curve in Figure<br>
+15. At t = 3.0, all the basis functions except <math><msub><mi>N</mi><mpadded depth="10%"><mrow><mn>2</mn><mo>,</mo><mn>3</mn></mrow></mpadded></msub><mo>(</mo><mi>t</mi><mo>)</mo></math> have a 0 value -- so control<br>
+point <math><msub><mi>B</mi><mpadded depth="10%"><mn>2</mn></mpadded></msub></math> is the only one to affect the curve at that instant, and thus the curve coincides<br>
+with that control point.
+</p>
+<p>
+<img src="img/166.gif" width="516 px"></img>
+</p>
+<p>
+<b>Figure 14.</b> Basis functions for a curve with multiple identical knots in the middle
+</p>
+<p>
+<img src="img/167.gif" width="348 px"></img>
+</p>
+<p>
+<b>Figure 15.</b> NURB curve with multiple identical knots in the middle
+</p>
+<p>
+In mathematical terms, continuity (smoothness) is an issue only at the joints defined<br>
+by the curve's knots, where two segments of the curve meet; between the joints, the<br>
+curve is perfectly smooth and continuous. A typical curve, in which each joint<br>
+corresponds to a single knot, has continuity <math><msup><mi>C</mi><mpadded voffset="-0.5em"><mrow><mi>n</mi><mo>-</mo><mn>1</mn></mrow></mpadded></msup></math> where n is the degree of the curve.<br>
+So a cubic (degree-3 or order-4) curve has second-derivative continuity (<math><msup><mi>C</mi><mpadded voffset="-0.5em"><mn>2</mn></mpadded></msup></math>) at<br>
+each joint if all the knots are distinct. If two knots coincide, the continuity at that joint<br>
+goes down by one degree; if three coincide, the continuity goes down another degree;<br>
+and so on.
+</p>
+<p>
+This means you can put a kink in the curve at a particular point by adding knots to the<br>
+knot vector at that point. Later, we'll look at some code that shows how to do this. We'll<br>
+also see how you can use this same technique of knot insertion to convert a curve from<br>
+NURB to B&eacute;zier representation.
+</p>
+<p>
+<b>RATIONAL CURVES</b>
+</p>
+<p>
+Now that we've learned all about control points and knots and basis functions, we<br>
+understand NUB (<b>n</b>on<b>u</b>niform <b>B</b>-spline) curves. But what about the rest of the<br>
+acronym? We're still missing the <i>R</i> in <i>NURB</i>. It's time to talk about rational curves.
+</p>
+<p>
+&nbsp;&nbsp;If you've sneaked a peek at QuickDraw 3D's NURB definitions, you may have wondered<br>
+why it uses a four-dimensional representation for three-dimensional control points:<br>
+{x, y, z, w} instead of just {x, y, z}. The reason for the extra coordinate is that it<br>
+allows us to exactly represent conic curves (circles, ellipses, parabolas, and<br>
+hyperbolas), as well as giving us more control over the shape of other curves. The<br>
+fourth coordinate, w, is customarily referred to as the <i>weight</i> of the control point.<br>
+Ordinarily, each control point carries a weight of 1.0, meaning that they all have equal<br>
+influence on the shape of the curve. Increasing the weight of an individual control point<br>
+gives it more influence and has the effect of "pulling" the curve toward that point (see<br>
+Figure 16).
+</p>
+<p>
+<img src="img/168.gif" width="396 px"></img>
+</p>
+<p>
+<b>Figure 16. </b>Increasing the weight of a control point
+</p>
+<p>
+Curves that are defined in this way, with a weight w for each control point, are called<br>
+<i>rational curves</i>. Mathematically, such curves are defined in four-dimensional space<br>
+(since the control points have four components) and are projected down into<br>
+three-dimensional space. Visualizing objects in four dimensions is a bit difficult (let<br>
+alone drawing them in a diagram), but we can understand the basic idea by considering<br>
+rational <i>two</i>-dimensional curves: that is, curves defined in three-dimensional space<br>
+and projected onto a plane, as shown in Figure 17.
+</p>
+<p>
+<img src="img/169.gif" width="414 px"></img>
+</p>
+<p>
+<b>Figure 17.</b> Projecting a three-dimensional curve into two dimensions
+</p>
+<p>
+This is essentially the same process as projecting a three-dimensional model onto a<br>
+two-dimensional screen with a perspective camera. The basic method for such<br>
+perspective projection is to divide by the homogeneous component of the vertex (that<br>
+is, w); we use an analogous approach to project our four-dimensional rational curve<br>
+into three-dimensional space. Mathematically, then, we must incorporate this division<br>
+into our earlier definition for a B-spline curve:
+</p><p class="spacer">&nbsp;</p>
+<p>
+
+        <p>
+            <math>
+                <mrow>
+                    <mi>Q</mi>
+                    <mo>(</mo>
+                    <mi>t</mi>
+                    <mo>)</mo>
+                </mrow>
+                <mo>=</mo>
+                <mfrac>
+                    <mstyle mathsize="100%">
+                        <mpadded height="10%">
+                        <mrow>
+                            <munderover>
+                                <mo>&Sigma;</mo>
+                                <mpadded height="110%">
+                                    <mrow>
+                                        <mi>i</mi>
+                                        <mo>=</mo>
+                                        <mn>0</mn>
+                                    </mrow>
+                                </mpadded>
+                                <mpadded depth="110%">
+                                    <mrow>
+                                        <mi>n</mi>
+                                        <mo>-</mo>
+                                        <mn>1</mn>
+                                    </mrow>
+                                </mpadded>
+                            </munderover>
+                            <msub>
+                                <mi>B</mi>
+                                <mpadded depth="10%">
+                                    <mi>i</mi>
+                                </mpadded>
+                            </msub>
+                            <op>&it;</op>
+                            <msub>
+                                <mi>w</mi>
+                                <mpadded depth="10%">
+                                    <mi>i</mi>
+                                </mpadded>
+                            </msub>
+                            <op>&it;</op>
+                            <mrow>
+                                <msub>
+                                    <mi>N</mi>
+                                    <mpadded depth="10%">
+                                        <mrow>
+                                            <mi>i</mi>
+                                            <mo>,</mo>
+                                            <mi>k</mi>
+                                        </mrow>
+                                    </mpadded>
+                                </msub>
+                                <mo>(</mo>
+                                <mi>t</mi>
+                                <mo>)</mo>
+                            </mrow>
+                        </mrow>
+                    </mpadded>
+                    </mstyle>
+                    <mstyle mathsize="100%">
+                        <mpadded depth="10%">
+                        <mrow>
+                            <munderover>
+                                <mo>&Sigma;</mo>
+                                <mpadded height="110%">
+                                    <mrow>
+                                        <mi>i</mi>
+                                        <mo>=</mo>
+                                        <mn>0</mn>
+                                    </mrow>
+                                </mpadded>
+                                <mpadded depth="110%">
+                                    <mrow>
+                                        <mi>n</mi>
+                                        <mo>-</mo>
+                                        <mn>1</mn>
+                                    </mrow>
+                                </mpadded>
+                            </munderover>
+                            <msub>
+                                <mi>w</mi>
+                                <mpadded depth="10%">
+                                    <mi>i</mi>
+                                </mpadded>
+                            </msub>
+                            <op>&it;</op>
+                            <mrow>
+                                <msub>
+                                    <mi>N</mi>
+                                    <mpadded depth="10%">
+                                        <mrow>
+                                            <mi>i</mi>
+                                            <mo>,</mo>
+                                            <mi>k</mi>
+                                        </mrow>
+                                    </mpadded>
+                                </msub>
+                                <mo>(</mo>
+                                <mi>t</mi>
+                                <mo>)</mo>
+                            </mrow>
+                        </mrow>
+                    </mpadded>
+                    </mstyle>
+                </mfrac>
+            </math>
+        </p>
+    
+</p><p class="spacer">&nbsp;</p>
+<p>
+The <math><msub><mi>B</mi><mpadded depth="10%"><mi>i</mi></mpadded></msub></math> are the projections of the four-dimensional control points and the <math><msub><mi>w</mi><mpadded depth="10%"><mi>i</mi></mpadded></msub></math> are their<br>
+weights.
+</p>
+<p>
+There are two different conventions for representing the control points in terms of<br>
+their four-dimensional coordinates {x, y, z, w}:
+</p>
+<ul>
+<li><i>Homogeneous</i>, in which the coordinates represent the point's position in<br>
+four-dimensional space. To project it into three dimensions, the components<br>
+must all be divided through by w. Thus the point's three-dimensional position<br>
+is actually {x/w, y/w, z/w}. (Note that w/w is always 1.)</li>
+<li><i>Weighted Euclidean</i>, in which the coordinates are already considered to<br>
+have been divided through. Thus the first three components {x, y, z} directly<br>
+represent the point's position in three-dimensional space and the fourth (w)<br>
+represents its weight.</li>
+</ul>
+<p>
+QuickDraw 3D uses homogeneous representation, as do most technical papers and other<br>
+graphics libraries.
+</p>
+<p>
+<b>CONIC SECTIONS</b>
+</p>
+<p>
+I said earlier that we could use the rational aspect of NURB curves to create conic<br>
+sections (such as circles and ellipses). Conic sections are so called because they're the<br>
+curves we get by intersecting a cone with a plane; the angle at which the plane<br>
+intersects the cone determines whether the resulting curve is a circle, an ellipse, a<br>
+parabola, or a hyperbola. Strictly speaking, hyperbolas and parabolas are of infinite<br>
+extent -- but infinite curves are generally not useful in graphics applications<br>
+(besides being very hard to compute a bounding box for). So we'll restrict our<br>
+discussion to conic arcs.
+</p>
+<p>
+Since conic curves are quadratic, we can represent them by quadratic (degree-2 or<br>
+order-3) NURB curves. The practical question, of course, is which NURB curve.<br>
+Although the proof is beyond the scope of this article, the following method (illustrated<br>
+in Figure 18) can be used to generate conic arcs:
+</p>
+<p>
+<img src="img/171.gif" width="540 px"></img>
+</p>
+<p>
+<b>Figure 18.</b> Constructing conic arcs
+</p>
+<ul>
+<li>The curve is defined by three control points. The first and last are the<br>
+endpoints of the conic arc, while the placement of the inner control point helps<br>
+determine the shape of the curve.</li>
+<li>The weights of the first and last control points are 1.0.</li>
+<li> A weight less than 1.0 for the inner control point generates an ellipse; a<br>
+weight equal to 1.0 generates a parabola; a weight greater than 1.0 generates a<br>
+hyperbola.</li>
+<li>The knot vector is {0.0, 0.0, 0.0, 1.0, 1.0, 1.0}.</li>
+</ul>
+<p>
+Probably the most common form of conic arc, particularly in modeling and design<br>
+applications, is a circular arc. Since a circle is simply a special case of an ellipse, the<br>
+method for constructing a circular arc is a special case of the general method for<br>
+elliptical arcs:
+</p>
+<ul>
+<li>The legs of the control polygon are of equal length (that is, the control<br>
+triangle is isosceles).</li>
+<li>The chord connecting the first and last control points meets each leg at an<br>
+angle &theta; equal to half the angular extent of the desired arc (for<br>
+instance, 30° for a 60° arc).</li>
+<li>The weight of the inner control point is equal to the cosine of &theta;.</li>
+<li>The knot vector is {0.0, 0.0, 0.0, 1.0, 1.0, 1.0}, just as before.</li>
+</ul>
+<p>
+Figure 19 illustrates this construction. (In this case, the control triangle is<br>
+equilateral, so the angle &theta; is 60° and the resulting arc is 120°, or<br>
+one-third of a circle.)
+</p>
+<p>
+<img src="img/172.gif" width="264 px"></img>
+</p>
+<p>
+<b>Figure 19.</b> Constructing a circular arc
+</p>
+<p>
+Note that the foregoing method can only produce circular arcs less than 180°; for<br>
+larger arcs, we have to piece together several NURB curves. So to draw a complete<br>
+circle we could combine three 120° arcs, or four 90° arcs. However, it's<br>
+possible to represent these three or four separate arcs as a single curve and to make a<br>
+circle with only one NURB curve. Figures 20 and 21 show how to do it with three and<br>
+four arcs, respectively.
+</p>
+<p>
+<img src="img/173.gif" width="408 px"></img>
+</p>
+<p>
+<b>Figure 20. </b>Constructing a circle with three arcs
+</p>
+<p>
+<img src="img/174.gif" width="480 px"></img>
+</p>
+<p>
+<b>Figure 21.</b> Constructing a circle with four arcs
+</p>
+<h2>NURB CURVES IN QUICKDRAW 3D</h2>
+<p>
+By now you're probably saying, "Enough theory already -- how does all this relate to<br>
+Macintosh programming?" So let's finally look at QuickDraw 3D's data structures and<br>
+routines for working with NURB curves.
+</p>
+<p>
+<b>DATA STRUCTURES</b>
+</p>
+<p>
+If you've been following the discussion so far, you can probably guess the contents of<br>
+the data structure representing a NURB curve: the order of the curve, its control<br>
+points, and its knots. There's also the usual QuickDraw 3D attribute set, so you can<br>
+draw your curves in, say, fuchsia or vermilion. Here are the definitions:
+</p>
+<pre>typedef struct TQ3RationalPoint4D {
+   float      x;
+   float      y;
+   float      z;
+   float      w;
+} TQ3RationalPoint4D;
+
+typedef struct TQ3NURBCurveData {
+    unsigned long       order;            // Order of the curve
+    unsigned long       numPoints;        // Number of control points
+    TQ3RationalPoint4D  *controlPoints;   // Array of control points
+    float               *knots;           // Array of knots
+    TQ3AttributeSet     curveAttributeSet; // QuickDraw 3D attributes
+} TQ3NURBCurveData;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Most of this is pretty straightforward, but here are a few things to keep in mind:
+</p>
+<ul>
+<li>The order of the curve must be between 2 and 16, inclusive. Order 2<br>
+gives you a polyline effect; the most common orders are 3 (quadratic) and 4<br>
+(cubic).</li>
+<li>The control points are represented in homogeneous form, meaning that<br>
+you have to divide the x, y, and z components by the w component to find the<br>
+point's actual position in three-dimensional space.</li>
+<li>The w component of each control point must be positive.</li>
+<li>The number of control points must be equal to or greater than the order.</li>
+<li>The number of knots must be equal to the number of control points plus<br>
+the order of the curve.</li>
+<li>The knots must be specified in nondecreasing order.</li>
+<li>If k is the order of the curve, there can't be more than k-1 knots with the<br>
+same value (except at the beginning or end of the sequence, where k<br>
+consecutive equal knots are allowed).</li>
+<li>The attribute set should contain only attributes that make sense for a<br>
+curve. Most often, the attribute set will either be NULL or simply contain a<br>
+color.</li>
+</ul>
+<p>
+<b>RENDERING A NURB CURVE</b>
+</p>
+<p>
+If you're familiar with QuickDraw 3D, you know that there are two ways to render a<br>
+graphical entity (called a <i>geometry</i> in QuickDraw 3D terminology):<i>retained mode</i> and<br>
+<i>immediate mode</i>. In retained mode, you first create an object representing the figure<br>
+you want to draw, then use this <i>retained object</i> to do your drawing. (See the article<br>
+"The Basics of QuickDraw 3D Geometries" in<i>develop</i> Issue 23 for more on this.)<br>
+Listing 1 shows how this works for a NURB curve. First we initialize a<br>
+TQ3NURBCurveData structure describing the curve to be drawn; we use this structure<br>
+to create a retained object with the QuickDraw 3D function Q3NURBCurve_New, and<br>
+then we pass the resulting object to Q3Geometry_Submit to render the curve. Finally,<br>
+we dispose of the retained object we created.
+</p>
+<p>
+<b>Listing 1. </b>Rendering a NURB curve in retained mode
+</p>
+<pre>TQ3GeometryObject         curveObject;
+TQ3NURBCurveData         curveData;
+
+static TQ3RationalPoint4D  controlPoints[4] = {
+                             { 0, 0, 0, 1 },
+                             { 1, 1, 0, 1 },
+                             { 2, 0, 0, 1 },
+                             { 3, 1, 0, 1 }
+                           };
+static float               knots[8] = {
+                              0, 0, 0, 0, 1, 1, 1, 1
+                           };
+
+// Initialize the data structure.
+curveData.order               = 4;
+curveData.numPoints           = 4;
+curveData.controlPoints       = controlPoints;
+curveData.knots               = knots;
+curveData.curveAttributeSet   = NULL;
+
+// Make a retained object.
+curveObject = Q3NURBCurve_New(&amp;curveData);
+
+// Use the retained object to render the curve.
+Q3View_StartRendering(view);
+do {
+   Q3Geometry_Submit(curveObject, view);
+} while (Q3View_EndRendering(view) == kQ3ViewStatusRetraverse);
+
+// Dispose of the curve object.
+Q3Object_Dispose(curveObject);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The equivalent drawing operation in immediate mode uses exactly the same code up to<br>
+the point where the object is created. Instead of creating the retained object, we<br>
+simply pass the TQ3NURBCurveData structure directly to the QuickDraw 3D function<br>
+Q3NURBCurve_Submit to be rendered immediately:
+</p>
+<pre>// Render the curve directly.
+Q3View_StartRendering(view);
+do {
+   Q3NURBCurve_Submit(&amp;curveData, view);
+} while (Q3View_EndRendering(view) == kQ3ViewStatusRetraverse);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>CONTROLLING SUBDIVISION</b>
+</p>
+<p>
+QuickDraw 3D doesn't render NURB curves directly -- as it does, say, lines or<br>
+triangles. To draw a NURB curve, the renderer has to break it up into a sequence of<br>
+lines or polylines. The more lines it's broken up into, the smoother it looks, but of<br>
+course the longer it takes to render. Before rendering a curve, you have to tell the<br>
+renderer how finely you want it subdivided.
+</p>
+<p>
+&nbsp;&nbsp;There are three ways of doing this, denoted by the values of an enumerated data type:
+</p>
+<pre>typedef enum TQ3SubdivisionMethod {
+   kQ3SubdivisionMethodConstant,
+   kQ3SubdivisionMethodWorldSpace,
+   kQ3SubdivisionMethodScreenSpace
+} TQ3SubdivisionMethod;</pre><p class="spacer">&nbsp;</p>
+<ul>
+<li>The first method, kQ3SubdivisionMethodConstant, says to subdivide the<br>
+curve into a polyline with a specified number of segments between each pair of<br>
+joints.</li>
+<li>The second method, kQ3SubdivisionMethodWorldSpace, says to subdivide<br>
+the curve so that the length of each line segment is no longer than a specified<br>
+value, measured in world space.</li>
+<li>The third method, kQ3SubdivisionMethodScreenSpace, is similar to the<br>
+second, but the measurement is done in screen space.</li>
+</ul>
+<p>
+The following data structure specifies the subdivision method to use and the relevant<br>
+parameter values:
+</p>
+<pre>typedef struct TQ3SubdivisionStyleData {
+   TQ3SubdivisionMethod      method;
+   float                     c1;
+   float                     c2;
+} TQ3SubdivisionStyleData;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+NURB curves use only the c1 component; the other is for NURB surfaces. A couple of<br>
+things to note:
+</p>
+<ul>
+<li>You should set both c1 and c2 to legitimate values. QuickDraw 3D doesn't<br>
+know whether a curve or a surface is coming up, so it always checks both<br>
+parameters for validity. If you're only drawing a curve, you may as well set<br>
+c2 to the same value as c1.</li>
+<li>If you specify an unreasonable value for either parameter, QuickDraw 3D<br>
+will substitute a more reasonable one and issue a warning. It won't let you<br>
+subdivide a curve at a million positions!</li>
+<li>For method kQ3SubdivisionMethodConstant, c1 should be a whole number<br>
+greater than 0; fractional values will be truncated.</li>
+<li>If you don't specify a subdivision style, the default value will be used.</li>
+</ul>
+<p>
+Expanding on our example of immediate mode rendering, the following code will render<br>
+our NURB curve with a five-segment polyline between each pair of knots:
+</p>
+<pre>TQ3SubdivisionStyleData         subdivData;
+...
+subdivData.method = kQ3SubdivisionMethodConstant;
+subdivData.c1 = subdivData.c2 = 5;
+...
+Q3View_StartRendering(view);
+do {
+   Q3SubdivisionStyle_Submit(&amp;subdivData, view);
+   Q3NURBCurve_Submit(&amp;curveData, view);
+} while (Q3View_EndRendering(view) == kQ3ViewStatusRetraverse);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>EDITING NURB CURVES</b>
+</p>
+<p>
+If you're rendering your curve in immediate mode, you can edit the curve by simply<br>
+modifying its control points, weights, and knot vectors directly in the<br>
+TQ3NURBCurveData structure. If you're using retained mode, QuickDraw 3D provides<br>
+calls to retrieve and set individual control points and knots:
+</p>
+<pre>TQ3Status Q3NURBCurve_GetControlPoint(TQ3GeometryObject curve,
+      unsigned long pointIndex, TQ3RationalPoint4D *point4D);
+
+TQ3Status Q3NURBCurve_SetControlPoint(TQ3GeometryObject curve,
+      unsigned long pointIndex, const TQ3RationalPoint4D *point4D);
+  
+TQ3Status Q3NURBCurve_GetKnot(TQ3GeometryObject curve,
+      unsigned long knotIndex, float *knotValue);
+
+TQ3Status Q3NURBCurve_SetKnot(TQ3GeometryObject curve,
+      unsigned long knotIndex, float knotValue);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Because we're not interacting with items that are objects themselves, there are no<br>
+reference counts involved and no need to dispose of any data structures. Note, however,<br>
+that if you edit a knot, the resulting knot vector must remain nondecreasing and follow<br>
+the limitations described earlier for multiple knots.
+</p>
+<p>
+You may have noticed that there are no calls to add, delete, or reorder control points or<br>
+knots. Instead, QuickDraw 3D provides calls for retrieving and replacing the entire<br>
+TQ3NURBCurveData structure from the retained object:
+</p>
+<pre>TQ3Status Q3NURBCurve_GetData(TQ3GeometryObject curve,
+             TQ3NURBCurveData *nurbCurveData);
+
+TQ3Status Q3NURBCurve_SetData(TQ3GeometryObject curve,
+             const TQ3NURBCurveData *nurbCurveData);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+If you want to change the number of control points and knots in a curve, you have to<br>
+make a local copy of the data structure you obtain from Q3NURBCurve_GetData<br>
+(making sure to allocate extra space for the new knots and control points), modify the<br>
+arrays in the local copy, and store it back into the object with Q3NURBCurve_SetData.<br>
+You must then call the following routine to dispose of the data you received from<br>
+Q3NURBCurve_GetData:
+</p>
+<pre>TQ3Status Q3NURBCurve_EmptyData(TQ3NURBCurveData *nurbCurveData);</pre>
+<p>
+However, if you're going to be modifying the NURB curve frequently, you should<br>
+probably be working in immediate mode and not using a retained object at all.
+</p>
+<h2>KNOT INSERTION</h2>
+<p>
+In general, the more control points we define for a NURB curve, the more control we<br>
+have over its shape. It would seem reasonable that we could add more control points<br>
+without changing the shape of the curve, and in fact this turns out to be true.<br>
+Remember, though, that there's a fundamental relationship among the knots, the<br>
+control points, and the order of the curve: the number of knots is equal to the number<br>
+of control points plus the order. For example, a cubic curve (order 4) with 9 control<br>
+points will require 13 knots. So every time we add a control point, we also have to add<br>
+an extra knot -- and make sure all the control points are in the correct locations to<br>
+keep the curve's shape the same as before.
+</p>
+<p>
+&nbsp;&nbsp;In practice, we actually take the reverse approach: we decide where to add a new knot,<br>
+then compute the location of the corresponding new control point (as well as the new<br>
+locations of some of the existing ones). For example, if we take the curve depicted<br>
+earlier in Figure 9 and insert a new knot at t = 3.6, we get a new curve with exactly<br>
+the same shape but with a new set of control points (Figure 22).
+</p>
+<p>
+<img src="img/175.gif" width="372 px"></img>
+</p>
+<p>
+<b>Figure 22.</b> Inserting a knot
+</p>
+<p>
+This operation of <i>knot insertion</i> is a fundamental one in working with NURB curves.<br>
+It's directly useful in both modifying (editing) and rendering curves, and can also be<br>
+used to convert a NURB curve to B&eacute;zier representation. After a brief discussion of the<br>
+mathematical algorithm for inserting a knot, we'll look at some example C code for<br>
+implementing it.
+</p>
+<p>
+<b>THE ALGORITHM</b>
+</p>
+<p>
+We start with a NURB curve represented by
+</p>
+<p>
+
+        <p>
+            <math display="block" style="text-align: left">
+                <mrow>
+                    <mrow>
+                        <mi>Q</mi>
+                        <mo>(</mo>
+                        <mi>t</mi>
+                        <mo>)</mo>
+                    </mrow>
+                    <mo>=</mo>
+                    <munderover>
+                        <mo>&sum;</mo>
+                        <mpadded height="110%">
+                            <mrow>
+                                <mi>i</mi>
+                                <mo>=</mo>
+                                <mn>0</mn>
+                            </mrow>
+                        </mpadded>
+                        <mpadded depth="110%">
+                            <mrow>
+                                <mi>n</mi>
+                                <mo>-</mo>
+                                <mn>1</mn>
+                            </mrow>
+                        </mpadded>
+                    </munderover>
+                    <msub>
+                        <mi>B</mi>
+                        <mpadded depth="10%">
+                            <mi>i</mi>
+                        </mpadded>
+                    </msub>
+                    <mo>&it;</mo>
+                    <msub>
+                        <mi>N</mi>
+                        <mpadded depth="10%">
+                            <mrow>
+                                <mi>i</mi>
+                                <mo>,</mo>
+                                <mi>k</mi>
+                            </mrow>
+                        </mpadded>
+                    </msub>
+                    <mo>(</mo>
+                    <mi>t</mi>
+                    <mo>)</mo>
+                </mrow>
+            </math>
+        </p>
+        <p>
+            with a knot vector
+            <math>
+                <mo>{</mo>
+                <msub>
+                    <mi>x</mi>
+                    <mpadded depth="10%">
+                        <mn>0</mn>
+                    </mpadded>
+                </msub>
+                <mo>,</mo>
+                <msub>
+                    <mi>x</mi>
+                    <mpadded depth="10%">
+                        <mn>1</mn>
+                    </mpadded>
+                </msub>
+                <mo>,</mo>
+                <mo>&hellip;</mo>
+                <mspace width="3px"></mspace>
+                <mo>,</mo>
+                <msub>
+                    <mi>x</mi>
+                    <mpadded depth="10%">
+                        <mrow>
+                            <mi>n</mi>
+                            <mo>+</mo>
+                            <mi>k</mi>
+                            <mo>-</mo>
+                            <mn>1</mn>
+                        </mrow>
+                    </mpadded>
+                </msub>
+                <mo>}</mo>
+            </math>
+            . Suppose we want to add a new knot
+            <math>
+                <msub>
+                    <mi>x</mi>
+                    <mpadded depth="10%">
+                        <mi>new</mi>
+                    </mpadded>
+                </msub>
+            </math>
+            where <br>
+            <math>
+                <msub>
+                    <mi>x</mi>
+                    <mpadded depth="10%">
+                        <mi>i</mi>
+                    </mpadded>
+                </msub>
+                <mo>&lt;</mo>
+                <msub>
+                    <mi>x</mi>
+                    <mpadded depth="10%">
+                        <mi>new</mi>
+                    </mpadded>
+                </msub>
+                <mo>&le;</mo>
+                <msub>
+                    <mi>x</mi>
+                    <mpadded depth="10%">
+                        <mrow>
+                            <mi>x</mi>
+                            <mo>+</mo>
+                            <mn>1</mn>
+                        </mrow>
+                    </mpadded>
+                </msub>
+                <mtext>.</mtext>
+            </math>
+            The new knot vector
+            <math>
+                <mover>
+                    <mi>x</mi>
+                    <mo>^</mo>
+                </mover>
+            </math>
+            is simply the old knot vector with
+            <math>
+                <msub>
+                    <mi>x</mi>
+                    <mpadded depth="10%">
+                        <mi>new</mi>
+                    </mpadded>
+                </msub>
+            </math>
+            inserted<br>
+            between
+            <math>
+                <msub>
+                    <mi>x</mi>
+                    <mpadded depth="10%">
+                        <mi>i</mi>
+                    </mpadded>
+                </msub>
+            </math>
+            and
+            <math>
+                <msub>
+                    <mi>x</mi>
+                    <mpadded depth="10%">
+                        <mrow>
+                            <mi>i</mi>
+                            <mo>+</mo>
+                            <mn>1</mn>
+                    </mpadded>
+                </msub>
+                <mtext>.</mtext>
+            </math>
+            The new curve will be defined by
+        </p>
+        <p>
+            <math display="block" style="text-align: left">
+                <mrow>
+                    <mrow>
+                        <mover>
+                            <mi>Q</mi>
+                            <mo>^</mo>
+                        </mover>
+                        <mo>(</mo>
+                        <mi>t</mi>
+                        <mo>)</mo>
+                    </mrow>
+                    <mo>=</mo>
+                    <munderover>
+                        <mo>&sum;</mo>
+                        <mpadded height="110%">
+                            <mrow>
+                                <mi>i</mi>
+                                <mo>=</mo>
+                                <mn>0</mn>
+                            </mrow>
+                        </mpadded>
+                        <mpadded depth="110%">
+                            <mrow>
+                                <mi>n</mi>
+                                <mo>-</mo>
+                                <mn>1</mn>
+                            </mrow>
+                        </mpadded>
+                    </munderover>
+                    <msub>
+                        <mover>
+                            <mi>B</mi>
+                            <mo>^</mo>
+                        </mover>
+                        <mpadded depth="10%">
+                            <mi>i</mi>
+                        </mpadded>
+                    </msub>
+                    <mo>&it;</mo>
+                    <msub>
+                        <mi>N</mi>
+                        <mpadded depth="10%">
+                            <mrow>
+                                <mi>i</mi>
+                                <mo>,</mo>
+                                <mi>k</mi>
+                            </mrow>
+                        </mpadded>
+                    </msub>
+                    <mo>(</mo>
+                    <mi>t</mi>
+                    <mo>)</mo>
+                </mrow>
+            </math>
+        </p>
+        <p>
+            with knot vector
+            <math>
+                <mover>
+                    <mi>x</mi>
+                    <mo>^</mo>
+                </mover>
+                <mtext>.</mtext>
+            </math
+        </p>
+        <p>
+            Now we have to figure out not only where the new control point is located and where<br>
+            it goes in the ordered vector of control points, but also how to adjust some of the<br>
+            existing control points to keep the shape of the curve unchanged; this process yields<br>
+            the new control point vector,
+            <math>
+                <mover>
+                    <mi>B</mi>
+                    <mo>^</mo>
+                </mover>
+                <mtext>.</mtext>
+            </math>
+            It turns out that the relationship between the old and<br>
+            new control points is
+        </p>
+        <p>
+            <math>
+                <msub>
+                    <mover>
+                        <mi>B</mi>
+                        <mo>^</mo>
+                    </mover>
+                    <mpadded depth="10%">
+                        <mi>j</mi>
+                    </mpadded>
+                </msub>
+                <mo>=</mo>
+                <mrow>
+                    <mo>(</mo>
+                    <mn>1</mn>
+                    <mo>-</mo>
+                    <msub>
+                        <mi>&alpha;</mi>
+                        <mpadded depth="10%">
+                            <mi>j</mi>
+                        </mpadded>
+                    </msub>
+                    <mo>)</mo>
+                </mrow>
+                <mo>&it;</mo>
+                <mrow>
+                    <msub>
+                        <mi>B</mi>
+                        <mpadded depth="10%">
+                            <mrow>
+                                <mi>j</mi>
+                                <mo>-</mo>
+                                <mn>1</mn>
+                            </mrow>
+                        </mpadded>
+                    </msub>
+                </mrow>
+                <mo>+</mo>
+                <mrow>
+                    <msub>
+                        <mi>&alpha;</mi>
+                        <mpadded depth="10%">
+                            <mi>j</mi>
+                        </mpadded>
+                    </msub>
+                    <mo>&it;</mo>
+                    <msub>
+                        <mi>B</mi>
+                        <mpadded depth="10%">
+                            <mi>j</mi>
+                        </mpadded>
+                    </msub>
+                </mrow>
+            </math>
+        </p>
+        <p>
+            where &alpha; is defined by
+        </p>
+        <p>
+            <math>
+                <msub>
+                    <mi>&alpha;</mi>
+                    <mpadded depth="10%">
+                        <mi>j</mi>
+                    </mpadded>
+                </msub>
+                <mo>=</mo>
+                <mrow>
+                    <mo>{</mo>
+                    <mtable columnalign="center left">
+                        <mtr>
+                            <mtd>
+                                <mi>1</mi>
+                            </mtd>
+                            <mtd>
+                                <mi>j</mi>
+                                <mo>&le;</mo>
+                                <mrow>
+                                    <mi>i</mi>
+                                    <mo>-</mo>
+                                    <mi>k</mi>
+                                    <mo>+</mo>
+                                    <mn>1</mn>
+                                </mrow>
+                            </mtd>
+                        </mtr>
+                        <mtr>
+                            <mtd>
+                                <mfrac>
+                                    <mstyle mathsize="100%">
+                                        <mpadded height="10%">
+                                            <mrow>
+                                                <msub>
+                                                    <mi>x</mi>
+                                                    <mpadded depth="10%">
+                                                        <mi>new</mi>
+                                                    </mpadded>
+                                                </msub>
+                                                <mo>-</mo>
+                                                <msub>
+                                                <mi>x</mi>
+                                                <mpadded depth="10%">
+                                                    <mi>j</mi>
+                                                </mpadded>
+                                                </msub>
+                                            </mrow>
+                                        </mpadded>
+                                    </mstyle>
+                                    <mstyle mathsize="100%">
+                                        <mpadded depth="10%">
+                                            <mrow>
+                                                <msub>
+                                                    <mi>x</mi>
+                                                    <mpadded depth="10%">
+                                                        <mrow>
+                                                            <mi>j</mi>
+                                                            <mo>+</mo>
+                                                            <mi>k</mi>
+                                                            <mo>-</mo>
+                                                            <mn>1</mn>
+                                                        </mrow>
+                                                    </mpadded>
+                                                </msub>
+                                                <mo>-</mo>
+                                                <msub>
+                                                    <mi>x</mi>
+                                                    <mpadded depth="10%">
+                                                        <mi>j</mi>
+                                                    </mpadded>
+                                                </msub>
+                                            </mrow>
+                                        </mpadded>
+                                    </mstyle>
+                                </mfrac>
+                            </mtd>
+                            <mtd>
+                                <mrow>
+                                    <mi>i</mi>
+                                    <mo>-</mo>
+                                    <mi>k</mi>
+                                    <mo>+</mo>
+                                    <mn>2</mn>
+                                </mrow>
+                                <mo>&le;</mo>
+                                <mi>j</mi>
+                                <mo>&le;</mo>
+                                <mi>i</mi>
+                            </mtd>
+                        </mtr>
+                        <mtr>
+                            <mtd>
+                                <mi>0</mi>
+                            </mtd>
+                            <mtd>
+                                <mi>j</mi>
+                                <mo>&ge;</mo>
+                                <mrow>
+                                    <mi>i</mi>
+                                    <mo>+</mo>
+                                    <mn>1</mn>
+                                </mrow>
+                            </mtd>
+                        </mtr>
+                    </mtable>
+                </mrow>
+            </math>
+        </p>
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<p>
+The proof of this is relatively simple, but we don't have the time or space to go into it<br>
+here. For a full discussion, see <i>Curves and Surfaces in Computer Aided Geometric</i><br>
+<i>Design</i>.
+</p>
+<h2>THE IMPLEMENTATION</h2>
+<p>
+Listing 2 shows a function to implement this basic algorithm. The function, which is<br>
+included on this issue's CD, accepts a QuickDraw 3D NURB-curve data structure as an<br>
+argument, along with the value of the new knot to insert, and returns a new data<br>
+structure representing the same curve with the new knot inserted. For brevity, the<br>
+function performs no range checking on the inserted knot, but simply assumes that it<br>
+falls within the legal range and that the resulting knot vector obeys the usual<br>
+limitations on multiple knots. Note also that the code shown here does no checking on<br>
+the results of memory allocation requests, though of course you should always perform<br>
+such checks in real life.
+</p>
+<p>
+<b>Listing 2.</b> Inserting a knot
+</p>
+<pre>static TQ3NURBCurveData *InsertKnot
+   (TQ3NURBCurveData    *oldCurveData, // Old curve
+    float              tNew)           // Knot to insert
+
+{
+   TQ3NURBCurveData    *newCurveData;  // New curve after adding knot
+   unsigned long       k;              // Order of curve
+   unsigned long       n;              // Number of control points
+   TQ3RationalPoint4D  *b;             // Old control point vector
+   TQ3RationalPoint4D  *bHat;          // New control point vector
+   float               *x;             // Old knot vector
+   float               *xHat;          // New knot vector
+   float               alpha;          // Interpolation ratio
+   unsigned long       i;              // Knot to insert after
+   unsigned long       j;              // Knot index for search
+   TQ3Boolean          foundIndex;     // Insertion index found?
+  
+   // Set up local variables for readability.
+   k = oldCurveData-&gt;order;
+   n = oldCurveData-&gt;numPoints;
+   x = oldCurveData-&gt;knots;
+   b = oldCurveData-&gt;controlPoints;
+  
+   // Allocate space for new control points and knot vector.
+   bHat = malloc((n + 1) * sizeof(TQ3RationalPoint4D));
+   xHat = malloc((n + k + 1) * sizeof(float));
+  
+   // Allocate data structure for new curve.
+   newCurveData = malloc(sizeof(TQ3NURBCurveData));
+   newCurveData-&gt;order = k;
+   newCurveData-&gt;numPoints = n + 1;
+   newCurveData-&gt;controlPoints = bHat;
+   newCurveData-&gt;knots = xHat;
+   newCurveData-&gt;curveAttributeSet =
+      (oldCurveData-&gt;curveAttributeSet == NULL)
+          ? NULL
+          : Q3Object_Duplicate(oldCurveData-&gt;curveAttributeSet);
+  
+   // Find where to insert the new knot.
+   for (j = 0, foundIndex = kQ3False; j &lt; n + k; j++) {
+      if (tNew &gt; x[j] &amp;&amp; tNew &lt;= x[j + 1]) {
+         i = j;
+         foundIndex = kQ3True;
+         break;
+      }
+   }
+  
+   // Return if not found.
+   if (!foundIndex) {
+      return (NULL);
+   }
+   // Copy knots to new vector.
+   for (j = 0; j &lt; n + k + 1; j++) {
+      if (j &lt;= i) {
+         xHat[j] = x[j];
+      } else if (j == i + 1) {
+         xHat[j] = tNew;
+      } else {
+         xHat[j] = x[j - 1];
+      }
+   }
+
+   // Compute position of new control point and new positions of
+   // existing ones.
+   for (j = 0; j &lt; n + 1; j++) {
+      if (j &lt;= i - k + 1) {
+         alpha = 1;
+      } else if (i - k + 2 &lt;= j &amp;&amp; j &lt;= i) {
+         if (x[j + k - 1] - x[j] == 0) {
+            alpha = 0;
+         } else {
+            alpha = (tNew - x[j]) / (x[j + k - 1] - x[j]);
+         }
+      } else {
+         alpha = 0;
+      }
+     
+      if (alpha == 0) {
+         bHat[j] = b[j - 1];
+      } else if (alpha == 1) {
+         bHat[j] = b[j];
+      } else {
+         bHat[j].x = (1 - alpha) * b[j - 1].x + alpha * b[j].x;
+         bHat[j].y = (1 - alpha) * b[j - 1].y + alpha * b[j].y;
+         bHat[j].z = (1 - alpha) * b[j - 1].z + alpha * b[j].z;
+         bHat[j].w = (1 - alpha) * b[j - 1].w + alpha * b[j].w;
+      }
+   }
+
+   return (newCurveData);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>EVALUATING NURB CURVES</b>
+</p>
+<p>
+Recall from our earlier discussion that if we have two knots at the same location, we<br>
+lose one degree of continuity; with three identical knots, we lose two degrees of<br>
+continuity; and so on. This process can be repeated until, when we reach k-1 identical<br>
+knots (where k is the order of the curve), we have no continuity at all at the given<br>
+point. In this case, the curve at that point coincides directly with a control point, as we<br>
+saw in Figure 15.
+</p>
+<p>
+&nbsp;&nbsp;We've just seen that we can add a knot xnew and calculate the new control points. If<br>
+we take this "new" curve (really just the old one with more knots) and add in that<br>
+same knot again and again, until we have k-1 knots in the same place, we'll end up<br>
+with a control point that lies exactly at <math><mover><mi>Q</mi><mo>^</mo></mover><mo>(</mo><msub><mi>x</mi><mpadded depth="10%"><mi>new</mi></mpadded></msub><mo>)</mo></math>. We can use this technique to<br>
+calculate the location of a particular point on the NURB curve: simply keep inserting<br>
+knots at the point of interest until there are k-1 of them, at which time the newest<br>
+control point created will lie at the desired point on the curve.
+</p>
+<p>
+We can also use this approach to render a curve: by adding enough knots at some<br>
+number of successive points in time t, we'll end up with a list of evaluated points on<br>
+the curve, which we can then render as a polyline. The greater the number of<br>
+evaluation points, the more segments the polyline will have, and the more closely the<br>
+resulting image will approximate the curve.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>This isn't the most efficient algorithm;</b> a number of better<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;alternatives are available. For example, see An Introduction to <i>Splines for Use</i><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>in Computer Graphics and Geometric Modeling</i> for a description of the Oslo<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;algorithm, which is significantly more efficient if you're adding more than a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;few knots.*
+</p>
+<h2>NURB CURVES AND B&#201;ZIER CURVES</h2>
+<p>
+If you're familiar with B&eacute;zier curves, you may be wondering how they relate to NURB<br>
+curves. In particular, if your application currently uses B&eacute;zier curves, how can you<br>
+draw them when QuickDraw 3D currently only supports NURB curves? Although a<br>
+thorough treatment of the subject is beyond the scope of this article, you'll be happy to<br>
+learn that B&eacute;zier curves can actually be viewed as a subset of NURB curves. As a<br>
+result, converting from B&eacute;zier to NURB representation turns out to be trivial.
+</p>
+<p>
+<b>CONVERTING B&#201;ZIER TO NURB CURVES</b>
+</p>
+<p>
+Here's all it takes to convert a B&eacute;zier curve to NURB format:
+</p>
+<ul>
+<li>Use the B&eacute;zier control points as the NURB control points. If the B&eacute;zier<br>
+control points are rational (that is, if they have four components {x, y, z,<br>
+w}), make sure they're in homogeneous rather than weighted Euclidean form.<br>
+If they're nonrational (have no w component), simply set w = 1.0 for each<br>
+NURB control point.</li>
+<li>Set the order of the NURB curve to the number of control points. B&eacute;zier<br>
+curves typically have three or four control points, corresponding to quadratic<br>
+(order-3) or cubic (order-4) NURB curves, respectively.</li>
+<li>Create a knot vector with 2k elements, where k is the order of the curve.<br>
+Set the first k knots to 0.0 and the last k to 1.0.</li>
+</ul>
+<p>
+Listing 3 shows a function to perform the conversion (it's included on this issue's CD).<br>
+The B&eacute;zier curve is assumed to be represented by a data structure of the form
+</p>
+<pre>typedef struct BezierCurve {
+   unsigned int   order;
+   Point3D         *controlPoints;
+} BezierCurve;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 3.</b> Converting a B&eacute;zier curve to NURB format
+</p>
+<pre>TQ3NURBCurveData *BezierToNURBCurve(BezierCurve *bezCurve)
+{
+   TQ3NURBCurveData  *nurbCurveData; // NURB curve data structure
+   unsigned long     k;              // Order of curve
+   Point3D           *b;             // Bezier control point vector
+   unsigned long     i;              // Control point or knot index
+  
+   // Set up local variables for readability.
+   k = bezCurve-&gt;order;
+   b = bezCurve-&gt;controlPoints;
+  
+   // Allocate data structure for new curve.
+   nurbCurveData = malloc(sizeof(TQ3NURBCurveData));
+   nurbCurveData-&gt;order = k;
+   nurbCurveData-&gt;numPoints = k;
+   nurbCurveData-&gt;controlPoints =
+      malloc(k*sizeof(TQ3RationalPoint4D));
+   nurbCurveData-&gt;knots = malloc(2*k*sizeof(float);
+  
+   // Create the control points.
+   for (i = 0; i &lt; k; i++) {
+      TQ3RationalPoint4D_Set(&amp;nurbCurveData-&gt;controlPoints[i],
+                              b[i].x, b[i].y, b[i].z, 1.0);
+   }
+  
+   // Create the knots.
+   for (i = 0; i &lt; k; i++) {
+      nurbCurveData-&gt;knots[i] = 0.0;
+      nurbCurveData-&gt;knots[i + k] = 1.0;
+   }
+  
+   // Set attributes here, if desired.
+   nurbCurveData-&gt;nurbCurveAttributes = NULL;
+  
+   return (nurbCurveData);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+where the number of control points is equal to the order of the curve. The function<br>
+returns a TQ3NURBCurveData structure representing the equivalent NURB curve.<br>
+Once again, we've saved code space by leaving out the necessary checks on the results of<br>
+memory allocation requests.
+</p>
+<p>
+<b>CONVERTING NURB TO B&#201;ZIER CURVES</b>
+</p>
+<p>
+Converting a NURB curve to B&eacute;zier format is more complicated than the other way<br>
+around. As we've just seen, any B&eacute;zier curve can be represented by a particular type<br>
+of NURB curve, having half its knots at one end and half at the other. The converse,<br>
+however, isn't true: an arbitrary NURB curve can't, in general, be represented by a<br>
+single B&eacute;zier curve. In fact, it generally requires several B&eacute;ziers to represent a<br>
+single NURB curve: one for each distinct segment of the curve, as defined by its knot<br>
+vector.
+</p>
+<p>
+Recall that each segment of a NURB curve is affected by some subset of the control<br>
+points. If we take each segment and add knots to both ends, generating a new set of<br>
+control points each time, until each end has a number of knots equal to the order of the<br>
+curve, the result will be a B&eacute;zier representation of that particular segment. Do this<br>
+for each segment, and we'll end up with a series of B&eacute;zier curves that, taken together,<br>
+look exactly like the original NURB curve.
+</p>
+<h2>DESIGNING WITH NURB CURVES</h2>
+<p>
+The topic of how to use NURB curves in design could easily fill a book; we'll have to be<br>
+content with just a brief discussion, along with some pointers for further reading.
+</p>
+<p>
+&nbsp;&nbsp;The most obvious capabilities an application program can offer for creating and<br>
+modifying NURB curves are
+</p>
+<ul>
+<li>interactive placement and movement of control points</li>
+<li>interactive placement and movement of knots</li>
+<li>interactive setting and modification of control-point weights</li>
+</ul>
+<p>
+These capabilities can be moderately effective, but actually using them to model a<br>
+desired shape turns out to be difficult and awkward. In addition, modifying a control<br>
+point, knot, or weight will generally affect parts of the curve that the user wants to<br>
+remain unchanged.
+</p>
+<p>
+One problem that has been explored extensively is that of automatically creating a<br>
+curve that goes through (interpolates) a given set of points, which may have been<br>
+interactively placed by the user or perhaps obtained by some sort of data sampling.<br>
+Indeed, it might be said that this was one of the original motivations for the<br>
+mathematical development of spline curves. The first straightforward attempts yielded<br>
+less than satisfactory results, but later efforts weren't too bad and may be useful if the<br>
+curve must pass exactly through the given points. Often, however, we only need to<br>
+approximate the given set of points with a spline curve. The points may have been<br>
+obtained by sampling the user's freehand drawing with a mouse or tablet, or perhaps<br>
+by measuring a physical object or extracting edge information from a glyph in a<br>
+bitmapped font. In these cases, we probably want to preserve features such as<br>
+endpoints and corners, but the remaining data samples may be noisy or nonsmooth and<br>
+need not be fitted exactly. Techniques for both exact and approximate fitting can be<br>
+found in <i>Phoenix: An Interactive Curve Design System Based on the Automatic Fitting of</i><br>
+<i>Hand-Sketched Curves and A User Interface Model and Tools for Geometric Design.</i><br>
+These techniques can also be adapted for use in modifying an existing curve, whether it<br>
+was generated in the usual way or via one of these fitting algorithms.
+</p>
+<h2>CURVING ON</h2>
+<p>
+Well, there you have it: more than you probably wanted to know about NURB curves,<br>
+plus some free code to boot. Look for a possible upcoming article on NURB surfaces,<br>
+and how NURB curves and surfaces can be used together for designing objects and<br>
+controlling motion.
+</p>
+<p>
+<b>BIBLIOGRAPHY AND RECOMMENDED READING</b>
+</p>
+<p>
+This article only scratches the surface of the theory underlying NURB curves. The<br>
+following is a list of books and articles referred to in this article, as well as others<br>
+you may want to investigate for further information.
+</p>
+<ul>
+<li><i>Curves and Surfaces for Computer Aided Geometric Design: A Practical</i><br>
+<i>Guide</i>by Gerald Farin (Academic Press, 1990).</li>
+<li><i>Curves and Surfaces in Computer Aided Geometric Design</i> by Fujio<br>
+Yamaguchi (Springer-Verlag, 1988).</li>
+<li><i>Fundamentals of Computer Aided Geometric Design</i> by Josef Hoschek and<br>
+Dieter Lasser (A. K. Peters, 1993).</li>
+<li><i>An Introduction to Splines for Use in Computer Graphics and Geometric</i><br>
+<i>Modeling</i> by Richard H. Bartels, John C. Beatty, and Brian A. Barsky (Morgan<br>
+Kaufman Publishers, 1987).</li>
+<li><i>Mathematical Elements for Computer Graphics</i> by David F. Rogers and J.<br>
+Alan Adams (McGraw-Hill, 1976).</li>
+<li><i>NURB Curves and Surfaces from Projective Geometry to Practical Use</i> by<br>
+Gerald Farin (A. K. Peters, 1995).</li>
+<li><i>Phoenix: An Interactive Curve Design System Based on the Automatic</i><br>
+<i>Fitting of Hand-Sketched Curves</i> by Philip J. Schneider (master's thesis,<br>
+University of Washington, 1988).</li>
+<li>"A Survey of Curve and Surface Methods in CAGD" by Wolfgang<br>
+B&ouml;hm, Gerald Farin, and J&#220;rgen Kahman, in <i>Computer Aided Geometric</i><br>
+<i>Design</i>, volume 1 (1984).</li>
+<li><i>A User Interface Model and Tools for Geometric Design </i>by Michael J.<br>
+Banks (master's thesis, University of Utah, 1989).</li>
+</ul>
+<p>
+<b>PHILIP J. SCHNEIDER</b> (pjs@apple.com) is the longest-surviving member of the<br>
+QuickDraw 3D team. He lives with his wife Suzanne and son Dakota out in the middle of<br>
+a redwood forest in the Santa Cruz mountains, pretending he does so because "it's more<br>
+affordable." People who are taken in by that malarkey probably also believe he doesn't<br>
+like driving a two-lane country highway to work every day, and would rather be stuck<br>
+in traffic jams on the interstate freeway with flatlanders. His current projects<br>
+include trying to single-handedly bring up the worldwide level of computer technology<br>
+to what he finds in the science fiction novels he reads voraciously, and teaching his<br>
+18-month-old son to change his own wet diapers in the middle of the night.*
+</p>
+<p>
+Thanks to our technical reviewers Pablo Fernicola, Jim Mildrew, Klaus Strelau, and<br>
+Nick Thompson.*
+</p>
+</body>
+</html>

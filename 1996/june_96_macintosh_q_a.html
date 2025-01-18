@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 24 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 96 - Macintosh Q & A</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Macintosh Q &amp; A</h1>
+<p><b>Q&nbsp;</b><i>Can I assume that the value of the ColorSync CMWorldRef parameter returned by</i><br>
+<i>the NCWNewColorWorld routine isn't NULL if the routine was successful? I'd like to</i><br>
+<i>determine whether a color world exists before trying to use it.</i><br></p>
+<p><b>A&nbsp;</b>Yes, you can assume that if no error is returned, the CMWorldRef parameter will<br>
+be valid.<br></p>
+<p><b>Q&nbsp;</b><i>Can ColorSync 2.0 profiles be embedded in EPS images?</i><br></p>
+<p><b>A&nbsp;</b>Yes, you can embed ColorSync profiles into EPS, as well as into PICT and TIFF<br>
+formats. For more information on how to do this, see the Macintosh Technical Q&amp;A<br>
+"Embedding ICC Profiles" (CS 06). There are also details on how to embed profiles in<br>
+PICTs, along with sample code, in <i>Advanced Color Imaging on the Mac OS,</i> page 4-34.<br></p>
+<p><b>Q&nbsp;</b><i>How can I determine whether SCSI Manager 4.3 has been loaded by an extension at</i><br>
+<i>startup time?</i><br></p>
+<p><b>A&nbsp;</b>Drivers or applications that intend to call the asynchronous SCSI Manager must<br>
+check that it's present by checking for the presence of the _SCSIAtomic trap<br>
+(0xA089).<br></p>
+<p>
+While this is sufficient by itself for applications, driver writers must keep in mind<br>
+that if the asynchronous SCSI Manager is loaded as a system extension, the driver may<br>
+be running before the _SCSIAtomic trap is installed (this is true for the startup<br>
+device driver), so simply checking for the existence of the trap when your driver<br>
+starts up isn't sufficient. The extension loading process needs to be completed before<br>
+you make the check.
+</p>
+<p>
+One way to do this is to use the accRun mechanism. If you set the dNeedTime flag in<br>
+your driver, it will get an accRun call at SystemTask time. You can test for<br>
+_SCSIAtomic then, set a flag indicating that you've discovered it, and then optionally<br>
+reset the dNeedTime flag so that your driver doesn't get called after you've completed<br>
+your discovery process. (Note that this technique is only suitable for old-style<br>
+drivers, type 'DRVR'. New PCI-compatible drivers, type 'ndrv', can't use the accRun<br>
+mechanism.)
+</p>
+<p>
+This method isn't foolproof, however. It's possible for your driver to get an accRun<br>
+call before all the extensions are loaded, such as when a dialog is presented from an<br>
+extension that calls, for instance, ModalDialog (which will eventually dispatch<br>
+SystemTask). This results in the driver receiving an accRun call even though there<br>
+may be more extensions to follow.
+</p>
+<p>
+So, in addition to simple determination of the presence of _SCSIAtomic, you need a way<br>
+to test that the Finder (or some other application process) has been launched. You can<br>
+do this by checking the length of CurApName. CurApName has a -1 length at startup<br>
+and becomes positive when a process (such as the Finder) gets launched.
+</p>
+<p>
+An alternative is to queue up a Notification Manager task without specifying an icon or<br>
+sound, but only a response procedure. The procedure will get called after the<br>
+extensions finish loading. You can then check for the _SCSIAtomic trap.
+</p>
+<p><b>Q&nbsp;</b><i>I'm writing a QuickDraw GX printer driver that supports SCSI and PrinterShare</i><br>
+<i>(server) connection types. I can connect multiple printers to one Macintosh on the</i><br>
+<i>SCSI bus, and I've seen that I can have active print jobs printing on all of them</i><br>
+<i>simultaneously. My question is: Do I have to be concerned about reentrancy when</i><br>
+<i>coding my message overrides?</i><br></p>
+<p><b>A&nbsp;</b>There are a few issues you'll need to keep in mind. One is that each copy of your<br>
+driver must store any data it needs in its own data space. You can do this by using the<br>
+GetMessageHandlerInstanceContext and SetMessageHandlerInstanceContext functions. If<br>
+there is common global data that all copies of your driver will need to access, you can<br>
+use the functions SetMessageHandlerClassContext and GetMessageHandlerClassContext.<br>
+These are documented in Chapter 6 of <i>Inside Macintosh: QuickDraw GX Environment</i><br>
+<i>and Utilities</i>.<br></p>
+<p>
+For each instance of your driver, you'll also need to watch out for insufficient<br>
+memory. You shouldn't need to add much code if you're already checking for error<br>
+conditions when attempting to allocate memory within your driver, but if there are<br>
+places where you're not checking to make sure that the allocation was actually<br>
+successful, you'll need to add code (it's a good idea to always check anyway).
+</p>
+<p>
+You'll also need to confirm that you don't have multiple instances of your driver trying<br>
+to write to the same printer at the same time. There are any number of ways you can<br>
+confirm this, including using a shared (ClassContext) data block with a semaphore to<br>
+mark whether an instance of your driver was in the middle of a GXWriteDTPData call.<br>
+Each instance could then first check that semaphore before attempting to read or write<br>
+data from the desktop printer. Be sure to include file locking while your driver is<br>
+reading or writing other files.
+</p>
+<p>
+Finally, if you're writing a PostScript driver, be aware that the PostScript font<br>
+downloading code is not reentrant.
+</p>
+<p>
+In general, you should use these techniques to write any QuickDraw GX printer driver,<br>
+whether or not you expect it to need reentrancy.
+</p>
+<p><b>Q&nbsp;</b><i>I want to program with Open Transport. What libraries should I link with?</i><br></p>
+<p><b>A&nbsp;</b>Here are descriptions of the libraries that come with Open Transport, and why<br>
+you might need to link with them.<br></p>
+<p>
+Let's look first at linking Open Transport with PowerPC code. The basic libraries to<br>
+link with are OpenTransportLib and OpenTransportAppPPC.o. If you need AppleTalk<br>
+services, also link with OpenTptAppleTalkLib and OpenTptATalkPPC.o. If you need<br>
+Internet services, also link with OpenTptInternetLib and OpenTptInetPPC.o.
+</p>
+<p>
+The OpenTransportUtilLib and OpenTptUtilsAppPPC.o libraries may provide a smaller<br>
+footprint if your application deals only with ports. Once you've got it working, try<br>
+replacing OpenTransportLib and OpenTransportAppPPC.o with these and see if your<br>
+application still links.
+</p>
+<p>
+The OpenTransportExtnPPC.o and OpenTptUtilsExtnPPC.o libraries replace<br>
+OpenTransportAppPPC.o and OpenTptUtilsAppPPC.o if you're writing a standalone code<br>
+resource, CFM fragment, or ASLM shared library.
+</p>
+<p>
+Note that if your code is meant to run on machines with and without Open Transport<br>
+(that is, you revert to Classic AppleTalk or MacTCP if Open Transport isn't available),<br>
+you should make sure to weak-link with the libraries ending in "Lib." Otherwise the<br>
+system will refuse to launch your application when Open Transport isn't installed.
+</p>
+<p>
+Now let's take a look at linking Open Transport with 680x0 code. The basic libraries to<br>
+link with are OpenTransport.o and OpenTransportApp.o. If you need AppleTalk<br>
+services, also link with OpenTptATalk.o. If you need Internet services, also link with<br>
+OpenTptInet.o.
+</p>
+<p>
+The OpenTptUtils.o library may provide a smaller footprint if your application deals<br>
+only with ports. Once you've got it working, try replacing OpenTransport.o with this<br>
+and see if it still links.
+</p>
+<p>
+The OpenTransportExtn.o library replaces the OpenTransportApp.o if you're writing a<br>
+standalone code resource or ASLM shared library.
+</p>
+<p>
+In addition, the following libraries are identical to their similarly named counterparts<br>
+except that they're suitable for linking with MPW model-near clients:<br>
+OpenTransport.n.o, OpenTransportApp.n.o, OpenTptATalk.n.o, OpenTptInet.n.o,<br>
+OpenTptUtils.n.o, and OpenTransportExtn.n.o.
+</p>
+<p><b>Q&nbsp;</b><i>How do I use Open Transport with CFM-68K?</i><br></p>
+<p><b>A&nbsp;</b>The short answer is that you don't, at the moment.<br></p>
+<p>
+To get a better answer to this you must first specify what you want to do: use<br>
+CFM-68K to build Open Transport modules (plug-ins like device drivers and<br>
+protocols), or call the Open Transport API from a CFM-68K application or library<br>
+(an OpenDoc part, for example).
+</p>
+<p>
+Building Open Transport modules with CFM-68K is not currently supported nor is it<br>
+likely to be supported. The Apple Shared Library Manager is your only alternative for<br>
+building 680x0 modules.
+</p>
+<p>
+Support for calling Open Transport from a CFM-68K application or library is likely<br>
+to be incorporated in the next major release of Open Transport. This is in line with<br>
+Apple's shared library strategy, as outlined in the DLL Statement of Direction<br>
+document (ftp://seeding.apple.com//ess/public/aslm/DLL_directions), which<br>
+indicates a move away from ASLM in general.
+</p>
+<p><b>Q&nbsp;</b><i>I wanted an extension to load last in the initialization or startup sequence, so I</i><br>
+<i>put the backquote character (`) as the first character in its name. But when I did this,</i><br>
+<i>it actually loaded near the beginning. What happened?</i><br></p>
+<p><b>A&nbsp;</b>If you view the contents of any folder by name, you'll see that items whose names<br>
+begin with a backquote appear last (or nearly last) in the list. To sort the list, the<br>
+Finder calls PACK 6, which uses the international sorting routines; these sorting<br>
+routines order words beginning with a backquote near the end of the list.<br></p>
+<p>
+During extension loading, however, PBHGetFInfo is called, and it in turn calls<br>
+RelString. RelString is called with case insensitivity and diacritical sensitivity turned<br>
+on. Unfortunately, due to a bug that HFS relies on, backquote sorts between a and b.<br>
+This means that extensions beginning with a backquote load after extensions beginning<br>
+with a (or A) and before those beginning with <i>b</i> (or <i>B</i>).
+</p>
+<p>
+There are no plans to fix this problem, because of the need to maintain compatibility<br>
+with old HFS volumes (which were created before this bug was discovered and which<br>
+use this sorting order).
+</p>
+<p>
+Interestingly, UpperString converts a backquote to an a, but leaves all other<br>
+nonletters unchanged.
+</p>
+<p>
+If you want to make sure that your extension is loaded last in the initialization<br>
+process, use the tilde (~) as the first character of its name.
+</p>
+<p><b>Q&nbsp;</b><i>When I'm printing and I call PrClosePage at the end of a page, I get a paramErr</i><br>
+<i>(-50) error. What does that mean?</i><br></p>
+<p><b>A&nbsp;</b>There are two ways to get this error. The most common is to pass a bad graphics<br>
+port to PrClosePage. If you don't pass back the port you got from PrOpenPage, you will<br>
+(rightfully) get an error.<br></p>
+<p>
+The second way to get paramErr from PrClosePage is more esoteric. If you've hidden<br>
+the menu bar before printing, and you leave it hidden, some drivers will report a<br>
+paramErr error when PrClosePage is called. What's happening is that somewhere deep<br>
+in the Printing Manager, one of the Printing Manager routines is calling a QuickDraw<br>
+function with the menu bar's rectangle as the parameter. This QuickDraw function sees<br>
+the empty rectangle (because you've hidden the menu bar) and sets QDError to<br>
+paramErr. The driver checks QDError when it's done printing, sees the error, and<br>
+sets PrError to the error. Note that this happens only on 680x0 machines, not on<br>
+PowerPC machines, which is ironic since 680x0 QuickDraw does much less error<br>
+checking, and seldom sets QDError.
+</p>
+<p>
+<b>Q&nbsp;</b><i>Are there any tools to help me debug my QuickDraw 3D project?</i>
+</p>
+<p><b>A&nbsp;</b>During your development process, you should use the debugging version of<br>
+QuickDraw 3D. To install it, just place the three extension files in the Extensions<br>
+folder (in the System Folder) and restart your computer. The debugging version has a<br>
+larger footprint and lower performance, but it has more extensive error checking.<br>
+Using the debugging version will help you find problems with your code; it posts<br>
+notices in addition to the errors and warnings posted by the optimized version. You'll<br>
+also want to check out the 3Debug application; it graphically displays QuickDraw 3D<br>
+memory usage, which can be very helpful. 3Debug and the debugging version of<br>
+QuickDraw 3D are provided with the QuickDraw 3D release.<br></p>
+<p><b>Q&nbsp;</b><i>I have a sample program compiled in MPW with Symantec's SC compiler. When I</i><br>
+<i>try to link the sample program, I get the following linker error:</i><br></p>
+<pre>### Link: Error: Undefined entry, name: (Error 28) "qd"
+Referenced from: main in file: :Obj 68K:FIFDECO.c.o</pre>
+<p>
+<b><i>qd</i></b><i> is the QuickDraw global variable. If I declare the global, as in&nbsp;&nbsp;QDGlobals qd;&nbsp;&nbsp;the</i><br>
+<i>error goes away. This is confusing, because the global is supposed to be declared for</i><br>
+<i>PowerPC code, but should automatically be declared for 680x0 files. In fact, this same</i><br>
+<i>code compiles and links correctly with Symantec C++ v7.0 IDE, as well as</i><br>
+<i>Metrowerks CodeWarrior. Is there some new library I need to include to get the</i><br>
+<i>680x0 global declared? Or has some subtle change been made to the header files?</i>
+</p>
+<p><b>A&nbsp;</b>Recently there has in fact been a change: The MPW libraries for the classic<br>
+Macintosh runtime architecture now require that the QuickDraw global qd be defined<br>
+in the global space of your code, the same as in the MPW libraries for the other<br>
+Macintosh runtime architectures (namely, the PowerPC and CFM-68K runtime<br>
+architectures). If you're working in the MPW environment, a simple definition such<br>
+as the following is all that will be necessary:<br></p>
+<pre>QDGlobals qd;</pre><p class="spacer">&nbsp;</p>
+<p>
+If you're working in multiple environments (say, MPW, Metrowerks, and Symantec)<br>
+use a preprocessor conditional such as this:
+</p>
+<pre>#if GENERATINGCFM
+    QDGlobals qd;     // Required for all CFM environments
+#else
+#if !defined(SYMANTEC_C) &amp;&amp; !defined(SYMANTEC_CPLUS)
+    #define __MPW_ONLY__
+#endif
+#if defined(__SC__) &amp;&amp; defined(__MPW_ONLY__)
+    QDGlobals qd;     // Required for SC in MPW compilations
+#endif
+    #undef __MPW_ONLY__
+#endif</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+For more details on the use of QDGlobals and <b>qd</b>, see Technote 1016, "Where Has my<b>qd</b><br>
+gone? And How Do I Use <b>qd</b> and QDGlobals Correctly?"
+</p>
+<p><b>Q&nbsp;</b><i>I'm confused about the implementation of the AutoStart feature that was</i><br>
+<i>announced with the QuickTime 2.1 release. Can you tell me how to create a CD with this</i><br>
+<i>feature that will work cross-platform?</i><br></p>
+<p><b>A&nbsp;</b>The AutoStart feature first documented in the release notes for QuickTime 2.1 has<br>
+been available since the release of QuickTime 2.0. This means that any CD title you<br>
+release today with an AutoStart application or document will work with most users'<br>
+current installation of software, since QuickTime 2.0 has been available for well over<br>
+a year. (Of course, there are other benefits to using QuickTime 2.1 over 2.0, but<br>
+that's beside the point.)<br></p>
+<p>
+The AutoStart feature is available only on HFS volumes, because it relies on<br>
+information located in block 0 of an HFS disk or partition. The first two bytes in the<br>
+sector of block 0 should be 0 or LK, although this realistically should be limited to 0<br>
+since LK designates an HFS boot volume. The name of the AutoStart file is stored in the<br>
+area allocated for the Clipboard name. This area begins 106 bytes into the sector of<br>
+block 0, with the first four bytes at that offset containing the hex value 0x006A7068.<br>
+This value indicates that an AutoStart filename follows. After this 4-byte tag, 12 bytes<br>
+remain, starting at offset 110. In these 12 bytes, the name of the AutoStart file is<br>
+stored as a Pascal string, giving you up to 11 characters to identify the file. The file<br>
+must reside in the root directory of the HFS volume or partition.
+</p>
+<p>
+You may designate either an application or a document as the AutoStart file. If you<br>
+choose an application, it may be visible or invisible in the root directory of the<br>
+volume. However, document files must be visible. Additionally, you may select an alias<br>
+file as the AutoStart file, but it too must be visible in the root directory of the volume<br>
+or partition. If the AutoStart file is a document or an alias to a document, QuickTime<br>
+will ask the Finder to launch the document as if it had been double-clicked from the<br>
+Finder. If the creating application isn't available, the Finder will issue its normal<br>
+warnings or use Macintosh Easy Open if available.
+</p>
+<p>
+The real goal of the AutoStart feature in QuickTime is for users to be immediately<br>
+engaged, upon insertion of a CD-ROM product, in an experience of the developer's<br>
+choice, whether it's jumping right into a multimedia program or reading an important<br>
+"ReadMe" document. Because there's no way for the user to bypass the launch of the<br>
+AutoStart file (except for disabling QuickTime at startup), you, the developer, must<br>
+determine what user experience you want to capture and decide whether or not the<br>
+AutoStart feature makes sense for your project.
+</p>
+<p>
+Creation of the AutoStart block 0 information is dependent on the CD-ROM mastering<br>
+software that you use. Most of today's CD-ROM mastering software is capable of<br>
+writing the AutoStart information. To be certain, however, it's best if you check with<br>
+the developer of your CD-ROM mastering software if you aren't sure of its<br>
+capabilities.
+</p>
+<p>
+Note that the AutoStart feature wasn't implemented in QuickTime for Windows. This is<br>
+primarily because new CD-ROM drivers are needed; the current drivers don't know<br>
+when a new CD is inserted. When producing a cross-platform CD title, you'll need to<br>
+create a hybrid disk that has an HFS partition if you want to use the AutoStart feature.<br>
+You can create an HFS/ISO 9660 hybrid disk with your Macintosh project on the HFS<br>
+partition and your cross-platform files on the ISO 9660 partition for use by both the<br>
+Macintosh and PC main programs. Of course this means that you wouldn't have any<br>
+AutoStart features on the PC platform unless you implemented a PC solution (like the<br>
+Windows 95 auto-play feature) on the ISO 9660 partition.
+</p>
+<p><b>Q&nbsp;</b><i>The kATAOfflineEvent and kATARemovedEvent documentation in the various</i><br>
+<i>Developer Notes for IDE-compatible Macintosh computers seems incomplete. Is it?</i><br></p>
+<p><b>A&nbsp;</b>Yes, it is. Updated ATA Manager documentation is in progress. In the meantime,<br>
+the documentation is supplemented here.<br></p>
+<ul>
+<li>kATAOnlineEvent (code 1) -- This event notifies clients when an ATA or<br>
+ATAPI device becomes available for use. The event occurs either when a new<br>
+device is connected to the bus or when a previously unavailable device becomes<br>
+available again (as in system wakeup when power is restored to the device).
+
+<p>
+If the device has a registered driver, only that driver will be notified of the<br>
+event; otherwise, each registered default driver will be notified until a driver<br>
+responds favorably (that is, with a noErr response to the event). Note that for<br>
+newly connected devices a driver loaded from the device is given priority.
+</p>
+<p>
+Drivers should keep track of whether the device coming online is a newly<br>
+connected device or one that's currently offline (that is, connected but not<br>
+unavailable). A device should be considered connected until a<br>
+kATARemovedEvent event for the device occurs.
+</p></li>
+
+<li>kATAOfflineEvent (code 2) -- This event notifies the registered driver of<br>
+an ATA or ATAPI device that the device is now unavailable for use (offline).<br>
+The device, however, is still connected to the bus and the offline state is<br>
+assumed to be temporary. This event will occur at system sleep when power is<br>
+removed.
+
+<p>
+Currently, this event is generated only when the ATA Manager receives a<br>
+PM_SUSPEND event (essentially the same as a Power Manager sleep demand<br>
+event) from the PC Card Manager. Drivers receiving kATAOfflineEvent events<br>
+most likely will want to maintain control of the device but deny access to the<br>
+device from its clients. In addition, the driver should note that the device may<br>
+need to be reconfigured when it comes online again (a kATAOnlineEvent event<br>
+will be generated when this happens).
+</p></li>
+
+<li>kATARemovedEvent (code 3) -- This event notifies the registered driver<br>
+of an ATA or ATAPI device that the device has been removed. The removal may<br>
+be either controlled (for example, a software eject command to the ATA<br>
+Manager) or uncontrolled (or example, a forced removal by the user). Note<br>
+that the device may have been in either an online or an offline state before the<br>
+removal. If the state was online before the removal, a kATAOfflineEvent event<br>
+is not generated, since the removal implies that an offline condition had to<br>
+occur.</li>
+<li>kATAResetEvent (code 4) -- This event notifies the registered driver of<br>
+an ATA or ATAPI device that the device has been reset. The device may need to<br>
+be reconfigured by the driver before it can be used again. This event was<br>
+created for use with multiple devices per bus (ATA Master/Slave mode), since<br>
+reset applies to all devices on the bus and not to a specific device. Apple<br>
+currently doesn't implement multiple devices per bus with ATA, so this event<br>
+isn't implemented. It's advised, however, that drivers support this event now<br>
+to prevent problems later on when the event is implemented.</li>
+<li>kATAOfflineRequest (code 5) -- This event is obsolete. It was defined for<br>
+the early stages of the PC Card Manager which would echo the Power Manager<br>
+sleep events to its clients. The ATA Manager would in turn echo the request to<br>
+its clients. This event was like the sleep request event. The current PC Card<br>
+Manager allows only for an event akin to a sleep demand event, which does not<br>
+permit rejection by the client.</li>
+<li>kATAEjectRequest (code 6) -- This event notifies the registered driver of<br>
+an ATA or ATAPI device that a request has been made to eject the device. If the<br>
+response to the request is 0, the device will be ejected and a subsequent<br>
+kATARemovedEvent event will be generated when the ejection is successful.<br>
+The kATAEjectRequest event serves as a protection mechanism to alert drivers<br>
+of a pending ejection. Drivers will most likely want to reject the request<br>
+unless they initiated the request, since ejection will remove the device from<br>
+the bus.</li>
+</ul>
+<p>
+Note also that the kATAResetEvent, kATAOfflineRequest, and kATAEjectRequest events<br>
+are not currently implemented in the ATA Manager.
+</p>
+<p>
+<b>Q&nbsp;</b><i>How do I convert Macintosh Simplified Chinese encoding to the relevant GB standard?</i>
+</p>
+<p><b>A&nbsp;</b>The Macintosh encoding for Simplified Chinese is a shifted GB2312. To convert<br>
+from GB2312 to Macintosh encoding, just add 0x8080 to each character. To convert<br>
+from the Macintosh encoding to GB2312, subtract 0x8080 from each character. For<br>
+example, an ideographic comma (Unicode code point 0x3001) is 0x2122 in GB, and<br>
+0xA1A2 on the Macintosh.<br></p>
+<p>
+The only subranges of characters you need to worry about are the Roman characters.<br>
+Below is some code that illustrates how to do the conversion.
+</p>
+<pre>// Returns true if the character needed conversion, or false if it
+// was a one-byte character (meaning that only the first byte was
+// processed).  (That is, a false return means the character was a
+// Roman character.)
+boolean MacToGB2312(unsigned char first, unsigned char second,
+                                             unsigned short *output)
+{
+    if (first &lt; 0x81) {
+          *output = first;
+          return false;
+    } else {
+          unsigned short temp;
+          temp = (first - 0x80) << 8;
+          temp += (second - 0x80);
+          *output = temp;
+          return true;
+    }
+}
+
+// This will always convert, so we don't need to get the bytes
+// separately nor do we need to return a Boolean saying whether
+// we converted.
+void GB2312ToMac(unsigned short input, unsigned short *output)
+{
+    *output = input + 0x8080;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+As you can see from the code, you need to modify both bytes of a two-byte character.<br>
+This is done so that it's obvious whether a character is part of a two-byte character or<br>
+is a one-byte Roman character.
+</p>
+<p>
+For more information, see <i>Understanding Japanese Information Processing by Ken</i><br>
+<i>Lunde.</i> See also Ken Lunde's Web page at http://jasper.ora.com/lunde/; while it<br>
+contains mostly information about Japanese text processing and standards, there are<br>
+pointers to more information about Chinese and Korean information processing as<br>
+well.
+</p>
+<p>
+<b>Q&nbsp;</b><i>I know that homonyms are words that are pronounced alike (and are often spelled the</i><br>
+<i>same) but have different meanings, and I know that synonyms are words that have the</i><br>
+<i>same or nearly the same meanings. But there are also words that are spelled alike but</i><br>
+<i>are pronounced differently and have different meanings. For instance, "row" (rhymes</i><br>
+<i>with "go") meaning things arranged in a line, and "row" (rhymes with "cow") meaning</i><br>
+<i>a fight. What do you call words like these?</i>
+</p>
+<p><b>A&nbsp;</b>Heteronyms.<br></p>
+<p>
+<b>These answers are supplied</b> by the technical gurus in Apple's Developer Support<br>
+Center. For more answers, see the Macintosh Technical Q&amp;As on this issue's CD or on<br>
+the World Wide Web at http://dev.info.apple.com/techqa/Main.html. (Older Q&amp;As can<br>
+be found in the Macintosh Q&amp;A Technical Notes on the CD.)*
+</p>
+</body>
+</html>

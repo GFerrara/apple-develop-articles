@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 60 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 96 - The OpenDoc Road: OpenDoc Memory Management and the Toolbox</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>The OpenDoc Road:<br>
+OpenDoc Memory Management and the Toolbox</h1>
+<h2>Troy Gaul and Vincent Lo</h2>
+<p>
+<img src="img/300.gif" width="180 px"></img>
+</p>
+<p>
+OpenDoc has its own memory management system, but OpenDoc part editors also need<br>
+to interact with the Macintosh Toolbox, which often does memory management using its<br>
+own system. This column will point out potential pitfalls resulting from the<br>
+interaction of these two systems, and suggest strategies to avoid them.
+</p>
+<p>
+OpenDoc has adopted the well-tested Memory Manager from the MacApp and Bedrock<br>
+frameworks for its own use. This memory manager was designed to provide fast and<br>
+efficient memory allocation to the framework, and since OpenDoc's memory<br>
+requirements are similar to those of a framework, it's natural for OpenDoc to reuse<br>
+the code that has served the framework so well. The OpenDoc Memory Manager (as<br>
+we'll call it here) is installed with OpenDoc as a shared library and handles most of the<br>
+memory allocation and deallocation in an OpenDoc process.
+</p>
+<p>
+There are several reasons for OpenDoc to have its own memory manager:
+</p>
+<ul>
+<li>The OpenDoc Memory Manager can improve upon the memory manager of<br>
+the underlying platform. On Macintosh 7.x systems, for instance, a faster and<br>
+more space-efficient memory allocation algorithm replaces the one provided<br>
+by the Macintosh Toolbox. In general, having a separate memory manager for<br>
+OpenDoc allows the platform implementer to fine-tune OpenDoc performance.</li>
+<li>The OpenDoc Memory Manager provides a cross-platform API for both<br>
+platform implementers and part developers, covering both nonrelocatable and<br>
+relocatable blocks. For platforms with no built-in relocatable blocks,<br>
+platform implementers could provide relocatable blocks through the OpenDoc<br>
+Memory Manager API without changing the underlying operating system.</li>
+<li>The OpenDoc Memory Manager is packaged as a CFM shared library, so it<br>
+can easily be replaced if a new version is required for improved performance<br>
+or feature enhancements. Also, as Apple evolves the Mac OS and its memory<br>
+manager, OpenDoc will adopt this new technology. Developers using the<br>
+OpenDoc Memory Manager API will reap the benefits of the new system<br>
+memory manager without modifying or even recompiling their part editors.</li>
+</ul>
+<p>
+The OpenDoc Memory Manager defines a low-level procedural API, which is described<br>
+in the "Memory Management" section of Appendix A in the <i>OpenDoc Cookbook</i>. An<br>
+OpenDoc utility library named ODMemory (provided as source code) organizes the<br>
+low-level API into high-level functions. The major difference between the underlying<br>
+API and the "wrapper" ODMemory API is that the latter signals an exception when an<br>
+error condition is encountered. For more on exception handling in OpenDoc, see<br>
+"OpenDoc Exception Handling."
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OPENDOC EXCEPTION HANDLING</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Handling exceptions in OpenDoc is a large topic, which will only be touched on<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;here. Readers should refer to the "Exception Handling" section of Appendix A in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the <i>OpenDoc Cookbook</i> for more details.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;In a nutshell, OpenDoc allows developers to choose their own exception<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mechanisms while providing a convenient utility to enable these exception<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mechanisms to work with SOMobjects(TM) for Mac OS (the Apple<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;implementation of the IBM SOM(TM) technology), which underlies OpenDoc.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SOM propagates exceptions through the environment parameter (commonly<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;known as the ev parameter). It's illegal to throw an exception out of a SOM<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;method. Instead, the exception code should be stuffed into the ev parameter and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;returned to the caller. The caller should examine the ev parameter to see<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;whether an error has been signaled in the called function. Since this checking<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;needs to be done after every SOM method invocation, OpenDoc provides a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;utility to automatically check the ev parameter. If an error has been signaled,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the utility will use the chosen exception mechanism (through the use of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;macros) to propagate the exception.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The macros for the SOM exception handlers are prefixed with "SOM_":<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SOM_TRY, SOM_CATCH_ALL, and SOM_ENDTRY. These macros should not be<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;confused with TRY, CATCH_ALL, and ENDTRY. The non-SOM exception handler<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;macros do not propagate the exception automatically unless RERAISE is called<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;explicitly in the catch block, and they can't be used to propagate an exception<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;across a SOM boundary.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+To ensure optimum usage of memory, part developers should use the OpenDoc Memory<br>
+Manager API or the ODMemory utility library to satisfy their memory needs. The only<br>
+exception is when the part editor is interacting with a Toolbox manager that requires<br>
+memory to be allocated in a certain memory heap. We'll go into more detail about this<br>
+in a moment.
+</p>
+
+
+<h2>HOW THE OPENDOC MEMORY MANAGER WORKS</h2>
+<p>
+The OpenDoc Memory Manager allocates fixed-sized, nonrelocatable blocks of memory<br>
+and organizes them into heaps. The memory allocated for these heaps may come from<br>
+the application heap, temporary memory, or the system heap. These memory blocks<br>
+(called <i>allocation segments</i>) are subdivided into smaller memory blocks as memory<br>
+requests are made by OpenDoc objects and part editors. When MMAllocate or ODNewPtr<br>
+is called to allocate a block of memory, the OpenDoc Memory Manager returns a<br>
+pointer to one of these memory blocks in an allocation segment.
+</p>
+<p>
+When an OpenDoc process is started up, the OpenDoc Memory Manager allocates a<br>
+small amount of memory for a heap, which becomes the default heap. Clients of the<br>
+OpenDoc Memory Manager can create extra heaps and make any of these the default<br>
+heap.
+</p>
+<p>
+If a new block is requested and no allocation segments have enough free space to satisfy<br>
+the request, the OpenDoc Memory Manager will trigger the creation of another<br>
+allocation segment, which has the effect of growing the heap. Similarly, when all<br>
+blocks in an allocation segment are freed, the segment is freed as well, shrinking the<br>
+heap.
+</p>
+<p>
+The OpenDoc Memory Manager and ODMemory utility also provide a way to allocate<br>
+relocatable blocks. These blocks are not suballocated from the allocation segments;<br>
+instead, the OpenDoc Memory Manager allocates them directly from the same operating<br>
+system heap zone that the OpenDoc heap allocates segments from.
+</p>
+
+
+<h2>MEMORY PARTITION</h2>
+<p>
+Typically, several OpenDoc part editors run in the single process associated with a<br>
+document. There's no way to determine how many part editors are going to be used in a<br>
+document and how much memory each part editor requires. Therefore, it's impossible<br>
+to know how big the memory partition of the process should be before opening the<br>
+OpenDoc document. As described above, the OpenDoc Memory Manager has its own<br>
+allocation scheme, which is not limited by the application partition, so the memory<br>
+partition becomes less significant. (Currently the default heap is allocated from<br>
+temporary memory, but this may change in the future.) The elimination of the need<br>
+for the end user to understand the concept of application heap and adjust the memory<br>
+partition is one of the design goals of OpenDoc.
+</p>
+<p>
+However, users familiar with OpenDoc might remember that the Document Info dialog<br>
+allows them to change the partition size of the process. You might ask, "If the OpenDoc<br>
+Memory Manager does what it claims to, why do I need to adjust the memory<br>
+partition?"
+</p>
+<p>
+Even though most of the memory allocation is done through the OpenDoc Memory<br>
+Manager, Toolbox managers do allocate memory in the application heap, and the amount<br>
+required varies considerably depending on the size of the data manipulated and the<br>
+operations performed. Changing the memory partition is needed to accommodate these<br>
+cases.
+</p>
+<p>
+When a document is created, it's opened into a process of a default size. Users can<br>
+change the default size for the document by using the Document Info dialog. There's also<br>
+a desktop utility called Infinity OpenDoc Sizer that's capable of changing either the<br>
+partition size of a particular document (without first having to open it) or the default<br>
+partition size used by all documents that don't already have custom partitions. It's<br>
+available in the Developer Release area of the OpenDoc Web site<br>
+(http://www.opendoc.apple.com) and accompanies this column on this issue's CD and<br>
+<i>develop</i>'s Web site.
+</p>
+
+
+<h2>MANAGING TOOLBOX MEMORY ALLOCATIONS</h2>
+<p>
+As your code makes calls into the Macintosh Toolbox, you'll find several places where<br>
+the Toolbox allocates memory for you. Generally, this memory is allocated out of the<br>
+current heap, which is usually the application heap. Since the size of an OpenDoc<br>
+document's application heap is limited (the default heap size leaves only about 100K of<br>
+space free after OpenDoc itself is loaded), you need to be careful when calling Toolbox<br>
+routines that allocate in that heap. With some care, you can control your allocations so<br>
+that your users won't have to increase your document's heap size in order to use your<br>
+part.
+</p>
+<p>
+When you're dealing with resources in particular, there are a few techniques you can<br>
+use to handle memory allocations. Standard resource access routines such as<br>
+GetResource will generally cause the associated memory to be allocated in the<br>
+application heap. If you're using a resource for only a short period of time and it's<br>
+fairly small, you can continue to use these routines to access it and load it into the<br>
+application heap.
+</p>
+<p>
+For larger resources, however, this won't work. Luckily, OpenDoc provides the utility<br>
+library UseRsrcM to help, as described in the "Resource Handling" section of Appendix<br>
+A in the <i>OpenDoc Cookbook</i>. The utility routine ODReadResource allows you to load<br>
+resources from your part's shared library file into temporary memory. This works<br>
+by determining the size of the resource, allocating a relocatable block of this size in<br>
+temporary memory, and using ReadPartialResource to load the resource directly into<br>
+that block. (Note, however, that resources read in by ODReadResource are detached;<br>
+you cannot, for instance, call ChangedResource to write out modifications to them.<br>
+Also, each call to ODReadResource will return a new copy of the resource.) If you need<br>
+to access large resources from files other than your part -- for instance, for a<br>
+sound-editing part that needs to load an 'snd ' resource from another file -- you can<br>
+use this same technique yourself. A part editor must also ensure that its resource file<br>
+is in the resource chain before accessing its resources (see "Resource File Access").
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;RESOURCE FILE ACCESS</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;In an OpenDoc environment, parts must share access to system services that<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;applications normally own exclusively. This adds some complications to the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;programming model you're probably used to.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;One such shared service is the resource chain. Since there are potentially<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;many parts all working in the active document, the resource chain must be<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;shared between them. Also, because OpenDoc parts are shared libraries, the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;resources in your part's file aren't automatically available like those in an<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;application.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The utility library UseRsrcM facilitates making your resource file available<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;and accessing resources from it. To open and initialize access to your shared<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;library's resource file, you call InitLibraryResources from your CFM<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;initialization routine. You also call CloseLibraryResources from your CFM<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;termination routine to close the resource file when you're done with it.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;To access a resource from your part's shared library, you must first call<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BeginUsingLibraryResources. This adds the part's resource file to the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;resource chain and sets the top of the chain to that file (so that calls such as<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Get1Resource will retrieve resources from the correct file). After reading or<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;writing the necessary resource, you call EndUsingLibraryResources to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;remove the file from the resource chain. For C++ users, a stack-based class<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;named CUsingLibraryResources is provided to do this for you automatically.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;There are a couple of implications about using this mechanism for handling the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;resource chain. Because Resource Manager routines are available only inside a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Begin.../End... block, you must make sure your code and the Toolbox aren't<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;trying to manipulate resources at other times. You also have to be careful that<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LoadResource isn't called on a purged resource from a file that's not in the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chain.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Other things, such as icons or Balloon Help in menus (which are loaded while<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the menu is pulled down and the part isn't in control), can also cause<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;problems. If you understand the relationship between your resource file and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the resource chain, however, you can work around these potential pitfalls.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+There are times when the Toolbox loads resources for you. In these cases, you<br>
+generally can't get them to be loaded into temporary memory. In several cases, the<br>
+resources are small or are allocated for only a short time, so there isn't much to<br>
+worry about. For instance, when accessing resources such as string lists ('STR#'),<br>
+cursors, and icon families, you can continue to use the normal Toolbox routines. In<br>
+these cases, the resource is often accessed once and left around in memory. Therefore,<br>
+you'll want to make sure these resources are marked as purgeable so that they can be<br>
+deallocated automatically when more space is needed.
+</p>
+<p>
+There are other times when larger resources (such as pictures) are being accessed<br>
+and problems can crop up where you might not expect them. For instance, if you have a<br>
+large picture that's referenced by a dialog item (like that 24-bit rendered image for<br>
+the background of your About box) and there isn't sufficient memory available when<br>
+the dialog is displayed, the picture won't be shown. One solution to this is to create<br>
+your own heap zone, as discussed later. Another is to create a user item procedure for<br>
+the picture, handling the memory allocation and spooling in of the picture yourself.
+</p>
+<p>
+For resources such as menus and definition procedures (WDEFs, CDEFs, and MDEFs),<br>
+there is little you can safely do. Most of these types of resources, although they persist<br>
+for a long time, are fairly small, so having them allocated in the application heap isn't<br>
+terrible.
+</p>
+<p>
+Another commonly used piece of memory allocated by the Toolbox, but in this case not<br>
+resource-based, is a region. If you're doing many region operations and the regions<br>
+aren't being kept around, you can continue to use NewRgn to allocate them in the<br>
+application heap. However, if you're keeping regions around for long periods of time,<br>
+there's an ODMemory utility routine, ODNewRgn, that you can call to allocate your<br>
+regions from the OpenDoc heap.
+</p>
+
+
+<h2>OTHER TECHNIQUES TO KEEP ALLOCATIONS OUT OF THE<br>
+APPLICATION HEAP</h2>
+<p>
+In some cases, the Toolbox allows you to specify that a memory allocation come from<br>
+temporary memory rather than the application heap. Probably the most common<br>
+example of this is a GWorld. Passing the useTempMem flag to NewGWorld or<br>
+UpdateGWorld will cause it to allocate the PixMap's buffer in temporary memory<br>
+rather than in the application heap. Use these opportunities when they present<br>
+themselves.
+</p>
+<p>
+Also, if you're allowed to specify the location of memory used by the Toolbox, such as<br>
+for the WindowRecord in calls to NewWindow and the sound channel in SndNewChannel,<br>
+you should take these opportunities to allocate the memory with ODNewPtr rather than<br>
+allowing the Toolbox to do the allocation.
+</p>
+<p>
+Another technique that you might consider for dealing with large or long-term<br>
+resources is loading them into the system heap. This can be done by setting the "system<br>
+heap" flag in the resources' attributes. This has the advantage of being easy to do and<br>
+working even for resources allocated by the Toolbox. The disadvantage is that<br>
+increasing the system heap's size can be bad for performance if virtual memory is<br>
+enabled. Since the system heap is always paged into real memory space in System 7, a<br>
+large system heap means there isn't much space in RAM available for paging in the<br>
+rest of memory.
+</p>
+<p>
+Yet another technique that can sometimes be useful is to create your own heap zone. To<br>
+do this, create a block in temporary memory using ODNewHandle, lock it, and create a<br>
+heap inside it by calling InitZone. This technique shouldn't be used for just any<br>
+allocation, but only if other methods don't work and if the allocation is ephemeral. One<br>
+example we mentioned before where this might be useful is for a dialog box with large<br>
+picture items. Note that you'll have to make sure the heap is large enough to hold not<br>
+only the pictures but also the other dialog-related resources, and you'll want to leave<br>
+some room to spare. Also, you probably wouldn't want to have more than one of these<br>
+heaps allocated at a time. When locking <i>any</i> handle in temporary memory, make sure<br>
+you unlock it again as soon as possible.
+</p>
+<p>
+Other parts of the Mac OS, such as QuickTime, will require you to use these and other<br>
+techniques to deal effectively with memory. (In the case of QuickTime, you can use<br>
+SetZone to switch to the system heap.) In such cases, it's a good idea to use a tool such<br>
+as Metrowerks' ZoneRanger to examine memory allocated in the application heap and,<br>
+if problems are found, look for ways to move allocations elsewhere.
+</p>
+
+
+<h2>MEMORY MATTERS</h2>
+<p>
+In the future, a new system memory manager will allow for heaps that can grow. When<br>
+this becomes available, many of these contortions will become unnecessary. In the<br>
+meantime, however, it's important to remember that you're sharing the application<br>
+heap with other clients and to act accordingly.
+</p>
+
+
+
+<p>
+<b>RELATED READING</b>
+</p>
+<p>
+For more information on the memory manager in OpenDoc and the utility<br>
+libraries mentioned in this column, check out the following references:
+</p>
+<ul>
+<li><i>OpenDoc Programmer's Guide for the Mac OS</i> by Apple Computer,<br>
+Inc. (Addison-Wesley, 1995).</li>
+<li><i>OpenDoc Cookbook for the Mac OS</i> by Apple Computer, Inc.<br>
+(Addison-Wesley, 1995). In particular, see Appendix A, "OpenDoc<br>
+Utilities."</li>
+<li>The OpenDoc World Wide Web site, located<br>
+athttp://www.opendoc.apple.com.</li>
+</ul>
+
+
+
+<p>
+<b>TROY GAUL</b> (tgaul@apple.com) has been writing OpenDoc parts -- er, Live Objects<br>
+-- since starting at Apple last May. Having created the Infinity Windoid WDEF in<br>
+1991, he has since appeared in more About boxes than Elvis.*
+</p>
+<p>
+<b>VINCENT LO</b> is Apple's technical lead for OpenDoc. When he's not dealing with Live<br>
+Objects, he's frequently spotted at fine dining establishments in the San Francisco Bay<br>
+Area. One of his dreams is to open up a Chinese restaurant in Italy.*
+</p>
+<p>
+<b>Thanks to</b> Jens Alfke, Dave Bice, and Steve Smith for reviewing this column.*
+</p>
+</body>
+</html>

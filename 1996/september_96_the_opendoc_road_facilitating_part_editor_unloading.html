@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 45 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 96 - THE OPENDOC ROAD: Facilitating Part Editor Unloading</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>The OpenDoc Road: Facilitating Part Editor<br>
+Unloading</h1>
+<h2>Vincent Lo</h2>
+<p>
+<img src="img/272.gif" width="270 px"></img>
+</p>
+<p>
+In the traditional application model, the code for an application typically remains<br>
+loaded until the process quits. In OpenDoc, starting with version 1.0.1, a part editor is<br>
+loaded when it's needed during a session and unloaded when it's not. As a result,<br>
+valuable memory space can be reclaimed and reused by other part editors.
+</p>
+<p>
+Even though part editor unloading is mostly transparent to part editors, there are a<br>
+few things a part editor should do to ensure the success of this scheme. I'll describe<br>
+these things after giving you a closer look at how part editor unloading works. Pay<br>
+careful attention, because the crash you prevent may be your own.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<h2>HOW PART EDITOR UNLOADING WORKS</h2>
+<p>
+The part editor unloading mechanism is enabled by facilities provided by<br>
+SOMobjects(TM) for Mac OS (the Apple implementation for the Macintosh of the IBM<br>
+SOM(TM) technology). The basis of part editor unloading is a reference-counting<br>
+system that enables OpenDoc to keep track of which part objects are in use. I'll explain<br>
+reference counting and then give the gory details of how part libraries are unloaded,<br>
+which differs for static and dynamic classes.
+</p>
+<p>
+Every persistent object (part, frame, link, and so on) in OpenDoc is given a reference<br>
+count by the draft that creates it. When the object is first created or acquired, its<br>
+reference count is initialized to 1. Whenever the object is acquired after that (through<br>
+either the draft's or the object's Acquire method), its reference count is incremented<br>
+by 1. Whenever the object is released (by a call to the object's Release method), its<br>
+reference count is decremented by 1.
+</p>
+<p>
+When all clients have released their references to an object, the reference count of the<br>
+object is 0, and at this point the draft can delete the object to regain the memory it<br>
+occupies. However, deletion may not be immediate when the object's reference count<br>
+drops to 0. In actuality, object deletion is deferred until the purge mechanism of the<br>
+draft is triggered. Typically, a purge is initiated by the storage system (for example,<br>
+during a save operation) or by the document shell (such as when the document shell<br>
+realizes that memory is running low).
+</p>
+<p>
+In response to a purge request, the draft deletes all the persistent objects and storage<br>
+units that aren't in use -- that is, objects whose reference count is 0. When all the<br>
+part objects belonging to a certain part editor are deleted, SOM calls the Code Fragment<br>
+Manager (CFM) to unload the part editor library. The CFM calls the CFMTerminate<br>
+routine of the part editor library, and both the code and data sections of the library are<br>
+destroyed. Some details of how the library is unloaded depend on the kind of SOM class<br>
+it contains -- either static or dynamic.
+</p>
+<p>
+Objects created using new className and SOM kernel services (somNewObject,<br>
+somNewClassReference, and SOMobject::somGetClass) are static class objects. Most (if<br>
+not all) objects created by a part editor fall into this category. A static class is<br>
+unloaded when the code that created the static class object is unloaded. Therefore, when<br>
+a part editor is unloaded, all static classes in the same library are unloaded as well.<br>
+Other interdependent libraries may also be unloaded; there will be more on this later.
+</p>
+<p>
+Objects created using the runtime name or ID class-lookup services of SOM (for<br>
+example, SOMClassMgr::somFindClass, somNewObjectByName, or<br>
+somGetDynamicClassReference) are dynamic class objects. OpenDoc parts are dynamic<br>
+class objects, since they're created by name. Extension objects are also dynamic<br>
+because ODExtension is implemented as a dynamic class; subclasses of ODExtension<br>
+inherit its dynamic property as long as they call the parent's InitExtension method.<br>
+Other OpenDoc classes will be converted to dynamic classes as the need arises; check<br>
+the notes accompanying future OpenDoc releases for a listing of these.
+</p>
+<p>
+A dynamic class guarantees that its code and the code for its inherited classes won't be<br>
+unloaded until the last object of the class is deleted. When the last instance of a part<br>
+class is deleted, SOM unloads the CFM library containing the part class.
+</p>
+<h2>REFERENCE-COUNTING GOTCHAS</h2>
+<p>
+Every persistent object must have a correct reference count for the part editor<br>
+unloading mechanism to work. If a part object has a reference count that's higher than<br>
+the correct count, the object will remain valid throughout the session even though it's<br>
+no longer being used. This object will keep its associated part editor library from<br>
+being unloaded until the process quits. Conversely, if an object has a reference count<br>
+that errs on the low side, the object may be deleted, causing its library to be unloaded.<br>
+Referencing an invalid object pointer usually results in a crash.
+</p>
+<p>
+The best way to avoid reference-count errors is to familiarize yourself with OpenDoc<br>
+persistent objects and follow the recipes outlined in the OpenDoc Programmer's Guide<br>
+for the Mac OS. Be sure to pay special attention to the following potential trouble spots.
+</p>
+<p>
+<b>Avoid self-referencing</b>. If a part object keeps a reference to itself, its reference<br>
+count will be at least 1 and its part editor library won't be unloaded until the session<br>
+ends. Since a reference to the part is passed in as an argument in every ODPart<br>
+method, a part shouldn't need to store a reference to itself.
+</p>
+<p>
+<b>Break circular references between parts and frames.</b> Each display frame<br>
+has a reference to its part (after the part has been internalized). Even though a part<br>
+isn't required to keep a reference to its display frames, most parts do so for<br>
+convenience. This creates a circular reference between a part and its display frames,<br>
+so the reference count alone won't indicate when deleting a part is appropriate. The<br>
+situation becomes more complicated when the part has embedded frames and also keeps<br>
+references to them. To break these circular references, OpenDoc offers the Close and<br>
+Remove protocols.
+</p>
+<ul>
+<li>The Close protocol is triggered when a containing part decides to<br>
+get rid of its runtime-embedded frame objects. The containing part calls the<br>
+embedded frame's Close method. The frame first calls its part's<br>
+DisplayFrameClosed method, which should release its reference to the display<br>
+frame and close its embedded frames (if any) before releasing its reference to<br>
+the part.</li>
+<li>The Remove protocol works similarly to the Close protocol.<br>
+However, the protocol is triggered when a containing part decides to remove<br>
+its embedded frames from both runtime storage and persistent storage. The<br>
+Remove protocol is propagated through the ODPart::DisplayFrameRemoved and<br>
+ODFrame::Remove methods.</li>
+</ul>
+<p>
+<b>Unregister frames and parts when idle time is no longer needed.</b> When a<br>
+part registers its frame with the OpenDoc dispatcher for idle time, the dispatcher<br>
+retains a reference to the frame. Until the part editor unregisters the frame object<br>
+from the dispatcher, the object will remain resident in memory with a reference<br>
+count greater than 0. This will prevent the object from being deleted and its library<br>
+from being unloaded. The part editor should unregister the frame when the Remove or<br>
+Close protocol is triggered.
+</p>
+<p>
+On rare occasions, a part may have a display frame that's not in the frame hierarchy<br>
+originated from the root frame. For example, a part may have some frames stored for<br>
+the View in Window command. Don't internalize those frames and register them for<br>
+idle time until the frames are actually used.
+</p>
+<p>
+A part may also register itself with the OpenDoc dispatcher for idle time. As in the case<br>
+of registered frames, the dispatcher retains a reference to the part object. To ensure<br>
+that the object is deleted and that its library is unloaded at the earliest possible time,<br>
+the part editor must unregister itself from the dispatcher as soon as idle time is no<br>
+longer needed. This usually occurs when all the part's display frames have been closed<br>
+or removed.
+</p>
+<p>
+<b>Watch extensions for reference-counting problems.</b> OpenDoc's extension<br>
+mechanism enables separate parts in a document to communicate with each other<br>
+directly. By creating an associated extension object, a part editor can extend its part<br>
+interface to satisfy special needs. To enable efficient communication, the extension<br>
+object maintains a reference to the part object that created it; the part typically keeps<br>
+a reference to the extension so that it can give out the same extension object again if<br>
+it's requested.
+</p>
+<p>
+In general, an extension object is released before its creator, thus preventing any<br>
+reference-counting problem for the part. But if the reference count of the extension<br>
+object isn't maintained correctly, or if the client of the extension object refuses to<br>
+release it, the part object can detach the extension object from itself by calling<br>
+ODExtension::BaseRemoved. A well-behaved extension object should then report errors<br>
+to clients when it's being accessed. An even better idea is to avoid using the base<br>
+removal mechanism and instead to define the scope and lifespan of an extension.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<h2>A LIBRARY-UNLOADING GOTCHA</h2>
+<p>
+When a part editor is unloaded, SOM unloads the CFM library associated with the part<br>
+editor. Moreover, if there's another library in the same library closure as the part<br>
+editor, the CFM will unload it if it doesn't belong to another library closure. (A<br>
+library closure is a group of shared libraries whose interdependencies cause them to<br>
+be loaded together by the CFM.) This means that code other than the part editor<br>
+residing in the same CFM library closure is unloaded as well. If the developer hasn't<br>
+foreseen this possibility, it can lead to unfortunate consequences.
+</p>
+<p>
+Let's consider a typical example. A part editor creates a SOM object from a static class<br>
+that resides in the same library closure as the part editor. The part editor then<br>
+installs the object in a name space so that others can access it. If this object doesn't<br>
+hold a reference to the part, the part may be deleted (and its library closure unloaded)<br>
+when the object reference is still in the name space. The next time this object is used,<br>
+a crash will likely occur because the code associated with the object has been unloaded<br>
+with the part editor.
+</p>
+<p>
+To prevent this from happening, you should ensure that no class whose code resides in<br>
+the same library closure as the part editor outlives the part itself. If an object must<br>
+outlive the part that creates it, the object should be created dynamically. OpenDoc<br>
+provides a utility function, ODNewObject, to create objects by name. The code in<br>
+Listing 1 illustrates how a dynamic object is created with ODNewObject.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 1.</b> Creating a dynamic object with ODNewObject
+</p>
+<pre>#include "ODNewObj.h"
+
+ODObjectNameSpace* objNameSpace =
+    (ODObjectNameSpace*) nameSpMgr-&gt;CreateNameSpace
+        (ev, kOSAScriptingTool, kODNULL, 1, kODNSDataTypeODObject);
+Sample_ScriptRunnerAgent* agent =
+    (Sample_ScriptRunnerAgent*) ODNewObject
+        ("Sample::ScriptRunnerAgent");
+objNameSpace-&gt;Register(ev, kOSAScriptingTool, agent);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+As mentioned earlier, parts and extensions are dynamic objects and thus don't require<br>
+ODNewObject. ODNewObject is used mainly on SOM classes that a part developer has<br>
+created.
+</p>
+<p>
+Once a class has been accessed dynamically, the class remains dynamic until the<br>
+process exits or the use count of the class maintained by SOM goes to 0. Until then, all<br>
+object references created for the class are considered dynamic by SOM.
+</p>
+<h2>COUNTING ON YOU</h2>
+<p>
+Part editor unloading in OpenDoc is a great scheme for managing memory efficiently.<br>
+But its success depends on the cooperation of each and every part editor. If you keep in<br>
+mind the gotchas detailed in this column, your part editor will avoid the pitfalls and<br>
+reap the benefits of wise resource use.
+</p>
+<p>
+<b>VINCENT LO</b> is Apple's technical lead for OpenDoc. In his leisure time, he loves to<br>
+travel and sample exotic food. Living in Hong Kong for many years convinced him that<br>
+no food can scare him, but he'll continue to trot the globe to seek out gustatory<br>
+challenges.
+</p>
+<p>
+<b>Thanks to</b> Dave Bice, Erik Eidt, and Troy Gaul for reviewing this column.
+</p>
+</body>
+</html>

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 59 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 96 - Newton Q & A: Ask the Llama</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Newton Q &amp; A: Ask the Llama</h1>
+<p><b>Q</b>&nbsp;<i>I was wondering why my autopart is taking up so much heap space after it's<br>
+
+installed. The InstallScript and RemoveScript are quite small:</i>
+</p>
+<pre>constant kGlobalDataSym := '|Globals:MYSIG|;
+
+InstallScript := func(partFrame, removeFrame) begin
+   if NOT GetGlobals().(kGlobalDataSym) exists then
+      GetGlobals().(EnsureInternal(kGlobalDataSym)) := {};
+   GetGlobals().(kGlobalDataSym).(EnsureInternal(kAppSymbol))
+      := GetLayout("MyTool.t");
+end;
+
+RemoveScript := func(removeFrame) begin
+   local NGP := GetGlobals().(kGlobalDataSym);
+   if hasSlot(NGP, kAppSymbol) then
+      RemoveSlot(NGP, kAppSymbol);
+end;</pre>
+<p class="spacer">&nbsp;</p>
+<p><i>
+The template in MyTool.t is only a simple proto with a few slots in the base view: a<br>
+symbol, viewBounds, viewFlags, viewJustify, viewFormat, viewClickScript, and three<br>
+methods. When installed, the autopart takes up about 640 bytes of heap space. Is this<br>
+because of the physical representation in the extras drawer?</i>
+</p>
+
+<p><b>A</b>&nbsp;A minimal autopart with no RemoveScript will take up about 240 bytes. One with<br>
+
+a RemoveScript will take 350 bytes or more, depending on the size of the<br>
+RemoveScript. The 240 bytes are used by the system to keep track of the package. This<br>
+includes the name, the extras drawer entry, and any symbols that you passed to<br>
+EnsureInternal.
+</p>
+<p>
+Trying your code showed that it used 444 bytes. Of course, we don't have the MyTool.t<br>
+layout in the package, but that doesn't matter since you don't call EnsureInternal on the<br>
+layout. Using 444 bytes isn't out of line considering the minimum size of an autopart.
+</p>
+<p>
+Of course, you could make your code a little smaller. For example, in your<br>
+RemoveScript you check that kGlobalDataSym is a known global variable. This isn't<br>
+required, since RemoveSlot will do the right thing if kAppSymbol isn't in your global<br>
+data frame. Note that you may want to make sure your global data frame exists:
+</p>
+<pre>RemoveScript := func(removeFrame)
+   RemoveSlot(GetGlobalVar(kGlobalDataSym), kAppSymbol);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Also, you use GetGlobals, which is a deprecated function for Newton OS 2.0. You should<br>
+be using GetGlobalVar, DefGlobalVar, and UnDefGlobalVar.
+</p>
+
+<p><b>Q</b>&nbsp;<i>I'm using a protoPeoplePicker in Newton OS 2.0 and it keeps showing an "Untitled<br>
+
+Person." Is this an opportunity to create someone or is there really a gremlin inside<br>
+the machine?</i>
+</p>
+
+<p><b>A</b>&nbsp;There are only two reasons for the appearance of the "Untitled Person" entry. One<br>
+
+is that you mistakenly entered that person in your card file, which can happen if you<br>
+edit an entry and accidentally erase the name. The more likely reason is that this is<br>
+your hacking Newton device. If so, you probably didn't go through the Setup application<br>
+and set an owner. "Untitled Person" is the default owner of the machine. We<br>
+recommend that you set up a default hacking MessagePad, back it up using NBU<br>
+(Newton Backup Utility), and then use that backup to create development units.
+</p>
+
+<p><b>Q</b>&nbsp;<i>I've read the article in Newton Technology Journal on package freezing and I'm<br>
+
+still a bit confused. Can you confirm that the following questions and answers are<br>
+right?
+</p>
+<ul>
+<li>Does my form part still have a slot in the root after being frozen? No.</li>
+<li>Is the RemoveScript called when it's frozen? Yes.</li>
+<li>Is the InstallScript called when it's unfrozen? Yes.</li>
+<li>Can I prevent freezing/unfreezing? No.</li>
+<li>Can I get a message indicating freezing vs. pulling the card? No.</li>
+<li>What happens when the user tries to put away an item routed to a frozen<br>
+application? A "can't find application" error.</li>
+</ul></i>
+
+<p><b>A</b>&nbsp;Congratulations, you understand package freezing correctly. And you win an<br>
+
+all-expenses paid visit to your nearest Green Giant food processing plant.
+</p>
+
+<p><b>Q</b>&nbsp;<i>There are times in my application when I want to perform the same operation on<br>
+
+a whole bunch of soup entries. Right now the Xmit form of the calls takes quite a while<br>
+and results in a lot of messages flying around. Is there a better way to do this?</i>
+</p>
+
+<p><b>A</b>&nbsp;Yes. You can use nil for the argument that tells the system which application is<br>
+
+performing the change. This tells the system not to transmit the change notification.<br>
+Then you can use XmitSoupChange to send a whatThe notification. This will inform<br>
+other applications that something changed, but not give specifics of the change. As an<br>
+example, here's a code snippet to remove all entries in a given cursor:
+</p>
+<pre>// create a function we can map over
+local myRemoveFunction := func(entry) EntryRemoveFromSoupXmit(entry,
+nil);
+
+// remove the entries
+MapCursor(removeCursor, myRemoveFunction);
+
+// now inform registered soups that something has changed
+XmitSoupChange(kSoupName, kAppSymbol, 'whatThe, nil);</pre>
+<p class="spacer">&nbsp;</p>
+<p><b>Q</b>&nbsp;<i>We're having a problem with compiled NewtonScript code. We have a function that<br>
+
+takes an <b>int</b> as a parameter. We use the <b>int</b> type indicator in the function definition.<br>
+However, it's possible for the parameter to be <b>nil</b>. For compiled code this results in a<br>
+type mismatch error. Is there a workaround for this?</i>
+</p>
+
+<p><b>A</b>&nbsp;There is a way to work around this problem; however, you'll pay a performance<br>
+
+penalty. It's much better to redesign your API to accept only integers. If you do want a<br>
+workaround, you can use the type-checking functions to make sure the parameter is an<br>
+integer before you use it like one. Here's some code that will work:
+</p>
+<pre>func native(x) begin
+   local int intx;
+
+   if IsInteger(x) then begin
+      // now you can use intx and it'll be faster than using x
+      intx := x;
+   end else begin
+      // do whatever else is appropriate; it isn't an integer
+      ...
+   end;
+end;</pre>
+<p class="spacer">&nbsp;</p>
+<p><b>Q</b>&nbsp;<i>In our application we sometimes have to show the user a big error message, which<br>
+
+unfortunately is too large for the Notify mechanism. Is there a way we can add a button<br>
+to the Notify slip? If not, is there some other mechanism we can use?</i>
+</p>
+
+<p><b>A</b>&nbsp;The answer is simple: just don't let your user generate such a large error. But<br>
+
+seriously, there is no way to modify the slip that comes up from Notify. Here are two<br>
+ways to solve your problem:
+</p>
+<ul>
+<li>Have the Notify message tell the user to click on some user interface<br>
+element in your application for more information. This is the recommended<br>
+solution.</li>
+<li>Instead of Notify, use a dialog to inform the user of the error. Since you<br>
+control the dialog, you control which buttons are in it. You could set up such a<br>
+dialog with AsyncConfirm.</li>
+</ul>
+
+<p><b>Q</b>&nbsp;<i>We need a way to find out whether a particular view inherits from a particular<br>
+
+proto. For example:</i>
+</p>
+<pre>aView := {_proto: anotherView,
+          // more slots...}
+
+anotherView := {_proto: protoFloater,
+                // more slots...}</pre>
+<p class="spacer">&nbsp;</p>
+<p><i>
+Is there a function I could call that would take aView and return true if it's an instance<br>
+of protoFloater?</i>
+</p>
+
+<p><b>A</b>&nbsp;There is no built-in function that will do this, but it's relatively simple to write:<br>
+<pre>func(frame, prot) begin
+   while (frame AND (frame &lt;&gt; prot))
+      frame := frame._proto;
+   return (frame &lt;&gt; nil)
+end;</pre>
+<p class="spacer">&nbsp;</p>
+<p><b>Q</b>&nbsp;<i>How do I define a pickerDef column to be "lastname, firstname" in a single column?</i></p>
+<p><b>A</b>&nbsp;You can specify a Get method in your pickerDef and modify your columns<br>
+
+appropriately. As an example, take a look at the protoListPicker sample on the Newton<br>
+Developer CD. One of the subsamples is called ListPickerSoup. The default is to display<br>
+the first item in the first column and the second item in the second column. The<br>
+original pickerDef is defined as follows (from pickerDef.f):
+</p>
+<pre>DefConst('kMyBasicSoupDataDef, {
+   _proto: protoNameRefDataDef,  // required
+   validationFrame: nil,         // used if editing is supported
+   name: "Random Data ",         // name at top left of picker if
+                                 // foldersTabs are present
+   HitItem: func(tapInfo, context) begin
+      context:ThingChosen(tapInfo);
+   end,
+   });</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Then in myListPicker in the listPickerSoup.t layout file, the pickerDef slot is:
+</p>
+<pre>{_proto: kMyBasicSoupDataDef,   // defined in the pickerDef.f file
+   class: 'nameRef,              // always include
+   columns: [  
+      // Column 1
+      {
+         fieldPath: 'first,      // field to display in column
+         tapWidth: 100,    // width for checkbox &amp; name combined,
+                                 // offset from the right margin
+         doRowHilite: true,
+      },
+      // Column 2
+      {
+         fieldPath: 'second,      // field to display in column
+         tapWidth: 0,             // width from preceding column to
+                                  // right bounds
+         doRowHilite: true,
+      },
+   ],
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+To modify this sample to show one column in the format "second, first", you would add<br>
+the following Get method to kMyBasicSoupDataDef:
+</p>
+<pre>Get: func(object, fieldPath, format) begin
+   if fieldPath = 'second AND
+      (format = 'text OR format = 'sortText) then
+   begin
+      local realData := EntryFromObj(object);
+      if realData then      // format is "second, first"
+         return (realData.second &amp; ", " &amp; realData.first);
+      else
+         return "- -";
+   end else
+      inherited:?Get(object, fieldPath, format);
+end</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+This Get method will return the correct string for a column that displays the<br>
+slot<b>'second</b>. It will also sort on a string that's in the format "second, first".
+</p>
+<p>
+The other thing you need to do is modify the columns definition. Simply remove the<br>
+first column, so that the pickerDef in myListPicker looks like this:
+</p>
+<pre>{_proto: kMyBasicSoupDataDef,     // defined in the pickerDef.f file
+   class: 'nameRef,               // always include
+   columns:
+   [  
+      // Column 2
+      {
+         fieldPath: 'second,      // slot to display in column
+         tapWidth: 0,             // width from preceding column to
+                                  // right bounds
+         doRowHilite: true,
+      },
+   ],
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p><b>Q</b>&nbsp;<i>I have a pick list that takes quite a while to create. I'd like to use a weak array so<br>
+
+that I don't have to keep creating the list. That way I get garbage collection for free. But<br>
+I don't want to make the array "weak" until after the pick list has been opened by the<br>
+picker so that items don't accidentally get garbage collected. How do I turn a regular<br>
+array into a weak array? Or will this work at all?</i>
+</p>
+
+<p><b>A</b>&nbsp;You can't turn a regular array into a weak array; an array is one or the other.<br>
+<p>
+But using a weak array should work, with these minor modifications to your code:<br>
+Create a slot in your picker (say myWeakArray) and initialize it to a weak array.<br>
+Create your regular array of pick items as usual. Let the user pop up the picker; then<br>
+in either the pickCancelledScript or the pickActionScript, set the first element of<br>
+myWeakArray to the array of list items. Next time you want to construct the pick list,<br>
+check for the first element of myWeakArray. If it exists, you have your pick list; if<br>
+not, create a new one.
+</p>
+
+<p><b>Q</b>&nbsp;<i>I'm using one of the newt name views to select a name. Whenever the people<br>
+
+picker comes up, it's viewing "All Names." How can I programmatically change the<br>
+default folder used by the picker?</i>
+</p>
+
+<p><b>A</b>&nbsp;You need to change the Picker method of the newt name flavor as follows:<br>
+<pre>Picker: func()
+   protoPeoplePopup:New('|nameRef.people|, nil, self,
+      {labelsFilter: &lt;symbol-for-desired-folder&gt;});</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The final argument to the New method is a frame of options. Each slot/value pair is<br>
+used to set up a slot/value pair in the protoPeoplePicker. So grab the symbol for the<br>
+default folder that you want and set the labelsFilter of the protoPeoplePopup.
+</p>
+
+<p><b>Q</b>&nbsp;<i>What is the path to true enlightenment and wisdom?</i></p>
+
+<p><b>A</b>&nbsp;Simple: Buy and read all the books that claim to show you such a path. As you<br>
+
+read, make a list of the major points. Take that list, cross off the contradictions, take<br>
+the inverse of what's left, and then get a life. Alternatively, go and code another<br>
+thousand lines of NewtonScript.
+</p>
+
+
+
+<p>
+<b>The llama is</b> the unofficial mascot of the Developer Technical Support group in<br>
+Apple's Newton Systems Group. Send your Newton-related questions<br>
+todr.llama@newton.apple.com.&nbsp;&nbsp;The first time we use a question from you, we'll send<br>
+you a T-shirt.*
+</p>
+<p>
+<b>Thanks to</b> jXopher Bell, Henry Cate, Bob Ebert, David Fedor, Ryan Robertson, Jim<br>
+Schram, Maurice Sharp, Bruce Thompson, and Scott Wright for these answers.*
+</p>
+<p>
+<b>If you need more answers</b>, take a look at the Newton developer Web page,<br>
+athttp://www.devworld.apple.com/dev/newtondev.shtml.*
+</p>
+</body>
+</html>

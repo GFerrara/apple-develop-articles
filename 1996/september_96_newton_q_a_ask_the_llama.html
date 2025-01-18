@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 44 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 96 - Newton Q & A: Ask the Llama</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Newton Q &amp; A: Ask the Llama</h1>
+<p><b>Q</b>&nbsp;<i>How can I open an application so that it displays a particular data item?</i></p>
+<p><b>A</b>&nbsp;If the target application supports Find, you can do that as long as three things are<br>
+
+true:
+</p>
+<ul>
+<li>You know the application symbol.</li>
+<li>You know the application soup name and data format.</li>
+<li>The application supports the ShowFoundItem message.</li>
+</ul>
+<p>
+If all of these are true, you can send the application the ShowFoundItem message with<br>
+the appropriate arguments. Check the Newton Programmer's Guide for the arguments<br>
+to ShowFoundItem. Be aware that not every application takes a soup entry as one of the<br>
+arguments. That's why you need to know the application's data format. You can check<br>
+whether the application supports the ShowFoundItem message with the following code:
+</p>
+<pre>local theApp := GetRoot().(kAppSymbol);
+if theApp AND theApp.ShowFoundItem exists then
+   // application installed and supports the message</pre>
+<p class="spacer">&nbsp;</p>
+<p><b>Q</b>&nbsp;<i>We have an application for a Newton device that communicates with the desktop.<br>
+
+Because of the structure of our data, we'd like to be able to request a particular<br>
+NewtonScript object. We thought of sending the reference or address of the<br>
+NewtonScript object to the desktop and using that as the identifier, but we could find no<br>
+way to do this. Are we missing something?</i>
+</p>
+<p><b>A</b>&nbsp;Unfortunately (or fortunately, depending on your point of view), Newton 2.0 OS<br>
+
+doesn't provide a way to get the memory address of an object. Actually, since<br>
+NewtonScript can relocate objects at will, providing an address would not be a good<br>
+idea. There's an alternate approach: you can maintain an array of the objects you want<br>
+to export. The array index can be used in much the same way as the address. As an<br>
+example, in the code below, the memory "address" for object2 would be 1. In other<br>
+words, myObjectArray[1] would give you object2.
+</p>
+<pre>object1 := "foo";
+object2 := {can: 'aid, eee: "an", a: "...yep"};
+object3 := [1,2,3];
+myObjectArray := [object1, object2, object3];</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+If you need to indicate that an object has already been transferred to the desktop, you<br>
+can simply replace the object at the relevant array index with NIL.
+</p>
+<p><b>Q</b>&nbsp;<i>I'm designing my data structures. I figure I could use either two cursors onto two<br>
+
+different soups or two cursors onto the same soup. Which is the more efficient<br>
+solution?</i>
+</p>
+<p><b>A</b>&nbsp;You can measure efficiency in two relevant ways: by time or by memory usage (or<br>
+
+both). The time to create the two cursors will be the same regardless of the number of<br>
+soups, but more heap space will be required for two soups. With two soups, it may<br>
+take less time to find items that exist in just one soup than when searching a larger,<br>
+combined soup. However, with two soups you won't get as much benefit from the<br>
+operating system's caching of the entries; there's more overhead information to swap<br>
+in and out of the heap, which increases the time required to get data.
+</p>
+<p>
+The real answer is to test it with your actual data and see. Overall, two cursors on one<br>
+soup sounds like the more efficient way to go. Your question implies that you're going<br>
+to have two completely different sets of data. You can do this in one soup by using<br>
+indexes, because entries with either no indexed slot or NIL in an indexed slot won't<br>
+participate in that index. That is, when you create a cursor that uses that index,<br>
+entries with NIL values will be ignored by that cursor.
+</p>
+<p>
+Something that might occur to you is using tags to implement the two different sets of<br>
+data (that is, each set would have a unique tag value), but this doesn't work as well as<br>
+using an index. With an index, you can navigate to an entry in O(log n) time, where n<br>
+is the number of entries that are in that index. In other words, the time taken to<br>
+navigate to a particular entry will be directly related to the log of the total number of<br>
+entries. If your query includes a beginKey/endKey or startExclKey/endExclKey<br>
+subrange, the system finds that subrange very quickly. It can then quickly step<br>
+through entries in between.
+</p>
+<p>
+The operating system gets the set of tags for an entry efficiently, but it has to know<br>
+which entries to get the tags for first. So with no other way to narrow the search, it<br>
+will check all the entries, assuming you aren't using an index. Getting the tags is<br>
+actually very efficient, but indexes work better for subranging.
+</p>
+<p><b>Q</b>&nbsp;<i>I'm trying to compile a program that works with both Newton 1.x and Newton 2.0<br>
+
+OS devices; however, it won't compile. Newton Toolkit complains that I have a bad<br>
+magic pointer, but I know that the value is defined in the MessagePad platform file. The<br>
+offending code is as follows:</i>
+</p>
+<pre>local theCountries :=
+   call kGetUserConfigFunc with ('commonCountries);
+if ClassOf(ROM_Countries) = 'frame then
+   // on a 1.x unit
+   labelCommands := foreach item in theCountries collect
+      ROM_Countries.(item).name;
+else</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<i>This would give a nice pop-up menu of countries on a 1.x unit. Why doesn't it work?</i>
+</p>
+<p><b>A</b>&nbsp;This is a subtle problem. In Newton Toolkit 1.5 and later there are certain<br>
+
+functions called constant functions that will evaluate at compile time when their<br>
+arguments are constant. The most common ones are GetLayout, which will return a<br>
+reference to another Newton Toolkit layout, and LocObj. The ClassOf function is another<br>
+one of these.
+</p>
+<p>
+At compile time, a magic pointer is considered a constant value. That means that the<br>
+ClassOf call in your conditional is executing at compile time. Of course, there's no<br>
+Newton device around at compile time, so Newton Toolkit is unable to dereference the<br>
+magic pointer. Hence the error.
+</p>
+<p>
+One workaround is to set a local to the value of the magic pointer and use that local in<br>
+your conditional. This works because the value of the argument to ClassOf is no longer<br>
+a constant, so it will not be called at compile time.
+</p>
+<pre>local mpCountries := ROM_Countries;
+if ClassOf(mpCountries) = 'frame then</pre>
+<p class="spacer">&nbsp;</p>
+<p><b>Q</b>&nbsp;<i>My communications program has a number of standard packets of information. I'm<br>
+
+trying to set up constants for each of these standard packets. However, for the packet</i>
+</p>
+<pre>constant kHaltAndCatchFireMessage := "\u102cff1003";</pre>
+<p>
+<i>Newton Toolkit complains that there's an "odd number of digits between \u's." I count<br>
+ten, which looks even to me. Does Newton Toolkit need a remedial math course?</i>
+</p>
+<p><b>A</b>&nbsp;Actually, Newton Toolkit is doing fine in math, but it should say "bytes" instead of<br>
+
+"digits." There are ten hex digits in your string, but there are two hex digits per byte,<br>
+so your string is five bytes long. Since Unicode is a double-byte representation, there<br>
+are four hex digits per Unicode character. You have ten hex digits, or two and a half<br>
+Unicode characters, which is an invalid Unicode string.
+</p>
+<p>
+You can either add two more hex digits to your string or use the MakeBinary and<br>
+Stuff... functions. If you're dealing with data that's not strings, the latter method is the<br>
+best one for compatibility. It's also likely to keep you saner.
+</p>
+<p><b>Q</b>&nbsp;<i>I'm trying to dial the following number using a Newton Fax Modem with my<br>
+
+MessagePad 130:<br>
+"18005551234,,,,,,,,1,,,,408-555-1234,,,,123-456-789-123,,,".I get an<br>
+error -16013 in my communications code whenever I do this. I need to use the long<br>
+string because it contains a calling card number. My modem dials correctly and the<br>
+modem at the other end picks up. I even hear the chirping whistle of exchanging bits.<br>
+But suddenly things just stop and the error occurs. Any clues?</i>
+</p>
+<p><b>A</b>&nbsp;Yes. First star on the right, then straight on till morning. But that's a different<br>
+
+story. In answer to your question, it looks as though you're timing out on the<br>
+connection attempt. Modems have a set amount of time to establish a connection, and the<br>
+commas are reducing the time they have. Each of the commas will insert a delay into<br>
+the dialing. For most modems, the time for each comma is controlled by register S08<br>
+and usually defaults to 2 seconds. You have 19 commas, so that's 38 seconds, which<br>
+leaves very little time for the modems to sync up (the chirping whistle exchange<br>
+you're hearing).
+</p>
+<p>
+The solution is to increase the timeout of the modem to a more reasonable value. When<br>
+you're thinking about the timeout, remember that each digit will take around 95<br>
+milliseconds to dial. There will also be a line connection time of about 2 seconds, a ring<br>
+time of a few seconds, and the final sync-up or negotiation time of 2 to 15 seconds. You<br>
+should increase your timeout values to at least 60 seconds. If that doesn't work, add<br>
+30-second increments. You can do a binary search to narrow it down to an optimal<br>
+value.
+</p>
+<p>
+To set the timeout for the modem, use 60 for the waitForCarrier (sixth) argument of<br>
+the kCMOModemDialing option. The following bit of code will do this:
+</p>
+<pre>// make a modem option data structure based on user preferences
+local option := MakeModemOption();
+// modify the timeout value
+option.data.arglist[6] := 60;
+// set that option in your endpoint
+ep:Option(option);</pre>
+<p class="spacer">&nbsp;</p>
+<p><b>Q</b>&nbsp;<i>How can I tell whether a tap is the first of a double tap?</i></p>
+<p><b>A</b>&nbsp;Unfortunately, the RUM (Read User Mind) ASIC didn't get completed in time for<br>
+
+Newton 2.0 OS, so we were unable to implement the IsFirstTap global function. We also<br>
+looked at a wireless link to one of the 900-number pay-by-the-minute psychic lines<br>
+but couldn't figure out how to bill the user.
+</p>
+<p>
+But seriously, you can't tell. The best you can do is to hold off processing the first tap<br>
+for some amount of time. If you receive another tap in that time, it's a double tap. The<br>
+drawback is that if it isn't a double tap, you've lost the unit parameter from the first<br>
+tap, since you can't save this parameter. The other option is to follow a user interface<br>
+guideline: Make the second tap an extension of the functionality that happens with the<br>
+first tap. Then there's no need to handle the first tap in a special way.
+</p>
+<p><b>Q</b>&nbsp;<i>We have a problem with union soups. We have an application that creates soups and<br>
+
+transfers them to a PC. The soups can get sent down to a different MessagePad. If the<br>
+user inserts a storage card and selects it as the default store, we can't successfully add<br>
+an item to the soup. Our code does a GetUnionSoupAlways, then tries to add an entry<br>
+using AddToDefaultStoreXmit. The Newton throws an exception that tells us there's no<br>
+soupDef. We're sure that the soup doesn't exist on the store, but we thought that<br>
+GetUnionSoupAlways creates the soup if you try to add something. One thing we thought<br>
+of was to use RegUnionSoup, but our transfer application doesn't know what the<br>
+soupDef is. Is there a way to copy a soupDef from one store to another or to get the<br>
+soupDef from an existing soup?</i>
+</p>
+<p><b>A</b>&nbsp;Well, first you need some good onions, then some stale French bread,<br>
+
+Gruy&egrave;re cheese...oh, sorry, I thought you said "onion soup."
+</p>
+<p>
+For a union soup to work properly in Newton 2.0 OS, a soupDef must exist in at least<br>
+one of two places: it can be registered with the OS via RegUnionSoup, or it can exist<br>
+within a soup that's on a mounted store. GetUnionSoupAlways should fail if there's no<br>
+soupDef present. However, in the current release of the Newton 2.0 OS ROMs it<br>
+doesn't. This means the problem is deferred until you first try to add an entry, which<br>
+is when the OS tries to create the soup but can't find the soupDef. That's why you get<br>
+the error on the call to AddToDefaultStoreXmit. Of course, this doesn't help you, but<br>
+there are a few options:
+</p>
+<ul>
+<li>Make sure that a soupDef is registered, via RegUnionSoup.</li>
+<li>Make sure that an actual soup exists on some store and that that soup<br>
+contains an embedded soupDef. The soup doesn't actually have to have any<br>
+entries. You can use the CreateSoupFromSoupDef function or the GetMember<br>
+soup message to do this. For example:</li>
+</ul>
+<p>
+RegUnionSoup(kMySoupDef):GetMember(GetStores()[0]);
+</p>
+<ul>
+<li>Don't use union soups; instead, have your download application just send<br>
+the store either the CreateSoupXmit or the GetSoup message.</li>
+<li>Write some smart code that checks to see if a soup with the same name<br>
+exists on any store and duplicate that soup on the new default store. If you use<br>
+GetIndexes/CreateSoupXmit and GetAllInfo/SetAllInfoXmit, you should be able<br>
+to make a reasonably similar soup.</li>
+</ul>
+<p>
+Unfortunately, there's no supported way to directly access the soupDef of an existing<br>
+soup.
+</p>
+<p><b>Q</b>&nbsp;<i>I have an application that performs some lengthy initializations in the<br>
+
+installScript. I need a slip to come up and inform the user that this action is occurring.<br>
+The problem is that the BuildContext slip I create at the beginning of the installScript<br>
+doesn't show up when the installScript is running. How can I get a slip to come up in<br>
+my installScript?</i>
+</p>
+<p><b>A</b>&nbsp;I assume that you do something like create the slip, send the slip an Open message,<br>
+
+and then do a tight loop with some initializations. If so, the system has probably opened<br>
+your view, but your installScript is still executing. That means the system cannot<br>
+refresh the display.
+</p>
+<p>
+One possible approach is to call RefreshViews to force the system to update the display.<br>
+However, if your progress indication is dynamic, you'll have to call RefreshViews each<br>
+time you change the progress slip. A better approach is to use the DoProgress call,<br>
+which provides a standard "Your Newton device is doing something" interface for the<br>
+user. You may also want to do your initialization in a deferred action.
+</p>
+<p><b>Q</b>&nbsp;<i>I'd like to add another item to the address picker pop-up list in my "To:," "Cc:," and<br>
+
+"Bcc:" pickers that would allow the user to create an e-mail address without adding it<br>
+to the Names soup. The user interface reasoning behind wanting to do this is to avoid<br>
+cluttering the Names soup with addresses that are used only once. I've successfully<br>
+added an item to the picker and caught the pickActionScript for it. The pick item that I<br>
+want to use to add this temporary name appears in the protoAddressPicker pop-up list.<br>
+Now I want to bring up an editor and add my temporary item. I tried the call</i>
+</p>
+<pre>GetDataDefs('|nameRef.email|):New(tapInfo, self);</pre><p class="spacer">&nbsp;</p>
+<p>
+<i>from my protoAddressPicker's pickActionScript, but I got an exception: Object {class:<br>
+nameRef.email, name: "E-Mail addresses", preferredRouting: [string.email], ...} is<br>
+read-only. Why can't I create a new data object with this?</i>
+</p>
+<p><b>A</b>&nbsp;Usually answers to these questions are reasonably self-contained; this is an<br>
+
+exception. Before you can understand this answer, you really need to read up on list<br>
+pickers and data, or you'll be tripped up by the subtle differences between nameRefs<br>
+and dataDefs.
+</p>
+<p>
+The transport system uses a structure called a nameRef for information on where to<br>
+send things. It so happens that nameRefs use the data definition registry as a<br>
+repository. However, a nameRef is a different beastie from a dataDef. To create a new<br>
+empty nameRef structure, you can use the call
+</p>
+<pre>GetDataDefs('|nameRef.email|):MakeNameRef(tapInfo, self);</pre><p class="spacer">&nbsp;</p>
+<p>
+Then you can use some sort of floating editor to enter the values. I suggest using a<br>
+protoFloatNGo that contains a newtFalseEntryView and then appropriate slot views for<br>
+the fields of the nameRef that you want to edit.
+</p>
+<p>
+The llama is the unofficial mascot of the Developer Technical Support group in Apple's<br>
+Newton Systems Group. Send your Newton-related questions<br>
+todr.llama@newton.apple.com. The first time we use a question from you, we'll send<br>
+you a T-shirt.
+</p>
+<p>
+Thanks to jXopher Bell, Henry Cate, Bob Ebert, David Fedor, Ryan Robertson, Jim<br>
+Schram, Maurice Sharp, and Bruce Thompson for these answers.
+</p>
+<p>
+If you need more answers, check out http://dev.info.apple.com/newton on the World<br>
+Wide Web.
+</p>
+</body>
+</html>

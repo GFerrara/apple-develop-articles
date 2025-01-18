@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 49 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 96 - Graphical Truffles: A Library for Traversing Paths</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Graphical Truffles: A Library for Traversing Paths</h1>
+<h2>Daniel I. Lipton</h2>
+<p>
+<img src="img/281.gif" width="297 px"></img>
+</p>
+<p>
+The QuickDraw GX graphics system is based on shape objects that are used by<br>
+reference. An application creates a shape object such as a path or a polygon by passing<br>
+in data that represents the geometric points of the shape to be drawn or otherwise<br>
+manipulated. The QuickDraw GX graphics system then stores this information in its<br>
+internal database and returns to the application a reference to the shape object. This<br>
+reference is then passed to the various QuickDraw GX routines that perform operations<br>
+on the shape.
+</p>
+<p>
+Since the QuickDraw GX graphics system is maintaining the original data in its<br>
+database, the application often won't keep this data around. Also, an application may not<br>
+even have created the geometric points in the first place, as in the case of converting<br>
+text into a path.
+</p>
+<p>
+It's often desirable, for a variety of purposes, for an application to retrieve the<br>
+geometric information from a shape object. Given the richness of geometric<br>
+information that these objects can contain, it can be a nontrivial task to read back the<br>
+information. This column describes a C library that any application can incorporate<br>
+for the purpose of traversing the geometric information in QuickDraw GX paths.
+</p>
+<h2>WHAT'S IN A QUICKDRAW GX PATH OBJECT</h2>
+<p>
+The QuickDraw GX graphics system provides several types of graphics primitives with<br>
+which to create visual content: lines, curves, polygons, paths, typography, and<br>
+bitmaps. In this system, curves are quadratic B&#201;ziers that can be defined by three<br>
+control points, the middle point being off the curve and the other two being on. Figure<br>
+1 depicts a single quadratic curve segment.
+</p>
+<p>
+<img src="img/282.gif" width="306 px"></img>
+</p>
+<p>
+<b>Figure 1.</b> A QuickDraw GX quadratic curve segment
+</p>
+<p>
+A QuickDraw GX path object is just a conglomeration of curve and line segments,<br>
+resulting from an array of points. The object can contain multiple contours, each<br>
+contour being a group of connected segments.
+</p>
+<p>
+&nbsp;&nbsp;The question arises, if we look at a specific point in a path structure, whether the<br>
+point is part of a line segment or part of a curve segment. The answer is that in<br>
+addition to the points themselves, a path contains an array of flags, one for each point,<br>
+indicating whether the point is on or off the path. To represent a single contour for a<br>
+path object, QuickDraw GX uses the gxPath data structure:
+</p>
+<pre>struct gxPath {
+   long               vectors;
+   long               controlBits[1];
+   struct gxPoint      vector[1];
+};
+typedef struct gxPath gxPath;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The vectors field is an integer that specifies the number of points in the contour, the<br>
+controlBits field is a bit array representing the on-curve/off-curve flags, and the<br>
+vector field is an array of points for the contour.
+</p>
+<p>
+To represent a path object, QuickDraw GX uses the gxPaths data structure:
+</p>
+<pre>struct gxPaths {
+   long               contours;
+   struct gxPath      contour[1];
+};
+typedef struct gxPaths gxPaths;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The contours field is an integer specifying the number of contours, and the contour<br>
+field is an array of gxPath structures, one for each contour.
+</p>
+<p>
+Hence we have enough information to figure out what the points mean. If we see two<br>
+on-path points in a row, we know that represents a line. If we see an on-path point<br>
+followed by an off-path point followed by an on-path point, we know that's a quadratic<br>
+curve segment.
+</p>
+<p>
+So to read the QuickDraw GX path object to determine the actual shape, all we have to<br>
+do is get a point and then get the next point. According to the previous description, it<br>
+would be safe to assume that the very first point in a contour is an on-path point.<br>
+Then, if the next one were also on the path, we'd have a line; if it were off, we'd know<br>
+that we'd have to read a third one (which by definition would have to be on) and we'd<br>
+have a curve.
+</p>
+<p>
+The only trouble is that those assumptions aren't necessarily true. The design of<br>
+QuickDraw GX could have restricted applications to using only those patterns of<br>
+on-path/off-path points, disallowing two consecutive off-path points and requiring<br>
+the first point and the last point in a contour to be on the path; however, it didn't.
+</p>
+<p>
+In the interest of saving memory, QuickDraw GX allows two consecutive off-path<br>
+points to imply a middle on-path point -- known as an implicit point -- exactly<br>
+halfway between the off-path points. An example of this is shown in Figure 2.
+</p>
+<p>
+<img src="img/283.gif" width="306 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>A QuickDraw GX quadratic path
+</p>
+<p>
+For each implicit point there's a memory savings of 8 bytes in QuickDraw GX. This<br>
+allows us to define geometries in less space than would be required in other popular<br>
+graphics models that use cubic B&#201;zier curves without implicit points, but it does<br>
+complicate traversing the path.
+</p>
+<p>
+QuickDraw GX also allows the first or the last point of a contour to be off the curve, in<br>
+the case where the contour is closed. This further complicates path traversal.
+</p>
+<h2>THE SHAPEWALKER LIBRARY</h2>
+<p>
+You can use the ShapeWalker library (which is included on this issue's CD) to avoid<br>
+having to write a huge blob of code to deal with all those points and flags discussed<br>
+above. It allows an application to pass in a QuickDraw GX shape object and be sent back<br>
+(via callbacks) each line and curve segment in the shape. All implicit points are<br>
+resolved by the library, so the client sees only complete line or curve segments.
+</p>
+<p>
+The header file to be used with the library defines types for four callbacks and a<br>
+prototype for the ShapeWalker function:
+</p>
+<pre>// Function is called to move to a new point
+// (start new contour).
+typedef Boolean (*TpwMovetoProc)(gxPoint *p,
+                  void* refcon);
+
+// Function is called to draw a line from
+// current point to p.
+typedef Boolean (*TpwLinetoProc)(gxPoint *p,
+                  void* refcon);
+
+// Function is called to draw a curve from
+// current point (which will be p[0]) through
+// p[1] to p[2].
+typedef Boolean (*TpwCurvetoProc)(gxPoint p[3],
+                  void* refcon);
+
+// Function is called to close a contour.
+typedef Boolean (*TpwClosepathProc)
+                  (void* refcon);
+
+// Return result will be true if path walking
+// was terminated by one of the callbacks.
+Boolean ShapeWalker(gxShape theShape,
+                     TpwMovetoProc DoMoveto,
+                     TpwLinetoProc DoLineto,
+                     TpwCurvetoProc DoCurveto,
+                     TpwClosepathProc DoClosepath,
+                     void* refcon);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+When using the library, you provide four callbacks and a refcon. Each callback will get<br>
+passed the refcon and possibly point information. It's suggested that the client maintain<br>
+whatever state information is necessary for the purpose at hand. The refcon can be a<br>
+pointer to a structure containing the state information. One typical component of such<br>
+information that most clients would need is the notion of the current point. The<br>
+current point is the piece of the path we've looked at most recently, representative of<br>
+the state of processing the shape. This current point should be updated as segments<br>
+come through the callbacks. (We'll see this in a moment in our sample application.)
+</p>
+<p>
+Each callback must also return a result of type Boolean, giving the client a mechanism<br>
+for causing the library to terminate traversal of the shape before completion. Return<br>
+false and the shape walker will continue on to the next segment; return true and it will<br>
+terminate early. This can be used to catch errors in processing the points, or to<br>
+terminate processing if you've finished with the shape before the last point is reached.
+</p>
+<p>
+The four callbacks are as follows:
+</p>
+<ul>
+<li>DoMoveto -- This procedure is called at the start of each new contour in<br>
+the shape. It gets passed a single point and the refcon. The point identifies the<br>
+location of the beginning of the contour. If the client is maintaining a current<br>
+point via the refcon, it should be updated to the point passed in.</li>
+<li>DoLineto -- This procedure is called for each line segment in the contour.<br>
+It gets passed a single point and the refcon. The point represents the end point<br>
+of the line segment. The start point of the line segment is whatever point we<br>
+last saw; that will be the current point if one is being maintained. If the client<br>
+is maintaining a current point via the refcon, it should be updated to the point<br>
+passed in.</li>
+<li>DoCurveto -- This procedure is called for each quadratic curve segment<br>
+in the contour. It gets passed an array of three points and the refcon. The three<br>
+points correspond to the control points of the curve. The first point in the<br>
+array will be the current point if one is being maintained. The current point<br>
+should then be updated to reflect the third point in the array.</li>
+<li>DoClosepath -- This procedure is called at the end of every contour if the<br>
+QuickDraw GX shape is closed (has the gxClosedFrameFill shape fill<br>
+attribute). Closing a contour implies connecting the last point in the contour<br>
+(whatever the current point is when this function is called) with the first<br>
+point in the contour (the point passed into the DoMoveto function).</li>
+</ul>
+<p>
+The code shown in Listing 1 is a sample application (SamplePathWalker.c) that<br>
+converts a piece of text to a path and then uses the ShapeWalker library to read the<br>
+points from the result. In this example the callback procedures are used only to print<br>
+out the points in the segments, but of course they can be used to do a lot of other things<br>
+as well.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 1. </b>Sample application using the ShapeWalker library
+</p>
+<pre>// The following structure is used to maintain a state while
+// walking a shape.
+typedef struct {
+   gxPoint         currentPoint;      // current point
+   gxPoint         firstPoint;        // first point in contour
+} TestWalkRec;
+
+#define fix2float(x) ((double)x / 65536.0)
+
+Boolean   TestMoveto(gxPoint *p, TestWalkRec* pWalk);
+Boolean   TestMoveto(gxPoint *p, TestWalkRec* pWalk)
+{
+   printf("Begin new contour: %f, %f\r\n", fix2float(p-&gt;x),
+            fix2float(p-&gt;y));
+   pWalk-&gt;currentPoint.x = p-&gt;x;
+   pWalk-&gt;currentPoint.y = p-&gt;y;
+   pWalk-&gt;firstPoint.x = p-&gt;x;
+   pWalk-&gt;firstPoint.y = p-&gt;y;
+   return (false);
+}
+
+Boolean   TestLineto(gxPoint *p, TestWalkRec* pWalk);
+Boolean   TestLineto(gxPoint *p, TestWalkRec* pWalk)
+{
+   printf("Line from %f, %f to %f, %f\r\n",
+            fix2float(pWalk-&gt;currentPoint.x),
+            fix2float(pWalk-&gt;currentPoint.y),
+            fix2float(p-&gt;x), fix2float(p-&gt;y));
+   pWalk-&gt;currentPoint.x = p-&gt;x;
+   pWalk-&gt;currentPoint.y = p-&gt;y;
+   return (false);
+}
+Boolean   TestCurveto(gxPoint p[3], TestWalkRec* pWalk);
+Boolean   TestCurveto(gxPoint p[3], TestWalkRec* pWalk)
+{
+   printf("Curve from %f, %f through %f, %f, to %f, %f\r\n",
+            fix2float(p[0].x), fix2float(p[0].y),
+            fix2float(p[1].x), fix2float(p[1].y),
+            fix2float(p[2].x), fix2float(p[2].y));
+   pWalk-&gt;currentPoint.x = p[2].x;
+   pWalk-&gt;currentPoint.y = p[2].y;
+   return (false);
+}
+
+Boolean TestClosepath(TestWalkRec* pWalk);
+Boolean TestClosepath(TestWalkRec* pWalk)
+{
+   printf("Closing the contour\r\n\r\n");
+   pWalk-&gt;currentPoint.x = pWalk-&gt;firstPoint.x;
+   pWalk-&gt;currentPoint.y = pWalk-&gt;firstPoint.y;
+   return (false);
+}
+
+main()
+{
+   gxShape         theShape;
+   gxPoint         location = {ff(100), ff(100)};
+   TestWalkRec      walker;
+   Boolean         result;
+  
+   theShape = GXNewText(5, "Hello", &amp;location);
+   GXSetShapeTextSize(theShape, ff(50));
+   GXSetShapeType(theShape, gxPathType);
+   GXSetShapeFill(theShape, gxClosedFrameFill);
+
+   result = ShapeWalker(theShape, TestMoveto, TestLineto,
+                         TestCurveto, TestClosepath, &amp;walker);
+   GXDisposeShape(theShape);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<h2>WALKING THE PATH</h2>
+<p>
+The files PathWalking.h and PathWalking.c are all that are required to use the<br>
+ShapeWalker library in your application (for the sake of brevity, PathWalking.c isn't<br>
+shown in this column). This library should make it easy for your application to<br>
+process QuickDraw GX path objects. For completeness, the library will also process<br>
+curve objects, line objects, rectangle objects, and polygon objects in a similar<br>
+manner. All other shape types will result in the posting of the<br>
+"illegal_type_for_shape" graphics error. (Graphics errors can be polled with the<br>
+GXGetGraphicsError function.) The ShapeWalker library is actually based on the same<br>
+code used by QuickDraw GX in its built-in GX-to-PostScript translator for printing.<br>
+The library's versatility means that its uses in your application are limited only by<br>
+your imagination, so get creative and try it out!
+</p>
+<p>
+<b>DANIEL I. LIPTON</b> (daniel_lipton@powertalk.apple.com) has worked at Apple for<br>
+seven years and is one of the original QuickDraw GX team members. In his spare time,<br>
+Dan runs a small business repairing perpetual motion machines.*
+</p>
+<p>
+<b>Thanks to</b> Dave Hersey, Ingrid Kelly, and Dave Polaschek for reviewing this<br>
+column.*
+</p>
+</body>
+</html>

@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 46 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 96 - The Speech Recognition Manager Revealed</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>The Speech Recognition Manager Revealed</h1>
+<h2>Matt Pallakoff and Arlo Reeves</h2>
+<p>
+<img src="img/273.gif" width="297 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">As any Star Trek fan knows, the computer of the future will talk</i>
+<br>
+
+<i style="font-size:125%;">and listen. Macintosh computers have already been talking for a</i>
+<br>
+
+<i style="font-size:125%;">decade, using speech synthesis technologies such as MacinTalk or</i>
+<br>
+
+<i style="font-size:125%;">the Speech Synthesis Manager. Now any Power Macintosh</i>
+<br>
+
+<i style="font-size:125%;">application can use Apple's new Speech Recognition Manager to</i>
+<br>
+
+<i style="font-size:125%;">recognize and respond to spoken commands as well. We'll show you</i>
+<br>
+
+<i style="font-size:125%;">how easy it is to add speech recognition to your application.</i>
+</p>
+<p>
+Speech recognition technology has improved significantly in the last few years. It may<br>
+still be a long while before you'll be able to carry on arbitrary conversations with<br>
+your computer. But if you understand the capabilities and limitations of the new<br>
+Speech Recognition Manager, you'll find it easy to create speech recognition<br>
+applications that are fast, accurate, and robust.
+</p>
+<p>
+With code samples from a simple speech recognition application, SRSample, this<br>
+article shows you how to quickly get started using the Speech Recognition Manager.<br>
+You'll also get some tips on how to make your application's use of speech recognition<br>
+compelling, intuitive, and reliable. For everything you need in order to use the Speech<br>
+Recognition Manager in your application (including SRSample and detailed<br>
+documentation), see this issue's CD or Apple's speech technology Web site.
+</p>
+<h2>WHAT THE SPEECH RECOGNITION MANAGER CAN AND CANNOT<br>
+DO</h2>
+<p>
+The Speech Recognition Manager consists of an API and a recognition engine. Under<br>
+System 7.5, these are packaged together in version 1.5 or later of the Speech<br>
+Recognition extension. (This packaging may change in future OS versions.)
+</p>
+<p>
+The Speech Recognition Manager runs only on Power Macintosh computers with<br>
+16-bit sound input. Speech recognition is simply too computation-intensive to run<br>
+well on most 680x0 systems. The installed base of Power Macs is growing by about<br>
+five million a year, however, so plenty of machines -- including the latest<br>
+PowerPC(TM) processor-based PowerBooks -- can run speech recognition.
+</p>
+<p>
+The current version of the Speech Recognition Manager has the following capabilities<br>
+and limitations:
+</p>
+<ul>
+<li>It's speaker independent, meaning that users don't need to train it before<br>
+they can use it.</li>
+<li>It recognizes continuous speech, so users can speak naturally, without --<br>
+pausing -- between -- words.</li>
+<li>It's designed for North American adult speakers of English. It's not<br>
+localized yet, and in general it won't work as well for children.</li>
+<li>It supports command-and-control recognition, not dictation. It works<br>
+well when your application asks it to listen for at most a few dozen phrases at<br>
+a time; however, it can't recognize arbitrary sentences and its accuracy<br>
+decreases substantially if the number of utterances it's asked to listen for<br>
+grows too large. For example, it won't accurately recognize one name out of a<br>
+list of five thousand names.</li>
+</ul>
+<h2>OVERVIEW OF THE SPEECH RECOGNITION MANAGER API</h2>
+<p>
+To use the Speech Recognition Manager, you must first open a recognition system,<br>
+which loads and initializes the recognition toolbox. You then allocate a recognizer,<br>
+which listens to a speech source for sound input. A recognizer might also display a<br>
+feedback window that shows the user when to speak and what the recognizer thinks was<br>
+said.
+</p>
+<p>
+To define the spoken utterances that the recognizer should listen for, you build a<br>
+language model and pass it to the recognizer. A language model is a flexible network of<br>
+words and phrases that defines a large number of possible utterances in a compact and<br>
+efficient way. The Speech Recognition Manager lets your application rapidly change the<br>
+active language model, so that at different times your application can listen for<br>
+different things.
+</p>
+<p>
+After the recognizer is told to start listening, it sends your application a recognition<br>
+result whenever it hears the user speak an utterance contained in the current language<br>
+model. A recognition result contains the part of the language model that was recognized<br>
+and is typically sent to your application via Apple events. (Alternatively, you can<br>
+request notification using callbacks if you cannot support Apple events.) Your<br>
+application then processes the recognition result to examine what the user said and<br>
+responds appropriately.
+</p>
+<p>
+Figure 1 shows how the Speech Recognition Manager works. Note that the telephone<br>
+speech source is not supported in version 1.5 of the Speech Recognition extension.
+</p>
+<p>
+<img src="img/274.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>How the Speech Recognition Manager works
+</p>
+<p>
+<b>SPEECH OBJECTS</b>
+</p>
+<p>
+The recognition system, recognizer, speech source, language models, and recognition<br>
+results are all objects belonging to classes derived from the SRSpeechObject class, in<br>
+accordance with object-oriented design principles. These and other objects are<br>
+arranged into the class hierarchy shown in Figure 2. The class hierarchy gives the<br>
+Speech Recognition Manager API the flexibility of polymorphism. For example, you<br>
+can call the routine SRReleaseObject to dispose of any SRSpeechObject.
+</p>
+<p>
+<img src="img/275.gif" width="468 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>The speech object class hierarchy
+</p>
+<p>
+The most important speech objects are as follows:
+</p>
+<ul>
+<li>SRRecognitionSystem -- An application typically opens one of these at<br>
+startup (by calling SROpenRecognitionSystem) and closes it at shutdown (by<br>
+calling SRCloseRecognitionSystem). Applications allocate other kinds of<br>
+objects by calling routines like SRNewWord, which typically take the<br>
+SRRecognitionSystem object as their first argument.</li>
+<li>SRRecognizer -- An application gets an SRRecognizer from an<br>
+SRRecognitionSystem by calling SRNewRecognizer. The SRRecognizer does the<br>
+work of recognizing utterances and sending recognition results back to the<br>
+application. It begins doing this whenever the application calls<br>
+SRStartListening and stops whenever the application calls SRStopListening.</li>
+<li>SRLanguageModel, SRPath, SRPhrase, SRWord -- An application builds<br>
+its language models from these object types, which are all subclasses of<br>
+SRLanguageObject. (A phrase is a sequence of one or more words, and a path is<br>
+a sequence of words, phrases, and language models.) A language model, in turn,<br>
+describes what a user can say at any given moment. For example, if an<br>
+application displayed ten animals and wanted to allow the user to say any of the<br>
+animals' names, it might build a language model containing ten phrases, each<br>
+corresponding to an animal's name.</li>
+<li>SRRecognitionResult -- When an utterance is recognized, an<br>
+SRRecognitionResult object is sent (using either an Apple event or a callback<br>
+routine, whichever the application prefers) to the application that was<br>
+listening for that utterance. The SRRecognitionResult object describes what<br>
+was recognized. An application can then look at the result in several forms: as<br>
+text, as SRWords and SRPhrases, or as an SRLanguageModel, which can assist<br>
+in quickly interpreting the uttered phrase.</li>
+</ul>
+<p>
+Each class of speech object has a number of properties that define how the objects<br>
+behave. For example, all descendants of SRLanguageObject have a kSRSpelling property<br>
+that shows how they're spelled. Your application uses the SRSetProperty and<br>
+SRGetProperty routines to set and get the various properties of each these objects.
+</p>
+<p>
+<b>RELEASING OBJECT REFERENCES</b>
+</p>
+<p>
+You create objects by calling routines like SRNewRecognizer and SRNewWord. When<br>
+you've finished using them, you dispose of them by calling SRReleaseObject. You can<br>
+also acquire references to existing objects by calling routines like SRGetIndexedItem<br>
+(for example, to get the second word in a phrase of several words). The Speech<br>
+Recognition Manager maintains a reference count for each object. An object's reference<br>
+count is incremented by SRNew... and SRGet... calls, and is decremented by calls to<br>
+SRReleaseObject. An object gets disposed of only when its reference count is<br>
+decremented to 0. Thus, to avoid memory leaks, your application must balance every<br>
+SRNew... or SRGet... call with a call to SRReleaseObject.
+</p>
+<h2>A SIMPLE SPEECH RECOGNITION EXAMPLE</h2>
+<p>
+It's easy to add simple speech recognition capabilities to your application. All you need<br>
+to do is perform a small number of operations in sequence:
+</p>
+<ul>
+<li>Initialize speech recognition by determining whether a valid version of<br>
+the Speech Recognition Manager is installed, opening an SRRecognitionSystem,<br>
+allocating an SRRecognizer, and installing an Apple event handler to handle<br>
+recognition result notifications.</li>
+<li>Build a language model that specifies the utterances your application is<br>
+listening for.</li>
+<li>Set the recognizer's active language model to the one you built and call<br>
+SRStartListening to start listening and processing recognition result<br>
+notifications.</li>
+</ul>
+<p>
+We'll describe each of these operations in more detail.
+</p>
+<p>
+<b>INITIALIZING SPEECH RECOGNITION</b>
+</p>
+<p>
+First, you must verify that a valid version of the Speech Recognition Manager is<br>
+installed on the target machine. Listing 1 shows how to do this. Note that only versions<br>
+1.5 and later of the Speech Recognition Manager adhere to the API used in this article.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 1.</b> Determining the Speech Recognition Manager version
+</p>
+<pre>Boolean HasValidSpeechRecognitionVersion (void)
+{
+   OSErr                  status;
+   long                   theVersion;
+   Boolean                validVersion               = false;
+   const unsigned long    kMinimumRequiredSRMVersion   = 0x00000150;
+  
+   status = Gestalt(gestaltSpeechRecognitionVersion, &amp;theVersion);
+   if (!status)
+      if (theVersion &gt;= kMinimumRequiredSRMVersion)
+         validVersion = true;
+  
+   return validVersion;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 2. </b>Initializing the Speech Recognition Manager
+</p>
+<pre>/* Our global variables */
+SRRecognitionSystem   gRecognitionSystem     = NULL;
+SRRecognizer          gRecognizer            = NULL;
+SRLanguageModel       gTopLanguageModel      = NULL;
+AEEventHandlerUPP     gAERoutineDescriptor   = NULL;
+
+OSErr InitSpeechRecognition (void)
+{
+   OSErr status = kBadSRMVersion;
+  
+   /* Ensure that the Speech Recognition Manager is available. */
+   if (HasValidSpeechRecognitionVersion()) {
+      /* Open the default recognition system. */
+      status = SROpenRecognitionSystem(&amp;gRecognitionSystem,
+                                    kSRDefaultRecognitionSystemID);
+     
+      /* Use standard feedback window and listening modes. */
+      if (!status) {
+         short feedbackNeeded = kSRHasFeedbackHasListenModes;
+        
+         status = SRSetProperty(gRecognitionSystem,
+                     kSRFeedbackAndListeningModes, &amp;feedbackNeeded,
+                     sizeof(feedbackNeeded));
+      }
+     
+      /* Create a new recognizer. */
+      if (!status)
+         status = SRNewRecognizer(gRecognitionSystem, &amp;gRecognizer,
+                                    kSRDefaultSpeechSource);
+      /* Install our Apple event handler for recognition results. */
+      if (!status) {
+         status = memFullErr;
+         gAERoutineDescriptor =
+                     NewAEEventHandlerProc(HandleRecognitionDoneAE);
+         if (gAERoutineDescriptor)
+            status = AEInstallEventHandler(kAESpeechSuite,
+                        kAESpeechDone, gAERoutineDescriptor, 0,
+                        false);
+      }
+   }
+
+   return status;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Listing 2 shows how to open an SRRecognitionSystem, allocate an SRRecognizer, and<br>
+install your Apple event handler. All of this happens when your application starts up.<br>
+The Apple event handler HandleRecognitionDoneAE is shown later (in Listing 4).
+</p>
+<p>
+Notice in Listing 2 how we call SRSetProperty to request Apple's standard feedback and<br>
+listening modes for the recognizer. To have a successful experience with speech<br>
+recognition, users need good feedback indicating when the recognizer is ready for them<br>
+to talk and what utterances the recognizer has recognized (for more on giving<br>
+feedback, see "Speech Recognition Tips"). In addition, because of the recognizer's<br>
+tendency to misinterpret background conversation and noises as speech, it's usually a<br>
+good idea to let the user tell the recognizer when to listen by pressing a predefined key<br>
+(the "push-to-talk" key). Your application can get all of this important behavior for<br>
+free, simply by setting the kSRFeedbackAndListeningModes property.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SPEECH RECOGNITION TIPS<br>
+</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Speech recognition is a completely new input mode, and using it properly isn't<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;always as straightforward as it might seem. While we don't yet have a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;complete set of human interface guidelines to guarantee a consistent and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;intuitive speech recognition user experience, there are a few simple rules<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;that all speech recognition applications should follow.
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GIVE FEEDBACK</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Your application must always provide feedback to let users know when they<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;can speak, when their utterance has been recognized, and how it was<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;interpreted. The feedback services in the Speech Recognition Manager perform<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;this for you, using the standard feedback window shown in Figure 3. (The<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;user's recognized utterances are shown in italics, and the displayed feedback is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;in plain text. The string under the feedback character's face indicates the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push-to-talk key.) All you need to do is set the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kSRFeedbackAndListeningModes property as shown in Listing 2.
+</p>
+<p>
+<img style="margin-left: 43px;"  src="img/276.gif" width="324 px"></img>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Figure 3. </b>Standard feedback window
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Your application should use this standard feedback behavior unless you have a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;very good reason to provide your own feedback and custom push-to-talk<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;options. (Fast action games that take over the entire screen and don't call<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WaitNextEvent are examples of applications that wouldn't use the standard<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;feedback.) Not only will users enjoy the benefits of consistent behavior, but as<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Apple improves the feedback components, your speech recognition applications<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;will automatically inherit this improved behavior without having to be<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;recompiled.
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SHOW WHAT CAN BE SAID</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Successful speech recognition applications always let the user know what he<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;or she can say. The way they achieve this depends on the application, but one<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;good example is a Web browser that makes all visible hyperlinks speakable.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;This lets the user know what can be said while restricting the size of the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;language model to improve recognition accuracy.
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CONSTRAIN THE LANGUAGE MODEL</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The recognition technology currently used by the Speech Recognition Manager<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;works best when it's listening for a small number of distinct utterances. The<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;longer an utterance is, the more easily it can be distinguished from other<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;utterances. For example, distinguishing the isolated words hot, cut, and quit is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;difficult and error prone. Recognition performance also decreases as the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;language model grows. The larger the language model, the more time the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;recognizer must spend searching for a matching utterance and the larger the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;likelihood of two utterances in the language model sounding similar. For best<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;results, limit the size of the language model to fewer than a hundred phrases at<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;any time and avoid including phrases that are easily confused when spoken,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;like "wreck a nice beach" and "recognize speech."
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DO SOMETHING DIFFERENT</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Compelling applications of speech recognition are often novel ones. Instead of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;simply paralleling an application's graphical user interface with a spoken one<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(making all menu items speakable, for example), do something different --<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;something that takes advantage of the unique properties of speech. Combine<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;speech synthesis with speech recognition to engage the user in a brief dialog.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Use efficient language models to allow a single utterance to trigger a series of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;commands that might otherwise require interaction with dialog boxes. Let the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;power of speech recognition augment the graphical interface your users are<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;already familiar with. Use your imagination!
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+With Apple's Speech control panel (which comes bundled on new Macintoshes and with<br>
+system updates), users can tailor this behavior to suit their needs, choosing preferred<br>
+feedback characters (that is, the cartoon faces displayed in the feedback window) and<br>
+preferred push-to-talk keys.
+</p>
+<p>
+<b>BUILDING A SIMPLE LANGUAGE MODEL</b>
+</p>
+<p>
+Your application needs to build a language model -- gTopLanguageModel in our sample<br>
+code -- that specifies what the recognizer is listening for. The routine in Listing 3<br>
+shows how your application can create a simple language model. (We'll discuss fancier<br>
+language models later in this article.) Even simple language models should avoid using<br>
+phrases that sound similar to one another; just like a human listener, the recognizer<br>
+may have a hard time distinguishing between similar-sounding phrases.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 3.</b> Building a simple language model
+</p>
+<pre>OSErr BuildLanguageModel (void)
+{  
+   OSErr         status;
+   const char   kLMName[]   = "&lt;Top LM&gt;";
+
+   /* First, allocate the gTopLanguageModel language model. */
+   status = SRNewLanguageModel(gRecognitionSystem,
+                &amp;gTopLanguageModel, kLMName, strlen(kLMName));
+   if (!status) {
+      long   refcon = kTopLMRefcon;
+     
+      /* Set the reference constant of our top language model so */
+      /* that when we process our recognition result, we'll be */
+      /* able to distinguish it from the rejection word, "???". */
+      status = SRSetProperty(gTopLanguageModel, kSRRefCon, &amp;refcon,
+                   sizeof(refcon));
+      if (!status) {
+         const char  *kSimpleStr[]  = { "Hello", "Goodbye",
+                                        "What time is it?", NULL };
+         char        **currentStr   = (char **) kSimpleStr;
+         long        refcon         = kHelloRefCon;
+        
+         /* Add each of the strings in kSimpleStr to the language */
+         /* model, and set the refcon to the index of the string */
+         /* in the kSimpleStr array. */
+         while (*currentStr &amp;&amp; !status) {
+            status = SRAddText(gTopLanguageModel, *currentStr,
+                         strlen(*currentStr), refcon++);
+            ++currentStr;
+         }
+        
+         /* Augment this simple language model with a fancier one. */
+         if (!status)
+            status = AddFancierLanguageModel(gTopLanguageModel);
+      }
+   }
+   return status;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+A recognizer returns a special speech object, called the rejection word, if it hears an<br>
+utterance but cannot recognize it. Listing 3 sets the reference constant of the top-level<br>
+language model to a predefined value to be able to distinguish that model from the<br>
+rejection word.
+</p>
+<p>
+Note in Listing 3 that we add the phrases "Hello," "Goodbye," and "What time is it?" to<br>
+our gTopLanguageModel using the call SRAddText, a convenient shortcut for the<br>
+sequence of calls SRNewPhrase, SRAddLanguageObject, and SRReleaseObject. SRAddText<br>
+also sets the kSRRefCon property of each added phrase. We'll use this reference<br>
+constant when we examine the recognition result to help determine what was said.
+</p>
+<p>
+<b>HANDLING RECOGNITION RESULT NOTIFICATIONS</b>
+</p>
+<p>
+Now let's look at how your application would process result notifications given this<br>
+simple language model.&nbsp;&nbsp;In Listing 4, HandleRecognitionDoneAE, our Apple event<br>
+handler, uses the routine AEGetParamPtr to extract the status of the result as well as<br>
+the recognizer and recognition result objects from the Apple event.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 4.</b> Handling the recognition-done Apple event
+</p>
+<pre>pascal OSErr HandleRecognitionDoneAE (AppleEvent *theAEevt,
+       AppleEvent *reply, long refcon)
+{
+   OSErr        recognitionStatus = 0, status;
+   long         actualSize;
+   DescType     actualType;
+  
+   /* Get recognition result status. */
+   status = AEGetParamPtr(theAEevt, keySRSpeechStatus,
+            typeShortInteger, &amp;actualType,
+            (Ptr) &amp;recognitionStatus, sizeof(recognitionStatus),
+            &amp;actualSize);
+  
+   /* Get the SRRecognizer. */
+   if (!status &amp;&amp; !recognitionStatus) {
+      SRRecognizer recognizer;
+      status = AEGetParamPtr(theAEevt, keySRRecognizer,
+                  typeSRRecognizer, &amp;actualType,
+                  (Ptr) &amp;recognizer, sizeof(recognizer),
+                  &amp;actualSize);
+      /* Get the SRRecognitionResult. */
+      if (!status) {
+         SRRecognitionResult recResult;
+         status = AEGetParamPtr(theAEevt, keySRSpeechResult,
+                     typeSRSpeechResult, &amp;actualType,
+                     (Ptr) &amp;recResult, sizeof(recResult),
+                     &amp;actualSize);
+        
+         /* Extract the language model from the result. */
+         if (!status) {
+            SRLanguageModel   resultLM;
+            long               propertySize = sizeof(resultLM);
+           
+            status = SRGetProperty(recResult, kSRLanguageModelFormat,
+                          &amp;resultLM, &amp;propertySize);
+           
+            /* Process the language model. */
+            if (!status) {
+               status = ProcessRecognitionResult(resultLM,
+                            recognizer);
+           
+               /* What we SRGot we must SRRelease! */
+               SRReleaseObject(resultLM);
+            }
+            /* Also release the recognition result. */
+            SRReleaseObject(recResult);
+         }
+      }
+   }
+   return noErr;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+At this point, the Apple event handler could easily get the text of what was heard by<br>
+getting the kSRTEXTFormat property of the recognition result. But a more useful form<br>
+of the result is the kSRLanguageModelFormat. This language model parallels the<br>
+language model gTopLanguageModel, but instead of containing all of the phrases "Hello,"<br>
+"Goodbye," and "What time is it?" it contains only a copy of the phrase that was<br>
+recognized. For example, if the user said "Goodbye," the language model returned in the<br>
+kSRLanguageModelFormat property would contain one phrase, which would have a<br>
+kSRSpelling property of "Goodbye" and a kSRRefCon property of 1 (the value passed<br>
+for that phrase in the SRAddText call in Listing 3). The ProcessRecognitionResult<br>
+routine (Listing 5) uses the language model to determine what was said by getting the<br>
+kSRRefCon property of the spoken phrase and responding appropriately.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 5.</b> Processing a recognition result
+</p>
+<pre>OSErr ProcessRecognitionResult (SRLanguageModel resultLM,
+         SRRecognizer recognizer)
+{
+   OSErr      status = noErr;
+  
+   if (resultLM &amp;&amp; recognizer) {
+      long      refcon;
+      long      propertySize = sizeof(refcon);
+     
+      /* Get the refcon of the root object */
+      status = SRGetProperty(resultLM, kSRRefCon, &amp;refcon,
+                   &amp;propertySize);
+     
+      /* Is the resultLM a subset of our top language model or is */
+      /* it the rejection word, "???"? */
+      if (!status &amp;&amp; refcon == kTopLMRefcon) {
+         SRLanguageObject languageObject;
+         propertySize = sizeof(languageObject);
+
+         /* The resultLM contains either an SRPhrase or an SRPath. */
+         /* We use the refcon property set in our language model */
+         /* building routine to distinguish between the results. */
+
+         /* Get the phrase or path. */
+         status = SRGetIndexedItem(resultLM, &amp;languageObject, 0);
+         if (!status) {
+            long refcon;
+            propertySize = sizeof(refcon);
+           
+            /* Get the refcon of the language object. */
+            status = SRGetProperty(languageObject, kSRRefCon,
+                         &amp;refcon, &amp;propertySize);
+            if (!status) switch (refcon) {
+               case kHelloRefCon:
+               case kGoodbyeRefCon:
+               case kWhatTimeIsItRefCon:
+                  {
+                     const char *kResponses[] =
+                  {"Hi there!", "Don't leave now!",
+                   "It's time to use the Speech Recognition Manager!"
+                  };
+                     /* Speak and display our response using the */
+                     /* feedback character.  Use the refcon as an */
+                     /* index into our response array. */
+                     status = SRSpeakAndDrawText(recognizer,
+                                 kResponses[refcon],
+                                 strlen(kResponses[refcon]));
+                  }
+                  break;
+               case kCompanyRefCon:
+                  status = ProcessFancierLanguageModel
+                               (languageObject, recognizer);
+                  break;
+            }
+            /* Always SRRelease what we SRGot. */
+            status = SRReleaseObject(languageObject);
+         }
+      }
+   }
+   return status;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+This example uses the SRSpeakAndDrawText routine to respond to recognition events.<br>
+The Speech Recognition Manager uses the Speech Synthesis Manager to speak the<br>
+string, and the animated feedback character (displayed in Apple's standard feedback<br>
+window) lip-synchs with the synthesized text. The Speech Recognition Manager also<br>
+displays the response text in the feedback window. (You can use other routines to<br>
+simply speak a string through the feedback window without displaying it, or to display<br>
+a string without speaking it.)
+</p>
+<p>
+<b>SETTING THE ACTIVE LANGUAGE MODEL AND STARTING TO LISTEN</b>
+</p>
+<p>
+All we need to do now is make the language model we've built, gTopLanguageModel, the<br>
+active language model and tell our recognizer to start listening. First we call the<br>
+SRSetLanguageModel function, which associates gTopLanguageModel with the<br>
+SRRecognizer we've allocated, gRecognizer:
+</p>
+<pre>OSErr status = SRSetLanguageModel(gRecognizer, gTopLanguageModel);</pre><p class="spacer">&nbsp;</p>
+<p>
+You can build as many language models as you like, but there is always just one that's<br>
+active. You can make another language model active (and thereby deactivate the one that<br>
+was previously active), or you can enable and disable parts of the active language<br>
+model. Typically this is done in response to a speech-detected Apple event, sent to the<br>
+application when recognition is about to begin.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>For a good example</b> of making your language model dynamically conform to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the context of your application, see the article "Adding Speech Recognition to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;an Application Framework" in this issue of <i>develop</i>.*
+</p>
+<p>
+Once we've set the active language model, we start the recognition process by calling<br>
+SRStartListening, as follows:
+</p>
+<pre>if (!status)
+   status = SRStartListening(gRecognizer);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Now we can start speaking to our application. When an utterance is recognized as<br>
+belonging to our language model, our Apple event handler, HandleRecognitionDoneAE,<br>
+will be called and the recognition result will be processed. It's that easy!
+</p>
+<p>
+<b>CLEANING UP</b>
+</p>
+<p>
+Listing 6 shows how to clean up when your application quits. In general, you should<br>
+release the speech objects in the order shown.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 6.</b> Terminating speech recognition
+</p>
+<pre>void TerminateSpeechRecognition (void)
+{
+   OSErr status = noErr;
+  
+   /* If we have an active language model, release it. */
+   if (gTopLanguageModel) {
+      status = SRReleaseObject(gTopLanguageModel);
+      gTopLanguageModel = NULL;
+   }
+  
+   /* If we have a recognizer, release it. */
+   if (gRecognizer) {
+      status = SRStopListening(gRecognizer);
+      status = SRReleaseObject(gRecognizer);
+      gRecognizer = NULL;
+   }
+
+   /* If we have a recognition system, close it. */
+   if (gRecognitionSystem) {
+      status = SRCloseRecognitionSystem(gRecognitionSystem);
+      gRecognitionSystem = NULL;
+   }
+  
+   /* Remove our Apple event handler and dispose of the handler's */
+   /* routine descriptor. */
+   if (gAERoutineDescriptor) {
+      status = AERemoveEventHandler(kAESpeechSuite, kAESpeechDone,
+                                       gAERoutineDescriptor, false);
+      DisposeRoutineDescriptor(gAERoutineDescriptor);
+      gAERoutineDescriptor = NULL;
+   }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<h2>BUILDING FANCIER LANGUAGE MODELS</h2>
+<p>
+The Speech Recognition Manager provides several routines that your application can<br>
+use to create and manipulate fancier language models than the one created earlier in<br>
+Listing 3. For example, suppose you wanted to create an application that responds to<br>
+users when they say, "Tell me the price of &lt;company&gt; stock," where &lt;company&gt; is one<br>
+of several company names.
+</p>
+<p>
+To create a language model like this, your application needs to create an SRPath object<br>
+that consists of the phrase "Tell me the price of" followed by an embedded language<br>
+model representing the company names, followed by the word "stock." The<br>
+AddFancierLanguageModel function creates this path and adds it to the language model<br>
+created in Listing 3. (Note that the embedded company language model is simply a list<br>
+of phrases, just like the language model we created in Listing 3.)
+</p>
+<p>
+Figure 4 shows the structure of the entire language model. We've limited the number<br>
+of companies to three here for simplicity. The top half of each box shows the spelling<br>
+and refcon properties of each object; the lower half indicates the object type.
+</p>
+<p>
+<img src="img/277.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 4.</b> Language model built by calling BuildLanguageModel
+</p>
+<p>
+Take a look at the AddFancierLanguageModel function (not shown, but included with our<br>
+sample code) to see how to build the fancier language model. (Don't worry if this<br>
+routine seems like a lot of code just to add the command "Tell me the price of<br>
+&lt;company&gt; stock"; below we'll describe the SRLanguageModeler tool, which makes the<br>
+creation of complicated static language models very easy.) Listing 7 shows how your<br>
+application would process results given this fancier language model.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 7. </b>Processing a recognition result given a fancier language model
+</p>
+<pre>OSErr ProcessFancierLanguageModel (SRPath resultPath,
+         SRRecognizer recognizer)
+{
+   OSErr      status = noErr;
+  
+   if (resultPath &amp;&amp; recognizer) {
+      SRLanguageModel companyLM;
+     
+      /* Get the second item in the path -- it's the company */
+      /* language model. */
+      status = SRGetIndexedItem(resultPath, &amp;companyLM, 1);
+      if (!status &amp;&amp; companyLM) {
+         SRPhrase companyName;
+        
+         /* In the result language model, the company language */
+         /* model contains just one phrase. */
+         status = SRGetIndexedItem(companyLM, &amp;companyName, 0);
+         if (!status) {
+            long   refcon;
+            long   propertySize = sizeof(refcon);
+           
+            /* Get the refcon from the company name. It's our */
+            /* index into the response array. */
+            status = SRGetProperty(companyName, kSRRefCon, &amp;refcon,
+                         &amp;propertySize);
+            if (!status) {
+               const char *kResponses[] =
+                        {  "Apple stock is priced to move!",
+                           "Netscape is trading at fifty dollars.",
+                           "Why would you want to know that?"
+                        };
+               status = SRSpeakAndDrawText(recognizer,
+                           kResponses[refcon],
+                           strlen(kResponses[refcon]));
+            }
+            /* What we SRGot we must SRRelease. */
+            status = SRReleaseObject(companyName);
+         }
+         status = SRReleaseObject(companyLM);
+      }
+   }
+   return status;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Speech recognition applications that support utterances like "Tell me the price of<br>
+&lt;company&gt; stock" or "Call &lt;name&gt;," while limiting &lt;company&gt; or &lt;name&gt; to a few dozen<br>
+items, can be more compelling than those that just respond to simple phrases. They're<br>
+nicely limited in scope, yet they allow the user to invoke actions more easily than<br>
+would be possible with a graphical user interface. What other technology does that?
+</p>
+<h2>MANIPULATING LANGUAGE MODELS</h2>
+<p>
+The Speech Recognition Manager contains several more routines and properties for<br>
+manipulating language models. We'll look at a few of them here. Your application can<br>
+create a large language model and then use the SRSetProperty function to disable and<br>
+enable parts of it quickly on the fly, as shown in Listing 8. By enabling only parts of a<br>
+language model, you can minimize the number of utterances that the recognizer is<br>
+listening for.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 8.</b> Disabling a part of a language model
+</p>
+<pre>/* Disable the stockPath part of the gTopLanguageModel. */
+/* The stock path is the fourth item in this language model. */
+
+SRPath stockPath;
+OSErr  status = SRGetIndexedItem(gTopLanguageModel, &amp;stockPath, 3);
+
+if (!status) {
+   Boolean enabled = false;
+   status = SRSetProperty(stockPath, kSREnabled, &amp;enabled,
+                           sizeof(enabled));
+
+   /* Balance SRGet call. */
+   status = SRReleaseObject(stockPath);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Your application can change, clear, or rebuild parts of a language model dynamically to<br>
+reflect the current context of your program. Listing 9 clears and then rebuilds the<br>
+company language model that was originally built by the AddFancierLanguageModel<br>
+function.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 9.</b> Emptying and refilling the company language model
+</p>
+<pre>/* Empty and refill the embedded company language model. */
+/* Assume that stockPath has already been initialized. */
+
+/* The companyLM is the second item in the stock path. */
+SRLanguageModel  companyLM;
+OSErr            status = SRGetIndexedItem(stockPath, &amp;companyLM, 1);
+
+if (!status) {
+   /* This releases each phrase in the company language model. */
+   status = SREmptyLanguageObject(companyLM);
+
+   /* Now rebuild the company language model with new companies. */
+   if (!status) {
+      const char   *kNewCompanies[]   = { "I B M", "Motorola",
+                                        "Coca-Cola", NULL };
+      char          **company         = (char **) kNewCompanies;
+      long         refcon            = 0;
+
+      while (*company &amp;&amp; !status) {
+         status = SRAddText(companyLM, *company, strlen(*company),
+                              refcon++);
+         ++company;
+      }
+   }
+   SRReleaseObject(companyLM);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+At any given moment, the active language model should be relatively small, but your<br>
+application can change the set of active phrases at any time. For example, if a Web<br>
+browser application made its links speakable, at any given moment there would only<br>
+be a few dozen visible links, so there would only be a few dozen phrases active. But if<br>
+you spent a couple of hours surfing the Web with that browser, you would have seen<br>
+many thousands of links throughout the session, and you could have spoken any one of<br>
+them while it was visible.
+</p>
+<p>
+In addition to enabling and disabling parts of your language model, the SRSetProperty<br>
+function allows your application to make words, phrases, paths, or language models<br>
+repeatable (so that the user can say that item one or more times in a row) or<br>
+rejectable (so that if the user says something else for that item, the recognizer will<br>
+fill it in with a special rejection word with a spelling of "???").
+</p>
+<p>
+Your application can also make any word, phrase, path, or language model optional by<br>
+setting the corresponding object's kSROptional property to true. In<br>
+AddFancierLanguageModel, we've set the kSROptional property of the SRWord "stock"<br>
+to true, so the recognizer is ready for the user to say, "Tell me the price of Apple" as<br>
+well as "Tell me the price of Apple stock."
+</p>
+<p>
+Your application doesn't have to build language models from scratch each time it runs.<br>
+The Speech Recognition Manager provides routines for saving and loading language<br>
+objects (for example, the SRPutLanguageObjectIntoHandle and<br>
+SRNewLanguageObjectFromDataFile routines). Listing 10 shows an example.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 10.</b> Saving a language model into a resource
+</p>
+<pre>/* Allocate a handle of size 0 to store our language model in; */
+/* SRPutLanguageObjectIntoHandle will resize it as needed. */
+Handle   lmHandle   = NewHandle(0);
+OSErr      status   = MemError();
+
+if (!status) {
+   status = SRPutLanguageObjectIntoHandle
+                (gTopLanguageModel, lmHandle);
+   if (!status) {
+      /* Save the language model as a resource in the current */
+      /* resource file. Pick a reasonable resource type and ID. */
+      AddResource(lmHandle, 'LMDL', 100, "\pTop Language Model");
+
+      /* Make sure it gets written to disk. */
+      if (!(status = ResError())) {
+         WriteResource(lmHandle);
+         DetachResource(lmHandle);
+      }
+   }
+  
+   DisposeHandle(lmHandle);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+Apple provides a very handy developer tool, called SRLanguageModeler, that you can<br>
+use to quickly create, test, and save language models into resources or data files. You<br>
+can find this tool, and documentation for it, with the other Speech Recognition Manager<br>
+developer information on this issue's CD and on the speech technology Web site.<br>
+SRLanguageModeler lets you write out a language model in a relatively simple text<br>
+form and then try it out to see how well its phrases can be recognized and<br>
+discriminated from one another. It lets you save the language models into a binary<br>
+resource or file format that you can ship with your application. Your application can<br>
+load the language model at run time with SRNewLanguageObjectFromHandle or<br>
+SRNewLanguageObjectFromDataFile. SRLanguageModeler will eliminate a lot of the<br>
+code you would otherwise have to write to construct the static parts of your language<br>
+models.
+</p>
+<h2>SPEECH: THE FINAL FRONTIER</h2>
+<p>
+If you've understood this article, you'll have no problem making practical use of<br>
+speech recognition in your application. From the basics of checking for the proper<br>
+version of the Speech Recognition Manager to some of the finer details of building<br>
+language models, we've shown you everything you need to know to get started. Be sure<br>
+to take a look at the SRSample application, which uses many of the listings in this<br>
+article.&nbsp;&nbsp;To dig even deeper, check out the Speech Recognition Manager documentation<br>
+and the SRLanguageModeler tool. For tips on using the Speech Recognition Manager<br>
+within an application framework and dynamically changing your language model, see<br>
+the article "Adding Speech Recognition to an Application Framework" in this issue of<br>
+<i>develop</i>. Then have fun turning your application into a good listener.
+</p>
+
+
+
+<p>
+<b>RELATED READING</b>
+</p>
+<ul>
+<li>"Speech Recognition Manager," on this issue's CD and on Apple's<br>
+speech technology Web site.</li>
+<li>"Adding Speech Recognition to an Application Framework" by Tim<br>
+Monroe, in this issue of <i>develop</i>.</li>
+</ul>
+
+
+
+<p>
+<b>MATT PALLAKOFF</b> (mattp@apple.com), Apple's Speech Recognition engineering<br>
+manager, likes to talk to inanimate objects. He has spent the last several years helping<br>
+Apple's speech group pull speech recognition technology kicking and screaming over a<br>
+threshold of usability that (as of PlainTalk 1.4) finally allows Power Macintosh users<br>
+to leave speech recognition on and use it in simple ways every day. He denies ever<br>
+having worked in the field of Artificial Intelligence.*
+</p>
+<p>
+<b>ARLO REEVES</b> (arlo@apple.com) has had a varied employment history that includes<br>
+baby-sitting young Peregrine falcons in Yosemite, studying variable stars from<br>
+Nantucket, and adding two-dimensional FFT capabilities to NIH Image. Lately he's been<br>
+helping Matt and the speech team at Apple bring the Speech Recognition Manager into<br>
+existence. Arlo lives in Santa Cruz, California, where he enjoys spending his free time<br>
+out of doors with his friends.*
+</p>
+<p>
+<b>Thanks to</b> our technical reviewers Mike Dilts, Eric "Braz" Ford, Tim Monroe, and<br>
+Guillermo Ortiz.*
+</p>
+</body>
+</html>

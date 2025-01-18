@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 31 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 96 - OpenDoc Parts and SOM Dynamic Inheritance</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>OpenDoc Parts and SOM Dynamic Inheritance</h1>
+<h2>&#201;RIC SIMENEL</h2>
+<p>
+<img src="img/221.gif" width="198 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">OpenDoc, Apple's compound-document architecture, isn't just for</i>
+<br>
+
+<i style="font-size:125%;">desktop publishing. The underlying IBM System Object Model (SOM)</i>
+<br>
+
+<i style="font-size:125%;">can be used to implement dynamic inheritance within and between</i>
+<br>
+
+<i style="font-size:125%;">applications, giving you the benefits of object-oriented</i>
+<br>
+
+<i style="font-size:125%;">programming while avoiding code duplication and the need to</i>
+<br>
+
+<i style="font-size:125%;">rebuild inherited parts when modifying the base part. The basic</i>
+<br>
+
+<i style="font-size:125%;">mechanism is described and illustrated in this article, which also</i>
+<br>
+
+<i style="font-size:125%;">serves as a starting point for developers who want to write</i>
+<br>
+
+<i style="font-size:125%;">OpenDoc extensions and thus require knowledge of SOM.</i>
+<br>
+<p>
+The problem is as old as programming: you want to reuse code in your applications in<br>
+order to reduce development costs. The idea of linked libraries was a first step toward<br>
+a solution but introduced the issue of code duplication. The advent of object-oriented<br>
+programming reduced somewhat the complexity of the problem of reusing code but<br>
+didn't make it go away completely: a bug fix or other modification to a base class still<br>
+necessitated a rebuild of all projects using it. Dynamic shared libraries solve the issue<br>
+of code duplication, but they don't support object-oriented programming.
+</p>
+<p>
+Now SOM, the object-oriented technology that underlies OpenDoc and enables part<br>
+editors to communicate with one another, offers a complete solution. With SOM, you<br>
+can have a dynamic shared library, which means that you don't have code duplication<br>
+and, in case of a bug fix or other modification, you don't need to rebuild projects that<br>
+use the library -- and you can also have inheritance, enabling you to take advantage of<br>
+the awesome strength of object-oriented programming.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>SOMobjects(TM) for Mac OS</b> is the Apple implementation for the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Macintosh of the IBM SOM technology. "SOM" is the name of the technology, and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"SOMobjects(TM) for Mac OS" is the name of the Macintosh extension file that<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;provides it.*
+</p>
+<p>
+This article explains how to construct an OpenDoc part object that serves as a base<br>
+class to be inherited from in your own applications and by others, if you so desire. I<br>
+use the example of creating scrollable lists, something almost all developers have to<br>
+bother with at one time or another. My sample base class (or base part, as I prefer to<br>
+call it), named ListPart, doesn't do anything by itself but is inherited from by three<br>
+other parts (ListEx1Part, ListEx2Part, and ListEx3Part) that produce lists of<br>
+varying complexity and that we'll examine in some detail. Since the goal of this article<br>
+is to highlight the inheritance aspects, I won't describe much about how the list itself<br>
+is managed by the base part. If you're interested, see the source code on this issue's CD.
+</p>
+<p>
+If you want to write OpenDoc extensions, you'll have to dive into SOM, so this article is<br>
+a good starting point for you, too.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>OpenDoc developer releases</b> are available at<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;http://www.opendoc.apple.com on the Web and on CD through a number of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;different sources. These releases include the OpenDoc Programmer's Guide,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the IBM SOM manual, and the SOMobjects for Mac OS manual, the best<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;documentation available on SOM and dynamic inheritance.*
+</p>
+<h2>A LOOK AT THE BASE PART</h2>
+<p>
+We'll start with a look at the process of building an OpenDoc part, which is really a<br>
+SOM object. Since we currently don't have a direct-to-SOM compiler on the<br>
+Macintosh, the process consists of two steps:
+</p>
+<ul>
+<li>We first write the .idl source file, which is the SOM interface for our<br>
+object, describing fields and methods and how the new part inherits from<br>
+ODPart. Then, with the SOM compiler (currently distributed as an MPW<br>
+tool), we generate the .xh, .xih, and .cpp source files, which will be used as a<br>
+bridge between SOM and C++.</li>
+<li>We write in C++ the body of the methods described in the .idl source file.</li>
+</ul>
+<p>
+We then have all the necessary files to build the whole project and get the OpenDoc<br>
+part. Because the first step is always the same for simple parts, most developers<br>
+never bother with it themselves, but instead use PartMaker to automatically generate<br>
+the files associated with this step (.idl, .xh, .xih, and .cpp) and then work mainly with<br>
+the constructed C++ object. Thus, they seldom open the subfolder containing the SOM<br>
+source files, and they modify these files even less often.
+</p>
+<p>
+But if you want to inherit from a part other than ODPart, you've got to take things into<br>
+your own hands. What PartMaker would otherwise do for you, you've got to do for<br>
+yourself. It's easier than it sounds, as you'll see in the following pages. We'll look at<br>
+how to create the .idl, .xh, .xih, and .cpp source files, plus a .cpp source file that<br>
+manages the initializations for SOM and the Code Fragment Manager, and the .h&nbsp;&nbsp;and<br>
+.cpp source files containing the C++ class and its methods.
+</p>
+<p>
+For the inheritance mechanism to be widely used by developers, it has to be simple. In<br>
+an ideal world, you would provide only the base part itself, its interface (the .idl<br>
+source file), and a little documentation describing the methods to be called or<br>
+overridden. But since we're in the real world, you may also want to provide a .xh<br>
+source file; this can be regenerated from the .idl file by the SOM compiler, but it's a<br>
+good idea to provide it to simplify the work of developers willing to inherit from your<br>
+part. I'll discuss these necessary files and then make some remarks about how the base<br>
+part works.
+</p>
+<p>
+<b>STARTING WITH THE .IDL SOURCE FILE</b>
+</p>
+<p>
+The complete class name for our sample base part is ACF_DevServ_som_ListPart. The<br>
+first step in creating this base part is generating the .idl source file. Listing 1 shows<br>
+only the differences from the .idl file generated by PartMaker.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>SOM objects are passed</b> into methods via pointers, so when generating the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;C++ implementation function for a SOM method, the SOM compiler adds an<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;asterisk (*) to the type of each SOM object being passed to those methods.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;When you use a SOM class name such as ODFacet and what you want is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ODFacet*, you only have to write ODFacet. If you write ODFacet* you'll get<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ODFacet**. (In Listing 1, ODEventData isn't a class but a struct; thus the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;asterisk on the end is correct.)*
+</p>
+<p>
+<b>Listing 1.</b> Extract from the som_ListPart.idl source file
+</p><p class="spacer">&nbsp;</p>
+<pre>module ACF_DevServ
+{
+    interface som_ListPart : ODPart
+    {
+    // To call
+        void    ShowMe(in ODFacet facet, in short theLine);
+        short   GetNbLines();
+        void    SetNbLines(in short newNbLines);
+        short   GetSel();
+        void    SetSel(in ODFacet facet, in short theLine);
+
+    // To override
+        ODISOStr    GetTheRealPartKind();
+        ODSLong OverrideBeginUsingLibraryResources();
+        void    OverrideEndUsingLibraryResources(in ODSLong ref);
+        void    SetUpGraphics(in void* theGWorld);
+        void    FillCell(in short theLine, in Rect* theRect);
+        void    FillHilCell(in short theLine, in Rect* theRect);
+        void    ClickInActive(in ODFacet facet,
+                    in ODEventData* event, in Rect* theRect);
+        void    CloseOpenedCell(in ODFacet facet);
+        void    IdleOpened(in ODFacet facet);
+        short   KeyInActive(in ODFacet facet, in ODEventData* event);
+        short   KeyShortCut(in char theChar);
+        void    GotDoubleClick(in ODFacet facet, in short theLine);
+        void    ExternalizeListData(in ODStorageUnit storageUnit);
+        void    InternalizeListData(in ODStorageUnit storageUnit);
+        void    SetUpListData(in ODStorageUnit storageUnit);
+        void    InitializeListData(in short* pNbLines, in short*
+                    pLineHeight, in short* pLineWidth,
+                    in short* pLineDepth, in short* pKind,
+                    in short* pAutoThumb, in short* pWantKey,
+                    in short* pListIndex, in short* pSel,
+                    in char** pMul);
+
+#ifdef __SOMIDL__
+        implementation
+        {
+        ...
+        override:
+            somInit, somUninit, ..., WriteActionState,
+            ReadActionState;
+
+        releaseorder:
+            ShowMe, GetNbLines, SetNbLines, GetSel, SetSel,
+            GetTheRealPartKind, OverrideBeginUsingLibraryResources,
+            OverrideEndUsingLibraryResources, SetUpGraphics,
+            FillCell, FillHilCell, ClickInActive, CloseOpenedCell,
+            IdleOpened, KeyInActive, KeyShortCut, GotDoubleClick,
+            ExternalizeListData, InternalizeListData, SetUpListData,
+            InitializeListData;
+        ...
+        };
+#endif
+    };
+};      //# Module ACF_DevServ</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Most field names in the .h and .idl source files are explicit enough -- fNbLines,<br>
+fLineHeight, fLineWidth, fLineDepth, fGWorld -- but these might need further<br>
+explanation:
+</p>
+<ul>
+<li>fListIndex is the number of the first line displayed.</li>
+<li>fAutoThumb tells whether we want live scrolling with the thumb.</li>
+<li>fKind specifies the kind of list we want, where
+
+<p>
+1 = no selection
+</p>
+<p>
+2 = single selection (stored in fSel)
+</p>
+<p>
+3 = live single selection (stored in fSel), where users can edit the line in<br>
+place
+</p>
+<p>
+4 = multiple selection (stored in fMul)
+</p>
+</li>
+<li>fWantKey tells whether we provide the user with keyboard shortcuts to<br>
+navigate in the list.</li>
+</ul>
+<p>
+These methods are only to be called and not overridden:
+</p>
+<ul>
+<li>ShowMe, which scrolls the list to a desired position</li>
+<li>GetNbLines and SetNbLines</li>
+<li>GetSel and SetSel, which return and set the currently selected line</li>
+</ul>
+<p>
+These methods are to be overridden if necessary:
+</p>
+<ul>
+<li>SetUpGraphics, which gives you a chance to further initialize the<br>
+offscreen buffer as you want (with default font and font size, for example)</li>
+<li>FillCell, which draws the content of one line</li>
+<li>FillHilCell, which draws the content of a selected line</li>
+<li>ClickInActive, CloseOpenedCell, IdleOpened, and KeyInActive, which deal<br>
+with the editing in place of a live selected line</li>
+<li>KeyShortCut, which scrolls the list according to the given character</li>
+<li>GotDoubleClick, which enables you to take appropriate actions in response<br>
+to a double click</li>
+<li>SetUpListData, ExternalizeListData, and InternalizeListData, which deal<br>
+with the storage unit</li>
+<li>InitializeListData, which asks for the initial values of the fields described<br>
+above</li>
+<li>GetTheRealPartKind, which returns the part kind usually defined in<br>
+xxxxPartDef.h and is necessary for the storage units to store the right owner</li>
+<li>OverrideBeginUsingLibraryResources and<br>
+OverrideEndUsingLibraryResources, which deal with resource management in<br>
+inherited parts</li>
+</ul>
+<p>
+Using only GetTheRealPartKind, InitializeListData, and FillCell, we can get a complete<br>
+working list. This will be illustrated in ListEx1Part. Meanwhile, it's essential to keep<br>
+in mind that in dynamic inheritance we're dealing with SOM objects, not C++ objects.<br>
+The implications of this are described in "SOM Objects&nbsp;&nbsp;vs. C++ Objects."
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SOM OBJECTS VS. C++ OBJECTS</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;An OpenDoc part is really a SOM object (in our example,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ACF_DevServ_som_ListPart) and is known to OpenDoc as such. The C++<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;object generated by PartMaker (in our example, ListPart) is a wrapper that<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;serves to simplify the data management and the code writing in the absence of a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;direct-to-SOM C++ compiler. In fact, the C++ object is just a field (in our<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;example, fPart) of the SOM object. We've written our SOM object's<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;implementation so that it simply delegates all messages to its C++ object.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;For instance, a call to FillCell or FacetAdded in our base class object<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ACF_DevServ_som_ListPart) would go through fPart and thus to the C++<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;method FillCell or FacetAdded, as illustrated in Figure 1. The C++ field<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fsomSelf (initialized in the InitPart and InitPartFromStorage methods, as<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;shown in som_ListPart.cpp and ListPart.cpp) points, in this case, to the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ACF_DevServ_som_ListPart SOM object.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;What happens in response to an OpenDoc call when a SOM object inherits from<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;our SOM base class? Say our SOM object of class<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ACF_DevServ2_som_ListEx1Part, inheriting from<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ACF_DevServ_som_ListPart, contains no data and only two methods --<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;InitializeListData and FillCell. As shown in Figure 2, a call to FillCell will go<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to the FillCell method in som_ListEx1Part, because the FillCell method in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;som_ListPart is overridden. A call to FacetAdded, though, will go to the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FacetAdded method inherited from som_ListPart, since this method isn't<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;overridden, and it will call the C++ method FacetAdded. In this case, fsomSelf<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;points to the SOM object ACF_DevServ2_som_ListEx1Part.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Thus, if you want a method to be overridden, you must not call your C++<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wrapper class's method directly. For example, if you call the C++ wrapper<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;class's FillCell method directly, it will be understood as <b>this-&gt;FillCell</b> and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;will always call the C++ FillCell method of the base part. You have to call it<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;as<b>fsomSelf-&gt;FillCell</b>, where fsomSelf is the SOM object that's your part.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;If FillCell is overridden in an inherited part, the FillCell method of that part<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;will be called.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<img src="img/222.gif" width="540 px"></img>
+</p>
+<p>
+<b>Figure 1. </b>Calls to base class object, no inheritance
+</p>
+<p>
+<img src="img/223.gif" width="552 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>Calls to base class object, with inheritance
+</p>
+<p>
+<b>GENERATING AND ADAPTING OTHER NEEDED FILES</b>
+</p>
+<p>
+We use the MPW SOM compiler to automatically generate the .xh, .xih, and .cpp files,<br>
+with this command line:
+</p>
+<pre>somc -other "-S 100000" -m chkexcept [[partialdiff]]
+    -m cpluscpp {SOMCEmitXIHOptions} [[partialdiff]]
+    -p -e xih,xh,xc som_ListPart.idl -o : -I
+"{OpenDoc_IDL_Interfaces}"</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The .xh and .xih files are regenerated from scratch each time we compile the .idl file.<br>
+The .cpp file, on the other hand, is modified (not rewritten) by the SOM compiler,<br>
+preserving all the modifications we've made to it.
+</p>
+<p>
+Now that we've got the .cpp file, we have to adapt it to our needs. We simply fill the<br>
+near-empty new methods in the same way PartMaker did with the old ones. For<br>
+example, for the method FillCell, we add
+</p>
+<pre>_fPart-&gt;FillCell(ev, theLine, theRect);</pre><p class="spacer">&nbsp;</p>
+<p>
+after the ACF_DevServ_som_ListPartMethodDebug call in this SOM-generated code:
+</p>
+<pre>SOM_Scope void SOMLINK som_ListPart__FillCell
+        (ACF_DevServ_som_ListPart *somSelf, Environment *ev,
+         short theLine, Rect* theRect)
+{
+    ACF_DevServ_som_ListPartData *somThis =
+        ACF_DevServ_som_ListPartGetData(somSelf);
+    ACF_DevServ_som_ListPartMethodDebug("ACF_DevServ_som_ListPart",
+        "som_ListPart__FillCell");
+    SOM_TRY
+        _fPart-&gt;FillCell(ev, theLine, theRect);
+    SOM_CATCH_ALL
+    SOM_ENDTRY
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+And that's all there is to generating our base part. As I mentioned earlier, it doesn't do<br>
+anything by itself, so when we launch it we see the message shown in Figure 3.
+</p>
+<p>
+<img src="img/224.gif" width="282 px"></img>
+</p>
+<p>
+<b>Figure 3. </b>Message upon launching the base part
+</p>
+<p>
+<b>WHY USE AN OFFSCREEN BUFFER?</b>
+</p>
+<p>
+Our scrollable list appears in a facet, and when several facets are made visible (as<br>
+when View in Window is chosen), it seems that a simple CopyBits operation could<br>
+replace calling the FillCell method again. The same thing applies to situations where<br>
+the user scrolls just one or a few lines, so that most of the previously displayed lines<br>
+still appear.
+</p>
+<p>
+&nbsp;&nbsp;But we can't use CopyBits to transfer the lines from the screen because the following<br>
+could happen: If two monitors with different depths are stacked one on top of the other,<br>
+and the user places the list across them and then scrolls the lines from the monitor<br>
+with the lesser depth to the other, the result won't be satisfactory if we're using<br>
+CopyBits to transfer the lines from the screen. For this reason and because of<br>
+performance issues, I use an offscreen buffer in which the lines are drawn by FillCell<br>
+or FillHilCell; the content of the offscreen buffer is then transferred to the facet with<br>
+CopyBits in the Draw method.
+</p>
+<p>
+<b>MANAGING THE CONTROLHANDLE</b>
+</p>
+<p>
+At first I placed the fListCtl field in my part, and when I chose View in Window a<br>
+second scroll bar appeared, but it appeared in the document window (where the first<br>
+facet was) and in a strange place. It seems that because my part had only a single scroll<br>
+bar, all the facets, wherever they might be, were using it. So I realized that I had to<br>
+associate an fListCtl field with each facet. The best way to do this is to store this field<br>
+in the partInfo field of the facet. In fact, since I needed some other fields too, the<br>
+partInfo field contains the address of a structure that contains all my values; this<br>
+structure is allocated in the FacetAdded method and deleted in the FacetRemoved<br>
+method.Of course, what's true for a ControlHandle is also true for any Macintosh<br>
+Toolbox object that depends on a graphics port, such as a TextEdit record, for example.
+</p>
+<p>
+<b>NEGOTIATING THE FRAME SIZE</b>
+</p>
+<p>
+For aesthetic reasons, I surround the scrolling lines with a white margin and try to<br>
+negotiate a size with my container that's a round number of lines plus the margin. The<br>
+negotiation takes place in the FrameShapeChanged method (and some others as well).
+</p>
+<p>
+In all cases, before frameShape is sent to the RequestFrameShape method, I add after<br>
+the PartMaker-provided line
+</p>
+<pre>TempODShape    frameShape = frame-&gt;AcquireFrameShape(ev, kODNULL);</pre><p class="spacer">&nbsp;</p>
+<p>
+the following code:
+</p>
+<pre>ODRect odrct;
+Rect        rct;
+
+frameShape-&gt;GetBoundingBox(ev, &amp;odrct);
+odrct.AsQDRect(rct);
+MyAdjustRectFacet(ev, &amp;rct);
+odrct = (rct);
+frameShape-&gt;SetRectangle(ev, &amp;odrct);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The rectangle size adjustment is done in the MyAdjustRectFacet method, which gives<br>
+back a rectangle respecting my wishes and smaller or equal to the given one to<br>
+maximize the chances of a successful negotiation.
+</p>
+<h2>AND NOW, LET'S INHERIT</h2>
+<p>
+Our base part is ready to be inherited from. I'll give three examples of scrollable lists<br>
+inherited from ListPart. ListEx1Part is a very simple list without data. ListEx2Part<br>
+is a more ambitious list with data and live in-place editing. ListEx3Part is even more<br>
+interesting, with data and a completely different kind of data management.
+</p>
+<p>
+&nbsp;&nbsp;You'll notice that both ListEx1Part and ListEx3Part are written in plain C, while<br>
+ListEx2Part is written in C++. This is to make the point that because all the<br>
+complexity of dealing with SOM is contained in the source files belonging to the SOM<br>
+subfolder of the project, which operate as a bridge between SOM and C++, your code<br>
+can be written in Pascal or FORTRAN or whatever. The problem is reduced to a simple<br>
+linker problem between C++ and your chosen language. This&nbsp;&nbsp;also implies that a base<br>
+part can be written in C++, an inherited part can be written&nbsp;&nbsp;in Pascal, and a<br>
+double-inherited part can be written in C++ or Pascal or C or FORTRAN or whatever.
+</p>
+<p>
+A few words first about three special methods that should always be overridden: For<br>
+the storage units managed by the base class (ListPart) to be associated with the right<br>
+inherited part (yours), the code in ListPart.cpp calls<br>
+fsomSelf-&gt;GetTheRealPartKind(ev) every time it needs to access the part kind. Your<br>
+GetTheRealPartKind method should simply return the part kind defined in<br>
+xxxxPartDef.h (an example of this is shown later in Listing 5). If you want to use<br>
+your part's resources (if only for your great "About" box), you also have to override<br>
+both OverrideBeginUsingLibraryResources and OverrideEndUsingLibraryResources,<br>
+which call BeginUsingLibraryResources and EndUsingLibraryResources. These latter<br>
+calls, provided by the OpenDoc utilities, identify the correct resource file to use by<br>
+first identifying the code fragment in use at the time they're called.
+</p>
+<p>
+<b>LISTEX1PART</b>
+</p>
+<p>
+ListEx1Part represents a very simple case of inheritance from ListPart. It's only <br>
+about 500 bytes of code and took 15 or 20 minutes to write. The scrollable list it<br>
+generates is shown in Figure 4. You can select multiple lines, scroll while selecting or<br>
+deselecting, go to the first selected line with Command-click, extend selections with<br>
+Shift-click, select all with Option-Shift-click, deselect all with Option-click, and<br>
+scroll with the arrow and PageUp, PageDown, Home, and End keys. You can also choose<br>
+View in Window if you embed the part in a container, so that you can see the<br>
+synchronization between the two facets.
+</p>
+<p>
+<img src="img/225.gif" width="168 px"></img>
+</p>
+<p>
+<b>Figure 4.</b> The list generated by ListEx1Part
+</p>
+<p>
+We use PartMaker to help us generate the project and its source files, but then we<br>
+make modifications because som_ListEx1Part inherits not from ODPart but from<br>
+som_ListPart. The sequence of steps, stated in general terms so that you can apply this<br>
+to your own experiments, is as follows:
+</p>
+<ul>
+<li>Use PartMaker as usual.</li>
+<li>Remove and delete all sources but xxxxPart.cpp, som_xxxxPart.cpp, and<br>
+som_xxxxPartInit.cpp (SOM stub).</li>
+<li>Add the OpenDoc shared library component ListPart.</li>
+<li>Modify the .idl source file to suit your needs (see Listing 2).</li>
+<li>Compile the .idl file with the SOM compiler, generating .xh, .xih, and .cpp<br>
+files.</li>
+<li>Modify som_xxxxPart.cpp (see Listing 3).</li>
+<li>Clear all contents of xxxxPart.h and xxxxPart.cpp.</li>
+<li>Write the contents of xxxxPart.h (Listing 4) and xxxxPart.cpp (Listing<br>
+5).</li>
+</ul>
+<p>
+Then build and admire your inherited part.
+</p>
+<p>
+<b>Listing 2.</b> som_ListEx1Part.idl
+</p>
+<pre>module ACF_DevServ2</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<pre>{
+    interface som_ListEx1Part : som_ListPart
+    {
+#ifdef __SOMIDL__
+        implementation
+        {
+            majorversion = currentMajorVersion;
+            minorversion = currentMinorVersion;
+            functionprefix = som_ListEx1Part__;
+        override:
+            GetTheRealPartKind, OverrideBeginUsingLibraryResources,
+            OverrideEndUsingLibraryResources,
+            InitializeListData, FillCell;
+        };
+#endif
+    };
+};      //# Module ACF_DevServ2</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 3. </b>som_ListEx1Part.cpp
+</p>
+<pre>SOM_Scope ODISOStr SOMLINK som_ListEx1Part__GetTheRealPartKind
+    (ACF_DevServ2_som_ListEx1Part *somSelf, Environment *ev)
+{ return (GetTheRealPartKind(ev)); }
+
+SOM_Scope ODSLong SOMLINK
+    som_ListEx1Part__OverrideBeginUsingLibraryResources(
+    ACF_DevServ2_som_ListEx1Part *somSelf, Environment *ev)
+{ return (OverrideBeginUsingLibraryResources(ev)); }
+
+SOM_Scope void SOMLINK
+    som_ListEx1Part__OverrideEndUsingLibraryResources(
+    ACF_DevServ2_som_ListEx1Part *somSelf, Environment *ev,
+        ODSLong ref)
+{ OverrideEndUsingLibraryResources(ev, ref); }
+
+SOM_Scope void SOMLINK som_ListEx1Part__InitializeListData
+    (ACF_DevServ2_som_ListEx1Part *somSelf, Environment *ev,
+     short* pNbLines, short* pLineHeight, short* pLineWidth,
+     short* pLineDepth, short* pKind, short* pAutoThumb,
+     short* pWantKey, short* pListIndex, short* pSel, char** pMul)
+{ InitializeListData(ev, pNbLines, pLineHeight, pLineWidth,
+        pLineDepth, pKind, pAutoThumb, pWantKey, pListIndex, pSel,
+        pMul); }
+
+SOM_Scope void SOMLINK som_ListEx1Part__FillCell
+    (ACF_DevServ2_som_ListEx1Part *somSelf, Environment *ev,
+     short theLine, Rect* theRect)
+{ FillCell(ev, theLine, theRect); }</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 4.</b> ListEx1Part.h
+</p>
+<pre>ODISOStr   GetTheRealPartKind(Environment* ev);</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<pre>ODSLong    OverrideBeginUsingLibraryResources(Environment* ev);
+void        OverrideEndUsingLibraryResources(Environment* ev,
+                    ODSLong ref);
+void        InitializeListData(Environment *ev, short* pNbLines,
+                    short* pLineHeight, short* pWantKey,
+                    short* pLineWidth, short* pLineDepth,
+                    short* pKind, short* pAutoThumb,
+                    short* pListIndex, short* pSel, char** pMul);
+void        FillCell(Environment *ev, short theLine, Rect* theRect);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 5.</b> ListEx1Part.cpp
+</p>
+<pre>ODISOStr GetTheRealPartKind(Environment* ev)</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<pre>{ return kListEx1PartKind; }
+
+ODSLong OverrideBeginUsingLibraryResources(Environment* ev)
+{ return BeginUsingLibraryResources(); }
+
+void OverrideEndUsingLibraryResources(Environment* ev, ODSLong ref)
+{ EndUsingLibraryResources(ref); }
+
+void InitializeListData(Environment *ev, short* pNbLines,
+    short* pLineHeight, short* pLineWidth, short* pLineDepth,
+    short* pKind, short* pAutoThumb, short* pWantKey,
+    short* pListIndex, short* pSel, char** pMul)
+{
+    *pNbLines = 1000;
+    *pLineHeight = 18;
+    *pLineWidth = 400;
+    *pLineDepth = 8;
+    *pKind = 4;
+    *pAutoThumb = 1;
+    *pWantKey = 1;
+    *pListIndex = 50;
+    *pMul = (char *)NewPtrClear(*pNbLines);
+}
+
+void FillCell(Environment *ev, short theLine, Rect* theRect)
+{
+    Str255      aStr;
+    RGBColor    myBlack = {0, 0, 0},
+                myLightBlue = {0xB000, 0xB000, 0xE000},
+                myLightYellow = {0xE000, 0xE000, 0xB000};
+    PenState    thePnState;
+
+    ::PenNormal();
+    ::EraseRect(theRect);
+    ::RGBForeColor(((theLine &amp; 1) == 0) ? (&amp;myLightBlue) :
+         (&amp;myLightYellow));
+    ::PaintRect(theRect);
+    ::RGBForeColor(&amp;myBlack);
+    ::NumToString(theLine, aStr);
+    ::MoveTo(theRect-&gt;left+1, theRect-&gt;bottom-3);
+    ::DrawString(aStr);
+    ::SetPenState(&amp;thePnState);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>LISTEX2PART</b>
+</p>
+<p>
+Now let's be a little more ambitious and provide live editing in place. Just for fun,<br>
+let's also override the FillHilCell method so that we can have a form of highlighting<br>
+other than InvertRect. ListEx2Part consists of 3K bytes and 136 lines of code and<br>
+generates the list shown in Figure 5.
+</p>
+<p>
+<img src="img/226.gif" width="318 px"></img>
+</p>
+<p>
+<b>Figure 5. </b>The list generated by ListEx2Part
+</p>
+<p>
+We proceed the same way as for ListEx1Part but override more methods in the .idl<br>
+source file (see Listing 6). Unlike in ListEx1Part, where we didn't have to override<br>
+somInit and somUninit since we had nothing special to do in these methods, in<br>
+ListEx2Part (and ListEx3Part also) we need to override these methods since we have<br>
+additional initializations to provide. With SOM, like any other object-oriented<br>
+language, a good programmer overrides only what's useful. And this time, since we're<br>
+going to manage some data, we add a C++ object as a field in the SOM object. (We'll see<br>
+another way of managing data in ListEx3Part.)
+</p>
+<p>
+<b>Listing 6. </b>som_ListEx2Part.idl
+</p>
+<pre>#ifdef __PRIVATE__
+    typedef somToken ListEx2Part;
+#endif
+
+module ACF_DevServ3
+{
+    interface som_ListEx2Part : som_ListPart
+    {
+#ifdef __SOMIDL__
+        implementation
+        {
+        ...
+        override:
+            somInit, somUninit,
+            GetTheRealPartKind, OverrideBeginUsingLibraryResources,
+            OverrideEndUsingLibraryResources, FillCell, FillHilCell,
+            ClickInActive, CloseOpenedCell, IdleOpened, KeyInActive,
+            ExternalizeListData, InternalizeListData, SetUpListData,
+            InitializeListData;
+
+#ifdef __PRIVATE__
+            passthru C_xih = "class ListEx2Part;";
+
+            ListEx2Part* fPart2;
+#endif
+        };
+#endif
+    };
+};      //# Module ACF_DevServ3</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+What needs to be perfectly understood here is that the C++ class ListEx2Part doesn't<br>
+inherit from the C++ class ListPart, whereas the SOM class som_ListEx2Part<br>
+inherits from the SOM class som_ListPart. In fact, if you look at the declaration of<br>
+ListEx2Part in the .h file, you'll see that it's just a simple class, inheriting from<br>
+nothing. Remember, the SOM objects are real, while the C++ objects are there only to<br>
+simplify the coding and aren't known by OpenDoc.
+</p>
+<p>
+The modifications made to som_ListEx2Part.cpp, ListEx2Part.h, and ListEx2Part.cpp<br>
+are very similar to those made in the previous example, so I won't discuss them in<br>
+detail. I invite you, though, to take a look at the source code. I do want to point out a<br>
+couple of aspects of the code.
+</p>
+<p>
+First, the <b>myself</b> field is of type ACF_DevServ3_som_ListEx2Part and thus is a SOM<br>
+object. In fact, this is the SOM object. The SOM field fPart2 declared in the .idl file<br>
+points to the C++ object, while the C++ field <b>myself</b> declared in the .h file points to<br>
+the SOM object. We need the field <b>myself</b> to be able to call the nonoverridden method<br>
+GetSel in som_ListPart (see the C++ method ClickInActive), or any other<br>
+nonoverridden method belonging to the inheritance hierarchy (som_ListPart >><br>
+ODPart >> ODPersistentObject and so on) that we can see in the .xh or .xih source file.<br>
+We initialize the field <b>myself</b>in som_ListEx2Part.cpp in the method somInit (or<br>
+rather som_ListEx2Part__somInit).
+</p>
+<p>
+Second, take a look at the ExternalizeListData, InternalizeListData, and SetUpListData<br>
+methods. As shown in Listing 7, there's no real pain here, since the way we deal with<br>
+storage units isn't specific to this example. (Of course, commercial product developers<br>
+should use a more graceful way than DebugStr to signal a problem to the user.)
+</p>
+<p>
+<b>Listing 7.</b> The xxxListData methods in ListEx2Part.cpp
+</p>
+<pre>void ListEx2Part::ExternalizeListData(Environment* ev,
+    ODStorageUnit* storageUnit)
+{
+    ODSUForceFocus(ev, storageUnit, kODPropListEx2Data,
+        kListEx2Data);
+    ODULong oldSize = storageUnit-&gt;GetSize(ev);
+    StorageUnitSetValue(storageUnit, ev, TABSIZE, gBigTab);
+    ODULong newSize = storageUnit-&gt;GetOffset(ev);
+    if (newSize &lt; oldSize)
+        storageUnit-&gt;DeleteValue(ev, oldSize - newSize);
+}
+
+void ListEx2Part::InternalizeListData(Environment* ev,
+    ODStorageUnit* storageUnit)
+{
+    long    theSize;
+    if (ODSUExistsThenFocus(ev, storageUnit, kODPropListEx2Data,
+            kListEx2Data))
+        if ((theSize = storageUnit-&gt;GetSize(ev)) != TABSIZE)
+            DebugStr("\pStorage size for gBigTab is wrong !");
+        else StorageUnitGetValue(storageUnit, ev, TABSIZE, gBigTab);
+}
+
+void ListEx2Part::SetUpListData(Environment* ev,
+       ODStorageUnit* storageUnit)
+{
+    if (!storageUnit-&gt;Exists(ev, kODPropListEx2Data, kODNULL, 0))
+        storageUnit-&gt;AddProperty(ev, kODPropListEx2Data);
+    if (!storageUnit-&gt;Exists(ev, kOPPropListEx2Data,
+            kListEx2Data, 0)) {
+        storageUnit-&gt;Focus(ev, kODPropListEx2Data,
+            kODPosUndefined, kODNULL, 0, kODPosAll);
+        storageUnit-&gt;AddValue(ev, kListEx2Data);
+    }
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>LISTEX3PART</b>
+</p>
+<p>
+In the previous example, we saw one way to manage data -- the way that PartMaker<br>
+creates for us. But we can also manage data directly in the SOM object. That's what<br>
+happens in ListEx3Part, which generates the list shown in Figure 6.
+</p>
+<p>
+<img src="img/227.gif" width="384 px"></img>
+</p>
+<p>
+<b>Figure 6. </b>The list generated by ListEx3Part
+</p>
+<p>
+Let's back up a minute to see how the SOM field fPart2 is managed in som_ListEx2Part<br>
+and how the SOM field fPart in som_ListPart is managed by PartMaker. We see that<br>
+fPart is initialized to NULL in somInit, deleted in somUninit, and allocated in both<br>
+InitPart and InitPartFromStorage. Because those last two methods aren't overridden in<br>
+som_ListEx2Part, fPart2 is allocated in somInit and deleted in somUninit.
+</p>
+<p>
+As shown in Listing 8, som_ListEx3Part needs three fields:
+</p>
+<ul>
+<li>one that's just a pointer and that will be initialized to NULL in somInit</li>
+<li>a second that's an array of string pointers (see Listing 9)</li>
+<li>a third that's a big block to store strings</li>
+</ul>
+<p>
+<b>Listing 8.</b>som_ListEx3Part.idl
+</p>
+<pre>module ACF_DevServ4
+{
+    interface som_ListEx3Part : som_ListPart
+    {
+#ifdef __SOMIDL__
+        implementation
+        {
+        ...
+        override:
+            somInit, somUninit,
+            GetTheRealPartKind, OverrideBeginUsingLibraryResources,
+            OverrideEndUsingLibraryResources, FacetAdded,
+            InitializeListData, SetUpGraphics, FillCell;
+
+            ODPart  gContainingPart;
+            char**  gListArray;
+            char*       charArray;
+        };
+#endif
+    };
+};      //# Module ACF_DevServ4</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 9.</b> somInit and somUninit in som_ListEx3Part.cpp
+</p>
+<pre>SOM_Scope void SOMLINK som_ListEx3Part__somInit
+ (ACF_DevServ4_som_ListEx3Part *somSelf)
+{
+ ACF_DevServ4_som_ListEx3PartData *somThis =
+    ACF_DevServ4_som_ListEx3PartGetData(somSelf);
+ ACF_DevServ4_som_ListEx3PartMethodDebug
+    ("ACF_DevServ4_som_ListEx3Part", "som_ListEx3Part__somInit");
+ ACF_DevServ4_som_ListEx3Part_parent_ACF_DevServ_som_ListPart_somInit
+    (somSelf);
+ _gListArray = (char **)NewPtr(NBLINES * sizeof(char *));
+ _charArray = (char*)NewPtr(50000);
+ _gContainingPart = 0L;
+}
+
+SOM_Scope void SOMLINK som_ListEx3Part__somUninit
+    (ACF_DevServ4_som_ListEx3Part *somSelf)
+{
+ ACF_DevServ4_som_ListEx3PartData *somThis =
+     ACF_DevServ4_som_ListEx3PartGetData(somSelf);
+ ACF_DevServ4_som_ListEx3PartMethodDebug
+     ("ACF_DevServ4_som_ListEx3Part",
+     "som_ListEx3Part__somUninit");
+ DisposePtr((Ptr)_gListArray);
+ DisposePtr((Ptr)_charArray);
+ ACF_DevServ4_som_ListEx3Part_parent_ACF_DevServ_som_ListPart
+     _somUninit(somSelf);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Through the .xih source file, we get the following definitions:
+</p>
+<pre>#define _gContainingPart (somThis-&gt;gContainingPart)</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<pre>#define _gListArray (somThis-&gt;gListArray)
+#define _charArray (somThis-&gt;charArray)</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+To use these fields, for instance in FillCell, we just add the line that gets somThis:
+</p>
+<pre>SOM_Scope void SOMLINK som_ListEx3Part__FillCell(</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<pre>ACF_DevServ4_som_ListEx3Part *somSelf, Environment *ev,
+    short theLine, Rect* theRect)
+{
+    ACF_DevServ4_som_ListEx3PartData *somThis =
+        ACF_DevServ4_som_ListEx3PartGetData(somSelf);
+    FillCell(ev, theLine, theRect, _gListArray);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Of course, the line that gets somThis should be added only to the methods that really<br>
+need it. If you look at the complete source code for som_ListEx3Part.cpp, you'll see<br>
+that many methods don't need it and thus don't have this line. The MPW SOM compiler<br>
+adds it automatically to all methods, so you have to manually remove it if it's not used.<br>
+The size of the generated code can be greatly decreased in this way.
+</p>
+<p>
+Now let's take a good look at FacetAdded. It's implemented in som_ListEx3Part.cpp like<br>
+this:
+</p>
+<pre>SOM_Scope void SOMLINK som_ListEx3Part__FacetAdded(</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<pre>ACF_DevServ4_som_ListEx3Part *somSelf, Environment *ev,
+    ODFacet* facet)
+{
+    ACF_DevServ4_som_ListEx3PartData *somThis =
+        ACF_DevServ4_som_ListEx3PartGetData(somSelf);
+    ACF_DevServ4_som_ListEx3PartMethodDebug
+        ("ACF_DevServ4_som_ListEx3Part",
+        "som_ListEx3Part__FacetAdded");
+
+    FacetAdded(ev, facet, &amp;(_gContainingPart), _gListArray,
+        _charArray);
+    ACF_DevServ4_som_ListEx3Part_parent_ACF_DevServ_som_ListPart
+        _FacetAdded(somSelf, ev, facet);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Thus, we can still get the normal behavior for FacetAdded that's contained in ListPart<br>
+and have a chance to add the specialized behavior that we want for ListEx3Part.
+</p>
+<p>
+<b>A NOTE ON USING GLOBALS</b>
+</p>
+<p>
+Let's not forget that if OpenDoc is based on SOM, SOM is based on the Code Fragment<br>
+Manager (CFM), and this greatly simplifies such programming aspects as management<br>
+of globals. Indeed, with the CFM architecture, there's no more need for SetUpA5,<br>
+SetCurrentA5, SetA5 (or even SetUpA4, provided by some environments); when you<br>
+need a global, you declare a global, then you use the global, period. When we're<br>
+building a part, we're in fact building a CFM shared library, but that doesn't prevent<br>
+us from declaring and using the string globals found in ListEx3Part.cpp, for example.<br>
+The only trick we've got to pay attention to is this: since OpenDoc loads the library<br>
+fragment only once when the first part is instantiated, with the kLoadLib flag set and<br>
+not the kLoadNewCopy flag, globals declared in the library will be shared by all<br>
+instances of the class in that process.
+</p>
+<h2>CLOSING REMARKS</h2>
+<p>
+I hope you now have a better understanding of the workings of OpenDoc, SOM, and<br>
+PartMaker. Dynamic inheritance is a powerful tool. You can easily construct your own<br>
+useful base parts to be inherited from by yourself and by others. The advantages are<br>
+that you won't suffer from code duplication, you'll get the benefits of object-oriented<br>
+programming, and you won't need to rebuild inherited parts when modifying the base<br>
+part.
+</p>
+<p>
+When I first wrote ListPart, I put it in a container document, to which I subsequently<br>
+added ListEx1Part, then another simple part, and then ListEx2Part. In the course of<br>
+writing ListEx2Part I discovered that I didn't design my base part as well as I first<br>
+thought. To correctly implement live editing in place, I had to thoroughly modify<br>
+ListPart, adding methods, deleting methods, changing method names, changing method<br>
+parameters, and so on. All the way through my testing, ListEx1Part and the other<br>
+simple part kept on working in the document without having to be rebuilt.
+</p>
+<p>
+As long as you don't change the methods used by the inherited parts (in my case, only<br>
+InitializeListData and FillCell), you're safe. This is because SOM, through the .idl file,<br>
+completely separates the interface from the implementation of the methods. Suppose I<br>
+distribute the current version of ListPart for developers to inherit from, and then<br>
+later I provide a new version of ListPart. As long as I don't modify the methods<br>
+contained in the current .idl file, I can add new methods and fields to the&nbsp;&nbsp;.idl file and<br>
+modify the C++ class without anybody being the wiser. All inherited parts developed<br>
+by others will continue to work fine and will benefit automatically from the new<br>
+features.
+</p>
+<p>
+In fact, I expect to provide progressively more refined versions of ListPart to be<br>
+included on the OpenDoc Developer Release CDs. I plan, for instance, to implement drag<br>
+and drop, copy and paste, dynamic links, display of information from the container<br>
+(more useful), and hierarchical lists (the kind with a triangle symbol pointing to the<br>
+next level).
+</p>
+<p>
+You get the idea. Why not give SOM dynamic inheritance a try yourself? Then spread<br>
+the word that OpenDoc isn't just for desktop publishing.
+</p>
+<p>
+<b>&#201;RIC SIMENEL</b> worked from 1988 until recently for Apple Computer France in<br>
+Developer Technical Support, where he was in charge of evangelism and technical<br>
+support for system software, imaging, and OpenDoc. He now works for DTS at Apple in<br>
+Cupertino. When he's not coding or supporting, he can be seen browsing the back<br>
+issues boxes in the comic book shops of the San Francisco Bay Area. His Silver Age<br>
+comics collection has already reached the 20,000 mark, and he's read each of them at<br>
+least three times. The question is: When does he sleep?*
+</p>
+<p>
+Thanks to our technical reviewers Jens Alfke, Erik Eidt, and Kurt Rodarmer.*
+</p>
+</body>
+</html>

@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 56 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 96 - Chiropractic for Your Misaligned Data</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Chiropractic for Your Misaligned Data</h1>
+<h2>Kevin Looney and Craig Anderson</h2>
+<p>
+<img src="img/297.gif" width="324 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">Misalignment occurs when a program accesses data in a way that's</i>
+<br>
+
+<i style="font-size:125%;">not in sync with the processor's internal paths. This can slow down</i>
+<br>
+
+<i style="font-size:125%;">performance a little or a lot, depending on the CPU architecture.</i>
+<br>
+
+<i style="font-size:125%;">But finding these areas in code can be very difficult. We'll</i>
+<br>
+
+<i style="font-size:125%;">demonstrate the cause and cost of alignment problems and then</i>
+<br>
+
+<i style="font-size:125%;">show you a couple of tools you can use to detect them in your</i>
+<br>
+
+<i style="font-size:125%;">programs.</i>
+</p>
+<p>
+Sometimes Macintosh application performance is limited by architectural factors that<br>
+can't be remedied, like the raw speed of the I/O or memory subsystem. But the<br>
+programmer <i>does</i> have control over some factors that affect the speed of the memory<br>
+subsystem and thus application performance -- such as how data is aligned and<br>
+accessed within memory. By default, most compilers will do the appropriate alignment<br>
+for PowerPC code. However, alignment options offered for backward compatibility<br>
+with the 680x0 architecture can cause significant overhead.
+</p>
+<p>
+Misalignment is a difficult performance problem to detect. Traditional debugging and<br>
+performance tools typically don't help you find misaligned accesses. On top of this,<br>
+misalignment problems manifest themselves differently on different CPU<br>
+architectures. 
+</p>
+<p>
+In this article, we'll define misalignment, describe how it's caused, discuss the<br>
+overhead penalties for accessing misaligned data on various microprocessors, and<br>
+introduce some tools designed to aid in the detection of misaligned accesses in code.<br>
+These tools accompany the article on this issue's CD and <i>develop</i>'s Web site.&nbsp;&nbsp;Armed<br>
+with these tools and what you learn in this article, you can perform chiropractic<br>
+adjustments on your programs to solve their data alignment problems.
+</p>
+
+
+<h2>WHAT IS MISALIGNMENT AND WHY SHOULD I CARE?</h2>
+<p>
+A piece of data is properly aligned when it resides at a memory address that a<br>
+processor can access efficiently. If it doesn't reside at such an address, it's said to be<br>
+misaligned. In the PowerPC architecture, 32-bit and 64-bit floating-point numbers<br>
+are misaligned when they reside at addresses not divisible by 4. Misalignment<br>
+exceptions are taken based on the specific microprocessor.
+</p>
+<p>
+Whether a data item is aligned depends not only on its address and the processor that's<br>
+performing the access, but also on the size of the item. In general, data of size <i>s</i> is<br>
+aligned if the least significant <i>n</i> bits of its address are 0, where <i>n</i> = log<i>2</i>(<i>s</i>). Hence,<br>
+1-byte items are always aligned, while 2-byte items are aligned on even addresses and<br>
+4-byte items are aligned if the address is evenly divisible by 4. This alignment policy<br>
+is often called <i>natural alignment</i> and is the recommended data alignment for code to run<br>
+well on all current and future PowerPC processors.
+</p>
+<p>
+Accessing misaligned data can be quite costly, depending on the microprocessor your<br>
+program is running on. We'll demonstrate just how costly in a minute, but in general,<br>
+misaligned memory accesses take from 2 to 80 times longer than aligned accesses on<br>
+603, 604, and future PowerPC microprocessors. A misaligned access can require<br>
+more time to perform for two reasons:
+</p>
+<ul>
+<li>It may require two requests to the memory system instead of just one.</li>
+<li>It may cause the processor to take an unaligned access exception, a costly<br>
+penalty.</li>
+</ul>
+
+
+<h2>WHAT CAUSES MISALIGNMENT?</h2>
+<p>
+Misaligned accesses can involve variables located on the stack or on the heap. The type<br>
+of compiler and the compiler settings that you use will determine whether misaligned<br>
+accesses occur. Improper structure placement and incorrect pointer arithmetic can<br>
+also cause misaligned accesses. These problems can be found with the tools and<br>
+techniques described below, but this article generally focuses on alignment problems<br>
+that aren't caused by programmatic errors.
+</p>
+<p>
+Most compilers for the Macintosh allow you to choose among various alignment<br>
+options. Some compilers default to 2-byte alignment so that data alignment in<br>
+PowerPC code mimics alignment on the 680x0 processor. While using this option<br>
+means that structures written to disk in binary format can be accessed easily by both<br>
+architectures, it also permits alignment problems in the PowerPC architecture. Both<br>
+improper structure padding and misaligned stack parameters can result in misaligned<br>
+accesses.
+</p>
+<p>
+<b>IMPROPER STRUCTURE PADDING</b>
+</p>
+<p>
+When a <b>float</b> field occurs in a structure, improper padding by the compiler will cause<br>
+the <b>float</b> field to be misaligned. The example in Listing 1 uses MPW's alignment<br>
+pragmas to illustrate this.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 1. </b>An example of a poorly aligned structure
+</p>
+<pre>#pragma options align=mac68k
+typedef struct sPoorlyAlignedStruct {
+   char      fCharField;
+   float     fFloatField;
+   char      fSecondCharField;
+} sPoorlyAlignedStruct;
+
+sPoorlyAlignedStruct      gPoorlyAlignedStruct;
+#pragma options align=reset</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+In this example, a compiler that did no padding would align fFloatField on an offset of<br>
+one byte from the structure's base address. Since compilers (and memory allocators)<br>
+usually align the base of a structure on a boundary of at least four bytes (and<br>
+multiples of four bytes), every access to fFloatField will cause a misalignment error.<br>
+Also, fFloatField will be misaligned in statically or dynamically allocated arrays, since<br>
+the lengths of structures are padded so that each structure that's an array element<br>
+starts on a 4-byte aligned address.
+</p>
+<p>
+A compiler with a 2-byte padding setting would align fFloatField on an even address,<br>
+but this would still cause misalignment when that address isn't divisible by 4.<br>
+Compilers using the mac68k pragma (as shown in Listing 1) cause 2-byte alignment,<br>
+putting fFloatField on an even but often misaligned address for PowerPC processors.
+</p>
+<p>
+A compiler with a 4-byte padding setting would always align the field properly.
+</p>
+<p>
+<b>MISALIGNED STACK PARAMETERS</b>
+</p>
+<p>
+Besides affecting the alignment of data in a structure, compiler settings can affect the<br>
+way data structures are placed on the stack. Consider this function declaration:
+</p>
+<pre>void FunctionFoo (sPoorlyAlignedStruct firstParam, float floatParam)</pre><p class="spacer">&nbsp;</p>
+<p>
+In this example, the parameters are placed on the stack (even though PowerPC<br>
+compilers use registers if possible). A compiler using a 680x0 2-byte padding option<br>
+may align firstParam.fFloatField on an even address, but if the address isn't divisible<br>
+by 4 this will cause a misalignment every time that parameter field is accessed within<br>
+FunctionFoo. It won't, however, change the alignment of other parameters on the stack.
+</p>
+
+<p>
+On the PowerPC processor, nonstructure parameters are usually placed in registers.<br>
+There are no alignment problems when accessing registers.
+</p>
+
+
+<h2>THE COST OF MISALIGNMENTS</h2>
+<p>
+To demonstrate the cost of misalignments, we've written the code in Listing 2, which<br>
+generates both aligned and misaligned accesses in the course of a million iterations. It<br>
+accesses a byte array in different ways -- data writes of integers, floats, and doubles<br>
+-- and at different offsets. In a portion of the code not shown, accesses are confined to<br>
+within a single page of memory, and interrupts are turned off. Running this code<br>
+enabled us to calculate the difference in performance between aligned and misaligned<br>
+accesses. This code (with slight modifications for the various compilers) was compiled<br>
+with the Symantec, MrC, and Metrowerks compilers. All compilers behaved similarly.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 2. </b>Generating accesses for comparison of access time
+</p>
+<pre>#define kNumAccessesPerCycle  200
+#define kNumCycles            5000
+// Number of total accesses = kNumAccessesPerCycle * kNumCycles
+// 1000000                  = 200                  * 5000
+#define kTableSize 1608 // Table size needed for 200 separate aligned
+                       // accesses on the largest data type (doubles)
+
+typedef enum ECType { eLong, eFloat, eDouble };
+
+void main(void)
+{
+   double AlignedTimeFloat = AlignLoop(0, eFloat);
+   double Misaligned1TimeFloat = AlignLoop(1, eFloat);
+   double Overhead1Float =
+       (((Misaligned1TimeFloat - AlignedTimeFloat) * 100)
+           / AlignedTimeFloat);
+   double avgOverhead1Float =
+       (Misaligned1TimeFloat - AlignedTimeFloat)
+           / kNumTotalAccesses;
+   ...
+}
+
+// The function AlignLoop measures the time of a loop of "writes" to
+// a byte array. The writes are either aligned or misaligned, based
+// on the offset parameter, which should be between 0 and 7. The
+// type should be eLong, eFloat, or eDouble.
+double AlignLoop(short offset, ECType type)
+{
+   UnsignedWide   startTime, stopTime;
+   double         start, stop;
+   char           bytetable[kTableSize];
+   long           j, k;
+
+   // Get starting timestamp.
+   Microseconds(&amp;startTime);
+
+   switch (type) {
+      case eLong:
+         {
+            long *longPtr = (long *) &amp;bytetable[offset];
+            for (j = 0; j &lt; kNumCycles; j++)
+               for (k = 0; k &lt; kNumAccessesPerCycle; k++)
+                  longPtr[k] = 1;
+         }
+         break;
+      case eFloat:
+         {
+            float *floatPtr = (float *) &amp;bytetable[offset];
+            for (j = 0; j &lt; kNumCycles; j++)
+               for (k = 0; k &lt; kNumAccessesPerCycle; k++)
+                  floatPtr[k] = 1.0;
+         }
+         break;
+      case eDouble:
+         {
+            double *doublePtr = (double *) &amp;bytetable[offset];
+            for (j = 0; j &lt; kNumCycles; j++)
+               for (k = 0; k &lt; kNumAccessesPerCycle; k++)
+                  doublePtr[k] = 1.0;
+         }
+         break;
+   }
+
+   // Get ending timestamp.
+   Microseconds(&amp;stopTime);
+
+   // Move the values to doubles.
+   start = (((double) ULONG_MAX + 1) * startTime.hi) + startTime.lo;
+   stop  = (((double) ULONG_MAX + 1) * stopTime.hi) + stopTime.lo;
+  
+   return stop - start;  
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+Table 1 shows the results. Overhead is calculated as the percentage difference between<br>
+the time required for aligned and misaligned accesses. Our experiments showed that<br>
+misaligned accesses at different offsets seemed to pay the same penalty (excluding<br>
+cases where the two accesses required to retrieve the data straddle a memory page<br>
+boundary, which is every 4K of memory).
+</p>
+<p>
+<b>Table 1. </b>Misalignment overhead for basic data types, native PowerPC code. Access<br>
+times are in (<i>u</i>sec).
+</p>
+
+    <p>
+        <table border="0">
+            <tbody>
+            <tr>
+                <td><b>CPU and data</b></td>
+                <td><b>Aligned total <br>access time</b></td>
+                <td><b>Misaligned total <br>access time</b></td>
+                <td><b>Overhead</b></td>
+            </tr>
+            <tr>
+                <td>PowerPC 601 integers</td>
+                <td>113439</td>
+                <td>119573</td>
+                <td>5.4%</td>
+            </tr>
+            <tr>
+                <td>PowerPC 601 floats</td>
+                <td>63234</td>
+                <td>94505</td>
+                <td>50.0%</td>
+            </tr>
+            <tr>
+                <td>PowerPC 601 doubles</td>
+                <td>63251</td>
+                <td>113306</td>
+                <td>79.1%</td>
+            </tr>
+            <tr>
+                <td>PowerPC 604 integers</td>
+                <td>687</td>
+                <td>695</td>
+                <td>1.1%</td>
+            </tr>
+            <tr>
+                <td>PowerPC 604 floats</td>
+                <td>261</td>
+                <td>23753</td>
+                <td>9009.0%</td>
+            </tr>
+            <tr>
+                <td>PowerPC 604 doubles</td>
+                <td>262</td>
+                <td>22546</td>
+                <td>8509.5%</td>
+            </tr>
+            </tbody>
+        </table>
+    </p>
+    
+
+
+
+
+
+
+
+
+
+
+
+
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Note:</b> Tests were run at 80 MHz on the PowerPC 601 and 132 MHz on the PowerPC<br>
+604.
+</p>
+<p>
+Misaligned integer accesses result in a relatively small penalty for PowerPC 601,<br>
+603, and 604 CPUs. However, there's no guarantee that future microprocessors will<br>
+provide hardware support for integer misalignment. Floating-point misalignments are<br>
+severely penalized by the 604 implementation. In fact, while a misaligned access takes<br>
+1.5 times as long as an aligned access on the 601, it takes more than 80 times as long<br>
+as an aligned access on the 604. The 601 pays a penalty only when an access crosses a<br>
+page boundary (this will be verified later). Misaligned accesses to doubles on a 601<br>
+result in nearly double the overhead of misaligned accesses to floats. On the 604,<br>
+however, doubles and floats suffer nearly the same overhead penalty. Misaligned<br>
+accesses for doubles occur on any address not divisible by 8 on the 601, and any<br>
+address not divisible by 4 on the 604. It's important to note that all memory accesses<br>
+(aligned and misaligned) result in some timing penalty.
+</p>
+<p>
+When we ran these experiments as emulated code (compiled for 680x0), float and<br>
+double accesses showed no significant overhead (less than 8%). The 68040LC<br>
+emulator doesn't do PowerPC floating-point loads/stores when processing<br>
+floating-point data; it avoids alignment exceptions by doing integer emulation of a<br>
+floating-point unit and loading and storing data 16 bits at a time.
+</p>
+<p>
+Our code paints a worst-case scenario; worst case or not, the results indicate that<br>
+there's plenty of motivation to avoid misaligned accesses in native PowerPC code.<br>
+Perhaps the biggest problem facing the programmer, however, is the detection of these<br>
+problems in application code. We'll look now at two tools that are useful for detecting<br>
+and pinpointing alignment problems.
+</p>
+
+
+<h2>TOOLS FOR DETECTING MISALIGNMENTS</h2>
+<p>
+Apple's Performance Evaluation Group has developed two tools for detecting<br>
+misalignments that cause exceptions:
+</p>
+<ul>
+<li>PPCInfoSampler, a tool to detect high levels of misalignment exceptions<br>
+over general application workloads</li>
+<li>the Misalignment Instrument Library (MIL), a set of functions useful for<br>
+profiling misalignments in specific regions of code</li>
+</ul>
+<p>
+PPCInfoSampler is useful for determining whether your code has misalignment<br>
+problems. If misaligned accesses are detected, the MIL can be used to pinpoint which<br>
+parts of your code are causing the misalignments. We'll describe each tool in greater<br>
+detail before discussing how to correct misalignments that you identify.
+</p>
+<p>
+<b>PPCINFOSAMPLER</b>
+</p>
+<p>
+PPCInfoSampler is a control panel that when activated records information about the<br>
+PowerPC exception services and emulator at 100-millisecond intervals. The<br>
+information recorded includes counts of mode switches, interrupts, misalignment<br>
+exceptions, and page faults. See Table 2 for a list of PPCInfoSampler output categories.<br>
+The output saved from PPCInfoSampler is in tab-delimited format and is best viewed<br>
+from a spreadsheet program.
+</p>
+<p>
+<b>Table 2. </b>PPCInfoSampler output categories
+</p>
+<p><table border="0"><tr><td><b>Output category</b></td><td><b></b><b>Explanation</b></td></tr>
+<tr><td>Time Delta (millis)</td><td>Elapsed milliseconds since last sample of</td></tr>
+<tr><td></td><td>"exception services" registers</td></tr>
+<tr><td>Microseconds time</td><td>Microseconds (calculated from timebase) since</td></tr>
+<tr><td></td><td>PPCInfoSampler was enabled</td></tr>
+<tr><td>Timebase Ticks</td><td>A reading of the 64-bit timebase register</td></tr>
+<tr><td>MixedMode switches</td><td>Number of mode switches into PowerPC code</td></tr>
+<tr><td>Data Page Faults</td><td>Number of page faults</td></tr>
+<tr><td>ExternalIntCount</td><td>Number of external processor interrupts</td></tr>
+<tr><td>MisalignmentCount</td><td>Number of misaligned accesses that caused an</td></tr>
+<tr><td></td><td>exception</td></tr>
+<tr><td>FPUReloadCount</td><td>Number of reloads of the FPU register state</td></tr>
+<tr><td>DecrementerIntCount</td><td>Number of interrupts caused by the PowerPC</td></tr>
+<tr><td></td><td>decrementer register</td></tr>
+<tr><td>EmulatedUnimpInstCount</td><td>Number of instructions that are emulated in</td></tr>
+<tr><td></td><td>exception services</td></tr>
+<tr><td>Timebase Ticks 68k</td><td>Number of timebase ticks spent in 680x0 code</td></tr>
+<tr><td>Timebase Ticks PPC</td><td>Number of timebase ticks spent in PowerPC code</td></tr>
+<tr><td>Level n Int Ticks</td><td>Number of timebase ticks that expired per</td></tr>
+<tr><td></td><td>interrupt level</td></tr>
+<tr><td>Level n interrupts</td><td>Number of interrupts that occurred at each</td></tr>
+<tr><td></td><td>interrupt level</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Note:</b> With the exception of microseconds time, each measurement is per sample and<br>
+isn't cumulative with the next interval.
+</p>
+<p>
+To use PPCInfoSampler, you must first drop it into your Control Panels folder and<br>
+reboot. The tool installs code in the system heap that waits for an action to occur. There<br>
+are two ways to activate the sampling mechanism:
+</p>
+<ul>
+<li>You can use the keyboard shortcut Command-Option-Z to start the<br>
+sampler instantly at any time. When you start the sampler, an 8-pixel line<br>
+will flash in the upper left corner of your main screen. It will continue to<br>
+flash for each sample that's recorded. To stop the sampler, use the keyboard<br>
+shortcut again.</li>
+<li>You can use the control panel interface, as shown in Figure 1, to start,<br>
+stop, and save a sample.</li>
+</ul>
+<p>
+<img src="img/298.gif" width="288 px"></img>
+</p>
+<p>
+<b>Figure 1. </b> PPCInfoSampler control panel interface
+</p>
+<p>
+For our purposes, let's focus on the number of misalignment exceptions. To determine<br>
+in general whether you have misalignment problems in your application, think of the<br>
+operations or "workloads" (such as saving to disk) that force your application to<br>
+access many data structures. Run PPCInfoSampler during these workloads to<br>
+determine whether any misalignments are occurring. Any misalignment count greater<br>
+than 0 should be investigated and, if possible, corrected.
+</p>
+<p>
+Table 3 shows an example of a misalignment count generated by PPCInfoSampler. The<br>
+program that was being executed during this count displayed bursty misalignment<br>
+characteristics. That is, during some 100-millisecond intervals no misalignments<br>
+were happening; during other intervals, large numbers were happening.
+</p>
+<p>
+<b>Table 3. </b>Sample output from PPCInfoSampler
+</p>
+<p><table border="0"><tr><td><b>Milliseconds</b></td><td><b></b><b>Misalignment count</b></td></tr>
+<tr><td>100</td><td>0</td></tr>
+<tr><td>100</td><td>0</td></tr>
+<tr><td>100</td><td>11652</td></tr>
+<tr><td>100</td><td>43694</td></tr>
+<tr><td>100</td><td>42931</td></tr>
+<tr><td>100</td><td>43695</td></tr>
+<tr><td>100</td><td>43679</td></tr>
+<tr><td>100</td><td>43705</td></tr>
+<tr><td>100</td><td>42942</td></tr>
+<tr><td>100</td><td>31213</td></tr>
+<tr><td>100</td><td>0</td></tr>
+<tr><td>100</td><td>0</td></tr>
+<tr><td>100</td><td>0</td></tr>
+<tr><td>100</td><td>14510</td></tr>
+<tr><td>100</td><td>44135</td></tr>
+<tr><td>100</td><td>44667</td></tr>
+<tr><td>100</td><td>44470</td></tr>
+<tr><td>100</td><td>44347</td></tr>
+<tr><td>100</td><td>44323</td></tr>
+<tr><td>100</td><td>44303</td></tr>
+<tr><td>100</td><td>6416</td></tr>
+<tr><td>100</td><td>0</td></tr>
+<tr><td>100</td><td>0</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>THE MISALIGNMENT INSTRUMENT LIBRARY</b>
+</p>
+<p>
+Where PPCInfoSampler allows you to detect misalignment activity in broad<br>
+100-millisecond intervals, the Misalignment Instrument Library (MIL) allows you<br>
+to then make educated guesses about where to further instrument your code to pinpoint<br>
+where the misalignment is happening. The MIL consists of two routines:
+</p>
+<pre>void initMisalignRegs(void);        // Initializes our misalignment
+                                     // counter (do this only once)
+unsigned long getMisalignments(void); // Returns the total number of
+                                     // misalignment exceptions since
+                                     // the initMisalignRegs call</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+With these calls to the MIL, you can profile strategic portions of your source for the<br>
+application's workloads. Iteratively narrow the focus of your profile by moving the<br>
+instrumentation in the code until you can determine where the misaligned accesses are<br>
+and the structures that they're associated with.
+</p>
+<p>
+Listing 3 is a sample of application code instrumented with the MIL calls. In this<br>
+sample, we use the MIL to display the different floating-point exception-handling<br>
+properties of the 601 and 604 CPUs.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 3. </b>Sample application code using the MIL
+</p>
+<pre>#define kNumAccessesPerCycle    200
+#define kNumCycles  5000
+#define kTableSize  804 // Table size needed for 200 separate aligned
+                        // accesses on the largest data type (floats)
+unsigned long gNumberOfMisalignments = 0; // Misalignments forced by
+                                          // program
+unsigned long gReportedMisalignments = 0; // Misalignments reported
+                                          // by exception services
+void main(void)
+{
+   float MisalignedTime = misalignLoop(false);
+   printf("&gt;*&gt; Forced number of misalignments: %d\n",
+            gNumberOfMisalignments);
+   printf("&gt;*&gt; Reported number of misalignments: %d\n",
+            gReportedMisalignments);
+}
+
+// The function misalignLoop measures the time of a loop of "writes"
+// to a byte array. The writes are either aligned or misaligned,
+// based on the align parameter.
+double misalignLoop(boolean align)
+{
+   UnsignedWide   startTime, stopTime;
+   float            start, stop;
+   short            alignIndex = (align)?0:1;
+  
+   // &#8721; MIL instrumentation code: initialize misalignment
+   // counter.
+   initMisalignRegs();  
+   // Get starting timestamp.
+   Microseconds(&amp;startTime);
+
+   for (long j = 0; j &lt; kNumCycles; j++) {
+      char bytetable[kTableSize];
+      float *floatPtr = (float *) &amp;bytetable[alignIndex];
+      for (long k = 0; k &lt; kNumAccessesPerCycle; k++) {
+         gNumberOfMisalignments++;
+         floatPtr[k] = 1;
+      }
+   }
+
+   // Get ending timestamp.
+   Microseconds(&amp;stopTime);
+  
+   // &#8721; MIL instrumentation code: get number of misalignments.
+   gReportedMisalignments = getMisalignments();
+  
+   // Move the values to doubles.
+   start = (((double) ULONG_MAX + 1) * startTime.hi) + startTime.lo;
+   stop = (((double) ULONG_MAX + 1) * stopTime.hi) + stopTime.lo;
+  
+   return stop - start;
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+The results of running this code are shown in Table 4. There's a large discrepancy<br>
+between the number of misalignments generated and the number reported by the MIL<br>
+on the 601. The 601 architecture internally fixes float and double misalignments in<br>
+hardware. However, the 601 can't fix misalignments across page boundaries, so it<br>
+takes a misalignment exception. Thus, only those page boundary cases are reported.<br>
+The 603/604 architecture doesn't handle misalignments in hardware, and it takes an<br>
+exception in all cases.
+</p>
+<p>
+<b>Table 4. </b>Number of misalignments generated and reported
+</p>
+<p><table border="0"><tr><td><b>CPU</b></td><td><b></b><b>Number of misalignments</b></td><td><b></b><b>Reported number of</b></td></tr>
+<tr><td></td><td><b>misalignments</b></td><td></td></tr>
+<tr><td>PowerPC 601</td><td>1000000</td><td>120</td></tr>
+<tr><td>PowerPC 604</td><td>1000000</td><td>1000000</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+
+
+<h2>NOW FOR THE CHIROPRACTIC ADJUSTMENTS</h2>
+<p>
+You've determined with the help of PPCInfoSampler that you have misalignment<br>
+problems in your application. You've used the MIL to determine where the misaligned<br>
+accesses are and the structures that they're associated with. Now it's time to think<br>
+about these structures.
+</p>
+<p>
+Is there a reason why they can't be naturally aligned (as we described early in the<br>
+article)? If there are structures in the parameter block passed to a Toolbox call,<br>
+fields within these structures may not naturally align, but this is something the<br>
+programmer can't do much about until the system provides an alternate API. Perhaps<br>
+there are binary data files created and accessed from 680x0 legacy code. Is it really<br>
+necessary to still be supporting data files formatted to 2-byte alignment? Can you<br>
+provide a version mechanism for your data files, such that newer versions write and<br>
+read to natural PowerPC alignment? Ask these questions, and naturally align<br>
+structures as much as possible.
+</p>
+<p>
+You can ensure proper structure alignment by ordering the fields in your structures<br>
+by hand, from largest to smallest, instead of relying on a compiler to pad the fields.<br>
+This will require you to do more work but will remove reliance on any particular<br>
+padding strategy.
+</p>
+<p>
+Another possible scenario is the case where data files are shared across multiple<br>
+platforms. Alignment strategies on Intel and other x86 processors aren't the same as<br>
+on PowerPC processors. There are two possible approaches to this scenario, given an<br>
+application on Windows and one on the Mac OS that share the same data files:
+</p>
+<ul>
+<li>Try compiling structures on the Windows application with 4-byte<br>
+alignment, according to PowerPC natural alignment. This is a "least common<br>
+denominator" approach.</li>
+<li>If rebuilding a Windows application isn't a viable option, load the data<br>
+from disk and convert the data structures to an aligned structure that's used<br>
+internally. The performance tradeoff depends on how often the misaligned<br>
+structure is used.</li>
+</ul>
+
+
+<h2>IT'S THAT SIMPLE</h2>
+<p>
+Misaligned memory accesses can take a real toll on your application's performance,<br>
+requiring from 2 to 80 times longer than aligned accesses on newer PowerPC CPUs. If<br>
+you do what we've described in this article, you can detect and pinpoint misalignments<br>
+and fix them so that your code will run efficiently now and on future processors<br>
+(which won't include hardware to fix misaligned accesses for any misaligned data<br>
+type) and won't be penalized by the lack of hardware support in future<br>
+implementations of PowerPC architecture. Isn't it worth a few simple adjustments<br>
+now to know that your code's future is secure?
+</p>
+<p>
+<b>KEVIN LOONEY</b> (looney@apple.com) is a research scientist for Apple's Performance<br>
+Evaluation Group, which does performance analysis of applications, systems, and<br>
+hardware. He previously wrote performance and debugging tools as part of the Core<br>
+Tools Group at Apple. Outside the confines of Apple, Kevin can be found moonlighting as<br>
+a pianist/synthesist and Web designer. He mainly ponders two questions in life: why<br>
+are things taking so long, and what would cause someone with a degree in artificial<br>
+intelligence to study performance issues?*
+</p>
+<p>
+<b>CRAIG ANDERSON</b> (c.s.anderson@ieee.org) was formerly a senior performance<br>
+analyst for Apple's Performance Evaluation Group. He's now at a startup company.<br>
+Before working at Apple, he spent many years researching and writing his<br>
+best-selling work <i>Improving the Performance of Bus-Based Multiprocessors</i>. Craig<br>
+enjoys cooking with Mollie Katzen and praticing katas with sensei Huber. He also takes<br>
+delight in reading fine literature, such as <i>The Gulag Archipelago</i>, <i>The Shipping News</i>,<br>
+and <i>It's Obvious You Won't Survive by Your Wits Alone</i>.*
+</p>
+<p>
+<b>Thanks to</b> our technical reviewers Justin Bishop, Dave Evans, and Jim Gochee. The<br>
+authors would like to acknowledge the help given by members of the Performance<br>
+Evaluation Group (a subgroup of the Architecture and Technology Group in Apple's<br>
+Hardware Division), including Marianne Hsiung, Tom Adams, and Scott McMahon. We'd<br>
+also like to thank Jim Gochee for his toolsets and valuable insights.*
+</p>
+</body>
+</html>

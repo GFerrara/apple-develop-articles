@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 37 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 96 - Balance of Power: Stalking the Wild Defect</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Balance of Power: Stalking the Wild Defect</h1>
+<h2>Dave Evans</h2>
+<p>
+<img src="img/240.gif" width="270 px"></img>
+</p>
+<p>
+Once again I found myself bleary eyed and fighting sleep, yet I continued to search for<br>
+understanding. Having already struck down two possible causes for my enigma, I was<br>
+now searching for new clues. I stubbornly refused to rest until I had flushed out the<br>
+software defect.
+</p>
+<p>
+My journey had begun modestly enough as I chanced upon a capricious crash in my<br>
+software. I wondered which assumption or logic was at fault. Armed with only my<br>
+low-level debugger, I began a hunt that would consume me into the dead of night. On<br>
+this adventure through the dark Mac OS interior, I crossed rivers of mode switches,<br>
+hopped islands of cross-TOC glue, and set snares in a jungle of native PowerPC code.
+</p>
+<p>
+In this column I'll walk you through one facet of that relentless pursuit, pointing out<br>
+the key landmarks I used to navigate and demonstrating the tools I used to survive. This<br>
+should help guide you through your own future explorations of the innards of PowerPC<br>
+code.
+</p>
+<h2>ON THE HUNT</h2>
+<p>
+Programming for a Power Macintosh may appear similar to your efforts on a<br>
+680x0-based Macintosh, but on close inspection you'll find PowerPC code far more<br>
+interesting to debug. The relatively simple landscape of a 680x0 world gives way to<br>
+confusing and insidious terrain on a Power Macintosh. Routine descriptors, dual<br>
+assembly languages, and native glue are obstacles that impede your progress.
+</p>
+<p>
+&nbsp;&nbsp;My subject was a crash that occurred when PowerPC applications called<br>
+MaxApplZone. I was certain the problem was in my recent system software changes,<br>
+but I needed to see what happened right before the crash to understand it. I started by<br>
+setting a breakpoint when an application called MaxApplZone. (Later I'll describe a<br>
+good technique for setting these breakpoints.) Then I traced through the system routine<br>
+and looked for anything startling.
+</p>
+<p>
+One application executed the following code just before calling MaxApplZone:
+</p>
+<pre> 0093B260   mflr       r0
+ 0093B264   stw        r31,-0x0004(SP)
+ 0093B268   stw        r30,-0x0008(SP)
+ 0093B26C   stw        r29,-0x000C(SP)
+ 0093B270   stw        r0,0x0008(SP)
+ 0093B274   stwu       SP,-0x0050(SP)
+ 0093B278   lwz        r30,-0x3940(RTOC)
+ 0093B27C   bl         MaxApplZone</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+The preamble to MaxApplZone saves registers R29 to R31 on the stack, creates a stack<br>
+frame, and loads a local variable into R30 from the application's TOC globals before<br>
+calling the routine. If we trace through this and then step into the bl (branch and link)<br>
+instruction to MaxApplZone, we find the following:
+</p>
+<pre> 0094CBFC   lwz        r12,-0x7E60(RTOC)
+ 0094CC00   stw        RTOC,0x0014(SP)
+ 0094CC04   lwz        r0,0x0000(r12)
+ 0094CC08   lwz        RTOC,0x0004(r12)
+ 0094CC0C   mtctr      r0
+ 0094CC10   bctr</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+This code is standard cross-TOC glue. The caller of a routine has the responsibility to<br>
+set the TOC register (RTOC) correctly for it. Routines imported from other code<br>
+fragments will have a different TOC value than the application. The PowerPC Code<br>
+Fragment Manager supplies the correct TOC value and the address of the imported<br>
+routine in a pair of long words called a transition vector, or TVector. In this case, the<br>
+TVector is stored as global data at the application's TOC value minus $7E60 bytes. This<br>
+glue code loads the TVector's address in R12 and then uses that to load the address of the<br>
+routine in R0 and the new TOC value. It uses the counter register and the bctr (branch<br>
+to counter register) instruction to jump to the correct address, so the return address<br>
+in the link register will not be changed.
+</p>
+<p>
+After tracing through this glue code, we find ourselves in a different kind of glue. The<br>
+MaxApplZone TVector points to a routine in the InterfaceLib code fragment, as listed<br>
+below. On this computer, you can guess that the code fragment is in ROM because the<br>
+address of the routine is very high, $40A0E30C in this case. Since the routine is in<br>
+ROM, you can't effectively set a breakpoint at its beginning.
+</p>
+<pre>MaxApplZone
+ +00000 40A0E30C   mflr    r0
+ +00004 40A0E310   stwu    SP,-0x0040(SP)
+ +00008 40A0E314   stw     r0,0x0048(SP)
+ +0000C 40A0E318   lis     r0,0x0001
+ +00010 40A0E31C   subic   r5,r0,0x5F9D
+ +00014 40A0E320   lwz     r3,MaxApplZone(r0)
+ +00018 40A0E324   li      r4,0x3802
+ +0001C 40A0E328   bl      CallOSTrapUniversalProc
+ +00020 40A0E32C   lwz     RTOC,0x0014(SP)
+ +00024 40A0E330   lwz     r12,0x0048(SP)
+ +00028 40A0E334   addic   SP,SP,0x0040
+ +0002C 40A0E338   mtlr    r12
+ +00030 40A0E33C   blr</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+You might expect the real MaxApplZone routine to do much more than what appears in<br>
+this routine. In fact, this routine is simply glue for the 680x0 A-trap table: it gets<br>
+the address of MaxApplZone from that trap table (don't try this yourself without<br>
+GetOSTrapAddress, kids) and then uses the CallOSTrapUniversalProc routine to call<br>
+the address.
+</p>
+<p>
+Most of the routines in InterfaceLib are actually just like this glue routine for the<br>
+trap table. Because the routines go through the trap table, PowerPC applications will<br>
+be affected by patches to the trap table; if they were to bind directly with the system<br>
+code fragments, patches would be bypassed.
+</p>
+<p>
+To continue with our tracing, we must step up to and then into<br>
+CallOSTrapUniversalProc. This takes us to more cross-TOC glue:
+</p>
+<pre> 40A06D10   lwz        r12,0x0008(RTOC)
+ 40A06D14   stw        RTOC,0x0014(SP)
+ 40A06D18   lwz        r0,0x0000(r12)
+ 40A06D1C   lwz        RTOC,0x0004(r12)
+ 40A06D20   mtctr      r0
+ 40A06D24   bctr</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Since CallOSTrapUniversalProc is part of the Mixed Mode Manager, it's implemented<br>
+in the MixedMode code fragment. This cross-TOC glue finds the TVector for that routine<br>
+and calls through to it. When we step through this and over the last bctr instruction,<br>
+we're magically transferred not to the Mixed Mode Manager but instead to 680x0 code.<br>
+Wow! MacsBug knew we were calling a universal procedure pointer, so it spared us<br>
+the trace through the mode switch and took us directly to the location of the universal<br>
+procedure pointer, in this case the following 680x0 code:
+</p>
+<pre> 0031B160   MOVE.L     ApplLimit,D0
+ 0031B164   MOVE.L     HeapEnd,D1
+ 0031B168   SUB.L      D1,D0
+ 0031B16A   MOVEQ      #$14,D1
+ 0031B16C   CMP.L      D0,D1
+ 0031B16E   BLE.S      *+$000A
+ 0031B170   MOVEQ      #$00,D0
+ 0031B172   MOVE.W     D0,MemErr
+ 0031B176   RTS
+ 0031B178   JMP        $00167FCC</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+From my experience tracing through the system, I'd guess that this 680x0 code is a<br>
+patch on top of the real MaxApplZone, because it compares two numbers and in one of<br>
+only two cases jumps to an absolute address. The absolute address was probably set<br>
+when this code was installed as a patch, and it points to either the real MaxApplZone<br>
+routine or another patch.
+</p>
+<p>
+The patch appears to check whether the value of the ApplLimit low-memory global is<br>
+within 20 bytes of the value of HeapEnd. If so, it simply returns noErr in the<br>
+low-memory global MemErr without calling through to the real MaxApplZone. This<br>
+patch is probably part of the system software, designed to fix a bug in the ROM without<br>
+having to replace the entire real MaxApplZone routine.
+</p>
+<p>
+Now if we trace through this patch and visit the absolute address $167FCC from the<br>
+patch, we find the following:
+</p>
+<pre>No procedure name
+ 00167FCC  *_MixedModeMagic
+ 00167FCE   BTST       D3,D0
+ 00167FD0   ORI.B      #$00,D0
+ 00167FD4   ORI.B      #$00,D0
+ 00167FD8   ORI.B      #$3002,D0
+ 00167FDC   ORI.B      #$04,D1
+ 00167FE0   ORI.B      #$8274,D7
+ 00167FE4   ORI.B      #$00,D0
+ 00167FE8   ORI.B      #$00,D0
+ 00167FEC   ORI.B      #$A036,D0</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Aha! This ugly disassembly is actually a routine descriptor in disguise. The<br>
+_MixedModeMagic trap invokes the Mixed Mode Manager from 680x0 code, and it<br>
+always appears at the beginning of a routine descriptor. Since this trap is at the<br>
+beginning of each routine descriptor, you can simply construct a routine descriptor<br>
+and then jump to it in 680x0 code. The drd dcmd in MacsBug will let you see this<br>
+routine descriptor in a meaningful way. When I typed drd pc in this case, I saw the<br>
+contents of Listing 1.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 1. </b>Displaying a routine descriptor
+</p>
+<pre>drd: 00167fcc
+  MixedModeMagic: 0xAAFE, version: #7,
+    flags: 0x00 (NotIndexable)
+  LoadLoc: 0x00000000, reserved2: 0x00000000,
+    SelectorInfo: 0x00 (No Selector)
+  Routine Count (zero-based): 0x0000 (#0)
+  ---- Routine Record 0x0000 (#0) at 0x00167fd8 ----
+       ProcInfo: 0x00003002,
+         Reserved1: 0x00000000, ISA: #1 (PowerPC)
+       Record Flags: 0x0004 (Absolute, IsPrepared, NativeISA,
+         PassSelector, IsNotDefault)
+       ProcPtr: 0x00078274, offset: 0x00000000,
+         selector: 0x00000000</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Notice the number of fields displayed in Listing 1. For simple routine<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;descriptors like this one, you'll only need to look at the ProcPtr entry on the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;last line of the display. More complicated routine descriptors have an array of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;routines, and you'll need to look for a passed selector to determine which one<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;is actually used.
+</p>
+<p>
+The last line of the listing shows a ProcPtr value of $00078274. This is the address<br>
+of the TVector for MaxApplZone in the MemoryMgr code fragment. Since the TVector<br>
+structure has the routine address as its first element, dereferencing that address once<br>
+will produce the address of the actual routine. Typing ilp @78274 to dereference the<br>
+TVector and disassemble PowerPC code showed me this:
+</p>
+<pre>__MaxApplZone
+ +00000 000CA1A8   mflr       r0
+ +00004 000CA1AC   stwu       SP,-0x0040(SP)
+ +00008 000CA1B0   stw        r0,0x0048(SP)
+ +0000C 000CA1B4   bl         __HSetStateQ+0073C
+ +00010 000CA1B8   crmove     cr7_SO,cr7_SO
+ +00014 000CA1BC   extsh      r4,r3
+ +00018 000CA1C0   li         r3,0x0000
+ +0001C 000CA1C4   bl         SetEmulatorRegister
+ +00020 000CA1C8   lwz        RTOC,0x0014(SP)
+ +00024 000CA1CC   lwz        r12,0x0048(SP)
+ +00028 000CA1D0   addic      SP,SP,0x0040
+ +0002C 000CA1D4   mtlr       r12
+ +00030 000CA1D8   blr</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+This is the MaxApplZone routine in the Memory Manager. It appears to call more<br>
+substantial subroutines when it branches to __HSetStateQ+0073C, but this is the<br>
+actual routine.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<h2>WALKING BACK OUT</h2>
+<p>
+We've braved routine descriptors, glue, and patches to make it this far. I won't dive<br>
+further into the Memory Manager for this illustration, but let's try an instructive<br>
+walk back out from the MaxApplZone routine.
+</p>
+<p>
+After tracing through this routine, we step over the blr instruction to branch back to<br>
+the link register address. To our surprise we not only switch back to 680x0 emulation<br>
+mode but we appear to be lost in darkness. The following 680x0 F-line instruction<br>
+will be executed next:
+</p>
+<pre>No procedure name
+ 0162D0A0   DC.W       $FE02</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+We switched back to 680x0 emulation mode because we're returning from the 680x0<br>
+patch call to a routine descriptor. Typing ip to disassemble at the current location<br>
+shows what appears to be garbage, however:
+</p>
+<pre>No procedure name
+ 0162D08C   NEGX.L     D7
+ 0162D08E   EOR.W      D3,(A0)+
+ 0162D090   BCHG       D0,-(A2)
+ 0162D092   DC.W       $D0F0
+ 0162D094   DC.W       $FFFF
+ 0162D096   ORI.B      #$00,D4
+ 0162D09A   DC.W       $FFFF
+ 0162D09C   ORI.B      #$A063,D0
+ 0162D0A0  *DC.W       $FE02
+ 0162D08C   NEGX.L     D7
+ 0162D08E   EOR.W      D3,(A0)+
+ 0162D090   BCHG       D0,-(A2)
+ 0162D092   DC.W       $D0F0
+ 0162D0A2   ORI.B      #$9C,D0
+ 0162D0A6   BCLR       D0,D3
+ 0162D0A8   BCHG       D0,-(A2)
+ 0162D0AA   ADD.B      D0,(A0)</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Here's the secret: The $FE02 F-line instruction is very much like the<br>
+_MixedModeMagic trap in that it can signal the transition from emulated 680x0 code<br>
+to PowerPC code. Just as with the routine descriptor that we saw earlier, executing<br>
+the $FE02 instruction will in this case cause us to switch back to PowerPC native<br>
+mode and will bring us to a completely different address.
+</p>
+<p>
+Truly perceptive readers might have noticed that the program counter at the $FE02<br>
+instruction is actually on the stack. Listing 2 shows a memory dump of the first 48<br>
+bytes of the stack at this time. Notice that the word at the beginning of the third line<br>
+(at $162D0A0) is the $FE02 instruction we're about to execute.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 2. </b>The stack upon return to PowerPC code
+</p>
+<pre>Displaying memory from sp
+ 0162D080  DDDD DDDD DDDD DDDD 7FFF 7FFF 4087 B758
+                               -+**********@&aacute;
+ 0162D090  0162 D0F0 FFFF 0004 0000 FFFF 0000 A063
+                               [[Sigma]]X*b-***********
+ 0162D0A0  FE02 0000 009C 0183 0162 D110 0000 3802
+                               +c*****&uacute;*&#201;*b--***</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+As we trace over that $FE02 instruction, we find ourselves back inside the<br>
+InterfaceLib glue routine for MaxApplZone. Tracing through those last instructions<br>
+finally takes us back to the application code where we started, as shown here:
+</p>
+<pre>MaxApplZone
+ +00020 40A0E32C   lwz        RTOC,0x0014(SP)
+ +00024 40A0E330   lwz        r12,0x0048(SP)
+ +00028 40A0E334   addic      SP,SP,0x0040
+ +0002C 40A0E338   mtlr       r12
+ +00030 40A0E33C   blr
+No procedure name
+ 0093B280   lwz        RTOC,0x0014(SP)
+ 0093B284   li         r31,0x0001</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Notice that when we returned to a previous code fragment, we immediately restored<br>
+the TOC register to a value saved on the stack. Not only is the caller responsible for<br>
+setting the TOC register before calling a routine, it's also responsible for restoring<br>
+this register when the call returns.
+</p>
+<p>
+This concludes our romp through the wilderness of the modern PowerPC environment.<br>
+We traced from an application's code fragment, through the InterfaceLib fragment and<br>
+then a patch in the trap table, to a routine descriptor for the real MaxApplZone<br>
+routine, and ultimately back again.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<h2>CATCHING POWERPC CALLS</h2>
+<p>
+Earlier I glossed over how to set a breakpoint and catch an application as it calls<br>
+MaxApplZone. Now I'll describe a good trick for doing this.&nbsp;&nbsp;The MacsBug debugger<br>
+doesn't implement 680x0 A-trap break commands for PowerPC code yet. But you can<br>
+easily mimic the A-trap break feature in PowerPC code, using the FindSym, PlayMem,<br>
+and PPCJump MacsBug macros. You can use those macros if you install the file<br>
+"PowerPC dcmds" (which you'll find on this issue's CD) into your MacsBug<br>
+Preferences folder.
+</p>
+<p>
+Say, as an example, that you'd like to catch all PowerPC code that calls the Toolbox<br>
+routine ReleaseResource. PowerPC code fragments access this routine by importing its<br>
+entry point from the InterfaceLib code fragment. Typing FindSym ReleaseResource on<br>
+my Power Macintosh 8100 produces the following:
+</p>
+<pre>findsym: "ReleaseResource"
+ "ReleaseResource" #1796 TVec 0001acc0
+ (40a15978,0001ea14) in "InterfaceLib"</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FindSym is case sensitive. When looking for an entry in InterfaceLib, for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;example, you must spell the routine name exactly and capitalize letters<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;perfectly; typing "releaseresource" rather than "ReleaseResource" will not<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;work.*
+</p>
+<p>
+This tells us a few things. ReleaseResource's TVector is located at the address<br>
+$0001ACC0. That vector contains the address for the routine at $40A15978 and the<br>
+InterfaceLib's TOC value, which is $0001EA14. FindSym will return TVector<br>
+addresses for each application or fragment bound to the routine. In System 7 these will<br>
+usually all be the same TVector.
+</p>
+<p>
+If I need to catch callers to ReleaseResource, I could then simply type brp 40a15978<br>
+to set a PowerPC breakpoint at the beginning of the InterfaceLib code. On the Power<br>
+Macintosh 8100, however, this address is in ROM. Setting breakpoints in ROM is more<br>
+difficult for MacsBug, which returns this message:
+</p>
+<pre>Warning: This requires stepping through each instruction</pre><p class="spacer">&nbsp;</p>
+<p>
+Your Macintosh might become unusable if MacsBug is forced to single-step through all<br>
+the code. Because MacsBug can set a breakpoint in RAM with less difficulty, we'll now<br>
+use the PlayMem and PPCJump macros to set an equivalent breakpoint in RAM.
+</p>
+<p>
+PlayMem is a MacsBug variable that points to 512 bytes of scratch memory in RAM.<br>
+The PPCJump macro expands to a set of PowerPC instructions for jumping to an<br>
+absolute address. So the command
+</p>
+<pre>sl PlayMem PPCJump 40a15978</pre><p class="spacer">&nbsp;</p>
+<p>
+writes the following instructions to MacsBug's scratch memory:
+</p>
+<pre>lis    r0,40a1         | 3C0040A1
+ori    r0,r0,5978      | 60005978
+mtctr  r0              | 7C0903A6
+bctr                   | 4E800420</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Now I'll replace the value of the TVector with our new code in scratch space, by typing<br>
+sl 0001acc0 PlayMem. PowerPC code bound with InterfaceLib will now call my new<br>
+code instead of ReleaseResource, but my code will then correctly pass control to<br>
+ReleaseResource. Finally, typing brp PlayMem will set the PowerPC breakpoint we<br>
+want.
+</p>
+<p>
+When PowerPC code tries to call the ReleaseResource trap via InterfaceLib, execution<br>
+will stop at my breakpoint in PlayMem. At that point, typing ipp lr will list PowerPC<br>
+instructions around the address in the link register, quickly showing me which code<br>
+was calling the trap.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<h2>AFTER THE HUNT</h2>
+<p>
+Although I seriously doubt I would find enjoyment in hunting live animals, I've found<br>
+the hunt for software defects truly rewarding. Some problems are a definite challenge,<br>
+and I often learn something new about the Mac OS with each riddle solved. I hope that<br>
+knowing the details of my pursuit will help you in your own future quests.
+</p>
+<p>
+<b>DAVE EVANS</b> and fellow Apple engineer Rus Maxham took another adventure by<br>
+motorcycle this summer. This time they journeyed to Utah and skirted the Great Salt<br>
+Lake. Turning north, they discovered the beautiful and unspoiled vistas of Idaho.<br>
+Cottonwood flower petals rained on them as they crossed into Washington. Hectares of<br>
+wheat farms and the blustery Columbia River guided them to Oregon. One cracked<br>
+tailpipe and two quarts of oil later, they finally arrived home in California.
+</p>
+<p>
+<b>Thanks to</b> Nitin Ganatra, Pete Gontier, Jim Luther, and Alex Rangel for reviewing<br>
+this column.
+</p>
+</body>
+</html>

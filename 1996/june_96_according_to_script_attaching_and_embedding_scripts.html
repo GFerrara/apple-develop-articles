@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 19 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>June 96 - According  to  Script: Attaching and Embedding Scripts</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>According&nbsp;&nbsp;to&nbsp;&nbsp;Script: Attaching and Embedding<br>
+Scripts</h1>
+<h2>CAL SIMONE</h2>
+<p>
+<img src="img/186.gif" width="267 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">One of the least-implemented powerful capabilities you can add to</i>
+<br>
+
+<i style="font-size:125%;">your application is attaching and embedding scripts. In this column</i>
+<br>
+
+<i style="font-size:125%;">I'll give you an idea of how to do this, and clear up some confusion</i>
+<br>
+
+<i style="font-size:125%;">along the way.</i>
+</p>
+<h2>ATTACHING VS. EMBEDDING</h2>
+<p>
+The term <i>attach</i> has been used to refer to both attaching and embedding. Allow me to set<br>
+the record straight by offering definitions of the two terms as they apply to scripting.
+</p>
+<ul>
+<li>An <i>attached</i> script is a compiled script or script application that's<br>
+associated with a menu item in an application; the script is executed when the<br>
+user chooses that command. This type of script usually resides in a particular<br>
+place, such as a Scripts folder. Script attachment can be implemented quickly<br>
+and, at its most basic level, doesn't require your application to be scriptable.</li>
+<li>An <i>embedded</i> script is a compiled script that's associated with an interface<br>
+element belonging to an application or with a document. The script can be<br>
+stored with the application's data, often in a special file known to the<br>
+application, or embedded within the data for a document file.</li>
+</ul>
+<h2>ATTACHING SCRIPTS TO MENU ITEMS</h2>
+<p>
+Attached scripts are useful for two reasons. You, or your users (depending on what's<br>
+appropriate for your application), can do the following:
+</p>
+<ul>
+<li>Execute scripts to communicate with and control other scriptable<br>
+applications without leaving your application. This is useful whether or not<br>
+your application is scriptable.</li>
+<li>Use scripts as an means of extending the functions or options available in<br>
+your application. If your application itself is scriptable, script attachment<br>
+leverages off the work you've already done.</li>
+</ul>
+<p>
+By allowing users to keep a menu of their favorite scripts, you enable them to build a<br>
+library of expanded functionality for your application. The Mac OS and Finder<br>
+accomplish this with the Automated Tasks submenu in the Apple menu. You can do this<br>
+with a Scripts menu that appears as the last (or next to last) of your application's<br>
+menus.
+</p>
+<p>
+Here are the steps for implementing this attachable behavior:
+</p>
+<ul>
+<li>In the resource file included with your application, include a menu<br>
+resource with the title "Scripts."</li>
+<li> In the startup code for your application, locate the Scripts folder in your<br>
+application's folder, creating it if it isn't there.</li>
+<li> Walk the files in the Scripts folder, checking for compiled scripts (file<br>
+type 'osas') and script applications (file type 'APPL', creator 'aplt' or 'dplt').<br>
+Add the names of these files to your Scripts menu.</li>
+<li> When a user selects a script name from the Scripts menu, load the script<br>
+resource ('scpt' 128) and execute the script, as shown in Listing 1.</li>
+</ul>
+<p>
+<b>Listing 1. </b>Loading and executing a script from a file
+</p>
+<pre>FUNCTION RunAttachedScript(theAlias: AliasHandle): OSAError;
+VAR
+   fileSpec:             FSSpec;
+   scriptRes:            Handle;
+   scriptDesc:           AEDesc;
+   scriptID, resultID:   OSAID;
+   myErr, ignoredErr:    OSAError;
+   savedRes, refNum:     Integer;
+   specChanged:          Boolean;
+
+BEGIN
+   (* Get the file specification corresponding to the menu item
+chosen. *)
+   myErr := ResolveAlias(NIL, theAlias, fileSpec, specChanged);
+   IF myErr &lt;&gt; noErr THEN MyErrorProc(myErr);
+
+   (* Open the resource fork and grab the script resource. *)
+   savedRes := CurResFile;
+   refNum := FSpOpenResFile(fileSpec, fsRdPerm);
+   IF refNum = -1 THEN MyErrorProc(-1);
+   UseResFile(refNum);
+   scriptRes := Get1Resource(kOSAScriptResourceType, 128);
+   IF ResError &lt;&gt; noErr THEN MyErrorProc(ResError);
+
+   (* Prepare and run the script. *)
+   myErr := AECreateDesc(typeOSAGenericStorage, scriptRes^,
+GetHandleSize(scriptRes),       scriptDesc);
+   IF myErr &lt;&gt; noErr THEN MyErrorProc(myErr);
+   myErr := OSALoad(gGenericComponent, scriptDesc, kOSAModeNull,
+scriptID);
+   IF myErr &lt;&gt; noErr THEN MyErrorProc(myErr);
+   myErr := OSAExecute(gGenericComponent, scriptID, kOSANullScript,
+kOSAModeNull, resultID);
+   ignoredErr := OSADispose(gGenericComponent, scriptID);
+   ignoredErr := AEDisposeDesc(scriptDesc);
+   IF myErr &lt;&gt; noErr THEN MyErrorProc(myErr);
+
+   (* Finish up. *)
+   ReleaseResource(scriptRes);
+   CloseResFile(refNum);
+   UseResFile(savedRes);
+
+   (* You might want to do something with the result. *)
+   IF resultID &lt;&gt; kOSANullScript THEN MyDealWithResult(resultID);
+   RunAttachedScript := myErr;
+END;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Before executing a script, you must establish a connection to a scripting component.<br>
+The easiest thing to do is to connect to the generic scripting component with<br>
+OpenDefaultComponent. When you're done, disconnect from the component with<br>
+CloseComponent. Depending on how you design your application, you can open this<br>
+connection and keep it open while your program is running, or you can open and close<br>
+the connection each time you load and execute a script. For more information on<br>
+choosing and connecting scripting components, see <i>Inside Macintosh: Interapplication</i><br>
+<i>Communication</i>, Chapter 10.
+</p>
+<h2>EMBEDDED SCRIPTS IN APPLICATION DATA OR DOCUMENT<br>
+FILES</h2>
+<p>
+Embedded scripts can be used in two ways:
+</p>
+<ul>
+<li>Interface elements belonging to an application, such as tool palette icons,<br>
+menu items, and buttons, can have scripts associated with them.</li>
+<li>Scripts can be associated with individual documents. Unlike the above<br>
+case, you can trigger the script with any method that's appropriate for your<br>
+application.</li>
+</ul>
+<p>
+Embedding scripts can be extremely powerful. For example, you can associate scripts<br>
+with elements of a form to supply a field's editing rules, or with a button to perform<br>
+calculations. Replace a script and you change the rules or the formula! Depending on<br>
+your particular application, you can use this technique yourself or allow users to do<br>
+their own replacement.
+</p>
+<p>
+If you reserve this technique for your own use, you can revise your software simply<br>
+by replacing scripts with corrected or enhanced versions. Or, if you allow your users<br>
+to change the embedded scripts, your application becomes easily customizable: users<br>
+can modify or augment your application's capabilities simply by substituting scripts.<br>
+You could even ship your application with replacement scripts, which users can<br>
+substitute for default scripts that you provide.
+</p>
+<h2>RETRIEVING EMBEDDED SCRIPTS</h2>
+<p>
+There are three methods of retrieving embedded scripts from files, depending on<br>
+where they're stored. Regardless of which method you choose, it's important to<br>
+remember that your program should never try to interpret the bytes of a compiled<br>
+script. However, as long as you keep the bytes intact, you can do whatever you want<br>
+with them and the script will remain intact.
+</p>
+<p>
+<b>Aliases to script files.</b> This is the same technique as described above for attached<br>
+scripts. This method is used primarily for maintaining a list of scripts. You'd use it,<br>
+for instance, if you kept a collection of scripts in a folder on disk. I don't recommend<br>
+this technique if the scripts are associated with actual interface elements, because the<br>
+links that aliases provide to the script files can too easily be broken.
+</p>
+<p>
+<b>In the document's resource fork.</b> Storing the scripts as resources is convenient<br>
+because you can easily use your favorite resource editor to copy a script resource<br>
+from a compiled script or script application and paste it into the special application<br>
+file or the document. It also makes it easy to grab the scripts for loading and executing,<br>
+using the method shown in Listing 1 (though in this situation I'd suggest using an ID<br>
+number other than 128 for the script resource). The drawback is that your users can<br>
+get their hands on the script with <i>their</i> favorite resource editor.
+</p>
+<p>
+<b>In the document's data fork.</b> Maintaining the scripts within the data for a<br>
+document is a more secure method, since it makes it harder for users to extract the<br>
+scripts. It's also more difficult for you, though, because you may have to keep track of<br>
+the location within the document's data, and then convert the script into the form<br>
+required for execution. You'll want to store three pieces of information: the<br>
+four-character ID 'scpt' (typeOSAGenericStorage), the length of the script data that<br>
+follows, and the script data itself. The ID isn't essential, but it may come in handy,<br>
+especially if there are other types of data present or if you load your document's data<br>
+sequentially.
+</p>
+<p>
+There are many ways to keep track of multiple types of data in a document file. If you<br>
+have a lot of different types of data in the file, you can even develop a small database<br>
+for the data, complete with a directory, so that you can gain quick access to particular<br>
+types of data, including the script. A simpler way is to maintain the data in one long<br>
+stream, embedding the script data within the stream. If you know the location of the<br>
+script within the stream, you can just load and execute it when a user wants to run it.<br>
+One developer I know reads all the data in the data fork (including scripts)<br>
+sequentially when the file is opened, so that he doesn't need to keep track of the script's<br>
+location within the file. Listing 2 shows an example of loading script data from the data<br>
+fork of a document file.
+</p>
+<p>
+<b>Listing 2.</b> Extracting script data from a document's data fork
+</p>
+<pre>FUNCTION RunEmbeddedScriptFromDataFork(theAlias: AliasHandle;
+             scriptLoc: LongInt): OSAError;
+VAR
+   fileSpec:              FSSpec;
+   scriptData:            Handle;
+   scriptDesc:            AEDesc;
+   dataType:              DescType;
+   scriptID, resultID:    OSAID;
+   myErr, ignoredErr:     OSAError;
+   refNum:                Integer;
+   scriptLen, readLen:    LongInt;
+   specChanged:           Boolean;
+
+BEGIN
+   (* Open the file. *)
+   myErr := ResolveAlias(NIL, theAlias, fileSpec, specChanged);
+   IF myErr &lt;&gt; noErr THEN MyErrorProc(myErr);
+   myErr := FSpOpenDF(fileSpec, fsRdPerm, refNum);
+   IF myErr &lt;&gt; noErr THEN MyErrorProc(myErr);
+
+   (* Grab the data. *)
+   IF MemError &lt;&gt; noErr THEN MyErrorProc(MemError);
+   myErr := SetFPos(refNum, fsFromStart, scriptLoc);
+   readLen := sizeof(dataType);
+   IF myErr = noErr THEN myErr := FSRead(refNum, readLen, @dataType);
+   (* dataType should be typeOSAGenericStorage. *)
+   readLen := sizeof(scriptLen);
+   IF myErr = noErr
+       THEN myErr := FSRead(refNum, readLen, @scriptLen);
+   IF myErr = noErr THEN scriptData := NewHandle(scriptLen);
+   IF MemError &lt;&gt; noErr THEN MyErrorProc(MemError);
+   myErr := FSRead(refNum, scriptLen, scriptData^);
+   IF myErr &lt;&gt; noErr THEN MyErrorProc(myErr);
+   myErr := FSClose(refNum);
+
+   (* Prepare and run the script. *)
+   myErr := AECreateDesc(typeOSAGenericStorage, scriptData^,
+      GetHandleSize(scriptData), scriptDesc);
+   DisposeHandle(scriptData);
+   IF myErr &lt;&gt; noErr THEN MyErrorProc(myErr);
+   myErr := OSALoad(gGenericComponent, scriptDesc, kOSAModeNull,
+      scriptID);
+   IF myErr &lt;&gt; noErr THEN MyErrorProc(myErr);
+   myErr := OSAExecute(gGenericComponent, scriptID, kOSANullScript,
+      kOSAModeNull, resultID);
+   ignoredErr := OSADispose(gGenericComponent, scriptID);
+   ignoredErr := AEDisposeDesc(scriptDesc);
+   IF myErr &lt;&gt; noErr THEN MyErrorProc(myErr);
+
+   (* You might want to do something with the result. *)
+   IF resultID &lt;&gt; kOSANullScript
+      THEN MyDealWithResult(resultID);
+   RunEmbeddedScriptFromDataFork := myErr;
+END;</pre>
+<p class="spacer">&nbsp;</p>
+<h2>GIVING IT AWAY</h2>
+<p>
+The information in this column is not offered as a complete solution, but is intended to<br>
+get you moving with implementing attachability. There are many other issues<br>
+surrounding attachability that are worth exploring, such as getting time during script<br>
+execution, using attached scripts to allow users to tinker with some of the core<br>
+functionality of your application, and providing a consistent way for your users to edit<br>
+attached and embedded scripts. I plan to delve into these other issues in upcoming<br>
+columns.
+</p>
+<p>
+Making your application capable of attaching or embedding scripts puts new power into<br>
+your users' hands, giving them unprecedented ability to develop custom solutions to<br>
+their problems. It's not hard to do, and the benefits are enormous. Do it today.
+</p>
+<p>
+<b>CAL SIMONE</b> (mainevent@his.com, AppleLink MAIN.EVENT)&nbsp;&nbsp;Few people know it, but<br>
+before Cal was in the software business, he used to produce records (the musical kind)<br>
+in Washington DC and New York. At a time when computers were used mostly to make<br>
+robotic dance music, Cal was one of the first to painstakingly create "human"<br>
+performances in pop records with about 60 MIDI synthesizers and, of course, a<br>
+Macintosh. He now works toward a day when every application will be scriptable.*
+</p>
+</body>
+</html>

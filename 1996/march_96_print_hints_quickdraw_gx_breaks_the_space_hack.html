@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 9 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 96 - Print Hints: QuickDraw GX Breaks the Space Hack</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Print Hints: QuickDraw GX Breaks the Space Hack</h1>
+<h2>Dave Polaschek</h2>
+<p>
+<img src="img/147.gif" width="126 px"></img>
+</p>
+<p>
+<i>Before QuickDraw GX, when an application that generated its own PostScript(TM) code</i><br>
+<i>wanted to make sure the printer could print a particular font, it could send one space</i><br>
+<i>character in the needed font. The LaserWriter driver would check the printer to see if</i><br>
+<i>the font was available, and if not, the driver would send the font to the printer so that</i><br>
+<i>it would be available to print the space character -- and any other characters in that</i><br>
+<i>font that the application-generated PostScript code might require. The reason for</i><br>
+<i>using a space was simple: you didn't want to mark the page just to get a font to the</i><br>
+<i>printer, and a space wouldn't mark it. This technique, first described in "The Perils of</i><br>
+<i>PostScript" back in develop Issue 1, became known as the "space hack."</i>
+</p>
+<p>
+<i>&nbsp;&nbsp;Unfortunately, the space hack doesn't work with QuickDraw GX. This column</i><br>
+<i>describes a new way for applications that generate their own PostScript code to send</i><br>
+<i>fonts to the printer. The code to do this is provided on this issue's CD.</i>
+</p>
+<h2>QUICKDRAW GX CHANGES THE PICTURE</h2>
+<p>
+QuickDraw GX has a really cool imaging model, supports all kinds of whizzy features,<br>
+and to top it off, introduces the long-awaited new printing architecture. But it has one<br>
+snag: after all the years you've spent getting your PostScript printing tuned just the<br>
+way you like it, QuickDraw GX breaks the space hack.
+</p>
+<p>
+&nbsp;&nbsp;The space hack depends on a font's entire character set being sent to the printer in<br>
+response to the need for a single character (the space character). But QuickDraw GX<br>
+sends only the needed characters in a font to a printer, because it's trying to conserve<br>
+memory on the printer and also because sending less data means faster transmission of<br>
+that data. This isn't such a big issue with Roman fonts, where there are only 256<br>
+characters at most, but in the case of two-byte fonts such as Chinese, Japanese, and<br>
+Korean fonts, where there can be tens of thousands of characters and the font can be<br>
+tens of megabytes in size, sending only the required characters makes a big difference<br>
+in speed.
+</p>
+<p>
+Incidentally, with QuickDraw GX you don't need a specialized printer to print two-byte<br>
+fonts. It divides fonts with more than 256 characters into several smaller fonts with<br>
+new encodings containing just the characters you need, so you can print characters<br>
+from the font on any PostScript printer.
+</p>
+<h2>THE NEW WAY TO DOWNLOAD FONTS</h2>
+<p>
+So QuickDraw GX has lots of advantages over QuickDraw, but the space hack is broken.<br>
+What's the poor programmer to do?
+</p>
+<p>
+&nbsp;&nbsp;You can use a new font downloading method based on calling GXFlattenFont, a handy<br>
+function introduced with QuickDraw GX, to convert the font to a form that's easily sent<br>
+to the printer. GXFlattenFont is intended to convert any font present on your Macintosh<br>
+into the output font format of your choice. (Conversion is limited by the capabilities of<br>
+the scalers present, as explained in "QuickDraw GX Font Scalers.")
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;QUICKDRAW GX FONT SCALERS</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The QuickDraw GX Open Font Architecture accepts drop-in font scalers. A font<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;scaler is a bit of code that takes a font of a given type and converts it to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bitmaps for display. It also converts fonts to outline format and can optionally<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;convert a font to another font format. QuickDraw GX includes three default<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;scalers:
+</p>
+<ul>
+                    <li style="margin-left: 44px">the bitmap scaler, which is essentially the same as in QuickDraw</li>
+                    <li style="margin-left: 44px">the TrueType GX scaler, which supports the TrueType GX format</li>
+                    <li style="margin-left: 44px">the Type 1 scaler, which is part of Adobe(TM) Type Manager</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;All of these default scalers are capable of generating bitmaps for screen<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;display and PostScript fonts for printing. Only the TrueType GX scaler can<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;generate downloadable TrueType fonts.
+</p>
+<p>
+GXFlattenFont can produce Type 1 data that's ready to be sent to your PostScript<br>
+printer with no problem.
+</p>
+<p>
+Now let's turn to the code that replaces the old space hack. The rough idea is to call<br>
+GXFlattenFont on a QuickDraw font reference and a set of characters&nbsp;&nbsp;(an encoding)<br>
+that you need to print, and return the result in a form that's easy to send to the<br>
+printer. For simplicity, if no encoding is present, we use the standard Macintosh<br>
+encoding. Listing 1 shows a font-downloading routine, FontToPict, that uses this<br>
+technique if QuickDraw GX is installed. (This is a somewhat simplified version; see the<br>
+CD for the full code of FontToPict and its related utility functions.)
+</p>
+<p>
+<b>Listing 1. </b>FontToPict
+</p>
+<pre>PicHandle FontToPict(short qdFont, short qdStyle)
+{
+   Rect         theRect = {0, 0, 1, 1};
+   PicHandle      thePict = OpenPicture(&amp;theRect);
+   const   short   kPostScriptHandle = 192;
+
+   // If QuickDraw GX is installed, use the new method.
+   if (GXInstalled()) {
+      Handle            piccommentHdl;
+      unsigned   short   *myEncoding = nil;
+     
+      MakePSHandle(qdFont, qdStyle, myEncoding, &amp;piccommentHdl);
+      PicComment(kPostScriptHandle, GetHandleSize(piccommentHdl),
+          piccommentHdl);
+   } else {
+     // If QuickDraw GX isn't installed, use the old method.
+      Point   penPoint;
+
+      // We would normally set the clip here, but since we're just
+      // drawing a space there's no need.
+      GetPen(&amp;penPoint);             // Save the pen location.
+      TextFont(qdFont);
+      TextFace(qdStyle);
+      DrawChar(' ');
+      MoveTo(penPoint.h, penPoint.v);    // Restore the pen location.
+   }
+   ClosePicture();
+   return (thePict);
+)</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+FontToPict starts by checking to see if QuickDraw GX is installed. If not, it uses the old<br>
+hack of printing a space; otherwise, it calls MakePSHandle (Listing 2), which calls<br>
+the utility function ConvertQDFontToGXFont&nbsp;&nbsp;to convert the QuickDraw font reference<br>
+into a QuickDraw GX font reference. MakePSHandle then checks to see if an encoding<br>
+has been passed in; if not, it builds the standard Macintosh encoding. Next it&nbsp;&nbsp;calls<br>
+FontToHandle, which is just a wrapper for GXFlattenFont. GXFlattenFont converts the<br>
+specified font to the Type 1 format. Error-handling and cleanup code is last.<br>
+Simplicity itself! The result, whether QuickDraw GX is present or not, is a PICT that<br>
+you can send to the printer by calling DrawPicture once the printer port has been<br>
+opened.
+</p>
+<p>
+When calling MakePSHandle, you should specify an encoding array that contains the<br>
+characters you intend to actually print. This prevents QuickDraw GX from sending the<br>
+entire font to the printer and becomes very important when you make your application<br>
+WorldScript aware. There's an #ifdef in the code on the CD that generates only the<br>
+encoding array you need in order to use a portion of the font. As mentioned earlier,<br>
+with Chinese, Japanese, and Korean fonts, sending only the characters you need can<br>
+make the difference between sending a few kilobytes or many megabytes of data to the<br>
+printer. If you don't use the entire font, remember to encode the characters that you<br>
+want to draw,&nbsp;&nbsp;using the same encoding that you passed in to the MakePSHandle<br>
+function.
+</p>
+<p>
+<b>Listing 2.</b> MakePSHandle
+</p>
+<pre>OSErr MakePSHandle(short qdFont, char qdStyle,
+    unsigned short *encodingArray, Handle *outputHandle)
+{
+   OSErr            status = noErr;
+   gxFont            theFont;
+   unsigned short   *myEncoding;
+   Boolean         madeEncoding = false;
+
+   // Convert to a QuickDraw GX font reference.
+   theFont = ConvertQDFontToGXFont(qdFont, qdStyle);
+
+   // If no encoding, create the standard Macintosh encoding.
+   if (!encodingArray) {
+      long   returnLength;
+
+      myEncoding =
+          (unsigned short *)NewPtrClear(256 * sizeof(short));
+      returnLength = MakeMac8BitEncoding(theFont, myEncoding);
+      if (returnLength != 256) {
+         DebugStr("\pHmm. We didn't get a full encoding.");
+         return (returnLength);      // Pass the error along.
+      }
+      madeEncoding = true;
+   } else {
+      myEncoding = encodingArray;
+   }
+
+   *outputHandle = FontToHandle(theFont, myEncoding);
+   if (madeEncoding) DisposePtr((Ptr)myEncoding);
+
+   status = MemError();
+   if (status == noErr) {
+      status = GXGetGraphicsError(nil);
+      if (status != noErr) {
+         DisposeHandle(*outputHandle);
+         *outputHandle = nil;
+      }
+   }
+   return (status);
+}</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+You may want to have HandleSpoolProc (which is called by GXFlattenFont and included<br>
+on the CD) spool directly to the printer via picture comments. This way you won't need<br>
+memory available to hold the font data at the intermediate steps.
+</p>
+<h2>DOWNLOADING HAPPINESS</h2>
+<p>
+The new font downloading method takes a little more work but produces better results<br>
+in your printer font handling. You can easily send needed fonts to the printer, either<br>
+the whole font or only the characters you'll be using. As a side benefit, you get support<br>
+for two-byte font systems without having to write custom&nbsp;&nbsp;code for handling the large<br>
+fonts or, worse yet, having to depend on the fonts being installed on the printer in a<br>
+specific manner. Even if you're not ready to add QuickDraw GX imaging to your<br>
+application today, adding QuickDraw GX compatibility improves the printing<br>
+experience for your customers.
+</p>
+<p>
+<b>DAVE POLASCHEK</b> recently relocated to California to join Apple's Developer<br>
+Technical Support group. He's been told that supporting printing leads to hair loss and<br>
+insanity. Dave previously lived in beautiful sunny Minnesota, and wonders if he'll get<br>
+used to the harsh San Francisco Bay Area winters before he's bald and crazy, or if it's<br>
+already too late.*
+</p>
+<p>
+Thanks to Dan Lipton for providing the idea and core code illustrating the new font<br>
+downloading method, and to Pete "Luke" Alexander, Dave Hersey, and Dan Lipton for<br>
+reviewing this column.*
+</p>
+</body>
+</html>

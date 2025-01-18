@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 38 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>September 96 - Working With OpenDoc Part Kinds</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Working With OpenDoc Part Kinds</h1>
+<h2>Tantek &#199;elik and Dave Curbow</h2>
+<p>
+<img src="img/241.gif" width="198 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">If you're ready to create your first full-featured OpenDoc part</i>
+<br>
+
+<i style="font-size:125%;">editor but have some questions about part kinds and how to work</i>
+<br>
+
+<i style="font-size:125%;">with them, you'll find the answers here. We explain how your</i>
+<br>
+
+<i style="font-size:125%;">choice of part kinds will affect whether users will be able to read</i>
+<br>
+
+<i style="font-size:125%;">your content with different part editors and even across different</i>
+<br>
+
+<i style="font-size:125%;">platforms. We also discuss some human interface principles and</i>
+<br>
+
+<i style="font-size:125%;">describe how to handle the most common user actions having to do</i>
+<br>
+
+<i style="font-size:125%;">with part kinds.</i>
+</p>
+<p>
+We imagine that every computer user on earth has had the experience of trying to open<br>
+a document created by someone else but not being able to because the application it was<br>
+created with is missing. In the context of OpenDoc, users can run into this when the<br>
+part editor that created a part is missing. OpenDoc provides several ways to mitigate<br>
+this "missing editor" problem. One way is for developers to create and freely<br>
+distribute part viewers for all the kinds of parts that they support; a part viewer is a<br>
+subset of its corresponding editor's code that displays and prints a part's contents but<br>
+can't be used to create or edit a part.
+</p>
+<p>
+But suppose a user doesn't have either an editor or a viewer for a particular part.<br>
+That's where part kinds come in. A part kind is a data format in which a part's<br>
+intrinsic content is stored, analogous to a file type in a traditional application.<br>
+OpenDoc allows a part editor to support multiple part kinds -- that is, to store the<br>
+same content in multiple data formats -- to increase the probability that a user will<br>
+be able to see and copy the contents of a part. A user who doesn't have the same part<br>
+editor that created a part may have a different part editor that can read at least one of<br>
+the data formats in which that part is stored. Alternatively, one or more of the data<br>
+formats can perhaps be translated into a part kind for which the user has an editor or<br>
+viewer.
+</p>
+<p>
+What this means to you is that your choice of part kinds to support is a crucial step in<br>
+developing a part editor. This article discusses how to choose which part kinds to<br>
+support -- standard (to Macintosh or across platforms) or proprietary -- and<br>
+whether to support one or multiple part kinds. We also discuss how to decide which<br>
+category your part kinds fit into, some human interface principles having to do with<br>
+part kinds, and what to do in a few key situations in which user actions cause your<br>
+editor to have to deal with part kinds.
+</p>
+<p>
+If you're not already familiar with the OpenDoc human interface, you should first read<br>
+"The OpenDoc User Experience" in develop Issue 22 to get up to speed. This article also<br>
+requires you to know something about OpenDoc storage and how to use the<br>
+ODStorageUnit class. "Getting Started With OpenDoc Storage" in develop Issue 24 is a<br>
+good introduction; further details can be found in the OpenDoc Programmer's Guide for<br>
+the Mac OS and its accompanying OpenDoc Class Reference CD.
+</p>
+<h2>CHOOSING YOUR PART KINDS AND CATEGORY</h2>
+<p>
+In developing your part editor, you first need to decide which part kind or kinds to<br>
+support. This choice is worthy of careful consideration. The decision you make about<br>
+whether to support standard vs. proprietary part kinds and how many part kinds to<br>
+support will affect the number of users able to read your content across documents and<br>
+platforms. We'll look at the tradeoffs here. We'll also give you the information you<br>
+need in order to decide which category or categories your part kinds fit into.
+</p>
+<p>
+<b>STANDARD VS. PROPRIETARY PART KINDS</b>
+</p>
+<p>
+First, you need to decide whether to support standard or proprietary part kinds, or<br>
+some combination of each. Standard part kinds are those data formats that, either<br>
+through an official decree or by some de facto means, have become widely used and<br>
+accepted. There are industry-standard part kinds, which are standard across more<br>
+than one platform, and standard Macintosh part kinds.
+</p>
+<p>
+Because new data formats are being created all the time, we can't give you a complete<br>
+list, but here's a sample:
+</p>
+<ul>
+<li>industry standards -- ASCII, TIFF, GIF, JPEG, MPEG</li>
+<li>Macintosh standards -- TEXT, PICT, stxt, MOOV, 3DMF</li>
+</ul>
+<p>
+Part kinds are usually specified as ISO strings (null-terminated ASCII strings using<br>
+7-bit characters) for manipulation by OpenDoc. As you can see from our list, standard<br>
+Macintosh part kinds are actually today's standard Macintosh file types, except that<br>
+instead of being file-type signatures they're ISO strings, which can be derived by<br>
+using methods of the class ODTranslation. (See the Data Interchange recipes on the<br>
+OpenDoc Class Reference CD for more details on how to properly support a standard<br>
+Macintosh part kind based on a standard Macintosh file type.) Your part editor needs to<br>
+provide user-readable names for part kinds in a name-mapping resource; more on<br>
+this later.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The ASCII standard is actually pretty loosely defined. It doesn't specify<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;whether you should use 7- or 8-bit encoding, nor does it say whether you<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;should use LF, CR, or CRLF for line separators. In the near future, Unicode,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;which OpenDoc uses internally, is likely to become the standard. In the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meantime, your part may need to be prepared to handle several variants on the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ASCII standard without failure.
+</p>
+<p>
+If the part kind you choose to support is an industry standard, users will benefit<br>
+because they'll be more likely to avoid the missing editor problem mentioned earlier.<br>
+Furthermore, supporting standard part kinds enables your part editor to support<br>
+more of the content that's already out there. Let's face it -- data formats don't live<br>
+forever, but the standard ones have a much better chance of being long-lived than any<br>
+proprietary kinds you create.
+</p>
+<p>
+On the other hand, if there's no standard for the content your part editor creates, or if<br>
+the standard won't suffice to capture the functionality your part editor offers, you'll<br>
+need to create a proprietary part kind. You must weigh the advantages of using a<br>
+proprietary part kind against the disadvantage of users possibly not being able to read<br>
+your part's content.
+</p>
+<p>
+In any case, don't redefine an existing standard. For example, the TEXT part kind<br>
+should be used only for plain text, not for some data format that uses text as part of its<br>
+definition, such as PostScript, HTML, or BinHex. These data formats should be part<br>
+kinds in their own right. Otherwise, there will be confusion when OpenDoc needs to<br>
+find a substitute part editor for a part that claims to be TEXT but is in fact another<br>
+kind such as HTML. The user won't be happy with the result.
+</p>
+<p>
+If you decide to use an industry-standard part kind, the Bento container suite (part of<br>
+the storage system in OpenDoc 1.0) can help you solve internal byte-ordering<br>
+problems and ensure that a document written on any OpenDoc platform can be read and<br>
+written on any other OpenDoc platform. However, your part editor is responsible for<br>
+proper byte ordering of the values in the content property of your storage unit. (Data<br>
+formats typically specify byte ordering, so OpenDoc stays out of your way here.) The<br>
+Standard Type I/O utilities (see the file StdTypIO.h and the functions declared there)<br>
+solve the byte-ordering problem for a variety of simple data formats. These utilities<br>
+can be used in combination to build up more complex data formats.
+</p>
+<p>
+<b>SUPPORTING MULTIPLE PART KINDS</b>
+</p>
+<p>
+As we've said, your editor can support one or more part kinds. If it supports more than<br>
+one part kind, one of these will be the preferred kind. Users implicitly indicate the<br>
+preferred kind when they choose a stationery pad or cut and paste content. They can<br>
+also change the preferred kind in the Part Info dialog if they desire; more on this later.
+</p>
+<p>
+Supporting multiple part kinds increases the probability that other users can see the<br>
+contents of a part created with your editor, even if they don't have your part editor<br>
+(see "Editor Substitution Explained" for why this is so). Your choice of part kinds to<br>
+support comes into play both when the user saves a document with parts created by<br>
+your editor and when the user transfers data with a paste or drop operation.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;EDITOR SUBSTITUTION EXPLAINED</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;When a user tries to open a document or edit a part and the editor that created<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;it is missing, OpenDoc searches for a substitute. This occurs as part of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OpenDoc's binding process -- the process of assigning the correct part editor<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to a given part. When a document is opened, the OpenDoc binding subsystem<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;binds editors to all parts that need to be displayed. During execution, OpenDoc<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;binds editors to part data when a part is read in or when its editor is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;explicitly changed.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Let's look at a simplified example of editor substitution. Suppose we've created<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;a text editor named SurfWriter that stores its content in three formats: a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;proprietary part kind (SurfWriter Text) and two standard part kinds (RTF<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;and TEXT). And suppose that SurfWriter Text is the preferred kind. When<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OpenDoc tries to display the part, its binding subsystem looks first for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SurfWriter -- the last editor that was used. If that isn't found, the binding<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;subsystem looks for an editor that can read SurfWriter Text -- the preferred<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kind. If that can't be found, it looks for one that can read RTF or TEXT. Thus,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;storing multiple part kinds increases the probability that users will be able<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to read your content with different part editors and across different platforms.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Now let's look at editor substitution in a little more detail. When attempting to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;find an editor to bind to a part, OpenDoc looks first for the editor that last<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edited the part, specified in the kODPropPreferredEditor property in the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;part's storage unit. If this editor isn't present on the user's system, the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;binding subsystem examines each of the part kinds in the stored part and the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;list of kinds supported by the editor or editors installed on the user's system,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;looking for a match. For each supported kind, there's a default editor. The user<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;can inspect and modify the list of default editors in the Editor Setup control<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;panel (Figure 1).
+</p>
+<p>
+<img style="margin-left: 43px;"  src="img/242.gif" width="516 px"></img>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Figure 1.</b> The Editor Setup control panel 
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;During the matching process, the binding subsystem looks first for the default<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;editor for the preferred kind. If this editor isn't present, it looks for the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default editor for the preferred kind's category, and finally for any editor that<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;can read the preferred kind. If such an editor can't be found, the binding<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;subsystem repeats the whole process for each of the remaining part kinds in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the part, from highest fidelity to lowest.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+If no editor for any of the part kinds is installed on the user's machine, the part<br>
+remains unviewable and uneditable. But OpenDoc still binds an editor to the part --<br>
+the "editor of last resort." This editor is always available and represents the part as an<br>
+icon within the document, so that there's never a blank spot in the document where a<br>
+part can't be displayed. The user can examine the part's kind in the Part Info dialog,<br>
+which gives a clue as to which editor or viewer should be installed, although if there's<br>
+no editor for the part, there's probably no user string for the preferred kind. The user<br>
+can also decide to translate the part to another part kind.
+</p>
+<p>
+When deciding how many part kinds to support when your editor is saving its parts of<br>
+a document, you'll want to consider the tradeoff between portability and the space<br>
+required to store your part as multiple kinds. The most transportable part kind (that<br>
+is, the standard one) may not be the most compact or the one that will represent the<br>
+underlying contents with the greatest fidelity. Typically, you'll want to store only the<br>
+one preferred part kind, or the preferred kind and one standard part kind. If there<br>
+isn't a standard kind that's roughly equivalent to your preferred kind, consider also<br>
+storing a TEXT or PICT representation, simply to maximize the chances that the user<br>
+will be able to see something for your part. For example, if your part's preferred kind<br>
+is 3DMF, there isn't an equivalent standard kind, so you should also store a PICT<br>
+representation. You might want to present the user with a Settings or Preferences<br>
+dialog giving a choice of part kinds to store in addition to the preferred kind. See pages<br>
+476 and 479 of the OpenDoc Programmer's Guide for implementation details.
+</p>
+<p>
+When your editor is providing data for a data transfer operation (such as a copy to the<br>
+Clipboard), you may want to write out a greater number of standard part kinds than<br>
+during a save operation. This is because during data transfer it's more likely that the<br>
+user is trying to move content to a different editor or application. Providing standard<br>
+part kinds in this situation is therefore even more important. On the other hand,<br>
+remember that the user can use the Paste As command to get more options, including<br>
+translation, so you needn't go overboard in supporting lots of kinds.
+</p>
+<p>
+<b>CATEGORY CONSIDERATIONS</b>
+</p>
+<p>
+After you've chosen the part kinds to support, you need to determine which category or<br>
+categories these belong to. A part category is a set of part kinds that are conceptually<br>
+similar. You might think of it as a generic term for several "brand name" variants.<br>
+For example, the kODCategoryStyledText category might include the part kinds<br>
+SurfWriter Text 3.0, SurfWriter Text 2.0, and others.
+</p>
+<p>
+OpenDoc looks at a part's category to decide which part editors or part viewers can be<br>
+substituted if an editor is missing and whether to merge or embed data when content is<br>
+copied from one part into another. Categories are specified by your editor in a<br>
+name-mapping resource and can't be changed by the user.
+</p>
+<p>
+Categories for existing part kinds have already been determined and should be adhered<br>
+to; this set of categories is broad enough to include most new part kinds as well. A list<br>
+of the predefined categories is given in Table 1. This list can be found in the OpenDoc<br>
+Programmer's Guide on pages 477-478, but note that a new category has been added<br>
+since the publication of the book: kODCategoryArchive.
+</p>
+<p>
+<b>Table 1. Predefined part categories</b>
+</p>
+<p><table border="0"><tr><td><b>Part category</b></td><td><b></b><b>Explanation</b></td></tr>
+<tr><td>kODCategoryPlainText</td><td>Plain ASCII text</td></tr>
+<tr><td>kODCategoryStyledText</td><td>Styled text</td></tr>
+<tr><td>kODCategoryDrawing</td><td>Object-based graphics</td></tr>
+<tr><td>kODCategory3DGraphic</td><td>3D object-based graphics</td></tr>
+<tr><td>kODCategoryPainting</td><td>Pixel-based graphics</td></tr>
+<tr><td>kODCategoryMovie</td><td>Movies or animations</td></tr>
+<tr><td>kODCategorySampledSound</td><td>Simple sampled sounds</td></tr>
+<tr><td>kODCategoryStructuredSound</td><td>Sampled sounds with additional information</td></tr>
+<tr><td>kODCategoryChart</td><td>Chart data</td></tr>
+<tr><td>kODCategoryFormula</td><td>Formula or equation data</td></tr>
+<tr><td>kODCategorySpreadsheet</td><td>Spreadsheet data</td></tr>
+<tr><td>kODCategoryTable</td><td>Tabular data</td></tr>
+<tr><td>kODCategoryDatabase</td><td>Database information</td></tr>
+<tr><td>kODCategoryQuery</td><td>Stored database queries</td></tr>
+<tr><td>kODCategoryConnection</td><td>Network-connection information</td></tr>
+<tr><td>kODCategoryScript</td><td>User scripts</td></tr>
+<tr><td>kODCategoryOutline</td><td>Outlines created by an outliner program</td></tr>
+<tr><td>kODCategoryPageLayout</td><td>Page layouts</td></tr>
+<tr><td>kODCategoryPresentation</td><td>Slide shows or other presentations</td></tr>
+<tr><td>kODCategoryCalendar</td><td>Calendar data</td></tr>
+<tr><td>kODCategoryForm</td><td>Forms created by a forms generator</td></tr>
+<tr><td>kODCategoryExecutable</td><td>Stored executable code</td></tr>
+<tr><td>kODCategoryCompressed</td><td>Compressed data</td></tr>
+<tr><td>kODCategoryControlPanel</td><td>Data stored by a control panel</td></tr>
+<tr><td>kODCategoryControl</td><td>Data stored by a control, such as a button</td></tr>
+<tr><td>kODCategoryPersonalInfo</td><td>Data stored by a personal information manager</td></tr>
+<tr><td>kODCategorySpace</td><td>Stored server, disk, or subdirectory data</td></tr>
+<tr><td>kODCategoryProject</td><td>Project-management data</td></tr>
+<tr><td>kODCategorySignature</td><td>Digital signatures</td></tr>
+<tr><td>kODCategoryKey</td><td>Passwords or keys</td></tr>
+<tr><td>kODCategoryUtility</td><td>Data stored by a utility function</td></tr>
+<tr><td>kODCategoryMailingLabel</td><td>Mailing labels</td></tr>
+<tr><td>kODCategoryLocator</td><td>Locators or addresses, such as URLs</td></tr>
+<tr><td>kODCategoryPrinter</td><td>Stored printer data</td></tr>
+<tr><td>kODCategoryTime</td><td>Stored clock data</td></tr>
+<tr><td>kODCategoryArchive</td><td>Archive or partial archive data such as TAR</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The majority of the entries in the list (such as kODCategoryPlainText and<br>
+kODCategoryStyledText) are self-explanatory, but a few need some clarification.
+</p>
+<ul>
+<li>kODCategoryOutline -- Use this category when your part's content has<br>
+some hierarchy -- that is, when the content is assigned to different nested<br>
+levels. For example, the Cyberdog Notebook, an excerpt from which is shown<br>
+in Figure 2, presents a collection of URLs in hierarchical form and thus is an<br>
+outline.</li>
+<li>kODCategorySpace -- Use this category when the content has no intrinsic<br>
+order, as in the case of server, disk, or subdirectory (folder) data. For<br>
+example, in a pre-System 7 Finder folder, the order of the contents depends<br>
+entirely on the settings of the View menu. A part with content like this would<br>
+belong to this category.</li>
+<li>kODCategoryPersonalInfo -- Use this category for the various kinds of<br>
+information represented in personal information management (PIM)<br>
+applications.</li>
+<li>kODCategoryPageLayout -- Use this instead of kODCategoryDrawing when<br>
+the part contains only embedded content. In contrast, the category<br>
+kODCategoryDrawing is for a drawing that has intrinsic content, such as<br>
+circles and rectangles.</li>
+</ul>
+<p>
+<img src="img/243.gif" width="432 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>Example of an outline from the Cyberdog Notebook
+</p>
+<p>
+Some of the categories seem as though they could be subsets of other categories -- for<br>
+instance, kODCategoryPlainText could be a subset of kODCategoryStyledText, and<br>
+kODCategory3DGraphic could be a subset of kODCategoryDrawing. But categories aren't<br>
+hierarchical -- that is, one category can't include others.
+</p>
+<p>
+When you're considering which category or categories your part kinds should belong<br>
+to, ask yourself the following question for each of the categories: If users pasted my<br>
+kind of data into a part belonging to this category, would they expect the content to be<br>
+merged, or embedded as a separate part? If they would expect the content to be merged,<br>
+that's a category your part kind should belong to. (Note that whether a part kind<br>
+supports embedding doesn't affect which category it's in.)
+</p>
+<p>
+For example, if users pasted a slide (a part belonging to the kODCategoryPresentation<br>
+category) into some text (a part belonging to the kODCategoryStyledText category),<br>
+they would expect the slide to be embedded within the text because the operations on<br>
+slides and text are very different. But if they pasted one slide into another slide, they<br>
+would expect the contents of the first slide to be merged into the destination slide;<br>
+thus, the two parts should belong to the same category.
+</p>
+<p>
+Consider another example. If users pasted a picture from a Web page into a part<br>
+belonging to the category kODCategoryPainting, they would probably expect it to be<br>
+merged. But if they pasted the picture into a part belonging to the category<br>
+kODCategoryDrawing or kODCategory3DGraphic, they would probably expect it to be<br>
+embedded, because the operations available in a painting part are usually very<br>
+different from those in a drawing part. Thus, the picture should belong to the category<br>
+kODCategoryPainting.
+</p>
+<p>
+You need to choose one or more categories for each of the part kinds that your part<br>
+editor supports. A part kind can be in multiple categories; for example, a part that can<br>
+shift its view from table to chart should have a preferred kind that's a member of both<br>
+categories. The same category can be specified for a part kind that represents a single<br>
+object and a part kind that represents a collection of those objects; for example, you<br>
+can specify kODCategoryDatabase for a part kind that represents a single database<br>
+record and for a part kind that represents a collection of such records.
+</p>
+<p>
+As mentioned earlier, when your part editor provides content to the Clipboard or a<br>
+drag and drop object, you may want to write out a greater number of standard part<br>
+kinds than during a save operation, to increase the probability of being able to<br>
+interchange data with other parts. In fact, it will help if you support kinds in more<br>
+than one category. Here's an example: Suppose a user copies some spreadsheet cells and<br>
+pastes them into a chart. Because the operations on cells and charts are different, the<br>
+user will expect the spreadsheet cells to be embedded. However, if the spreadsheet<br>
+provides its copied data in a format that the chart is prepared to merge, the user gets a<br>
+higher level of interoperability. If the spreadsheet and the chart both support kinds<br>
+that are in the kODCategoryPlainText category, for instance, the chart can take the<br>
+content of the spreadsheet and chart it instead of embedding the spreadsheet.
+</p>
+<p>
+Here are some more examples of part kinds and the categories they fit into:
+</p>
+<ul>
+<li>PostScript -- This page description language is used to define images in a<br>
+structured fashion. The PostScript format might fit into either<br>
+kODCategoryPageLayout or kODCategoryDrawing. We recommend<br>
+kODCategoryDrawing because a part in PostScript format has intrinsic content<br>
+like a drawing, such as arcs and clip shapes.</li>
+<li>HTML -- Hypertext Markup Language (HTML) is similar to PostScript in<br>
+that it defines a page layout. However, when HTML is displayed it typically<br>
+looks more like styled text than like a drawing. Therefore, the appropriate<br>
+category for HTML is kODCategoryStyledText.</li>
+<li>BinHex -- Like many other formats that claim to be text but are only<br>
+making use of text to define some richer format, BinHex is actually an archive<br>
+format. Hence BinHex belongs in kODCategoryArchive.</li>
+<li>URL -- Another kind that uses text to define some richer format, a URL<br>
+should be in kODCategoryLocator.</li>
+</ul>
+<p>
+If your part kinds don't appear to fit in any of the predefined categories, you can<br>
+request a new category. The list of predefined categories is maintained by CI Labs, a<br>
+consortium that coordinates cross-platform OpenDoc development. See the CI Labs Web<br>
+pagehttp://www.cilabs.org/categories for instructions on how to request a new<br>
+category.
+</p>
+<p>
+<b>RESOURCES REQUIRED</b>
+</p>
+<p>
+Both part kinds and part categories are assigned in your part editor's name-mapping<br>
+('nmap') resources. You can learn how to construct these resources by looking at the<br>
+Dynamic Binding recipes on the OpenDoc Class Reference CD. These resources are<br>
+required:
+</p>
+<ul>
+<li>EditorKinds -- lists every part kind your editor supports, except<br>
+standard Macintosh part kinds</li>
+<li>EditorPlatformKind -- lists the standard Macintosh part kinds your<br>
+editor supports</li>
+<li>KindCategories -- lists the category or categories your part kinds belong<br>
+to</li>
+<li>KindUserString -- lists the part kind user strings</li>
+</ul>
+<p>
+If you request a new category and CI Labs approves your request, you'll also need<br>
+aCategoryUserString resource listing your category user strings. OpenDoc already<br>
+contains user strings for predefined categories.
+</p>
+<p>
+Listing 1 shows an EditorPlatformKind resource indicating that your editor supports<br>
+TEXT files and TEXT scrap data. Listing 2 demonstrates how a part editor would declare<br>
+two part kinds that are in the same category in a KindCategories resource.
+</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 1. </b>An example EditorPlatformKind resource
+</p>
+<pre>resource kODNameMappings (kPlatformEditorKindMapId)
+{
+   kODEditorPlatformKind,
+   {   /* array KeyList: 1 element */
+      /* [1] */
+      kYourEditorID,
+      kODIsPltfmTypeSpac
+      {   /* array PltfmTypeSpacList: 2 elements */
+         {
+            /* [1] */
+            kODPlatformFileType,
+            'TEXT',
+            smRoman,
+            langEnglish,
+            "Plain Text",
+            kODCategoryPlainText,
+            /* [2] */
+            kODPlatformDataType,
+            'TEXT',
+            smRoman,
+            langEnglish,
+            "Plain Text",
+            kODCategoryPlainText,
+         }
+      }
+   }
+};</pre>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Listing 2. </b>An example KindCategories resource
+</p>
+<pre>resource kODNameMappings (kKindCategoryMapId)
+{
+   kODKind,
+   {   /* array kinds: 2 elements */
+      /* [1] */
+      kStyledTextKind1,
+      kODIsAnISOStringList
+      {
+         {   /* array categories: 1 element */
+            /* [1] */
+            kODCategoryStyledText
+         }
+      },
+      /* [2] */
+      kStyledTextKind2,
+      kODIsAnISOStringList
+      {
+         {   /* array categories: 1 element */
+            /* [1] */
+            kODCategoryStyledText
+         }
+      }
+   }
+};</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+At run time, if you need to convert a Mac OS file type such as 'TEXT' to an ISO type,<br>
+first get the translation object from the session:
+</p>
+<pre>ODTranslation* translation = session-&gt;GetTranslation(ev);</pre><p class="spacer">&nbsp;</p>
+<p>
+Then call the translation object to convert the Mac OS file type, or what we call the<br>
+platform kind (a platform-neutral term), to an ISO type:
+</p>
+<pre>ODValueType valueType =
+         translation-&gt;GetISOTypeFromPlatformType
+             ('TEXT', kODPlatformFileType);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+You'll find kODPlatformFileType defined in StdDefs.xh, ODTranslation defined in<br>
+Translt.xh, and ODSession defined in ODSessn.xh. Use kODPlatformDataType instead of<br>
+kODPlatformFileType if you're converting a scrap type from the Clipboard as opposed<br>
+to a file type from the file system.
+</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<h2>SOME HUMAN INTERFACE PRINCIPLES</h2>
+<p>
+There are some important human interface principles regarding part kinds that you<br>
+should incorporate in the design of your part editor. They boil down to maintaining the<br>
+fidelity of parts as they pass through various operations. One key principle of the user<br>
+model is that editors shouldn't change the part kind of content without warning,<br>
+because the translation may cause information to be lost. Only the user should be able<br>
+to change the preferred kind of a part, and then only through an explicit action. This<br>
+supports the concept that content copied into or out of an OpenDoc document should<br>
+retain its fidelity. For example, when the user drags a drawing document from the<br>
+desktop into an OpenDoc document and then back to the desktop, the initial document<br>
+and the final document should be identical, as far as the user is concerned. The final<br>
+document should have the same part kind as the original document, unless the user<br>
+elects to change the part kind. (See the recipe for promising a non-OpenDoc file on the<br>
+OpenDoc Class Reference CD for more details.)
+</p>
+<p>
+Users can change the preferred kind of a part with the Part Info (or Document Info)<br>
+command in the Edit menu. This command brings up a dialog like the one shown in<br>
+Figure 3. A pop-up menu offers a list of part kinds supported by the current editor,<br>
+plus the possibility of translating to a different format with the "Translate to"<br>
+command.
+</p>
+<p>
+<img src="img/244.gif" width="410 px"></img>
+</p>
+<p>
+<b>Figure 3.</b> The Part Info dialog
+</p>
+<p>
+When the user wants to save a document, your editor should write it out in the format<br>
+of the preferred kind. The highest-fidelity kind that your editor writes should be the<br>
+preferred kind. Don't change the preferred kind, because that would be implicit<br>
+translation, or translating formats behind the user's back -- not a good idea, although<br>
+some applications behave this way today. Perhaps you've seen this: the application<br>
+claims to read or write a particular data format, but when a document of that file type<br>
+is opened with that application and then saved, the application converts the document to<br>
+its own proprietary format. Users are left wondering why their documents can't stick<br>
+with the format they were created with.
+</p>
+<p>
+To maximize interchange between OpenDoc, traditional applications, and system<br>
+software, OpenDoc does not arbitrarily promote platform kinds (which, remember, is<br>
+our platform-neutral term for Mac OS file types) to OpenDoc part kinds.*
+</p>
+<p>
+In today's applications, this unexpected format change is also often associated with the<br>
+creation of a new document named "Untitled x" or "FooDocument - converted." In<br>
+OpenDoc, parts don't have control over the name of the document, so this errant<br>
+behavior is prevented. The name of the document, just like the preferred kind of a<br>
+part, should be considered a user setting. Editors shouldn't tamper with user settings.
+</p>
+<p>
+There are situations where it's appropriate for the editor to query the user about<br>
+changing a part kind. If the user tries some operation, or tries to add some content,<br>
+that's not supported in the current kind but is supported in another kind that the<br>
+editor understands, it's appropriate to suggest changing to the kind with more<br>
+functionality.
+</p>
+<p>
+As an example of the first situation, suppose the user is editing a plain-text document<br>
+with an editor that supports styled text. If the user selects some text and tries to<br>
+change it to bold, the part editor must allow this change but should warn the user that<br>
+the operation will require a change in the part kind -- and the user must be allowed to<br>
+veto this operation before it's done. In this situation the part editor should display an<br>
+alert like the one shown in Figure 4.
+</p>
+<p>
+<img src="img/245.gif" width="471 px"></img>
+</p>
+<p>
+<b>Figure 4.</b> Warning the user that an operation requires the part kind to be changed
+</p>
+<p>
+As an example of the second situation, suppose the user now pastes some text that<br>
+includes a page break and an indentation, which isn't supported in styled text but is<br>
+supported in a proprietary format the part editor uses. The part editor should allow<br>
+this change but present an alert (see Figure 5) and let the user veto the change.
+</p>
+<p>
+<img src="img/246.gif" width="468 px"></img>
+</p>
+<p>
+<b>Figure 5.</b> Warning the user that adding content requires the&nbsp;&nbsp;part kind to be changed
+</p>
+<h2>HANDLING USER ACTIONS</h2>
+<p>
+A number of user actions require your editor to deal with part kinds and categories,<br>
+though in most cases this interaction is transparent to the user. For example, when a<br>
+user pastes content into a part, the editor of the part where the content is about to be<br>
+pasted examines the part kinds and categories of the content being pasted. The editor<br>
+decides which, if any, of the multiple part kinds available will be pasted. In this case,<br>
+as in many others, the user doesn't realize what's going on behind the scenes with part<br>
+kinds and categories.
+</p>
+<p>
+We'll discuss in detail what your editor should do with part kinds and categories in<br>
+response to each of the following user actions:
+</p>
+<ul>
+<li>creating a document</li>
+<li>opening a document</li>
+<li>saving a document</li>
+<li>transferring data</li>
+<li>changing the preferred kind</li>
+<li>translating or converting a part</li>
+</ul>
+<p>
+<b>CREATING A DOCUMENT</b>
+</p>
+<p>
+To create a document, the user double-clicks on a stationery pad that you supply with<br>
+your part editor. You must provide at least one stationery pad for each part category<br>
+that your editor supports. For example, if your editor supports the "styled text"<br>
+category and the SurfWriter Text, AcmeWriter Text, and RTF part kinds, you must<br>
+supply (and your product's installer must install on the user's system) a stationery<br>
+pad for at least one of these part kinds. Typically, you'll install a stationery pad for the<br>
+highest-fidelity part kind that you support.
+</p>
+<p>
+You can optionally provide more than one stationery pad. When users decide to<br>
+double-click on one stationery pad instead of another, they've made an explicit decision<br>
+about the preferred kind of the document they want to be created.
+</p>
+<p>
+Rules and conventions for installing part editors and stationery pads can be found in<br>
+the OpenDoc Programmer's Guide, Appendix C, "Installing OpenDoc Software and<br>
+Parts."
+</p>
+<p>
+<b>OPENING A DOCUMENT</b>
+</p>
+<p>
+Whenever a user opens a document containing one of your parts, your part must be<br>
+reconstituted from external storage by your InitPartFromStorage method, described in<br>
+detail in the article "Getting Started With OpenDoc Storage" in develop Issue 24. Your<br>
+editor needs to find out the preferred kind and read in the content data accordingly.
+</p>
+<p>
+If your editor supports any platform kinds (Mac OS file types), you should first check<br>
+for the HFSFlavor value type in the content property (kODPropContents) of the part's<br>
+storage unit. If it's there, you've been bound to an empty storage unit that's pointing to<br>
+a file that you should use to internalize from. This binding can happen in one of two<br>
+ways: the user may have dragged and dropped a traditional Macintosh file onto an<br>
+OpenDoc document and your part editor was bound to the drop, or the user may have<br>
+opened a traditional Macintosh file with the OpenDoc launcher application. For detailed<br>
+information on how to make this work, see the Drag and Drop Recipes on the OpenDoc<br>
+Class Reference CD, specifically the section "Incorporating Data From a Non-OpenDoc<br>
+Document." Also, see the section "Accepting Non-OpenDoc Data" on page 371 of the<br>
+OpenDoc Programmer's Guide.
+</p>
+<p>
+If your editor doesn't support any platform kinds, follow these steps:
+</p>
+<ul>
+<li>Get the preferred kind -- that is, read the value from the<br>
+kODPropPreferredKind property of the part's storage unit. If this property<br>
+doesn't exist, the editor can assume that the preferred kind of the part is the<br>
+value type of the first value in the content property. Keep the preferred kind<br>
+in a field, as shown in the following example using utility functions from<br>
+StdTypIO and TempObj:
+
+<pre>#include &lt;StdTypIO.h&gt;
+#include &lt;TempObj.h&gt;
+...
+// The following code belongs in your InitPartFromStorage method.
+ODStorageUnit* su = self-&gt;GetStorageUnit(ev);
+TempISOStr preferredKind = ODGetISOStrProp(ev, su,
+   kODPropPreferredKind, kODISOStr, kODNULL);
+if (preferredKind == kODNULL) {
+   su-&gt;Focus(ev, kODPropContents, kODPosUndefined, kODNULL, 1,
+      kODPosUndefined);
+   preferredKind = su-&gt;GetType(ev);
+}</pre>
+</li>
+<li>Focus your part's storage unit to the value of the content property whose<br>
+value type is the preferred kind.
+
+<pre>self-&gt;GetStorageUnit(ev)-&gt;Focus(ev, kODPropContents,
+   kODPosUndefined, preferredKind, 0, kODPosUndefined);</pre>
+</li>
+<li>Read the contents of that value and create the in-memory data structures<br>
+necessary to represent that content. Use the ODStorageUnit method GetValue to<br>
+accomplish this step.</li>
+</ul>
+<p>
+Note that it's possible for your editor to be bound to a part that previously had a<br>
+different editor, as described earlier in "Editor Substitution Explained." In this case,<br>
+the OpenDoc binding subsystem will automatically notify the user. If your editor<br>
+doesn't support the preferred kind, use the highest-fidelity kind in the content<br>
+property that your editor does support as the de facto preferred kind. Do not update the<br>
+preferred kind property until Externalize or ChangeKind is called on your part.
+</p>
+<p>
+<b>SAVING A DOCUMENT</b>
+</p>
+<p>
+Whenever a user saves the document, your part must be written out to the storage<br>
+unit, or externalized, by your Externalize method, described in detail in the article<br>
+"Getting Started With OpenDoc Storage" in develop Issue 24. Your editor should write<br>
+out the preferred kind, at a minimum; you may also decide to write out one or more<br>
+alternate part kinds, as discussed earlier under "Supporting Multiple Part Kinds."
+</p>
+<p>
+The first two steps that are required have to do with preparing the storage unit for<br>
+clean externalization from your part editor, also known as "prepping the storage<br>
+unit." You should only have to do this the first time Externalize is called on your part.
+</p>
+<ul>
+<li>Clean up the storage unit by removing any values that you won't be<br>
+updating. This means calling the Remove method for any values in the content<br>
+property that have value types (part kinds) that your editor doesn't support<br>
+or that your editor won't externalize.</li>
+<li>Add values if necessary. Use AddValue to create or recreate the value types<br>
+that you want to externalize in proper fidelity order (from highest fidelity to<br>
+lowest fidelity). Fidelity ordering is important because OpenDoc looks at it to<br>
+determine which editor would best edit any given part.</li>
+<li>Externalize your content in the format of the preferred kind that your<br>
+editor kept track of in a local field.</li>
+<li>Optionally, write out alternative part kinds. As mentioned earlier, the<br>
+typical part editor should by default write out only the one preferred kind, or<br>
+the preferred kind and one standard part kind. If you present users with a<br>
+Settings or Preferences dialog to indicate a set of alternative part kinds to<br>
+store, write out the alternative kinds indicated there.</li>
+</ul>
+<p>
+Your Externalize method may be called at times other than when the user saves a<br>
+document. For example, depending on the Save model of the current document and the<br>
+idle-time optimizations that may or may not be present, your part may be told to<br>
+externalize only when the user saves a document or as often as every minute.<br>
+Therefore, your editor shouldn't have preconceived notions about why it's asked to<br>
+write out your part. As an optimization, your editor should keep an fDirty flag that's<br>
+set whenever the user changes the part's content and cleared whenever externalization<br>
+is completed. If your fDirty flag is clear, your Externalize method should be a no-op.
+</p>
+<p>
+<b>TRANSFERRING DATA</b>
+</p>
+<p>
+Whenever the user transfers data with Cut, Copy, Paste, Paste As, or drag and drop,<br>
+your CloneInto method is called. See the section "The CloneInto Method of Your Part<br>
+Editor" on pages 327-329 of the OpenDoc Programmer's Guide for the precise details<br>
+of implementing the CloneInto method.
+</p>
+<p>
+For the purposes of multiple part kind support, however, your editor should do the<br>
+following:
+</p>
+<ul>
+<li>Write the same part kinds you would if you were externalizing, plus any<br>
+standard part kinds you support. As explained earlier, it's more important to<br>
+write out standard part kinds during CloneInto than Externalize because the<br>
+user is more likely to be trying to move content to a different editor or<br>
+application.</li>
+<li>Call SetPromiseValue for each part kind if you're using promises<br>
+(explained in the OpenDoc Programmer's Guide).</li>
+</ul>
+<p>
+If your part editor is a container, it's important for it to treat pasted content<br>
+appropriately. When your container receives a Paste command or is the destination of<br>
+a drag and drop, it should check the preferred kind of the incoming content to decide<br>
+whether to merge or embed that content. If the category of the preferred kind of the<br>
+incoming content is the same as the category of your content's kind, merge the<br>
+incoming content; otherwise, embed the incoming content into a new part.
+</p>
+<p>
+As mentioned earlier, it's possible for kinds to belong to more than one category. If the<br>
+incoming content's kind or your content's kind belongs to multiple categories, or if<br>
+both do, as long as they share at least one category they can be said to be of the same<br>
+category. If the incoming content isn't an OpenDoc part, simply use the data type that's<br>
+closest to your own content kind as the de facto preferred kind for the incoming<br>
+content.
+</p>
+<p>
+If the user drops a part onto your part that you determine should be merged, and you<br>
+find there's no content when you try to merge it, the operation will appear to be a<br>
+no-op, which is very confusing to the user. You may want to actually embed an empty<br>
+part in this case rather than merging nothing, so that the user at least receives some<br>
+feedback.
+</p>
+<p>
+You also should be aware of a concern about format fidelity that arises if the user<br>
+attempts a paste or drop operation with your editor that involves content with other<br>
+content embedded. Some data or formatting may be lost if one or more of the part kinds<br>
+supported by your part editor is of lesser fidelity and can't handle embedded content,<br>
+and at the time of the paste or drop the destination part editor can work only with the<br>
+lower-fidelity kind. In this case, the destination part editor can't know that it's losing<br>
+the embedded content.
+</p>
+<p>
+What can you do to minimize these cases, or at least make them easier on the user? We<br>
+strongly recommend that your part editor support embedding. If it doesn't, it shouldn't<br>
+claim to support a kind that includes embedding. For example, the part editor that's the<br>
+destination for a paste or drop shouldn't strip embedded content or links out of the data<br>
+format. If your editor can't preserve the fidelity of the paste or drop, it must choose a<br>
+lower-fidelity part kind; if there are no other kinds present that your editor<br>
+supports, it shouldn't allow the paste or accept the drop. The only exception to this is<br>
+when a plain-text editor receives a paste of styled text; in this case, it can use only the<br>
+text and ignore the style information. Because text is so ubiquitous, it's handled<br>
+differently from other kinds of content.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;If your part editor supports embedding, it should allow the user to embed any<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;content that can't be merged; it shouldn't restrict the kinds that can be<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;embedded.
+</p>
+<p>
+Remember that if your part editor supports data interchange, it must completely<br>
+support Undo, so that if data or formatting is lost in a transfer operation, the user can<br>
+undo and recover what was lost. Although most of today's applications don't alert the<br>
+user when data or formatting is lost, users seem to recognize with ease when they've<br>
+experienced such a loss and need to choose Undo to recover. With the multiple-level<br>
+Undo support in OpenDoc, recovering from a loss of data or formatting is much easier.
+</p>
+<p>
+<b>CHANGING THE PREFERRED KIND</b>
+</p>
+<p>
+Whenever the user changes the preferred kind of a part, your ChangeKind method is<br>
+called. This is usually done from the Part Info (or Document Info) dialog shown<br>
+earlier, but you shouldn't assume that that will be the only user interface that can<br>
+cause this method to be called. Your editor should do the following:
+</p>
+<ul>
+<li>Externalize the part in the new preferred data format. Make sure that the<br>
+fidelity order of the values in your content property is maintained by creating<br>
+the values for the supported part kinds in the right order. You may need to<br>
+prep your storage unit again and recreate the values to ensure that they're in<br>
+the proper fidelity order. It's up to your part editor whether you keep the<br>
+previous preferred kind or not.</li>
+<li>Write the new preferred kind into the preferred kind property of the<br>
+part, as shown in the following example using utility functions from StdTypIO<br>
+and TempObj:
+
+<pre>#include &lt;StdTypIO.h&gt;
+#include &lt;TempObj.h&gt;
+...
+// The following code belongs in your ChangeKind method; the kind
+// that the user selected is passed in the changeKind parameter.
+ODStorageUnit* su = self-&gt;GetStorageUnit(ev);
+ODSetISOStrProp(ev, su, kODPropPreferredKind, kODISOStr, changeKind);</pre></li></ul>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>TRANSLATING OR CONVERTING A PART</b>
+</p>
+<p>
+The user can force translation of a part with the Part Info (or Document Info)<br>
+command in the Edit menu, which brings up a dialog like the one shown earlier in<br>
+Figure 3. The part kind pop-up menu in the dialog, in addition to listing part kinds<br>
+supported by the current editor, offers the possibility of choosing "Translate to" and<br>
+then choosing a part kind from the Translate To dialog. The part kind pop-up menu<br>
+shown in Figure 6 illustrates a number of different ways that picture data can be<br>
+stored on the Macintosh, including standard MIME types, standard Macintosh file<br>
+types, and standard Macintosh data types. Of course, most part editors won't support<br>
+this many different kinds.
+</p>
+<p>
+<img src="img/247.gif" width="258 px"></img>
+</p>
+<p>
+<b>Figure 6.</b> The part kind pop-up menu
+</p>
+<p>
+&nbsp;&nbsp;There are also data interchange utilities, such as converters and grinders, that<br>
+convert parts or entire documents to different part kinds. This operation involves<br>
+asking each part in the original document to externalize itself in a set of standard part<br>
+kinds. The user may initiate this action by dropping a document on a converter or<br>
+grinder icon (like the one shown in Figure 7) on the desktop. Your ExternalizeKinds<br>
+method is called in response.
+</p>
+<p>
+<img src="img/248.gif" width="48 px"></img>
+</p>
+<p>
+<b>Figure 7.</b> A converter icon
+</p>
+<p>
+ExternalizeKinds is passed a list of kinds to externalize. Your part editor doesn't need<br>
+to write other values it might ordinarily write in addition to the preferred kind. Your<br>
+editor should do the following in its ExternalizeKinds method:
+</p>
+<ul>
+<li>Externalize the set of part kinds specified. Make sure that the fidelity<br>
+order of the values in your content property is maintained by creating the<br>
+values for these part kinds in the right order. You may need to prep your<br>
+storage unit again and recreate the values to ensure that they're in the proper<br>
+fidelity order. Be sure to write out these kinds in addition to the preferred<br>
+kind, not instead of the preferred kind.</li>
+<li>Ignore any part kinds in the set that you don't support.</li>
+</ul>
+<h2>PARTING WORDS</h2>
+<p>
+By now you should have a good idea of all the ramifications of choosing the part kinds to<br>
+support with your part editor. We hope that by spelling out what the tradeoffs are and<br>
+suggesting how your part editor should respond to various user actions related to part<br>
+kinds, we're helping to promote a consistent approach to working with part kinds. This<br>
+is bound to result in more portable parts and happier users.
+</p>
+
+
+
+<p>
+<b>RELATED READING</b>
+</p>
+<ul>
+<li>OpenDoc Programmer's Guide for the Mac OS by Apple Computer, Inc.<br>
+(Addison-Wesley, 1995). This book is accompanied by the OpenDoc Class<br>
+Reference CD and includes the OpenDoc human interface guidelines.</li>
+<li>OpenDoc Cookbook for the Mac OS by Apple Computer, Inc.<br>
+(Addison-Wesley, 1995).</li>
+<li>"The OpenDoc User Experience" by Dave Curbow and Elizabeth<br>
+Dykstra-Erickson, develop Issue 22.</li>
+<li>"Getting Started With OpenDoc Storage" by Vincent Lo, develop Issue 24.</li>
+<li>Byte Guide to OpenDoc by Andrew MacBride and Joshua Susser (Osborne<br>
+McGraw-Hill, 1996), http://www.splash.net/books/opendoc.</li>
+<li>The OpenDoc World Wide Web pages. Apple's page is<br>
+athttp://www.opendoc.apple.com, and the CI Labs page is<br>
+athttp://www.cilabs.org/opendoc.html. These include updated recipes,<br>
+technical notes, and the like.</li>
+</ul>
+
+
+
+<p>
+<b>TANTEK &#199;ELIK</b> (tantek@6prime.com ) was until recently an OpenDoc technical lead<br>
+at Apple. After shipping OpenDoc 1.0 and determining that it was good, he helped found<br>
+6prime corporation (http://www.6prime.com ), an OpenDoc software consulting<br>
+firm. Tantek prides himself on his multiple modes of alternative transportation,<br>
+including inline skating, bicycling, and motorcycling. He likes to occasionally spend<br>
+time writing applications in HyperCard, night skating in San Francisco, or turning a<br>
+profit shorting Microsoft options.
+</p>
+<p>
+<b>DAVE CURBOW</b> (curbow@apple.com )&nbsp;&nbsp;was until recently the OpenDoc human<br>
+interface lead. He has transferred to Apple Research Labs, where he's working on<br>
+something really neat -- but he can't tell you about it yet. When he isn't toiling away<br>
+at Apple or planning his next trip to Europe, Dave likes to work in his Japanese-style<br>
+garden. All he needs now is a book that clearly explains how to twist black pines into<br>
+interesting shapes.
+</p>
+<p>
+<b>Thanks to</b> our technical reviewers Craig Carper, Elizabeth Dykstra-Erickson, and<br>
+Kurt Piersol.
+</p>
+</body>
+</html>

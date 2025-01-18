@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 64 - Extracted from develop-1996 -->
+<!-- on 2025-01-18 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>December 96 - New QuickDraw 3D Geometries</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>New QuickDraw 3D Geometries</h1>
+<h2>Philip J. Schneider</h2>
+<p>
+<img src="img/306.gif" width="324 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">A number of new QuickDraw 3D geometric primitives can save you</i>
+<br>
+
+<i style="font-size:125%;">time as you create 3D objects -- from footballs to the onion domes</i>
+<br>
+
+<i style="font-size:125%;">of the Taj Mahal. Most of these new primitives are very versatile,</i>
+<br>
+
+<i style="font-size:125%;">but this versatility comes at the cost of some complexity. Here</i>
+<br>
+
+<i style="font-size:125%;">you'll find a discussion of their various features and uses, with</i>
+<br>
+
+<i style="font-size:125%;">special attention to the differences among the features and</i>
+<br>
+
+<i style="font-size:125%;">structural characteristics of the polyhedral primitives. Being</i>
+<br>
+
+<i style="font-size:125%;">aware of these differences will help you make the right choices</i>
+<br>
+
+<i style="font-size:125%;">when you're using these primitives in a particular application.</i>
+<br>
+<p>
+When QuickDraw 3D version 1.0 made its debut, it came with 12 geometric<br>
+primitives that you could use to model pretty much anything you wanted. With applied<br>
+cleverness, you could make arbitrary shapes by combining and manipulating such<br>
+primitives as polylines, polygons, parametric curves and surfaces, and polyhedra.<br>
+Because some shapes are so commonly used, recent versions of QuickDraw 3D have<br>
+added them as high-level primitives, including two new polyhedral primitives. This<br>
+frees each developer from having to reinvent them and ensures that the new<br>
+primitives are implemented in such a way as to fit nicely with the existing paradigm<br>
+in QuickDraw 3D.
+</p>
+<p>
+We'll start by looking at how the new ellipse primitive was designed. A similar<br>
+paradigm was used in creating most of the other new high-level primitives.<br>
+Understanding their design will help you use them effectively. Later, we'll move on to<br>
+the two new polyhedral primitives -- the polyhedron and the trimesh -- which you<br>
+can use to model very complex objects. We'll also take a fresh look at the mesh and<br>
+trigrid, which have been around for a while, and compare the usefulness of all four<br>
+polyhedral primitives. Along the way, you'll find some relevant background<br>
+information about the QuickDraw 3D team's design philosophy. 
+</p>
+<p>
+I'm going to assume that you're already familiar with the capabilities of QuickDraw<br>
+3D, including how to use the original 12 geometric primitives. But if you want more<br>
+basic information, see the articles "QuickDraw 3D: A New Dimension for Macintosh<br>
+Graphics" in <i>develop</i> Issue 22 and "The Basics of QuickDraw 3D Geometries" in Issue<br>
+23. The book <i>3D Graphics Programming With QuickDraw 3D</i> has complete<br>
+documentation for the QuickDraw 3D programming interfaces for version 1.0. Version<br>
+1.5 of QuickDraw 3D, which supports these new primitives, is now available.
+</p>
+<p>
+To get you started using the new primitives, the code listings shown here accompany<br>
+this article on this issue's CD and <i>develop</i>'s Web site.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Aficionados of QuickDraw 3D use</b> a variety of terms to refer to a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;geometric primitive. But a geometric primitive by any other name (primitive<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;geometric shape, basic geometric object, geometric primitive object, or<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;geometry) is still a geometric primitive.*
+</p>
+
+
+<h2>CONICS, QUADRICS, AND QUARTICS</h2>
+<p>
+One category of geometric primitives is conics, quadrics, and quartics; this class<br>
+includes such shapes as ellipses, disks, ellipsoids (the generalization of spheres),<br>
+cones, cylinders, and tori (doughnuts). Each of these shapes is a recently introduced<br>
+primitive that's defined with a paradigm similar to the one already used in the box<br>
+primitive. I'll begin by explaining how the ellipse primitive works because the same<br>
+basic approach is used for the more complex geometries.
+</p>
+<p>
+<b>ELLIPSES</b>
+</p>
+<p>
+My article "NURB Curves: A Guide for the Uninitiated" in <i>develop</i> Issue 25 describes<br>
+how you can make circles and partial circles with NURB curves. Though you can<br>
+further use NURB curves to make ellipses and elliptical arcs by manipulating the<br>
+locations of the control points, this isn't necessarily the most convenient way to do it.<br>
+So QuickDraw 3D now provides an ellipse primitive. The data structure for the ellipse<br>
+is as follows:
+</p>
+<pre>typedef struct TQ3EllipseData {
+   TQ3Point3D         origin;
+   TQ3Vector3D        majorRadius;
+   TQ3Vector3D        minorRadius;
+   float              uMin, uMax;
+   TQ3AttributeSet    ellipseAttributeSet;
+} TQ3EllipseData;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Let's assume we have a variable declared like this:
+</p>
+<pre>TQ3EllipseData      ellipseData;</pre><p class="spacer">&nbsp;</p>
+<p>
+As we go over the ellipse primitive, I'll explain the various fields in the data<br>
+structure, then fill them in as I tell you how they work. Let's take for our example a<br>
+special case of an ellipse -- a circle of radius 2 that lies in the {<i>x, y</i>} plane, with an<br>
+origin at {3, 2, 0} -- and show how we'd define it in QuickDraw 3D. For starters, a<br>
+circle must have a center. One way QuickDraw 3D could do this is always center the<br>
+circle at the point {0, 0, 0} and then have us translate the circle to the desired<br>
+location. However, it seems a bit odd to be able to make, say, a line with arbitrary<br>
+endpoints, but not be able to make a circle with an arbitrary center. So, as shown in<br>
+Figure 1, a QuickDraw 3D circle follows the paradigm for primitives and has an<br>
+explicit center, called the origin in the data structure:
+</p>
+<pre>Q3Point3D_Set(&amp;ellipseData.origin, 3, 2, 0);</pre><p class="spacer">&nbsp;</p>
+<p>
+<img src="img/307.gif" width="534 px"></img>
+</p>
+<p>
+<b>Figure 1.</b> Defining a circle's origin, size, and plane
+</p>
+<p>
+Of course, circles must have a size. Again, QuickDraw 3D could make all circles a unit<br>
+size (that is, have a radius of 1) and then require us to scale them appropriately. But,<br>
+for the same reason that the circle has an explicit center, it has an explicit size.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;Given an origin and size, we have to specify the plane in which the circle lies in 3D<br>
+space. Though it would be possible for QuickDraw 3D to define a circle's plane by<br>
+default -- say, the {x, z} plane -- and require us to rotate the circle into the desired<br>
+plane, QuickDraw 3D lets us define the radius with a vector whose length is the radius.<br>
+Then we similarly define a second radius perpendicular to the first radius. The cross<br>
+product of these two vectors (majorRadius and minorRadius) defines the plane the<br>
+ellipse lies in:
+</p>
+<pre>Q3Vector3D_Set(&amp;ellipseData.majorRadius, 2, 0, 0);
+Q3Vector3D_Set(&amp;ellipseData.minorRadius, 0, 2, 0);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+In other words, the plane the circle lies in passes through the origin of the circle, and<br>
+the cross product of the majorRadius and minorRadius vectors is perpendicular to the<br>
+plane (see Figure 1).
+</p>
+<p>
+For a full circle, we need to set uMin to 0 and uMax to 1 (more on this later):
+</p>
+<pre>ellipseData.uMin = 0;
+ellipseData.uMax = 1;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+As for the final field in the data structure, ellipseAttributeSet, QuickDraw 3D includes<br>
+this field so that we can, for instance, make screaming yellow ellipses:
+</p>
+<pre>ellipseData.ellipseAttributeSet = Q3AttributeSet_New();
+Q3ColorRGB_Set(&amp;color, 1, 1, 0);
+Q3AttributeSet_Add(ellipseData.ellipseAttributeSet,
+   kQ3AttributeTypeDiffuseColor, &amp;color);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Finally, we create an ellipse object that describes the circle:
+</p>
+<pre>ellipse = Q3Ellipse_New(&amp;ellipseData);</pre><p class="spacer">&nbsp;</p>
+<p>
+Or we can use the data structure in a Submit call in immediate mode (for rendering,<br>
+bounding, picking, or writing):
+</p>
+<pre>Q3Ellipse_Submit(&amp;ellipseData, view);</pre><p class="spacer">&nbsp;</p>
+<p>
+The ellipse comes with the usual array of calls for getting and setting individual<br>
+definitional properties, as well as the entire definition, just like the other primitives.
+</p>
+<p>
+Why all of this power just for a circle? This power gives us flexibility. Let's use some<br>
+of the object-editing calls to make some more interesting shapes. We'll start by<br>
+making an ellipse out of the circle we've just constructed. If you recall, we originally<br>
+made the circle with majorRadius and minorRadius equal to 2. So to make an ellipse<br>
+instead of a mere circle, all we have to do is make majorRadius and minorRadius<br>
+different lengths. To get the first ellipse you see in Figure 2, we can use this:
+</p>
+<pre>Q3Vector3D_Set(&amp;vector, 0, 1, 0);
+Q3Ellipse_SetMinorRadius(ellipse, &amp;vector);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+"But wait," you say, "vectors have direction as well as size!" Well, we can get really<br>
+carried away and make the two defining vectors nonperpendicular to get something like<br>
+the second ellipse shown in Figure 2:
+</p>
+<pre>Q3Vector3D_Set(&amp;vector, 1, 2, 0);
+Q3Ellipse_SetMinorRadius(ellipse, &amp;vector);</pre><p class="spacer">&nbsp;</p>
+<p>
+<img src="img/308.gif" width="540 px"></img>
+</p>
+<p>
+<b>Figure 2.</b> Defining a regular and skewed ellipse
+</p>
+<p>
+All we have left is how to define partial ellipses. We can do this by taking a parametric<br>
+approach. Let's say that an ellipse starts at <i>u</i> = 0 and goes to <i>u</i> = 1. Then we have to<br>
+define the starting point. Let's make it be the same point that's at the end of the vector<br>
+defining majorRadius in the first circle in Figure 3. To make a partial ellipse (that is,<br>
+an elliptical or circular arc), we specify the parametric values of the starting and<br>
+ending points for the arc:
+</p>
+<pre>Q3Ellipse_SetParameterLimits(ellipse, 0.05, 0.3);</pre><p class="spacer">&nbsp;</p>
+<p>
+<img src="img/309.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 3.</b> Defining a partial ellipse
+</p>
+<p>
+This gives us an elliptical (or in this case, circular) arc, as shown in Figure 3. (The<br>
+dotted line isn't actually rendered -- it's just there for diagrammatic reasons.)<br>
+Though the starting and ending points must be between 0 and 1, inclusive, we can make<br>
+the starting point have a greater value than the ending point:
+</p>
+<pre>Q3Ellipse_SetParameterLimits(ellipse, 0.875, 0.125);</pre><p class="spacer">&nbsp;</p>
+<p>
+As you can also see in Figure 3, this allows us to "wrap around" the point <i>u</i> = 0.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>In version 1.5 of QuickDraw 3D</b>, the feature for defining partials is not<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;enabled, so until it is, you must set the minimum and maximum parameter<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;limits to 0 and 1, respectively.*
+</p>
+<p>
+About now, you're probably thinking that all this power and flexibility for just a<br>
+simple ellipse is overkill and that the preceding explanation is overkill, too. Sorry<br>
+about that, but there is a reason -- it turns out that we can take this same approach to<br>
+defining disks, ellipsoids, cones, cylinders, and tori.
+</p>
+<p>
+<b>DISKS</b>
+</p>
+<p>
+If you go back over the past few pages and substitute <i>disk</i> for <i>ellipse</i>, you pretty much<br>
+get everything you need to know. The data structure and functionality are analogous,<br>
+except that disks are filled primitives, like polygons, while ellipses are curvilinear<br>
+primitives, like polylines. So, partial disks are like pie slices rather than arcs. The<br>
+only other difference is that since disks are surfaces rather than curves, they have<br>
+parameters in two directions. Figure 4 illustrates the definition of a disk, including<br>
+the U and V parameters.
+</p>
+<p>
+<img src="img/310.gif" width="246 px"></img>
+</p>
+<p>
+<b>Figure 4.</b> Defining a disk
+</p>
+<p>
+Note that the UV surface parameterization for the disk is different from the<br>
+parametric limit values around the perimeter of the disk. The UV surface<br>
+parameterization was chosen so that an image applied as a texture would appear on the<br>
+disk or end cap as if it were applied as a decal. The values associated with positions<br>
+around the perimeter are used for making partial disks, just as we used them to make<br>
+partial ellipses. The distinct parametric limit values (uMin and uMax) are necessary<br>
+so that the partial end caps on partial cones and cylinders will properly match. If the<br>
+surface parameterization for the disk meant that the U direction went around the<br>
+perimeter, you'd have a nearly impossible time applying decal-like textures.
+</p>
+<p>
+<b>ELLIPSOIDS, CONES, CYLINDERS, AND TORI</b>
+</p>
+<p>
+Now, I want you to hold two thoughts in your head at the same time: recall that the box<br>
+primitive is defined by an origin and three vectors, which define the lengths and<br>
+orientations of the edges of the box, and then think about the definition of the ellipse.<br>
+Doing that, you should be able to imagine how we define, say, a sphere -- we just add<br>
+another vector to the definition of the ellipse!
+</p>
+<p>
+Figure 5 shows how an ellipsoid (a sphere), cone, cylinder, and torus are defined with<br>
+respect to an origin and three vectors (the labels being fields in the corresponding data<br>
+structures). Note that the torus requires one more piece of information to allow for<br>
+elliptical cross sections: the ratio between the length of the orientation vector (which<br>
+gives the radius of the "tube" of the torus in the orientation direction) and the radius<br>
+of the tube of the torus in the majorRadius direction. With the resulting torus<br>
+primitive, you can make a circular torus with an elliptical cross section, or an<br>
+elliptical torus with a circular cross section, or an elliptical torus with an elliptical<br>
+cross section. (Hmm...perhaps I was drinking too much coffee when I designed the<br>
+torus.)
+</p>
+<p>
+<img src="img/311.gif" width="522 px"></img>
+</p>
+<p>
+<b>Figure 5.</b> Creating four primitive objects and applying texture
+</p>
+<p>
+You use the U and V parameters to map a texture onto a shape. In Figure 5, the U and V<br>
+parameters have their origins and orientations relative to the surface in what should<br>
+be the most intuitive layout. If you apply a texture to the object, the image appears as<br>
+most people would expect.
+</p>
+<ul>
+<li>For the ellipsoid, the parametric origin is at the south pole, with V going<br>
+upward toward the north pole, and U going around the axis in a<br>
+counterclockwise direction (when viewed from the north pole).</li>
+<li>For the cone and cylinder, the parametric origin is on the bottom edge, at<br>
+the point where the majorRadius vector ends. V goes up while U goes around in<br>
+the direction shown by the arrows. The bottom of the cone, and the top and<br>
+bottom of the cylinder, are parameterized exactly like the disk.</li>
+<li>For the torus, the parametric origin is located at the point on the inner<br>
+edge where the majorRadius goes through it. V goes around as shown by the<br>
+arrow, and U goes around the "outside" of the entire torus.</li>
+</ul>
+<p>
+By changing the relative lengths of the majorRadius, minorRadius, and orientation<br>
+vectors, you can get ellipsoids, cones, cylinders, and tori with elliptical cross<br>
+sections, similar to how we made a circle into an ellipse earlier.
+</p>
+<p>
+So to make an ellipsoid that's a sphere, you make the majorRadius, minorRadius, and<br>
+orientation vectors the same length as well as mutually perpendicular. To make an<br>
+elliptical cylinder, you can vary the lengths of the three vectors. Even more fun can be<br>
+had by making the vectors nonperpendicular -- this makes skewed or sheared objects.<br>
+This is easy to see with a cylinder (Figure 6).
+</p>
+<p>
+<img src="img/312.gif" width="372 px"></img>
+</p>
+<p>
+<b>Figure 6.</b> Creating an elliptical or sheared cylinder
+</p>
+<p>
+You can make partial disks, cones, cylinders, and tori in a fashion analogous to what we<br>
+did with the ellipse (see Figure 7). Since these are surfaces, you can set a minimum<br>
+and maximum for each direction.
+</p>
+<p>
+<img src="img/313.gif" width="360 px"></img>
+</p>
+<p>
+<b>Figure 7.</b> A partial cylinder and cone
+</p>
+<p>
+One important thing to notice is that the "wraparound" effect I showed with the ellipse,<br>
+by making uMin be greater than uMax, is possible with all the other primitives in this<br>
+category, but the equivalent feature in the V direction is possible only with the torus.<br>
+For example, the cone wraps around naturally in the U direction because the face itself<br>
+is one continuous surface in that direction, but the surface doesn't wrap in the V<br>
+direction.
+</p>
+<p>
+Some of you must be wondering what we can do with the ends of cones and cylinders. Do<br>
+we want them left open so that the cones look like dunce caps and the cylinders look<br>
+like tubes? Or do we want them to be closed so that they appear as if they were true<br>
+solid objects? You may have already wondered about a similar issue when we used the<br>
+uMax and uMin parameter values to cut away part of the object. Do we make a sphere<br>
+look like a hollow ball, or like a solid ball that's been cut into?
+</p>
+<p>
+To take care of these issues, the ellipsoid, cone, cylinder, and torus have an extra field<br>
+in their data structures that you can use to tell the system which of these end caps to<br>
+draw:
+</p>
+<pre>typedef enum TQ3EndCapMasks {
+   kQ3EndCapNone           = 0,
+   kQ3EndCapMaskTop        = 1 << 0,
+   kQ3EndCapMaskBottom     = 1 << 1,
+   kQ3EndCapMaskInterior   = 1 << 2
+} TQ3EndCapMasks;
+
+typedef unsigned long TQ3EndCap;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>The end cap is a bit of a misnomer,</b> as it refers to the end caps of the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cone and cylinder as well as to the "interior end caps" that are the analog to the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;base and top caps of the cylinder for the portion at the boundary of the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cutaway.*
+</p>
+<p>
+What about attributes? As for all other geometries in QuickDraw 3D, there is an<br>
+attribute set for the entire geometry, so you can make the entire cone, say, all one<br>
+color, or apply a texture to the entire object. But you're probably wondering about all<br>
+these end caps. For example, you might want to have different textures for a solid<br>
+cylinder's top end cap, face, and interior end caps, as shown in Figure 8. The data<br>
+structures for the ellipsoid, cone, cylinder, and torus have fields for storing these<br>
+types of attributes.
+</p>
+<p>
+<img src="img/314.gif" width="360 px"></img>
+</p>
+<p>
+<b>Figure 8.</b> Cylinders with and without end caps or interior end caps
+</p>
+
+
+<h2>POLYHEDRAL PRIMITIVES</h2>
+<p>
+In version 1.5, QuickDraw 3D has four different types of shared-vertex primitives,<br>
+or polyhedral primitives -- the mesh and trigrid, and the newer polyhedron and<br>
+trimesh. These primitives vary in such characteristics as memory use, rendering<br>
+speed, and suitability for representing models. To a great extent, their usefulness is<br>
+governed by how closely each primitive's design follows the original QuickDraw 3D<br>
+design philosophy. (For some background, see the philosophical aside, "QuickDraw 3D<br>
+Design Principles.") Of the four polyhedral primitives, the polyhedron and the trigrid<br>
+best conform to the design standards set out by the QuickDraw 3D team. I'll begin by<br>
+describing the design characteristics of the polyhedron, followed by discussion of the<br>
+other three. Then I'll compare the four primitives and discuss their best uses.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;QUICKDRAW 3D DESIGN PRINCIPLES</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The founders of the QuickDraw 3D team had as a primary design tenet that<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retained mode and immediate mode would be coequal in the API in every<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"renderable" component (geometric primitives, transforms, styles, and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;attributes). Most other graphics systems support only one mode or, if both,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;one is given short shrift in the API. The intention for QuickDraw 3D was to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;allow developers to make decisions based on such things as their programming<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;style and preferences and their particular program needs.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;This intention manifests itself in several ways. For example, in most cases the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;calls that create an object take the address of a public data structure as an<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;argument, and this argument is exactly the same as that for the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;immediate-mode Submit call:
+</p>
+<pre>      TQ3GeometryObject      polyhedron;
+      TQ3PolyhedronData      polyhedronData;
+      ...   /* Fill in poly data structure here. */
+      
+      /* Create a polyhedron object... */
+      polyhedron = Q3Polyhedron_New(&amp;polyhedronData);
+      
+      /* ...or use immed. mode with same struct. */
+      Q3Polyhedron_Submit(&amp;polyhedronData, view);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Further, the Get and Set object-editing calls take arguments that correspond<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to the part of the public data structure being retrieved or modified (or both).<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Here, you see how to retrieve the sixth vertex from the polyhedron and add a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;normal to it:
+</p>
+<pre>      TQ3Vertex3D      vertex;
+      TQ3Vector3D      normal = { 0, 1, 0 };
+      
+      Q3Polyhedron_GetVertex(poly, 5, &amp;vertex);
+      Q3AttributeSet_Add(vertex.attributeSet,
+         kQ3AttributeTypeNormal, &amp;normal);
+      Q3Object_Dispose(vertex.attributeSet);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;It was also intended that the developer be able to mix immediate mode and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retained mode graphics freely and use these modes alternately or even<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;simultaneously for one geometric primitive (transform, and so forth). Thus,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;you can easily use immediate mode for a triangle and then later make it a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retained object and place it in a group. If you have a retained object, you can<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retrieve its data structure and use it in an immediate-mode call. The following<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;code retrieves the representation from a polyhedron object and then uses it to<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;make an immediate-mode rendering call:
+</p>
+<pre>      TQ3PolyhedronData      polyhedronData;
+      
+      Q3Polyhedron_GetData(polyhedron, &amp;polyhedronData);
+      Q3Polyhedron_Submit(&amp;polyhedronData, view);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;This capability is important if an application uses immediate mode but reads<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;in models from 3DMF files (which creates objects). The application can<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retrieve the data structure from the object with a GetData call and then<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dispose of the object with Q3Object_Dispose.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;There's also a rich set of editing calls for retained objects. While this makes<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the API rather large, it allows retained mode to have much of the flexibility of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;immediate mode. In some display-list or object-oriented graphics systems<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(or systems with both), such editing was often awkward to program and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inefficient. The design of QuickDraw 3D, however, makes these operations<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;easy, consistent, and convenient.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Another design principle that pervades QuickDraw 3D is that you define<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;properties by creating attribute set objects and locating them as close as<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;possible (in the data structures) to the item to which they apply. For<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;example, attribute sets for vertices are contained in a data structure along<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;with the location (coordinates):
+</p>
+<pre>      typedef struct TQ3Vertex3D {
+         TQ3Point3D        point;
+         TQ3AttributeSet   attributeSet;
+      } TQ3Vertex3D;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The consistent use of attribute sets for vertices, faces, and entire geometric<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;primitives has two significant benefits. First, it allows for a reduction in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;space when the same data is to be applied to a number of faces (or vertices or<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;geometries). For example, a shared texture needs to be stored only once, and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;each face using it simply has a reference (a pointer) to it. Second, only a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;single modification to an attribute set is needed to change the properties of all<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;faces (or vertices or geometries) that have a reference to that attribute set.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Not least, a notable design criterion was consistency in naming, ordering, and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;structuring, because with an API so large it would be easy to get lost. For<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;example, all of the primitives that have explicit vertices (like polyhedra,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lines, triangles, polygons, and trigrids) use as the type of their vertices<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TQ3Vertex3D (with the exception of the trimesh). Also, the editing calls for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;all the objects are cut from the same cloth.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>POLYHEDRA</b>
+</p>
+<p>
+One common way of making a polyhedral primitive is to have an array of points, with a<br>
+list of faces (often triangles) to organize the points. Each face usually consists of a list<br>
+of indices into the list of vertices, so basically this is a polygon with one level of<br>
+array-based indirection. If there is more than one face, the vertices can be shared by<br>
+simply reusing the same array indices in each face. This allows the graphics system to<br>
+run faster because the same point doesn't have to be transformed or shaded more than<br>
+once, and it saves quite a lot of storage space. In addition, because two or more faces<br>
+share only one real vertex, this type of polyhedral primitive can make it easier to<br>
+program interactive editing.
+</p>
+<p>
+The design philosophy for the geometry of type kQ3GeometryTypePolyhedron -- from<br>
+now on, let's call it the <i>polyhedron</i> -- was to implement this idea in a way that was<br>
+consistent with all the other QuickDraw 3D primitives. The basic entity for polygonal<br>
+primitives (line, triangle, polygon, and so forth) is TQ3Vertex3D, which is an {x, y,<br>
+z} location with an attribute set. For consistency with the rest of the geometric<br>
+primitives, the polyhedron also uses this data structure for its vertices.
+</p>
+<p>
+The vertices of adjacent triangular faces are shared simply by using the same vertex<br>
+indices. Also, sets of attributes may be shared like other objects in QuickDraw 3D:
+</p>
+<pre>vertex-&gt;attributeSet =
+    Q3Shared_GetReference(otherVertex-&gt;attributeSet);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Vertices can contain the same locations, but may or may not share attributes. This can<br>
+be quite useful, for example, if you have a polyhedron you want to be generally<br>
+smooth-looking, but it has some edges or corners where you want a discontinuity. For<br>
+example, consider the cross section of a polyhedral object in Figure 9. Each location is<br>
+shared, and vertices at positions A, B, D, and E share normals, while the vertices at<br>
+position C share the location but not the normal. So when smooth-shaded, the object<br>
+has an edge or corner at position C but appears smooth elsewhere.
+</p>
+<p>
+<img src="img/315.gif" width="432 px"></img>
+</p>
+<p>
+<b>Figure 9.</b> A cross section of a polyhedron with all vertices sharing locations but not<br>
+attributes
+</p>
+<p>
+Another advantage to this approach is that values in an attribute set apply to all<br>
+vertices sharing that attribute set, so operations on it simultaneously affect all the<br>
+vertices to which it's attached. Of course, this applies to attributes on faces as well.<br>
+For example, though you can texture an entire object by attaching the texture to the<br>
+attribute set for the object, you can more naturally associate a single texture with a<br>
+group of faces by simply having each face contain a shared reference to the<br>
+texture-containing attribute set. But for a single texture to span a number of faces,<br>
+you need to make sure their shared vertices share texture coordinates. You can do this<br>
+by simply having shared vertices of faces that are spanned by a single texture use the<br>
+same attribute set, which contains texture coordinates (see Figure 10).
+</p>
+<p>
+<img src="img/316.gif" width="498 px"></img>
+</p>
+<p>
+<b>Figure 10.</b> Applying textures that span a number of faces
+</p>
+<p>
+<b>Rendering the edges.</b> Since the geometric primitives are generally array-based,<br>
+the polyhedron needs an array of faces -- and more information for a face. Besides an<br>
+attribute set for the face, the three vertices defining a face are in an array (of size 3).<br>
+The polyhedron also needs an enumerated type that tells us which edges are to be<br>
+drawn, and which not:
+</p>
+<pre>typedef enum TQ3PolyhedronEdgeMasks {
+   kQ3PolyhedronEdgeNone   = 0,
+   kQ3PolyhedronEdge01     = 1 << 0,
+   kQ3PolyhedronEdge12     = 1 << 1,
+   kQ3PolyhedronEdge20     = 1 << 2,
+   kQ3PolyhedronEdgeAll    = kQ3PolyhedronEdge01 |
+                             kQ3PolyhedronEdge12 |
+                             kQ3PolyhedronEdge20
+} TQ3PolyhedronEdgeMasks;
+
+typedef unsigned long TQ3PolyhedronEdge;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+That way, by OR-ing these flags together, you can select which edges of a particular<br>
+triangle you want drawn. For example, if you're using a wireframe renderer to draw<br>
+an object like the one in Figure 11 (or you're using a scan-line or z-buffer type<br>
+renderer that implements the "edges" fill style), you wouldn't have to show the<br>
+"internal" edges, just the edges that represent the true border of the face. For face 0 in<br>
+Figure 11, you could tell the system that you only want to display the edges between<br>
+vertices 0 and 1, and between vertices 2 and 0, and not draw the edge between vertices<br>
+1 and 2. You'd do this by specifying (kQ3PolyhedronEdge01 | kQ3PolyhedronEdge20)<br>
+as the edge mask.
+</p>
+<p>
+<img src="img/317.gif" width="582 px"></img>
+</p>
+<p>
+<b>Figure 11.</b> A wireframe and filled polyhedron
+</p>
+<p>
+All this information is collected in this data structure:
+</p>
+<pre>typedef struct TQ3PolyhedronTriangleData {
+   unsigned long         vertexIndices[3];
+   TQ3PolyhedronEdge     edgeFlag;
+   TQ3AttributeSet       triangleAttributeSet;
+} TQ3PolyhedronTriangleData;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Of course, an alternative to using a mask to specify the edges would be to have a list of<br>
+edges for the entire polyhedron. This can be advantageous in that if the renderer draws<br>
+the edges (or lines, in the case of a wireframe renderer) from an edge list, the<br>
+renderer can transform the points just once each and draw each edge just once,<br>
+resulting in much faster rendering. So if you're willing and able to generate this<br>
+representation of edges, there's a way to do this. The renderer ignores the edge flags in<br>
+the face data structure if an array of these edges is present:
+</p>
+<pre>typedef struct TQ3PolyhedronEdgeData {
+   unsigned long      vertexIndices[2];
+   unsigned long      triangleIndices[2];
+   TQ3AttributeSet    edgeAttributeSet;
+} TQ3PolyhedronEdgeData;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+As Figure 12 shows, the vertexIndices field specifies indices into the vertex array,<br>
+one for the vertex at each end of the edge. The triangleIndices field specifies indices<br>
+into the array of faces. You need to provide the indices to the faces that share this edge<br>
+because in order to perform proper backface removal, the edge is drawn only if at<br>
+least one of the faces that it's part of is facing forward.
+</p>
+<p>
+<img src="img/318.gif" width="252 px"></img>
+</p>
+<p>
+<b>Figure 12.</b> A schematic for filling out the polyhedron edge data structure
+</p>
+<p>
+The edgeAttributeSet field allows the application to specify the color and other<br>
+attributes of the edges independently. If no attribute is set on an edge, the attributes<br>
+are inherited from the geometry, or if that's not present, then from the view's state.<br>
+Every edge must have two points, but edges may have one or two faces adjacent to them<br>
+-- those with just one are on a boundary of the object. To represent this in an<br>
+array-based representation, you use the identifier kQ3ArrayIndexNULL as a face index<br>
+for the side of the edge that has no face attached to it. Note the relationship between the<br>
+face indices and vertex indices in Figure 12. Relative to going from the vertex at index<br>
+0 to the vertex at index 1, the 0th face is to the left. If at all possible, fill out your<br>
+data structures to conform to this schematic. For example, an application may want to<br>
+traverse the edge list and be assured of knowing exactly which face is on which side of<br>
+each edge.
+</p>
+<p>
+<b>The polyhedron data structure.</b> Whew! Finally we're ready for the entire data<br>
+structure:
+</p>
+<pre>typedef struct TQ3PolyhedronData {
+   unsigned long                numVertices;
+   TQ3Vertex3D                  *vertices;
+   unsigned long                numEdges;
+   TQ3PolyhedronEdgeData        *edges;
+   unsigned long                numTriangles;
+   TQ3PolyhedronTriangleData    *triangles;
+   TQ3AttributeSet              polyhedronAttributeSet;
+} TQ3PolyhedronData;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Creating a polyhedron.</b> In Listing 1, you'll find the code that creates the four-faced<br>
+polyhedron in Figure 11.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 1. </b>Creating a four-faced polyhedron
+</p>
+<pre>TQ3ColorRGB            polyhedronColor;
+TQ3PolyhedronData      polyhedronData;
+TQ3GeometryObject      polyhedron;
+TQ3Vector3D            normal;
+
+static TQ3Vertex3D   vertices[7] = {
+   { { -1.0,  1.0,  0.0 }, NULL },
+   { { -1.0, -1.0,  0.0 }, NULL },
+   { {  0.0,  1.0,  1.0 }, NULL },
+   { {  0.0, -1.0,  1.0 }, NULL },
+   { {  2.0,  1.0,  1.0 }, NULL },
+   { {  2.0, -1.0,  0.0 }, NULL },
+   { {  0.0, -1.0,  1.0 }, NULL }
+};
+TQ3PolyhedronTriangleData   triangles[4] = {
+   {  /* Face 0 */
+      { 0, 1, 2 },                              /* vertexIndices */
+      kQ3PolyhedronEdge01 | kQ3PolyhedronEdge20,/* edgeFlag */
+      NULL                                /* triangleAttributeSet */
+   },
+   {  /* Face 1 */
+      { 1, 3, 2 },
+      kQ3PolyhedronEdge01 | kQ3PolyhedronEdge12,
+      NULL
+   },
+   {  /* Face 2 */
+      { 2, 3, 4 },
+      kQ3PolyhedronEdgeAll,
+      NULL
+   },
+   {  /* Face 3 */
+      { 6, 5, 4 },
+      kQ3PolyhedronEdgeAll,
+      NULL
+   }
+};
+
+/* Set up vertices, edges, and triangular faces. */
+polyhedronData.numVertices    = 7;
+polyhedronData.vertices       = vertices;  
+polyhedronData.numEdges       = 0;
+polyhedronData.edges          = NULL;
+polyhedronData.numTriangles   = 4;
+polyhedronData.triangles      = triangles;
+
+/* Inherit the attribute set from the current state. */
+polyhedronData.polyhedronAttributeSet = NULL;
+  
+/* Put a normal on the first vertex. */
+Q3Vector3D_Set(&amp;normal, -1, 0, 1);
+Q3Vector3D_Normalize(&amp;normal, &amp;normal);
+vertices[0].attributeSet = Q3AttributeSet_New();
+Q3AttributeSet_Add(vertices[0].attributeSet, kQ3AttributeTypeNormal,
+   &amp;normal);
+
+/* Same normal on the second. */
+vertices[1].attributeSet =
+   Q3Shared_GetReference(vertices[0].attributeSet);
+  
+/* Different normal on the third. */
+Q3Vector3D_Set(&amp;normal, -0.5, 0.0, 1.0);
+Q3Vector3D_Normalize(&amp;normal, &amp;normal);
+vertices[2].attributeSet = Q3AttributeSet_New();
+Q3AttributeSet_Add(vertices[2].attributeSet, kQ3AttributeTypeNormal,
+   &amp;normal);
+/* Same normal on the fourth. */
+vertices[3].attributeSet =
+   Q3Shared_GetReference(vertices[2].attributeSet);
+
+/* Put a color on the third triangle. */
+triangles[3].triangleAttributeSet = Q3AttributeSet_New();
+Q3ColorRGB_Set(&amp;polyhedronColor, 0, 0, 1);
+Q3AttributeSet_Add(triangles[3].triangleAttributeSet,
+   kQ3AttributeTypeDiffuseColor, &amp;polyhedronColor);
+
+/* Create the polyhedron object. */
+polyhedron = Q3Polyhedron_New(&amp;polyhedronData);
+
+...   /* Dispose of attributes created and referenced. */</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+Listing 2 shows the code that you'd use to specify the edges of the polyhedron in Figure<br>
+11, but this time with the optional edge list. You would add this code to the code in<br>
+Listing 1, except that if you're using the edge list, you should set the edge flags in the<br>
+triangle data to some legitimate value (like kQ3EdgeFlagAll), which will be ignored.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 2. </b>Using an edge list to specify the edges of a polyhedron
+</p>
+<pre>polyhedronData.numEdges = 8;
+polyhedronData.edges = malloc(8 * sizeof(TQ3PolyhedronEdgeData));
+  
+polyhedronData.edges[0].vertexIndices[0]     = 0;
+polyhedronData.edges[0].vertexIndices[1]     = 1;
+polyhedronData.edges[0].triangleIndices[0]   = 0;
+polyhedronData.edges[0].triangleIndices[1]   = kQ3ArrayIndexNULL;
+polyhedronData.edges[0].edgeAttributeSet     = NULL;
+  
+polyhedronData.edges[1].vertexIndices[0]     = 2;
+polyhedronData.edges[1].vertexIndices[1]     = 0;
+polyhedronData.edges[1].triangleIndices[0]   = 0;
+polyhedronData.edges[1].triangleIndices[1]   = kQ3ArrayIndexNULL;
+polyhedronData.edges[1].edgeAttributeSet     = NULL;
+
+polyhedronData.edges[2].vertexIndices[0]     = 1;
+polyhedronData.edges[2].vertexIndices[1]     = 3;
+polyhedronData.edges[2].triangleIndices[0]   = 1;
+polyhedronData.edges[2].triangleIndices[1]   = kQ3ArrayIndexNULL;
+polyhedronData.edges[2].edgeAttributeSet     = NULL;
+
+polyhedronData.edges[3].vertexIndices[0]     = 3;
+polyhedronData.edges[3].vertexIndices[1]     = 2;
+polyhedronData.edges[3].triangleIndices[0]   = 1;
+polyhedronData.edges[3].triangleIndices[1]   = 2;
+polyhedronData.edges[3].edgeAttributeSet     = NULL;
+
+...   /* Specify the rest of the edges. */</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Using the polyhedron to your best advantage.</b> Before we leave the polyhedron,<br>
+let's take a look at some of the characteristics that should make it the most widely used<br>
+polyhedral primitive.
+</p>
+<p>
+Geometric editing operations, which change the positions of existing vertices, are easy<br>
+and convenient. In immediate mode, you simply alter the point's position in the array<br>
+in the data structure, and rerender. For retained mode, you'll find a number of<br>
+function calls that allow you to change vertex locations, as well as the usual<br>
+assortment of Get and Set calls for attributes, faces, face attributes, and so forth.
+</p>
+<p>
+Topological editing operations change the relationships between vertices, faces, edges,<br>
+and the entire object. Though you can do these operations, the addition or deletion of<br>
+vertices, faces, or edges may require reallocation of one or more of the arrays.<br>
+Because the polyhedron has a public data structure, these operations are possible in<br>
+both immediate mode and retained mode. So long as such operations aren't the primary<br>
+ones required for using the polyhedron, it's not a problem; however, in the case where<br>
+they are, you should use the mesh primitive.
+</p>
+<p>
+The polyhedron uses memory and disk space in a maximally efficient manner because<br>
+shared locations and attributes are each stored only once and only those parts that<br>
+logically require attributes need to have them. This results in generally excellent I/O<br>
+characteristics (though, as is true of all geometric primitives, the addition of textures<br>
+requires a great deal of space and can increase I/O time significantly).
+</p>
+<p>
+Finally, good to very good rendering speed is possible with the polyhedron, owing to<br>
+the shared nature of the vertices. In short, you can easily use the polyhedron to<br>
+represent almost any polyhedral object.
+</p>
+<p>
+<b>TRIMESHES</b>
+</p>
+<p>
+The trimesh primitive is similar to the polyhedron in that it has a list of points and a<br>
+list of triangular faces that contain indices into the list of points. Similarly, it also has<br>
+an optional edge list. However, beyond these general characteristics, the two<br>
+primitives differ greatly. Indeed, the trimesh primitive differs in style from every<br>
+other geometric primitive in QuickDraw 3D, and this significantly affects its<br>
+applicability.
+</p>
+<p>
+Three features characterize the design of the trimesh data structures:
+</p>
+<ul>
+<li>All the data is in explicit arrays -- the locations of the vertices, vertex<br>
+attributes, triangle attributes, and edge attributes.</li>
+<li>Unlike with all other QuickDraw 3D geometries, attributes are not kept<br>
+in objects of type TQ3AttributeSet; rather, they're kept as (arrays of)<br>
+explicit data structures. The exception to this is that the trimesh has a<br>
+standard attribute set for its entire geometry, just like all the other<br>
+primitives.</li>
+<li>Again, unlike with all other QuickDraw 3D geometries, you must have the<br>
+exact same types of attributes on all vertices, faces, or edges, with the<br>
+exception of custom attributes.</li>
+</ul>
+<p>
+The third of these features, which I'll call the <i>uniform-attributes requirement</i>, makes<br>
+it necessary for you to put, say, a color on every face if you want to put a color on just<br>
+one of the faces (and it's similar for vertices and edges). For some types of models,<br>
+this may not be a problem, in which case the trimesh is a good choice. In addition,<br>
+preexisting applications that are to be ported to QuickDraw 3D and already use<br>
+uniform attributes (particularly in immediate mode) may find this the easiest<br>
+polyhedral primitive to use, as the "translation" is more direct. (This use was one of<br>
+the motivations for creating the trimesh primitive.) In such cases, the trimesh may<br>
+be faster and more compact.
+</p>
+<p>
+<b>Diverging from the design philosophy.</b> The triangular face of a trimesh is<br>
+simply a three-element array of indices into a location (TQ3Point3D) array, and an<br>
+edge consists of indices into the location array and triangular face array:
+</p>
+<pre>typedef struct TQ3TriMeshTriangleData {
+   unsigned long      pointIndices[3];
+} TQ3TriMeshTriangleData;
+typedef struct TQ3TriMeshEdgeData {
+   unsigned long      pointIndices[2];
+   unsigned long      triangleIndices[2];
+} TQ3TriMeshEdgeData;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+Note that this differs from the polyhedron, and most of the rest of the QuickDraw 3D<br>
+primitives, in that the attributes associated with a part of the geometry are not closely<br>
+attached to the geometric part. Instead, the normal -- say, for vertex number 17 --<br>
+is contained in the 17th element of an array of vertex normals, and it's the same for<br>
+face and edge attributes. Of course, because you might have more than one type of<br>
+attribute on a vertex, face, or edge, you might have an array of arrays of attributes. To<br>
+keep things organized, the trimesh has a data structure that contains an identifier for<br>
+the type of the attribute and a pointer to the array of values; so you actually will have<br>
+an array of structures of the following type that contains arrays of data defining the<br>
+attributes:
+</p>
+<pre>typedef struct TQ3TriMeshAttributeData {
+   TQ3AttributeType    attributeType;
+   void                *data;
+   char                *attributeUseArray;
+} TQ3TriMeshAttributeData;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+For example, if a trimesh has 17 vertices with normals on them, you would create a<br>
+data structure of this type, set attributeType to kQ3AttributeTypeNormal, allocate a<br>
+17-element array of TQ3Vector3D, and then fill it in appropriately. For all but<br>
+custom attributes, the attributeUseArray pointer must be set to NULL. In the case of<br>
+custom attributes, you can choose whether or not a particular vertex has that<br>
+attribute by (in our example) allocating a 17-element array of 0/1 entries and<br>
+setting to 1 the nth element if the nth vertex has a custom attribute on it (and 0<br>
+otherwise). You would use the same approach for vertex, face, and edge attributes.
+</p>
+<p>
+<b>The trimesh data structure.</b> The data structure for the trimesh consists of the<br>
+attribute set for the entire geometry, plus pairs of (count, array) fields for points,<br>
+edges, and faces, and the attributes that may be associated with each:
+</p>
+<pre>typedef struct TQ3TriMeshData {
+   TQ3AttributeSet           triMeshAttributeSet;
+   unsigned long             numTriangles;
+   TQ3TriMeshTriangleData    *triangles;
+   unsigned long             numTriangleAttributeTypes;
+   TQ3TriMeshAttributeData   *triangleAttributeTypes;
+   unsigned long             numEdges;
+   TQ3TriMeshEdgeData        *edges;
+   unsigned long             numEdgeAttributeTypes;
+   TQ3TriMeshAttributeData   *edgeAttributeTypes;
+   unsigned long             numPoints;
+   TQ3Point3D                *points;
+   unsigned long             numVertexAttributeTypes;
+   TQ3TriMeshAttributeData   *vertexAttributeTypes;
+   TQ3BoundingBox            bBox;
+} TQ3TriMeshData;</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+<b>Trimesh characteristics.</b> The uniform-attributes requirement and the use of<br>
+arrays of explicit data for attributes -- as opposed to the attribute sets used<br>
+throughout the rest of the system -- may be advantageous for some models and<br>
+applications and make the trimesh relatively easy to use. The simplicity of this<br>
+approach, however, makes it very hard to use this primitive to represent arbitrary,<br>
+nonuniform polyhedra. (You'll learn more about this at the end of this article when I<br>
+compare the characteristics of the four polyhedral primitives.)
+</p>
+<p>
+Geometric editing operations on the trimesh are similar to those on the polyhedron in<br>
+immediate mode: you simply alter the point's position in the array in the data<br>
+structure and rerender. There are no retained-mode part-editing API calls for the<br>
+trimesh, as is befitting its design emphasis on immediate mode.
+</p>
+<p>
+Topological editing in immediate mode is also similar to that on the polyhedron.<br>
+However, unlike the polyhedron, there are no retained-mode part-editing calls, so<br>
+editing an object topologically is not possible.
+</p>
+<p>
+The uniform-attributes requirement for this primitive results in generally good I/O<br>
+characteristics. However, the redundant-data problem that's inherent in this<br>
+requirement may cause poor I/O speeds due to the repeated transfer of multiple copies<br>
+of the same data (for example, the same color on every face). Rendering speed for the<br>
+trimesh is generally good to very good.
+</p>
+<p>
+<b>MESHES</b>
+</p>
+<p>
+Here I'll expand on the information about the mesh primitive that's in <i>3D Graphics</i><br>
+<i>Programming With QuickDraw 3D</i>, focusing on its use.
+</p>
+<p>
+Like the polyhedron and trimesh, the mesh is intended for representing polyhedra.<br>
+However, it was designed for a very specific type of use and has characteristics that<br>
+make it quite different from the polyhedron and trimesh (and all the other QuickDraw<br>
+3D primitives).
+</p>
+<p>
+The mesh is intended for interactive topological creation and editing, so the<br>
+architecture and API were designed to allow for iterative construction and topological<br>
+modification. By <i>iterative construction</i> I mean that you can easily construct a mesh by<br>
+building it up face-by-face, rather than using an all-at-once method of filling in a<br>
+data structure and constructing the entire geometric object from that data structure<br>
+(which you do with all the other geometric primitives). By <i>topological modification</i> I<br>
+mean that you can easily add and delete vertices, faces, edges, and components. A<br>
+particularly notable feature of this primitive is that it has no explicit (public) data<br>
+structure, and so it has no immediate-mode capability, as do all the other geometric<br>
+primitives.
+</p>
+<p>
+The mesh is specifically <i>not</i> intended to be used for representation of large-scale<br>
+polyhedral models that have a lot of vertices and faces. If you use it this way, you get<br>
+extremely poor I/O behavior, enormous memory usage, and less-than-ideal rendering<br>
+speed. In particular, individuals or companies creating 3DMF files should immediately<br>
+cease generating large models in the mesh format and instead use the polyhedron.<br>
+Modeling, animation, and design applications should also cease using the mesh and<br>
+begin using the polyhedron for most model creation and storage.
+</p>
+<p>
+The reason for this is that meshes consist of one or more components, which consist of<br>
+one or more faces, which consist of one or more contours, which consist of a number of<br>
+vertices. To enable the powerful topological editing and traversal functions, each of<br>
+these entities must contain pointers not only to their constituent parts, but also to the<br>
+entity of which they are parts. So a face must contain a reference to the component of<br>
+which it is a part, and references to the contours that define the face itself. All of this<br>
+connectivity information can significantly dwarf the actual geometrical information<br>
+(the vertex locations), so a nontrivial model can take up an unexpectedly large amount<br>
+of space in memory. The connectivity information (the pointers between parts) can<br>
+take up from 50% to 75% of the space. Further, when reading a mesh, QuickDraw 3D<br>
+must reconstruct all the connectivity information, which is computationally<br>
+expensive. Writing is relatively slow as well, primarily because of the overhead<br>
+incurred by the richly linked architecture. In addition, models distributed in the mesh<br>
+format do a tremendous disservice to subsequent users of these models who might want<br>
+to extract the data structure for immediate-mode use. This won't be possible because<br>
+the mesh has no public data structure.
+</p>
+<p>
+These somewhat negative characteristics don't mean this isn't a useful primitive. For<br>
+the purposes for which it was designed, it's clearly superior to any other available<br>
+QuickDraw 3D geometric primitive. For example, if you have an application that uses<br>
+a 3D sampling peripheral (for instance, a Polhemus device) for digitizing physical<br>
+objects, the mesh would be ideal. You can easily use the mesh in such situations to<br>
+construct the digitized model face-by-face, merge or split faces, add or delete<br>
+vertices, and so forth. Doing this sort of thing with an array-based data structure<br>
+would be awkward to program and inefficient becuase of the repeated reallocation you'd<br>
+be forced to do.
+</p>
+<p>
+To give you an idea of the richness of the API and the powerful nature of this<br>
+primitive, you can expect to find routines to create and destroy parts of meshes,<br>
+retrieve the number of parts (and subparts of parts), get and set parts, and iterate<br>
+over parts (and subparts). And because the iterators are so essential to the editing<br>
+API, you'll find a large set of convenient macros for common iterative operations.
+</p>
+<p>
+<b>Mesh characteristics.</b> The mesh API richly supports both geometric and<br>
+topological editing operations, but only for retained mode because the mesh has no<br>
+immediate-mode public data structure -- an inconsistency with the design goals of the<br>
+QuickDraw 3D API. (You should use the polyhedron primitive if immediate mode is<br>
+desired.)
+</p>
+<p>
+In general, the rendering speed of meshes is relatively slow. In the case of the<br>
+polyhedron and trimesh, faster rendering is facilitated by the use of arrays of points,<br>
+which are presented to renderers in the form of a public data structure. The mesh,<br>
+having neither an array-based representation nor a public version of the same, must<br>
+be either traversed for rendering or decomposed into some other primitives that are<br>
+more amenable to faster rendering. However, traversing usually results in<br>
+retransformation and reshading of shared vertices (which tends to be extremely<br>
+slow), while decomposition may involve tremendous use of space as well as complex<br>
+and slow bookkeeping code.
+</p>
+<p>
+Faces of meshes (unlike those in the polyhedron and trimesh) may have more than<br>
+three vertices, may be concave (though not self-intersecting), and may have holes by<br>
+defining a face with more than one contour (list of vertices).
+</p>
+<p>
+<b>Using the mesh.</b> Listing 3 creates a mesh that's geometrically equivalent to the<br>
+polyhedron created in Listing 1.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 3. </b>Creating a mesh
+</p>
+<pre>static TQ3Vertex3D   vertices[7] = {
+   { { -1.0,  1.0,  0.0 }, NULL },
+   { { -1.0, -1.0,  0.0 }, NULL },
+   { {  0.0,  1.0,  1.0 }, NULL },
+   { {  0.0, -1.0,  1.0 }, NULL },
+   { {  2.0,  1.0,  1.0 }, NULL },
+   { {  2.0, -1.0,  0.0 }, NULL },
+   { {  0.0, -1.0,  1.0 }, NULL },
+};
+TQ3MeshVertex        meshVertices[7], tmp[4];
+TQ3GeometryObject    mesh;
+TQ3MeshFace          face01, face2, face3;
+TQ3AttributeSet      faceAttributes;
+unsigned long        i;
+TQ3ColorRGB          color;
+TQ3Vector3D          normal;
+
+/* Add normals to some of the vertices. */
+vertices[0].attributeSet = Q3AttributeSet_New();
+Q3Vector3D_Set(&amp;normal, -1, 0, 1);
+Q3Vector3D_Normalize(&amp;normal, &amp;normal);
+Q3AttributeSet_Add(vertices[0].attributeSet, kQ3AttributeTypeNormal,
+   &amp;normal);
+
+vertices[1].attributeSet =
+   Q3Shared_GetReference(vertices[0].attributeSet);
+
+vertices[2].attributeSet = Q3AttributeSet_New();
+Q3Vector3D_Set(&amp;normal, -0.5, 0.0, 1.0);
+Q3Vector3D_Normalize(&amp;normal, &amp;normal);
+Q3AttributeSet_Add(vertices[2].attributeSet, kQ3AttributeTypeNormal,
+   &amp;normal);
+
+vertices[3].attributeSet =
+   Q3Shared_GetReference(vertices[2].attributeSet);
+
+/* Create the mesh. */
+mesh = Q3Mesh_New();
+
+/* Create the mesh vertices. */
+for (i = 0; i &lt; 7; i++) {
+   meshVertices[i] = Q3Mesh_VertexNew(mesh, &amp;vertices[i]);
+}
+
+/* Create a quad equal to the first two triangles in the */
+/* polyhedron. */
+tmp[0] = meshVertices[0];
+tmp[1] = meshVertices[1];
+tmp[2] = meshVertices[3];
+tmp[3] = meshVertices[2];
+face01 = Q3Mesh_FaceNew(mesh, 4, tmp, NULL);
+
+/* Create other faces. */
+tmp[0] = meshVertices[2];
+tmp[1] = meshVertices[3];
+tmp[2] = meshVertices[4];
+face2 = Q3Mesh_FaceNew(mesh, 3, tmp, NULL);
+
+tmp[0] = meshVertices[6];
+tmp[1] = meshVertices[5];
+tmp[2] = meshVertices[4];
+face3 = Q3Mesh_FaceNew(mesh, 3, tmp, NULL);
+
+/* Add an attribute set to the last face. */
+faceAttributes = Q3AttributeSet_New();
+Q3ColorRGB_Set(&amp;color, 0, 0, 1);
+Q3AttributeSet_Add(faceAttributes, kQ3AttributeTypeDiffuseColor,
+   &amp;color);
+Q3Mesh_SetFaceAttributeSet(mesh, face, faceAttributes);</pre>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+<b>TRIGRIDS</b>
+</p>
+<p>
+Like the mesh, the trigrid has been around since the first release of QuickDraw 3D and<br>
+is quite simple, so I won't go into a long discussion here. The basic idea is that you have<br>
+a list of items of type TQ3Vertex3D, each representing a series of rows of vertices in a<br>
+topologically rectangular grid, as illustrated in Figure 13.
+</p>
+<p>
+The numbers of rows and columns are part of the data structure, and there is an<br>
+optional array of type TQ3AttributeSet for face attributes.
+</p>
+<p>
+<img src="img/319.gif" width="480 px"></img>
+</p>
+<p>
+<b>Figure 13.</b> A trigrid
+</p>
+<p>
+This primitive has a fixed topology, defined by the numbers of rows and columns.<br>
+Thus, the space in memory and in files is very efficiently used. I/O is relatively fast<br>
+because of the simplicity and efficiency of the primitive. Rendering can also be fast<br>
+because of the shared nature of the points and the fixed topology. However, the fixed<br>
+topology and the fact that shared locations must share attributes restrict the<br>
+generality and flexibility of this primitive.
+</p>
+<p>
+<b>COMPARING THE POLYHEDRAL PRIMITIVES</b>
+</p>
+<p>
+It should be clear that the four polyhedral primitives in QuickDraw 3D can be used to<br>
+represent the same sorts of shapes. It should also be clear that there are some<br>
+important differences in their generality, flexibility, style of programming,<br>
+performance, and compliance with the overall design goal of treating retained and<br>
+immediate mode programming as equivalent. To help you determine the usefulness of<br>
+these polyhedral primitives, Table 1 compares a number of their important<br>
+characteristics.
+</p>
+<p>
+<b>Table 1. Comparison of polyhedral primitives</b>
+</p>
+<p><table border="0"><tr><td><b>Characteristic</b></td><td><b></b><b>Polyhedron</b></td><td><b></b><b>Trimesh</b></td><td><b></b><b>Mesh</b></td><td><b></b><b>Trigrid</b></td></tr>
+<tr><td>Memory usage</td><td>Very good</td><td>Fair to very good</td><td>Poor</td><td>Very good</td></tr>
+<tr><td>File space usage</td><td>Very good</td><td>Fair to very good</td><td>Very good</td><td>Very good</td></tr>
+<tr><td>Rendering speed</td><td>Good to very good</td><td>Good to very good</td><td>Fair to good</td><td>Good to very good</td></tr>
+<tr><td>Geometric object</td><td>Very good</td><td>Impossible (no API calls)</td><td>Very good</td>
+<td>Very good</td></tr>
+<tr><td>Topological object editing</td><td>Poor</td><td>Impossible (no API calls)</td><td>Very good</td>
+<td>Impossible (fixed
+ topology)</td></tr>
+<tr><td>Geometric data structure editing</td><td>Very good</td><td>Very good</td><td>Impossible (no data
+ structure)</td>
+<td>Very good</td></tr>
+<tr><td>Topological data structure editing</td><td>Fair</td><td>Fair</td><td>Impossible (no data
+ structure)</td>
+<td>Impossible (fixed
+ topology)</td></tr>
+<tr><td>I/O speed</td><td>Good to very good</td><td>Fair to very good</td><td>Fair</td><td>Good to very good</td></tr>
+<tr><td>Flexibility / generality</td><td>Good</td><td>Poor</td><td>Very good</td><td>Poor (fixed
+ topology)</td></tr>
+<tr><td>Suitability for general model<br>representation and distribution</td><td>Very good</td><td>Fair</td><td>Fair</td>
+<td>Poor</table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>An upcoming release of QuickDraw 3D will have</b> the capability of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;generating one geometric primitive from another, but with a different type --<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for example, getting a group of triangles that corresponds to a cone, or a mesh<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;that's equivalent to a trimesh, or a polyhedron that's equivalent to a mesh.*
+</p>
+<p>
+Most of the characteristics in Table 1 were covered in greater detail in the sections<br>
+that described each primitive. So let's look at the last characteristic -- suitability for<br>
+general model representation and distribution -- to help you determine when you<br>
+would use one of these primitives. We'll look at the primitives one by one.
+</p>
+<p>
+<b>The polyhedron primitive.</b> This polyhedral primitive is the primitive of choice<br>
+for the vast majority of programming situations and for the creation and distribution<br>
+of model files if editing of models is desired. Companies and individuals whose<br>
+businesses involve creation of, conversion to, distribution of, or sale of polyhedral<br>
+models should produce them in polyhedron format, rather than mesh or trimesh.<br>
+User-level applications such as modelers and animation tools should generally use the<br>
+polyhedron as well. Creators of plug-in renderers are required to support certain<br>
+basic primitives (triangles, points, lines, and markers) and are also <i>very</i> strongly<br>
+urged to support the polyhedron.
+</p>
+<p>
+Let's quickly recount some of the pluses for the polyhedron: it can easily represent<br>
+arbitrarily shaped polyhedral models in a space-efficient fashion, it's amenable to fast<br>
+rendering, it's highly consistent with the rest of the API, and attributes may be<br>
+attached in whatever combination is appropriate for the model. The polyhedron has<br>
+advantages over the mesh because of the mesh's profligate use of space and lack of<br>
+immediate mode.
+</p>
+<p>
+<b>The mesh primitive.</b> You should use the mesh primitive for interactive<br>
+construction and topological editing. The rich set of geometric and topological object<br>
+editing calls, the ability to make nontriangular faces directly, the allowance of concave<br>
+faces and faces with holes, and the consistent use of attribute sets make this primitive<br>
+ideal for those purposes. In addition, the 3DMF representation of a mesh is quite space<br>
+efficient. However, because the mesh lacks an immediate mode, it requires a large<br>
+amount of memory and is generally "overkill" in terms of representation for other<br>
+uses.
+</p>
+<p>
+<b>The trigrid primitive.</b> Because of its fixed rectangular topology, the trigrid is a<br>
+good choice for objects that are topologically rectangular -- for example, surfaces of<br>
+revolution, swept surfaces, and terrain models -- and as an output primitive for<br>
+applications that want to decompose their own parametric or implicit surfaces. If the<br>
+situation matches one of these criteria and space is a serious issue, the trigrid is an<br>
+especially good choice because it's more space efficient than the other primitives<br>
+discussed here and it's very consistent with the rest of the QuickDraw 3D API.
+</p>
+<p>
+<b>The trimesh primitive.</b> I promised earlier that I'd discuss the implications that<br>
+the uniform-attributes requirement has on the suitability of this primitive for<br>
+representing general polyhedral objects. Real objects have regions that are smoothly<br>
+curved and regions that are intentionally flat or faceted, and often have sharp edges,<br>
+corners, and creases. The vertices in the curved regions need normals that<br>
+approximate the surface normal at that vertex, but vertices at corners or along edges<br>
+or that are part of a flat region need none. On a polyhedron, mesh, or trigrid, you need<br>
+only take up storage (for the normal) on those vertices that actually require a normal,<br>
+but on a trimesh you would be required to place vertex normals on all the vertices,<br>
+resulting in a tremendous use of space.
+</p>
+<p>
+This same problem can be seen for face attributes. Real objects often have regions that<br>
+differ in color, transparency, or surface texture. For example, a soccer ball has black<br>
+and white faces, and a wine bottle may have a label on the front, a different one on the<br>
+back, and yet another around the neck. The other polyhedral primitives would, in the<br>
+case of the soccer ball, simply create two attribute sets (one for each color) and attach<br>
+a reference to the appropriate attribute set to each face, thus sharing the color<br>
+information. In a trimesh, you would be required to create an array of colors, thus<br>
+using quite a lot of space to represent the same data over and over. If you wanted to<br>
+highlight one face, you couldn't simply attach a highlight switch attribute to that face<br>
+(set to "on") -- you'd need to attach it to the rest as well (set to "off"). As for the wine<br>
+bottle, you would want to attach the label textures to the appropriate faces on the<br>
+bottle, which would require attaching texture parameters to the vertices of the faces to<br>
+which you attached the label texture. With a trimesh, this extremely useful and<br>
+powerful approach is simply not possible.
+</p>
+<p>
+In using the trimesh for large polyhedral models, these problems can result in a<br>
+rather startling explosion of space, both on disk and in memory. Consider a<br>
+10,000-face model whose faces are either red or green. The other polyhedral<br>
+primitives would use references to just two color attribute sets while the trimesh<br>
+would use up 10,000 x 12 bytes = 120,000 bytes. Further, if the red faces were to<br>
+be transparent, we would have to use up yet another 120,000 bytes. Highlighting just<br>
+one face would require another 40,000 bytes. This same sort of data explosion can<br>
+occur with vertex attributes as well. Note that these problems do not affect the other<br>
+polyhedral primitives.
+</p>
+<p>
+Thus, developers should carefully weigh the potentially negative consequences of the<br>
+trimesh's characteristics when considering its use in applications. Its lack of<br>
+object-editing calls renders it almost useless for an object-oriented approach, and<br>
+this inconsistency with the rest of the QuickDraw 3D library may make its inclusion<br>
+in a program awkward. In addition, because the trimesh doesn't use attribute sets<br>
+(which are the foundation of the rest of the geometric primitives) for vertices, faces,<br>
+and edges, it requires special-case handling in the application.
+</p>
+<p>
+In spite of these features that limit the suitability of the trimesh for general-purpose<br>
+polyhedral representation, the uniform-attributes requirement makes it ideal for<br>
+models in which each vertex or face naturally has the same type of attributes as the<br>
+other vertices (or faces), but with different values. For example, if your application<br>
+uses Coons patches, it could subdivide the patch into a trimesh with normals on each<br>
+vertex. Games often are written with objects such as walls, or even some stylized<br>
+characters, that typically have just one texture for the entire thing and either no<br>
+vertex attributes or, more often, normals on every vertex. Multimedia, some demo<br>
+programs, and other "display-only" applications in which the user typically is unable<br>
+to modify objects may find the trimesh useful, at least for those primitives that don't<br>
+suffer from the size problems described earlier.
+</p>
+
+
+<h2>DRAWING TO A CLOSE</h2>
+<p>
+Well, I have to say that I would have liked to have waxed eloquent a bit longer<br>
+regarding these "primitive creations" for QuickDraw 3D. But for the most part, you<br>
+have the long and short of it: some new high-level primitives to save you time and two<br>
+new polyhedral primitives. Use them well and wisely -- and have fun doing it!
+</p>
+
+
+
+<p>
+<b>RELATED READING</b>
+</p>
+<ul>
+<li>"QuickDraw 3D: A New Dimension for Macintosh Graphics" by<br>
+Pablo Fernicola and Nick Thompson, <i>develop</i> Issue 22.</li>
+<li>"The Basics of QuickDraw 3D Geometries" by Nick Thompson and<br>
+Pablo Fernicola, <i>develop</i> Issue 23.</li>
+<li>"NURB Curves: A Guide for the Uninitiated" by Philip J.<br>
+Schneider, <i>develop</i> Issue 25.</li>
+<li>"Adding Custom Data to QuickDraw 3D Objects" by Nick Thompson,<br>
+Pablo Fernicola, and Kent Davidson, <i>develop</i> Issue 26.</li>
+<li><i>3D Graphics Programming With QuickDraw 3D</i> by Apple<br>
+Computer, Inc. (Addison-Wesley, 1995).</li>
+</ul>
+
+
+
+<p>
+<b>PHILIP J. SCHNEIDER</b> (pjs@apple.com)&nbsp;&nbsp;is still the longest-surviving member of<br>
+the QuickDraw 3D team (and in answer to an oft-posed question, no, not as in<br>
+"surviving member of the Donner Party"). One current task is to find a name for his<br>
+second son, which he and his wife expect in January, that won't eventually lead to a<br>
+question like "Why did you give my older brother a cool name like Dakota, and then<br>
+name me Bob?" He's given up trying to teach two-year-old Dakota to change his own<br>
+diapers and has instead begun teaching him Monty Python's "The Lumberjack Song,"<br>
+which isn't nearly as useful a skill, but is one at which he has a better chance of<br>
+succeeding. Philip's original interest in geometry began early, when an elementary<br>
+school teacher warned him that he could "put an eye out" with a protractor.*
+</p>
+<p>
+<b>Thanks to</b> our technical reviewers Rick Evans, Pablo Fernicola, Jim Mildrew, Klaus<br>
+Strelau, and Nick Thompson.*
+</p>
+</body>
+</html>
