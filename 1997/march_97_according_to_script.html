@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 10 - Extracted from develop-1997 -->
+<!-- on 2025-03-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 97 - According to Script</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>ACCORDING TO SCRIPT</h1>
+<h1>User Interactions in Apple Event-Driven<br>
+Applications</h1>
+<h2>Cal Simone</h2>
+<p>
+<img src="img/142.gif" width="267 px"></img>
+</p>
+<p>
+So far throughout the history of the Macintosh, most applications have been designed to<br>
+be run by a user double-clicking the icon of an application (or document) in the<br>
+Finder and manipulating the application and its data through the graphical interface.<br>
+Recently, the publishing industry has adopted AppleScript and scriptable applications<br>
+as the mechanism for creating production systems. Now that scripting and Apple events<br>
+have become more pervasive, and more and more applications are scriptable,<br>
+applications must be prepared to be controlled remotely by Apple events from other<br>
+applications and scripts. And there's a new kind of application on the horizon, the<br>
+Apple event-based <i>server application</i>. A server application has no user interface: it's<br>
+designed to communicate with the outside world only through Apple events. Although<br>
+server applications have been possible to write since the introduction of System 7,<br>
+they're becoming increasingly important and will play a major role in the future<br>
+versions of the Mac OS.
+</p>
+<p>
+In other words, there may not be a human being sitting at the computer where your<br>
+application is running.
+</p>
+<p>
+In this column, I'll cover these topics:
+</p>
+<ul>
+<li>the two types of Apple-event control</li>
+<li>determining when your application should interact with a user</li>
+<li>how to interact, when a user is present</li>
+<li>how <i>not</i> to interact, when no user is present, and how to return errors<br>
+when you don't interact</li>
+</ul>
+<p>
+There are some important differences between direct manipulation through the<br>
+graphical interface and remote control through interapplication communication. When<br>
+developing server applications, you'll want to be careful about what happens when an<br>
+Apple event (or series of Apple events) takes over. This applies not only to<br>
+applications that are designed to be controlled primarily through Apple events, but<br>
+also to those designed to be controlled mainly through a graphical interface but for<br>
+which Apple events provide an alternative interface to the graphical one. The<br>
+information presented in this column applies to both types of application.
+</p>
+<h2>TYPES OF APPLE-EVENT CONTROL</h2>
+<p>
+For this discussion, I'll classify Apple-event control into two scenarios:
+</p>
+<ul>
+<li>Simulating a user sitting at the computer -- Many users will write<br>
+scripts that help them automate their work. They'll generally still be at (or<br>
+near) the computer when the scripts run. In such cases, it's OK (or even<br>
+expected) that an application will interact with the user whenever there's a<br>
+problem or a choice needs to be made, or when the computer needs more input.<br>
+Many scripts that drive such applications will even incorporate interaction in<br>
+the form of dialog boxes. This scenario is often the case for embedded scripts,<br>
+such as those attached to tool palette icons.</li>
+<li>When a user isn't present -- This is the more interesting case for<br>
+automation and integration through interapplication communication, and will<br>
+become increasingly common as more intelligent scripts are written. Some<br>
+operations (and some applications) are more suited than others for unattended<br>
+batch processing. It's recommended for operations that take a long time, such<br>
+as those found in production systems; in these situations, direct interaction<br>
+with the user is usually not a good idea, since no one's likely to be there to deal<br>
+with a problem or a request for more information. Server applications deal<br>
+only with this scenario.</li>
+</ul>
+<p>
+Since your application may need to respond to either type of Apple-event control, I'll<br>
+describe how to comfortably handle both, starting with the way to determine which one<br>
+you're dealing with at a particular moment. The largest issue to tackle in responding to<br>
+Apple events is whether to interact with the user. I'll explain how to determine<br>
+whether you should interact and what to do once you've made that determination.<br>
+Incidentally, in a standard factored application (you <i>are</i> factoring your application<br>
+these days, aren't you?) you can get most of the proper behavior for free.
+</p>
+<p>
+<b>An example scenario. </b> Let's look at a common case that may or may not require<br>
+user interaction: handling the Core suite's Close event. According to the <i>Apple Event</i><br>
+<i>Registry</i>, one of the optional parameters for this event is the <b>saving</b>parameter, which<br>
+can have one of three enumerated values: <b>yes</b>, <b>no</b>, and <b>ask</b>. The traditional meanings of<br>
+these values are as follows:
+</p>
+<ul>
+<li><b>yes</b> will always save a modified document, presenting a standard file<br>
+dialog if it has never been saved (unless the user included the <b>saving</b><br>
+<b>in</b>parameter to specify where to save the document).</li>
+<li><b>no</b> will never save a modified document, but rather discard any changes.</li>
+<li><b>ask</b> will allow the user to choose whether to save the document, invoking<br>
+the user interface behavior.</li>
+</ul>
+<p>
+But it's not quite that simple. For example, assume that the user modifies a document<br>
+in one of your application's windows and then runs a script that executes the command<br>
+<b>close the front window</b>(with no <b>saving</b> parameter or with <b>saving ask</b>). Your<br>
+application's Close event handler will typically display a dialog box asking the user<br>
+whether to save the document. The catch is that you can't always do this; it depends on<br>
+where the script is running. You could implement a preference setting that allows the<br>
+user to configure your application for "response to humans vs. non-humans," but<br>
+having too many preferences spoils the simplicity.
+</p>
+<p>
+So what should you do? The solution is to call the routine AEInteractWithUser, and<br>
+then decide what to do based on its return result. But before getting into that, we'll<br>
+take a look at how the Apple Event Manager decides whether user interaction is<br>
+appropriate.
+</p>
+<h2>BEHIND THE SCENES</h2>
+<p>
+The following conditions are considered by the Apple Event Manager to determine<br>
+whether you should interact while handling an Apple event. Note that the first one is an<br>
+application setting, while the last two are optional attributes of a particular event that<br>
+may be set by the sender.
+</p>
+<ul>
+<li>the user interaction level -- whether your application allows<br>
+interactions in general</li>
+<li>the event source attribute -- where the particular Apple event came<br>
+from</li>
+<li>the event's interaction-requested attribute -- whether the Apple event<br>
+wants you to interact</li>
+</ul>
+<p>
+<b>The user interaction level.</b> The Apple Event Manager first checks the <i>user</i><br>
+<i>interaction level</i> of your application. You can call AEGetInteractionAllowed yourself to<br>
+determine which Apple event sources can cause your application to interact with the<br>
+user. If you need to change the interaction level, you can set it at any time with<br>
+AESetInteractionAllowed.
+</p>
+<p>
+The Apple Event Manager provides a data type, AEInteractAllowed, which is an<br>
+enumeration that defines three levels of allowable interaction:
+</p>
+<ul>
+<li>Interact with self -- At this level, you can interact with the user only in<br>
+response to Apple events you've sent to yourself, through your factored user<br>
+interface or from an attached or embedded script that you're executing inside<br>
+your application.</li>
+<li>Interact with local -- You can interact with the user in response to Apple<br>
+events originating from the same computer where your application is running.<br>
+This includes the above case.</li>
+<li>Interact with all -- You can interact with the user in response to any<br>
+Apple event, whether sent from the same computer or a remote machine.</li>
+
+<p>
+<b>Remote events will arrive only</b> if all the conditions for accepting remote<br>
+events are met. You need to set two flags in the SIZE resource -- "accept<br>
+high-level events" (to receive any Apple events) and "allow local and remote<br>
+events" (to receive events from other computers) -- and give permission for<br>
+program linking in the Users and Groups control panel. You must also make<br>
+sure that Program Linking is turned on in the Sharing Setup control panel and<br>
+enabled for the application in the Finder's Sharing dialog.*
+</p></ul>
+<p>
+There's a fourth possibility for some applications, the true lowest level of interaction,<br>
+which is "no interaction." This is the appropriate level in a background-only<br>
+application or any pure server application, or any other situation where interaction is<br>
+undesirable. Consider this example (which Jon Pugh came across when he was working<br>
+for Storm Technologies, while implementing scriptability in PhotoFlash): An attached<br>
+script is executed as part of an automation process. The script gets an error and the<br>
+application puts up a dialog box -- but there's no one there to answer it. If users can<br>
+execute a script inside your application and the script might be run without a user<br>
+present, you'll have this problem. Before running the script, the user needs to be able<br>
+to tell your application, "No one will be here, so don't interact."
+</p>
+<p>
+Since the Apple Event Manager doesn't provide support for the no-interaction<br>
+condition (the AEInteractAllowed type has only three possible values), you'll have to<br>
+set up and maintain this yourself. The simplest way to implement this setting is by<br>
+using a global Boolean variable for the no-interaction flag. If the variable's value is<br>
+true and your application is called on to do interaction, you'll know right away not to<br>
+allow the interaction. (Note that if your application handles multiple concurrent Apple<br>
+events using threading, an application global is <i>not</i> a good solution.)
+</p>
+<p>
+Because AppleScript doesn't provide a way to get or set interaction levels from<br>
+scripts, you'll need to implement a <b>user interaction level</b> property for your<br>
+application, similar to the one in PhotoFlash, that a user can set or get from a script.<br>
+This property should handle all four enumeration constants and associate the fourth<br>
+level, no interaction, with the global Boolean variable. In your 'aete' resource, use the<br>
+following terminology and 4-byte codes for the enumeration constants:
+</p>
+<ul>
+<li><b>never interact</b> -- 'eNvr'</li>
+<li><b>interact with self</b> -- 'eInS'</li>
+<li><b>interact with local</b> -- 'eInL'</li>
+<li><b>interact with all</b> -- 'eInA'</li>
+</ul>
+<p>
+Apple events initiated from the user interface should probably ignore the<br>
+no-interaction flag altogether, and just call AEInteractWithUser and interact in the<br>
+usual way if need be. This way your application could perform double duty,<br>
+successfully performing actions initiated by Apple events from other sources without<br>
+disturbing a user who might be sitting there using the application.
+</p>
+<p>
+<b>The event source attribute. </b>The next step taken by the Apple Event Manager is to<br>
+examine the <i>event source attribute</i> of the particular Apple event being handled. If you<br>
+want to look at the source for an Apple event, you can call AEGetParamPtr with the<br>
+keyEventSourceAttr keyword to obtain the source. The source data type,<br>
+AEEventSource, is an enumeration indicating five possible sources: unknown, direct<br>
+call, same process, local process, and remote process. This is checked against the user<br>
+interaction level to find out whether your application allows user interaction in<br>
+response to an Apple event from this particular source.
+</p>
+<p>
+<b>The interaction-requested attribute.</b> Finally, if the Apple Event Manager<br>
+determines that interaction with the user in response to the event source is OK, it<br>
+examines the event's <i>interaction-requested attribute</i>, which tells the Apple Event<br>
+Manager what kinds of interaction are requested by the Apple event. If you want to look<br>
+at this level yourself, you can call AEGetParamPtr with the keyInteractLevelAttr<br>
+keyword to obtain the interaction level requested by the Apple event. There are three<br>
+constants that represent the interaction levels:
+</p>
+<ul>
+<li>kAEAlwaysInteract -- Your application can interact with the user for any<br>
+reason, such as to confirm an action, notify the user of something, or request<br>
+information.</li>
+<li>kAECanInteract -- Your application can interact with the user if it needs<br>
+to request information from the user to continue.</li>
+<li>kAENeverInteract -- Your application should never present a user<br>
+interface while handling this Apple event.</li>
+</ul>
+<p>
+When present, an additional constant that's set by the sender of the event,<br>
+kAECanSwitchLayer, contributes to determining whether you may bring yourself to<br>
+the foreground if you need to interact.
+</p>
+<p>
+If the interaction-requested attribute is present, both its value and the user<br>
+interaction level (obtained from AEGetInteractionAllowed) determine whether you can<br>
+interact. Otherwise, the default rules apply: if the event is remote, the default is<br>
+"never interact"; otherwise the default is "can interact." This default scheme has the<br>
+advantage that the interaction levels work out neatly for events sent to your<br>
+application from yourself -- that is, from attached or embedded scripts running<br>
+inside your application or from your factored user interface -- since the default for<br>
+events on the same machine is "can interact." (Note that the "never interact" value for<br>
+the interaction-requested attribute is different from the "no interaction" user<br>
+interaction level described earlier. The former is an event attribute set by the sender<br>
+of the event, while the latter is a setting in the server application.)
+</p>
+<h2>DETERMINING WHETHER TO INTERACT</h2>
+<p>
+So how do you make this work in your application? Before initiating user interaction,<br>
+you'll need to make sure your application is the active application -- that is, it's in<br>
+the foreground. Let's take a moment to discuss the ways to become the active<br>
+application.
+</p>
+<p>
+In the old days, shortly after System 7 was released, developers used to call the<br>
+GetCurrentProcess routine, followed by SetFrontProcess to switch layers. In that case,<br>
+an application won't actually go to the foreground until the next call to WaitNextEvent,<br>
+which usually won't happen until the application returns to the main event loop.<br>
+Moreover, you can't later prevent your application from coming to the foreground if<br>
+you're able to correct a problem and no longer need to be in the foreground. Since<br>
+we're talking here about the situation where you're in an Apple event handler when<br>
+this happens, <i>don't</i> call SetFrontProcess to make yourself the active application;<br>
+there's no need to do this. Developers have also used the Notification Manager to put up<br>
+an alert, beep, place a diamond mark in the Application menu, call Mom in Florida, and<br>
+so on. This is somewhat better, but still more difficult than it has to be.
+</p>
+<p>
+It turns out that finding out whether you should interact with the user and getting<br>
+yourself into the foreground are really easy with the Apple Event Manager. What?<br>
+"Apple Event Manager" and "easy" in the same sentence? Yes, it's true! The correct,<br>
+easy, and fun way to do this is by calling AEInteractWithUser (which will call the<br>
+Notification Manager on your behalf to get the user's attention):
+</p>
+<p>
+<code>err := AEInteractWithUser(timeOutInTicks,</code><br>
+<code>&nbsp;&nbsp;&nbsp;notificationRec, idleProc);</code>
+</p>
+<p>
+What's more, this works even in situations where there's no Apple event being handled<br>
+(whenever you need to gratuitously get yourself into the foreground, right where you<br>
+are in your code).
+</p>
+<p>
+If AEInteractWithUser returns noErr, you're in the foreground and it's safe to<br>
+interact. That's it! The conditions discussed earlier are automatically tested for you, so<br>
+you won't have to do any of that yourself.
+</p>
+<p>
+Be sure to check the error that AEInteractWithUser returns. If it's not appropriate for<br>
+you to interact, AEInteractWithUser returns errAENoUserInteraction. Also, be aware<br>
+that AEInteractWithUser can time out if timeOutInTicks is reached before the user<br>
+responds to the notification. You should supply a reasonable timeout value for<br>
+timeOutInTicks, and if AEInteractWithUser times out, return errAETimeout or some<br>
+other suitable error as the result for your event handler. And remember that the<br>
+original Apple event can time out if the notification is outstanding for too long.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>If your application might have any windows visible</b> when you call<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AEInteractWithUser, you must use a filter procedure to handle update,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;activate, suspend, and resume events. If you don't do this, you'll lock out other<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;processes from getting any processor time. For details, including a description<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;of the hazards of failing to use a filter procedure, see Technote TB 37,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"Pending Update Perils."*
+</p>
+<p>
+Listing 1 shows a very simple routine that calls AEInteractWithUser, checking the<br>
+no-interaction flag if requested. You should call this routine before every alert or<br>
+dialog box that you may present, and handle the situation another way if you aren't<br>
+allowed to interact.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 1.</b> Interacting with a user while handling an Apple event
+</p>
+<p>
+<code>FUNCTION AllowInteraction(timeOutInTicks: LongInt;</code><br>
+<code>&nbsp;&nbsp;&nbsp;checkNoInteractFlag: Boolean): Boolean;</code><br>
+<code>VAR</code><br>
+<code>&nbsp;&nbsp;&nbsp;procSerNum: ProcessSerialNumber;</code><br>
+<code></code><br>
+<code>BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;(* If the no-interaction flag should be checked and that flag</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;is true, don't allow any interaction. *)</code><br>
+<code>&nbsp;&nbsp;&nbsp;IF checkNoInteractFlag &amp; gNoInteract THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AllowInteraction := false</code><br>
+<code>&nbsp;&nbsp;&nbsp;ELSE</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BEGIN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(* After executing the next line, your application should</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;be in the foreground, unless it times out, or unless</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;interaction isn't appropriate. Note that gIdleProc is</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;usually your Apple event idle proc. *)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err := AEInteractWithUser(timeOutInTicks, gNotificationRec,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gIdleProc);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IF err &lt;&gt; noErr THEN</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;... (* errAETimeout, or some other error *)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AllowInteraction := err = noErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;END;</code><br>
+<code>END;</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+So, in our earlier Close event example, the <b>saving yes</b> and <b>saving ask</b> cases work<br>
+out a little differently than you might have expected: if AEInteractWithUser returns<br>
+noErr, put up the alert or dialog; if not, return from the Close event handler with<br>
+errAENoUserInteraction, errAETimeout, or some other suitable error.
+</p>
+<h2>WHEN THE USER IS THERE</h2>
+<p>
+Now that you've determined whether or not to interact in a given situation, let's look at<br>
+a couple of things to keep in mind when you put up an alert or dialog box while<br>
+handling an Apple event.
+</p>
+<p>
+If you end up presenting an alert or dialog box in response to an Apple event for which<br>
+you shouldn't interact (because for some reason you weren't sure whether you should<br>
+interact or not), it's best to time yourself out by dismissing the dialog after a<br>
+reasonable time, even when no one has clicked any of its buttons. You might consider<br>
+doing this even if interaction is allowed; after a lengthy time, put your application out<br>
+of its misery and move on. Just be careful which button you choose -- you might want<br>
+the effect of canceling out the dialog, or producing the least damage, or losing the least<br>
+amount of work. If you choose to continue processing, be prepared to use suitable<br>
+defaults, if applicable.
+</p>
+<p>
+An example of an Apple event scenario that <i>always</i> involves interaction with the user<br>
+is handling the Edit Graphic Object (EGO) event. EGO is an Apple event specification<br>
+devised by Allan Bonadio in 1991. In the EGO scenario, an application that contains an<br>
+embedded object that was created by another application allows a user to edit the object<br>
+in the creating application. If you do need to pull yourself to the front immediately<br>
+(such as with EGO), bypassing any possibility of Notification requests, you should call<br>
+SetFrontProcess followed by AEInteractWithUser. You can insert the following just<br>
+before the call to AEInteractWithUser in Listing 1 (in C, the parameter procSerNum<br>
+in the GetCurrentProcess call needs to be a pointer):
+</p>
+<p>
+<code>err := GetCurrentProcess(procSerNum);</code><br>
+<code>err := SetFrontProcess(procSerNum);</code>
+</p>
+<p>
+Because the Apple event always results from a user action, in this situation it's OK to<br>
+force yourself into the foreground -- this may be the only reasonably significant case<br>
+where you should do this.
+</p>
+<p>
+And, as in the case of AEInteractWithUser, you should be careful about pending update<br>
+events while your alert or dialog box is on the screen.
+</p>
+<h2>WHEN NOBODY'S HOME</h2>
+<p>
+What if there isn't a user sitting at the computer? You'll want your application to cope<br>
+with limitations or restrictions on user interaction without failing, especially when it<br>
+comes to reporting errors properly.
+</p>
+<p>
+When your application is more likely to be controlled by a batch process, such as a<br>
+script that runs periodically in a production system, avoid requesting user interaction<br>
+when the computer is likely to be unattended. (When you're not sure how you're being<br>
+controlled, performing the tests discussed earlier in "Behind the Scenes" may help you<br>
+find out.) You don't want an alert popping up on a screen when there's no one to<br>
+respond -- this can cause the computer to come to its knees and, depending on what<br>
+other applications are running, may even cause it to stop processing anything else.
+</p>
+<p>
+<b>Dealing with the problem yourself.</b> Not being able to interact when you want to<br>
+is a problem that can arise from any of the following: you're faced with the error<br>
+errAENoUserInteraction (or your AllowInteraction function returns false);<br>
+AEInteractWithUser times out; or you implement "no interaction" as a user<br>
+interaction level. In some cases, the best thing to do is to try to handle the situation<br>
+yourself.
+</p>
+<p>
+If the situation doesn't require the user to make a choice or supply any information --<br>
+that is, if you just want to tell the user something -- don't hold up the works for this;<br>
+simply skip the interaction. But if you do require a choice or some information,<br>
+consider handling this situation intelligently in the application. Users will have a<br>
+better experience if they come back from lunch (or the next day) to find that your<br>
+application carried on instead of stopping after the first 20 seconds because it needed<br>
+some small piece of information. For example, if an Apple event is missing a required<br>
+parameter, and the inability to put up a dialog box means that you can't request<br>
+information from the user, see whether you can use default values instead.
+</p>
+<p>
+Be careful what behavior you choose when the user isn't available to decide. And don't<br>
+go overboard by trying to second-guess a user -- that can cause genuine irritation. If<br>
+you really, really need to interact but you can't, it's acceptable to generate an error<br>
+such as errAENoUserInteraction. Judge what's best for your application, based on who<br>
+uses it and how it's used.
+</p>
+<p>
+<b>Returning an error to the Apple event.</b> Sometimes the best way to avoid&nbsp;&nbsp;user<br>
+interaction is to return an error describing what went wrong through your Apple<br>
+event reply. For server applications, this is the <i>only</i> way to interact. It puts the<br>
+burden of responsibility in the hands of the Apple event's sender, which is often a<br>
+script or another application running on another machine. This way, you're off the<br>
+hook -- the decision about whether to find and disturb a user is made by another<br>
+process. As shown in Table 1, the Apple event error-reporting mechanism provides<br>
+several <i>error parameters</i> that you can use to more concisely describe the nature of the<br>
+problem.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Table 1.</b> Apple event error parameters
+</p>
+<p>
+<b>Parameter</b>
+</p>
+<ul>
+<li><b>AppleScript keyword</b></li>
+<li><b>Meaning</b></li>
+</ul>
+<p>
+keyErrorString or kOSAErrorMessage
+</p>
+<ul>
+<li>direct parameter</li>
+<li>The error message text. Strive to keep this clear and concise.</li>
+</ul>
+<p>
+keyErrorNumber or KOSAErrorNumber
+</p>
+<ul>
+<li>number</li>
+<li>The error number. Remember that Apple reserves all<br>
+negativekOSAErrorNumber values, as well as positive values up to 128.</li>
+</ul>
+<p>
+kOSAErrorPartialResult
+</p>
+<ul>
+<li>partial result</li>
+<li>If more than one item is being handled by the Apple event, you can return<br>
+the successful results processed so far.</li>
+</ul>
+<p>
+kOSAErrorOffendingObject
+</p>
+<ul>
+<li>from</li>
+<li>You can indicate which object has caused the problem.  This is especially<br>
+useful for coercions.</li>
+</ul>
+<p>
+kOSAErrorExpectedTypetoIn coercions, the type requested in the coercions.
+</p>
+<p>
+<b>Note:</b> The AppleScript keywords are those used in the error and on error commands.
+</p>
+<p>
+______________________________
+</p>
+<p>
+It's important to come up with unique error numbers, because the text for the<br>
+corresponding error messages should be localized and thus may vary from location to<br>
+location and system to system. The numbers are the best means for the sending<br>
+application or script to trap errors, since they won't vary.
+</p>
+<p>
+Normally the error code you return from your Apple event handler becomes the error<br>
+number, so there's no need to explicitly supply an error number parameter. It's<br>
+better to use the error number as the return value from your event handler, rather<br>
+than stuffing it as a parameter in the reply event yourself, because the error code will<br>
+become the return value for the call to AESend in the sending application or script,<br>
+which can immediately detect that something went wrong with the handling of the Apple<br>
+event. (However, if you suspend an Apple event, you must place the error number<br>
+explicitly in the error number parameter of the reply before resuming the event.) In<br>
+any case, all other error parameters must be placed in the reply event with<br>
+AEPutParamPtr or AEPutParamDesc. As an example of setting an error parameter,<br>
+here's how to provide an error string to an Apple event reply:
+</p>
+<p>
+<code>err := AEPutParamPtr(reply, keyErrorString,</code><br>
+<code>typeChar, @messageStr[1], length(messageStr));</code>
+</p>
+<p>
+If you want to cancel an operation, you'll typically return error -128<br>
+(userCanceledErr), which is the most reliable way to stop executing a script that's<br>
+sending an Apple event to your application. The exception to this rule occurs when the<br>
+Apple event was sent from a script command that's inside a<b>try</b> block that specifically<br>
+traps for that error; in this case, you may not be able to halt the script.
+</p>
+<p>
+Note that there are many cases where either you can't return errors or, if you can,<br>
+they'll be ignored. An Apple event sent with a send mode of kAENoReply doesn't have a<br>
+reply event. So if you try to stuff parameters such as error parameters into this nil<br>
+reply, you'll die horribly. You can also get a nil reply event if the Apple event is sent<br>
+by an AppleScript command in an <b>ignoring application responses</b> block.<br>
+Furthermore, the Finder ignores errors returned to Apple events it sends, such as the<br>
+Required suite's Open Documents event that's sent when icons are dragged onto your<br>
+application's icon. And a user can trip you up by enclosing an AppleScript command in<br>
+a <b>try</b> block (<b>try...on error...end try</b>); you'll still get a reply event, but the<br>
+script that executes the command can ignore any error information you return in the<br>
+reply, or ignore your error altogether. There's no specific strategy to follow in these<br>
+cases, since you can't know when this is happening, but be aware that it can happen.
+</p>
+<p>
+<b>Supplying a missing data value. </b>Part of the design of your error-handling<br>
+scheme includes determining that it isn't always necessary to return an error. Rather<br>
+than cause an error, sometimes it's better to return noErr and place a Boolean<br>
+indicator value or an empty list in the direct parameter as the result. This depends<br>
+mostly on which Apple event you're handling.
+</p>
+<p>
+For example, if you receive a request to find or use an object or a file that doesn't<br>
+exist, you should return an appropriate error, such as errAENoSuchObject or fnfErr.<br>
+(The exception to this is the Does Object Exist event, where you always want to return<br>
+a true or false value.) On the other hand, if the request is to search for all items<br>
+matching a certain criterion, you may want to return an empty list if nothing matches<br>
+the criterion. This way the sending application or script won't fail, and the script can<br>
+just check the result instead of having to trap for errors.
+</p>
+<h2>OUT ON GOOD BEHAVIOR</h2>
+<p>
+When a user is likely to be at the computer while a script controlling your application<br>
+is run or while another application is directly communicating with your application,<br>
+interacting with the user can be appropriate. Although having the application bring up<br>
+alerts and dialogs used to be the norm, it's becoming rarer. Since scripts can interact<br>
+with a user, why not let the script do the user interaction when it needs to?
+</p>
+<p>
+The techniques I've described in this column apply whether Apple events are an<br>
+alternative to the graphical interface or your application is designed specifically as an<br>
+Apple event server application. If your application will be controlled through Apple<br>
+events, decide when it's appropriate (and when it's not appropriate) to interact with<br>
+the user, by performing the tests discussed in this column. A well-planned interaction<br>
+and error code-and-message scheme can make it possible for users to run your<br>
+application in situations where a user isn't in control.
+</p>
+
+
+
+<b>RELATED READING</b>
+<ul>
+<li><i>Inside Macintosh: Interapplication Communication</i> by Apple<br>
+Computer, Inc. (Addison-Wesley, 1993), especially Chapter 4,<br>
+"Responding to Apple Events."</li>
+<li><i>Apple Event Registry: Standard Suites</i> (Apple Computer, Inc.,<br>
+1992).</li>
+<li>Technote TB 37, "Pending Update Perils."</li>
+</ul>
+
+
+
+<p>
+<b>CAL SIMONE</b> (mainevent@his.com) eats,&nbsp;&nbsp;drinks, and sleeps AppleScript.&nbsp;&nbsp;Just when<br>
+he thought he was out of the woods, the AppleScript Language Association (ASLA) was<br>
+born. Oh well,&nbsp;&nbsp;maybe next year he'll get to take that vacation. And why didn't Cal write<br>
+a column for the last couple of issues of <i>develop</i>? Let's see...his company shipped a<br>
+product, and he participated in six trade shows, moved to a new apartment, and solved<br>
+the world hunger problem (just kidding about that last one).*
+</p>
+
+<p>
+<b>Thanks to</b> Andy Bachorski, Sue Dumont, and Jon Pugh for reviewing this column.*
+</p>
+<p>
+<b>For recently updated vocabulary advice from Cal</b>, see this issue's CD<br>
+or<i>develop</i>'s Web site, under Additional Articles.*
+</p>
+
+
+
+
+
+
+</body>
+</html>

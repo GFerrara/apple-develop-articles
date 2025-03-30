@@ -1,0 +1,1556 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 12 - Extracted from develop-1997 -->
+<!-- on 2025-03-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 97 - High-Performance ACGIs in C</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>High-Performance ACGIs in C</h1>
+<h2>Ken Urquhart</h2>
+<p>
+<img src="img/155.gif" width="198 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">Asynchronous Common Gateway Interface (ACGI) programs allow</i>
+<br>
+
+<i style="font-size:125%;">Macintosh HTTP servers to do external processing tasks ranging</i>
+<br>
+
+<i style="font-size:125%;">from custom HTML forms processing to controlling hardware</i>
+<br>
+
+<i style="font-size:125%;">devices. ACGIs are usually written in AppleScript (which limits</i>
+<br>
+
+<i style="font-size:125%;">them to handling only one server request at a time).</i>
+<br>
+
+<i style="font-size:125%;">High-performance ACGIs, ones that are capable of handling</i>
+<br>
+
+<i style="font-size:125%;">multiple simultaneous requests, need to be written in a high-level</i>
+<br>
+
+<i style="font-size:125%;">language like C. The resulting ACGI will work with any HTTP server</i>
+<br>
+
+<i style="font-size:125%;">that supports the WebSTAR WWW Apple event suite.</i>
+</p>
+<p>
+Now that you've got your HTTP server up and running on your Macintosh, people are<br>
+flocking to your Web site by the thousands. The only problem is that you've written all<br>
+of your Asynchronous Common Gateway Interface programs (ACGIs) in AppleScript and<br>
+their performance is leaving much to be desired. You know you should be writing your<br>
+ACGIs in C for speed, but you think that will be a lot of work.
+</p>
+<p>
+Well, have I got news for you! A full-blown, multithreaded, high-performance ACGI<br>
+program for use with Macintosh HTTP servers is easier to write than you think. If<br>
+you've worked through one of the introductory Macintosh programming books, you<br>
+already know just about everything you need to.
+</p>
+<p>
+When all is said and done, an ACGI is little more than a simple, Apple event-aware<br>
+application that knows how to process Apple events in threads. Most of the work is<br>
+concentrated in decoding the Apple event parameters that make up each server request.<br>
+Hopefully you won't feel so overwhelmed by ACGIs written in C (or any other<br>
+high-level language) after you've read this article, and you can get on with using them<br>
+to hot-rod your Web site!
+</p>
+<p>
+I've made writing an ACGI easier for you by providing a generic ACGI program, which<br>
+accompanies this article on this issue's CD and <i>develop</i>'s Web site. I designed the<br>
+program (which I'll be referring to as an ACGI "shell") in such a way that you can<br>
+create your own ACGIs just by customizing a handful of routines. The messy details of<br>
+accepting multiple requests from an HTTP server, and then handling each request in<br>
+its own thread of execution, are taken care of for you. The program even relieves you<br>
+of the burden of URL-decoding the post and search arguments (including breaking up<br>
+all of the <i>name=value</i> pairs and translating them from the ISO-8859 Latin-1<br>
+character encoding used by most browsers into the standard Macintosh Roman<br>
+encoding).
+</p>
+<p>
+I've also provided a rich set of convenience routines that perform the following tasks:
+</p>
+<ul>
+<li>give you easy access to all the arguments and parameters that make up a<br>
+server request</li>
+<li>help you compose your HTML replies</li>
+<li>get and set various ACGI performance-tuning parameters</li>
+<li>allow you to gently turn away new requests when your ACGI is very busy</li>
+<li>gracefully shut down the ACGI if the need arises</li>
+</ul>
+<p>
+I've tried to provide enough support to make it possible for you to forget most of the<br>
+details of interacting with an HTTP server and concentrate on writing the code needed<br>
+to implement your custom form processing.
+</p>
+<p>
+The ACGI shell program, compiled under CodeWarrior as a PowerPC application with<br>
+no optimizations, takes up a little under 42K on disk (not including custom code that<br>
+you must add to process your requests). Memory requirements are dictated by the<br>
+number of concurrent requests you want to handle and how much stack space you<br>
+allocate to each running thread. In a typical case, the shell should provide uniform<br>
+response to about five to ten concurrent requests in a 1 MB memory footprint.
+</p>
+<h2>WHAT'S AN ACGI?</h2>
+<p>
+Before I can tell you what an ACGI is, I need to explain what a CGI is. This requires a<br>
+bit of background on what HTTP servers are all about.
+</p>
+<p>
+<b>WHAT'S A CGI?</b>
+</p>
+<p>
+HTTP servers are designed to do one thing and to do it very well: respond to requests<br>
+from Web browsers. If the request is for a file that resides somewhere in the server's<br>
+directory tree, the server locates the file, reads its contents, and then sends the<br>
+information back to the browser. Other requests such as image map or form processing<br>
+are handed off to auxiliary programs that communicate with the server by using the<br>
+Common Gateway Interface (CGI) protocol. When the server receives a request that<br>
+must be handled by a CGI program, the server starts up the CGI (if it wasn't already<br>
+running) and passes it the request. The CGI is responsible for parsing and decoding the<br>
+request parameters, processing them, and then composing the HTML response. The<br>
+server takes care of returning the response to the requesting browser.
+</p>
+<p>
+Being a computer program, a CGI can readily interact with databases, transaction<br>
+processing systems, or even connected serial devices to process a given request. So<br>
+CGIs allow your Web site to serve up a wide variety of dynamic information.
+</p>
+<p>
+The structure of a CGI program is dictated by the HTTP server and by the operating<br>
+system. The first Macintosh HTTP server was MacHTTP, written by Chuck Shotton. He<br>
+used Apple events for server/CGI communication and defined a special event suite<br>
+(WWW ) for this purpose. He later extended this suite, adding several more<br>
+parameters, when he wrote WebSTAR -- the commercial version of MacHTTP. His<br>
+suite has become the de facto standard for server/CGI interaction on the Macintosh. As<br>
+such, you can be sure that most other Macintosh HTTP servers will support it.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Copies of Chuck Shotton's Macintosh HTTP servers</b>, both a fully<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;functional copy of MacHTTP and a time-limited copy of WebSTAR, are<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;available athttp://www.starnine.com/software/software.html.*
+</p>
+<p>
+WebSTAR-like servers use custom Apple events to communicate with CGIs and can call<br>
+them either synchronously or asynchronously.
+</p>
+<ul>
+<li>Synchronous calls require the server to suspend processing while it waits<br>
+for the Apple event reply from the CGI.</li>
+<li>Asynchronous calls allow the server to send the request to the CGI and<br>
+then continue processing other connections while the CGI does its work.</li>
+</ul>
+<p>
+Asynchronous calls are almost always preferable for a popular Web site that's<br>
+receiving several connection requests a second.
+</p>
+<p>
+<b>SO NOW WILL YOU TELL ME WHAT AN ACGI IS?</b>
+</p>
+<p>
+An ACGI is a CGI that's called asynchronously by the HTTP server (you're surprised to<br>
+hear this?). Furthermore, when an ACGI is written to handle each request in a<br>
+separate thread of execution (enabling it to deal with multiple requests<br>
+simultaneously), it's referred to as a <i>threaded</i> ACGI.
+</p>
+<p>
+To write a threaded ACGI for the Macintosh, you need to understand the following:
+</p>
+<ul>
+<li>how Web browsers send CGI requests to HTTP servers</li>
+<li>how a Macintosh HTTP server uses the WWW Apple event suite to pass<br>
+these requests along to an ACGI</li>
+<li>how an ACGI can arrange to process each Apple event in a separate thread<br>
+of execution</li>
+<li>how to extract the URL-encoded data from the Apple events so that the<br>
+ACGI can process it</li>
+</ul>
+<p>
+While it would be just about impossible to describe each of these points in detail in one<br>
+short article, I do provide brief overviews as I talk about the functions of the ACGI<br>
+shell.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>For more information on writing a threaded ACGI</b>, refer to the book<br>
+<i>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Planning and Managing Web Sites on the Macintosh: The Complete Guide to</i><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>WebSTAR and MacHTTP</i>, which covers this topic in detail and is a good general<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;reference. Chapters 10 through 15 provide a wealth of information,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;especially Chapter 13, "Writing CGI Applications," and Chapter 15,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"Developing CGIs in C."*
+</p>
+<p>
+Like other threaded ACGI solutions (described in "Other Techniques for Developing a<br>
+Threaded ACGI"), my technique uses cooperative threads as opposed to preemptive<br>
+threads. This allows you to call any Toolbox routine you want when you're carrying out<br>
+your form processing. Preemptive threads currently have many Toolbox calling<br>
+restrictions (see the article "Concurrent Programming With the Thread Manager" in<br>
+<i>develop</i> Issue 17).
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OTHER TECHNIQUES FOR DEVELOPING A THREADED<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ACGI</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Processing Apple events in threads has been dealt with by several authors, and<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;there are a variety of solutions available.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The first solution was presented by Steve Sisak in late 1994 in his <i>MacTech</i><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>Magazine</i> article "Adding Threads to Sprocket." His AEThreads library allows<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;you to choose which Apple events to process in threads and gives you complete<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;control over all thread creation parameters.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A second, rather different approach can be found in the source code for the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Mail Tools ACGI written by Jon Norstad (available<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;athttp://charlotte.acns.nwu.edu/mailtools/techinfo.html).
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Greg Anderson, in his article "Futures: Don't Wait Forever" in <i>develop</i> Issue<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;22, presented a third solution involving a predispatch Apple event handler<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;that transparently threaded all Apple events.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;John O'Fallon described a fourth method in his <i>MacTech</i> article "Writing CGI<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Applications in C." In 1996, Grant Neufeld came up with a fifth solution in<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;conjunction with his CGI framework in his <i>MacTech</i> article "Threading Apple<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Events."
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Not wishing to break with this long tradition, the program described in this<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;article presents yet a sixth variation on the theme.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>THE STRUCTURE OF THE ACGI SHELL</h2>
+<p>
+Just as there are many ways of writing a Macintosh application, there are many ways<br>
+to write an ACGI shell. I've taken the simplest possible approach and avoided using an<br>
+application framework like MacApp or PowerPlant. My ACGI shell is written in plain C<br>
+and consists of three logically separate code sections:
+</p>
+<ul>
+<li>a main program that receives Apple event requests from an HTTP server<br>
+and processes them in separate threads of execution</li>
+<li>the set of customizable request-processing routines</li>
+<li>a set of convenience routines that simplify accessing the request data,<br>
+composing HTML response pages, and controlling the runtime behavior of the<br>
+ACGI</li>
+</ul>
+<p>
+The code is split into two source files (acgi.c and www.c), two include files (acgi.h and<br>
+www.h), and one resource file (acgi.rsrc). The main application and the convenience<br>
+routines are located in acgi.c, while the routines that you'll need to customize are in<br>
+www.c. The include file acgi.h contains the public prototypes for the convenience<br>
+functions you can call from www.c, while the include file www.h contains the function<br>
+prototypes and data structure definitions used by routines in both source files.
+</p>
+<h2>THE ROUTINES YOU NEED TO CUSTOMIZE</h2>
+<p>
+The file www.c contains six routines that you'll need to customize to implement your<br>
+own custom form processing. Four routines are called exactly once by the main<br>
+program while the ACGI is running. A fifth routine is called at idle time in the main<br>
+event loop, while the last one is called to process each HTTP request.
+</p>
+<p>
+<b>WWWGETLOGNAME</b>
+</p>
+<p>
+When the ACGI starts up, one of the first things the main program does is open a log<br>
+file to write progress messages to. It gets the name of the file by calling this routine:
+</p>
+<p>
+<code>char *WWWGetLogName(void);</code>
+</p>
+<p>
+Customizing WWWGetLogName allows you to specify the name of the log file. All you<br>
+typically need to do is write something like this:
+</p>
+<p>
+<code>char *WWWGetLogName(void)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;return "acgi.log";</code><br>
+<code>}</code>
+</p>
+<p>
+The one gotcha here is that I've used ANSI file I/O routines to simplify the program<br>
+code. So you must always be sure to return a valid ANSI filename (a plain filename<br>
+fewer than 31 characters long with no full or partial Macintosh file path prepended to<br>
+it). Note that some Macintosh ANSI libraries will allow filenames prefixed by partial<br>
+paths as long as the total length of the string is no longer than 255 characters.
+</p>
+<p>
+<b>WWWGETHTMLPAGES</b>
+</p>
+<p>
+After the log file is opened, the main program will ask you to build four HTML error<br>
+pages that are returned to the HTTP server when one of these general errors occurs:
+</p>
+<ul>
+<li>The ACGI is declining (refusing) to process requests.</li>
+<li>The ACGI is too busy to handle a new request.</li>
+<li>The ACGI has run out of memory.</li>
+<li>The ACGI has run into an unexpected problem.</li>
+</ul>
+<p>
+The routine you use to construct your pages is as follows:
+</p>
+<p>
+<code>void WWWGetHTMLPages(Handle refused, Handle tooBusy,</code><br>
+<code>&nbsp;&nbsp;&nbsp;Handle noMemory, Handle unexpectedError);</code>
+</p>
+<p>
+The main program passes in four handles. Each handle contains a standard HTTP<br>
+response header, and you're responsible for appending whatever HTML text you want<br>
+for the error pages. This allows you to control the "look and feel" of the error<br>
+messages returned by your ACGI. Perhaps the simplest approach here is to put the<br>
+HTML error pages into text files located in the same directory as your ACGI and then<br>
+append them to the handles with the convenience routine HTMLAppendFile:
+</p>
+<p>
+<code>void WWWGetHTMLPages(Handle refused, Handle tooBusy,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Handle noMemory, Handle unexpectedError</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;HTMLAppendFile(refused, "acgiRefused.html");</code><br>
+<code>&nbsp;&nbsp;&nbsp;HTMLAppendFile(tooBusy, "acgiTooBusy.html");</code><br>
+<code>&nbsp;&nbsp;&nbsp;HTMLAppendFile(noMemory, "acgiNoMemory.html");</code><br>
+<code>&nbsp;&nbsp;&nbsp;HTMLAppendFile(unexpectedError, "acgiUnexpected.html");</code><br>
+<code>}</code>
+</p>
+<p>
+Other convenience routines allow you to read the text from string and text resources,<br>
+so you have some flexibility here. The idea behind WWWGetHTMLPages is to allow you<br>
+to create your HTML error pages early in the initialization phase so that they'll always<br>
+be available for use.
+</p>
+<p>
+<b>WWWINIT</b>
+</p>
+<p>
+After the main program has completed its initialization steps, you're given a chance to<br>
+carry out any private initialization you need to do before beginning form processing.<br>
+This might include calling the ACGI runtime-tuning routines, initializing your own<br>
+global variables, reading resources into memory, building HTML template pages, or<br>
+opening connections to external databases and other computers. The prototype is
+</p>
+<p>
+<code>OSErr WWWInit(void);</code>
+</p>
+<p>
+If you run into problems during your initialization, simply return a nonzero code. The<br>
+main program checks the return code and immediately quits to the Finder when the<br>
+code is nonzero.
+</p>
+<p>
+If you have no special initialization to do, you could write this routine as follows:
+</p>
+<p>
+<code>OSErr WWWInit(void)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;return (noErr);</code><br>
+<code>}</code>
+</p>
+<p>
+<b>WWWQUIT</b>
+</p>
+<p>
+When the main program exits its main event loop, it calls this next routine to give you<br>
+one last chance to clean up after yourself (close files, database connections, and so on):
+</p>
+<p>
+<code>void WWWQuit(void);</code>
+</p>
+<p>
+If you don't need to do any cleaning up, you can write something as simple as this:
+</p>
+<p>
+<code>void WWWQuit(void) { }</code>
+</p>
+<p>
+<b>WWWPERIODICTASK</b>
+</p>
+<p>
+The main program allows you to carry out idle-time processing by calling the<br>
+following routine at the end of each pass through the main event loop:
+</p>
+<p>
+<code>OSErr WWWPeriodicTask(void);</code>
+</p>
+<p>
+This is where you'd place code to check that connections to other computers are still<br>
+alive or carry out any background processing initiated by previous server requests. If<br>
+you have no idle-time processing, you could write the following:
+</p>
+<p>
+<code>OSErr WWWPeriodicTask(void)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;return (noErr);</code><br>
+<code>}</code>
+</p>
+<p>
+The main program checks the return code from this routine and, if the code is nonzero,<br>
+quits to the Finder (after trying to gracefully abort all currently running threads).
+</p>
+<p>
+<b>WWWPROCESS</b>
+</p>
+<p>
+The last routine you must customize is the one that processes a server request:
+</p>
+<p>
+<code>OSErr WWWProcess(WWWRequest request);</code>
+</p>
+<p>
+When the HTTP server sends the ACGI a request through an Apple event, the main<br>
+program creates a new thread and passes the Apple event data into the thread. The<br>
+thread extracts the request data from the Apple event and packs it into a private data<br>
+structure. The thread then calls WWWProcess, passing a pointer to the private data<br>
+structure in the request parameter. You extract information from the data structure<br>
+with the convenience routines (described later).
+</p>
+<p>
+If you need to abort the processing of a request, you can return one of the four error<br>
+codes errWWWRefused, errWWWTooBusy, errWWWNoMemory, and<br>
+errWWWUnexpected. These cause the corresponding HTML error pages that you built<br>
+in the routine WWWGetHTMLPages to be returned to the server.
+</p>
+<h2>THE MAIN PROGRAM</h2>
+<p>
+As mentioned previously, the main program is a simple Macintosh application --<br>
+simpler than most of the programs described in introductory Macintosh programming<br>
+books. It's important to remember that an ACGI is meant to interact with HTTP<br>
+servers, not live users. It doesn't need any windows, complex menus, or even an About<br>
+box. Its purpose in life is to respond to Apple events and not mouse clicks or<br>
+keystrokes.
+</p>
+<p>
+Furthermore, you cannot assume that a human will always be watching the server<br>
+screen, ready to react to dialog boxes or alerts. If an ACGI runs into trouble, it should<br>
+try to recover as best it can and keep going. For example, if a required external<br>
+database shuts down, an ACGI might return an "out of service" response to each request<br>
+until the database comes back online. If an ACGI runs out of memory, it might simply<br>
+quit and allow the HTTP server to launch a fresh copy of it the next time a request<br>
+comes in. Hopefully, that would cure the problem in the short term.
+</p>
+<p>
+An efficient, low-overhead ACGI is therefore a windowless, Apple event-aware<br>
+program that posts no alerts or dialogs. It implements only the Apple and File menus.<br>
+For simplicity, the About item in the Apple menu does nothing except show the name of<br>
+the ACGI (although there's nothing to stop you from implementing an About box if you<br>
+want to). The File menu contains the single item Quit. A log file is used to record all<br>
+informational, error, and debugging messages.
+</p>
+<p>
+As shown in Listing 1, the main program starts by calling ACGIInit to set itself up.<br>
+Then it runs the main event loop, calling ACGIEvent to process each new event, until<br>
+the global gDone flag is set and all threads have completed. The program then cleans up<br>
+after itself by calling ACGIQuit.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 1.</b> The ACGI main program
+</p>
+<p>
+<code>// Include files and function prototypes</code><br>
+<code>...</code><br>
+<code></code><br>
+<code>static Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gDone = false;</code><br>
+<code>static unsigned long&nbsp;&nbsp;&nbsp;gThreads = 0;</code><br>
+<code>static long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gThreadSleep = 4;</code><br>
+<code>static long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gIdleSleep = 0x7FFFFFFF;</code><br>
+<code>static long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gWNEDelta = 8;</code><br>
+<code></code><br>
+<code>void main(void)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;EventRecord&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theEvent;</code><br>
+<code>&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sleep;</code><br>
+<code>&nbsp;&nbsp;&nbsp;unsigned long&nbsp;&nbsp;&nbsp;nextWNE;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;ACGIInit();</code><br>
+<code>&nbsp;&nbsp;&nbsp;while (!gDone || gThreads &gt; 0) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (gThreads &gt; 0)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sleep = gThreadSleep;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sleep = gIdleSleep;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (WaitNextEvent(everyEvent, &amp;theEvent, sleep, nil))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ACGIEvent(&amp;theEvent);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nextWNE = TickCount() + gWNEDelta;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;do {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;YieldToAnyThread();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;} while (TickCount() &lt;= nextWNE);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ACGIPeriodicTask();</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;ACGIQuit();</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>THREADS AND THE MAIN EVENT LOOP</b>
+</p>
+<p>
+The presence of threads affects the main event loop shown in Listing 1 in three ways.<br>
+First, the loop doesn't exit as long as there are active threads. This ensures that all<br>
+threads processing HTTP server requests complete their work before the ACGI shuts<br>
+down. Second, there are two different sleep times for WaitNextEvent: gThreadSleep<br>
+when threads are running and gIdleSleep when they're not. We need idle time to give<br>
+the threads a chance to run. This means we should use a rather small value for sleep<br>
+when gThreads is greater than 0. On the other hand, when there are no outstanding<br>
+requests, we should set sleep to a large value to avoid wasting CPU time. The exception<br>
+to this rule is when you have periodic tasks, in which case you should call<br>
+ACGISetSleeps in WWWInit to set gIdleSleep to get the idle time you need.
+</p>
+<p>
+Third, there's the inner loop that repeatedly calls YieldToAnyThread. This routine<br>
+causes the Thread Manager to turn control over to the oldest running thread. This<br>
+thread keeps control until it too calls YieldToAnyThread to turn control over to the<br>
+next running thread. This continues until the newest thread calls YieldToAnyThread and<br>
+control returns to the main event loop (see "Concurrent Programming With the<br>
+Thread Manager" in <i>develop</i> Issue 17).
+</p>
+<p>
+It's important to call YieldToAnyThread frequently inside your request-processing<br>
+code, usually after you complete a logical step in your processing and no less than<br>
+every 1 to 2 ticks of the Macintosh clock (1 tick = 1/60th of a second). Don't bother<br>
+putting your calls to YieldToAnyThread inside a timed loop as we did in the main event<br>
+loop. Just call it often throughout your code: it's a very low overhead call. The secret to<br>
+uniform response time to all requests is not to allow any one thread to hog the CPU.
+</p>
+<p>
+YieldToAnyThread is enclosed in a timed loop to give threads enough time to do useful<br>
+work when running on a Power Macintosh. Currently, there's a context switch from<br>
+native PowerPC mode to 680x0 emulation mode when WaitNextEvent is called. In<br>
+addition, historical reasons guarantee that WaitNextEvent always waits at least 1 tick<br>
+before it returns. Calling YieldToAnyThread only once per pass through the main event<br>
+loop means that threads would get time only once every 1/60th of a second and a lot of<br>
+useful CPU time would be wasted in mode switches. The timed loop could result in a<br>
+thousandfold performance increase -- without noticeably affecting other applications<br>
+-- for ACGIs running compute-bound threads that frequently yielded.
+</p>
+<p>
+<b>THE INITIALIZATION ROUTINE ACGIINIT</b>
+</p>
+<p>
+ACGIInit carries out seven distinct steps to get the ACGI going:
+</p>
+<ol>
+<li>Initialize the Toolbox.</li>
+<li>Get the name of the log file by calling WWWGetLogName and then open it.</li>
+<li>Check to see that both Apple events and the Thread Manager are present.</li>
+<li>Set up the menu bar.</li>
+<li>Install the Apple event handlers.</li>
+<li>Call WWWGetHTMLPages to build the four generic HTML error pages.</li>
+<li>Call WWWInit to initialize your processing environment.</li>
+</ol>
+<p>
+If ACGIInit runs into trouble, it calls ACGIFatal to write an error message to the log<br>
+file and quit. If you run into trouble in WWWInit you should write a meaningful error<br>
+message to the log with ACGILog and return a nonzero result code. ACGIInit will write<br>
+the code to the log and then quit.
+</p>
+<p>
+<b>THE LOGGING ROUTINES ACGILOG AND ACGIFATAL</b>
+</p>
+<p>
+Two routines that write zero-terminated strings to the log -- ACGILog and ACGIFatal<br>
+-- are shown in Listing 2. In these routines, gLog is an ANSI <b>FILE*</b>variable that's<br>
+local to the source file acgi.c. It points to the open log file.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 2.</b> Logging routines
+</p>
+<p>
+<code>void ACGILog(char *msg)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;DateTimeRec&nbsp;&nbsp;&nbsp;dt;</code><br>
+<code>&nbsp;&nbsp;&nbsp;ThreadID&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theThread;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;if (gLog == NULL)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;</code><br>
+<code>&nbsp;&nbsp;&nbsp;GetTime(&amp;dt);</code><br>
+<code>&nbsp;&nbsp;&nbsp;GetCurrentThread(&amp;theThread);</code><br>
+<code>&nbsp;&nbsp;&nbsp;fprintf(gLog, "%4d/%02d/%02d\t%02d:%02d:%02d\t%010lu\t%s\n",</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theThread, msg);</code><br>
+<code>&nbsp;&nbsp;&nbsp;fflush(gLog);</code><br>
+<code>}</code><br>
+<code></code><br>
+<code>void ACGIFatal(char *reason)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (gLog != NULL) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ACGILog(reason);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ACGILog("That was a fatal error...shut down.");</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;ExitToShell();</code><br>
+<code>}</code>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+ACGILog prefixes each message with the date and time and the ID number of the thread<br>
+it was called in. The items are tab-separated so that you can later import the log into a<br>
+spreadsheet and sort it by date, time, or thread ID. This can be useful when you're<br>
+trying to debug an ACGI or gather statistics based on the messages you wrote into the<br>
+log during processing. ACGIFatal calls ACGILog to write its message to the log and then<br>
+quits the program immediately without waiting for running threads to complete. It's<br>
+meant to be called only from within ACGIInit.
+</p>
+<p>
+<b>PERIODIC TASKS AND THE TERMINATION ROUTINE</b>
+</p>
+<p>
+ACGIPeriodicTask runs periodic tasks by calling your WWWPeriodicTask routine and<br>
+then checking for a nonzero result code (in which case it writes the code to the log and,<br>
+if the code is positive, sets gDone to true). The termination routine ACGIQuit is the last<br>
+routine called by the main program. It shuts down processing by calling your<br>
+WWWQuit routine and then closes the log.
+</p>
+<p>
+<b>EVENT HANDLING IN THE MAIN EVENT LOOP</b>
+</p>
+<p>
+Since an ACGI is basically a simple Macintosh application with no windows, no About<br>
+box, and only the Apple menu and File menu (which supports the single item Quit),<br>
+you don't have to worry about activate and update events, and suspend/resume events<br>
+only need to set the cursor to an arrow. Keystrokes are important only if they're<br>
+Command-key equivalents that might represent a menu selection. This limited event<br>
+handling is carried out entirely in the routine ACGIEvent and its small support routine<br>
+DoMenu (for menu and Command-key handling). ACGILog is used to report any errors<br>
+that are encountered.
+</p>
+<p>
+ACGIEvent doesn't need to do any special processing at this level to handle threaded<br>
+Apple events. It just calls AEProcessAppleEvent like any other application. Details of<br>
+the threading process are hidden away in the Apple event handler that's called in<br>
+response to HTTP server requests.
+</p>
+<h2>APPLE EVENT SUPPORT IN THE ACGI</h2>
+<p>
+The ACGI must support the four core Apple events and the custom event sent by HTTP<br>
+servers and must be able to process HTTP events in threads. Here are the details of<br>
+how the ACGI shell implements the required Apple events and the threading of the<br>
+server requests.
+</p>
+<p>
+<b>SUPPORTING CORE APPLE EVENTS</b>
+</p>
+<p>
+Any application that supports Apple events must support the four core events (Open<br>
+Application, Open Document, Print Document, and Quit Application), as well as any<br>
+custom Apple events needed for communication with other programs. Because the ACGI<br>
+doesn't have any documents, doesn't do any printing, and does all the application<br>
+initialization before accepting the first Apple event, it can deal with the four core<br>
+events with the single handler HandleAECore:
+</p>
+<p>
+<code>#define kQuitCoreEvent 1</code><br>
+<code>#define kOtherCoreEvent 0</code><br>
+<code>static pascal OSErr HandleAECore(AppleEvent *event,</code><br>
+<code>&nbsp;&nbsp;&nbsp;AppleEvent *reply, long refCon)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (refCon == kQuitCoreEvent)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gDone = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;return (noErr);</code><br>
+<code>}</code>
+</p>
+<p>
+The ACGI sets the handler reference constant, refCon, to kOtherCoreEvent for the<br>
+'oapp', 'odoc', and 'pdoc' events and to kQuitCoreEvent for the 'quit' event. When the<br>
+handler is called, it simply returns noErr if the refCon is kOtherCoreEvent and sets<br>
+gDone to true if the refCon is kQuitCoreEvent.
+</p>
+<p>
+<b>THREADING HTTP SERVER REQUESTS</b>
+</p>
+<p>
+The WWW Apple event class defines a single event ID ('sdoc') to pass requests to ACGI<br>
+programs. This is the event that the ACGI shell responds to. To handle multiple server<br>
+requests at once, the ACGI must process each request in its own thread of execution.
+</p>
+<p>
+This leads to some complications in the code because the Apple Event Manager was<br>
+designed to have only one event active at any given time. To process multiple Apple<br>
+events in threads, the ACGI will have to suspend each new Apple event in the main<br>
+thread of execution, put each suspended event into its own thread for processing, and<br>
+then let each thread resume its suspended Apple event at the end of processing so that<br>
+replies are returned to the HTTP server.
+</p>
+<p>
+The one catch here is that when an event is suspended, the pointers to the event and<br>
+reply data structures become invalid. The ACGI must therefore make copies of the<br>
+event and reply data structures (and not just the pointers) before suspending an event.<br>
+These copies of the AEDescs are passed into the thread for processing.
+</p>
+<p>
+So, the processing flow for threading HTTP server requests is as follows:
+</p>
+<ol>
+<li>ACGIInit makes HandleSDOC the handler for HTTP server requests.</li>
+<li>The main event loop (running in the main thread) receives an HTTP<br>
+server request and calls AEProcessAppleEvent as usual.</li>
+<li>HandleSDOC (also running in the main thread) receives the Apple event.</li>
+<li>If there are too many threads running or the ACGI is refusing connections,<br>
+the handler immediately returns an HTML page indicating that the server<br>
+request cannot be processed. Otherwise, the handler allocates a handle called<br>
+<b>params</b> to hold copies of the Apple event and its reply. Note that the complete<br>
+data structures must be copied, not just the pointers to them, because the<br>
+pointers become invalid when the event is suspended.</li>
+<li>HandleSDOC creates a new thread and passes <b>params</b> into it. If the thread<br>
+cannot be created, <b>params</b> is disposed of and the error code is returned.</li>
+<li>HandleSDOC increments the count of running threads and then suspends<br>
+the current Apple event and returns. The main event loop is now free to accept<br>
+another server request.</li>
+<li>The main event loop regains control and calls YieldToAnyThread almost<br>
+immediately. Each processing thread is given time to run, and control<br>
+eventually passes to the new thread.</li>
+<li>The new thread begins life by calling SDOCThread. This routine makes<br>
+local copies of the suspended Apple event and its reply and then disposes of the<br>
+<b>params</b> handle that was passed to it by HandleSDOC.</li>
+<li>SDOCThread extracts parameters from the Apple event, URL-decodes<br>
+them, and then calls WWWProcess to process the server request.<br>
+WWWProcess calls YieldToAnyThread frequently to give time to other threads<br>
+and to allow the main thread to accept new Apple events. When WWWProcess<br>
+finishes, it returns a handle containing the HTML response page.</li>
+<li>SDOCThread places the response into its copy of the Apple event reply and<br>
+then resumes execution of the suspended event. The event in this thread is now<br>
+considered complete. You're guaranteed that no other Apple event will be<br>
+"current" at this time because HandleSDOC suspends each new event before any<br>
+of the processing threads are given time to run.</li>
+<li>The thread decrements the global counter gThreads and then returns<br>
+(causing the thread to be disposed of).</li>
+</ol>
+<p>
+With this processing flow as a guide, the associated code practically writes itself. The<br>
+HandleSDOC routine is shown in Listing 3.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 3.</b> Handling HTTP server requests
+</p>
+<p>
+<code>static unsigned long&nbsp;&nbsp;&nbsp;gMaxThreads = 10;</code><br>
+<code>static Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gRefusing = false;</code><br>
+<code>static long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gThreadStackSize = 0;</code><br>
+<code>static ThreadOptions&nbsp;&nbsp;&nbsp;gThreadOptions</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= kCreateIfNeeded | kFPUNotNeeded;</code><br>
+<code>typedef struct AEParams {</code><br>
+<code>&nbsp;&nbsp;&nbsp;AppleEvent&nbsp;&nbsp;&nbsp;event;</code><br>
+<code>&nbsp;&nbsp;&nbsp;AppleEvent&nbsp;&nbsp;&nbsp;reply;</code><br>
+<code>} AEParams;</code><br>
+<code></code><br>
+<code>void SDOCThread(void *threadParam);</code><br>
+<code>OSErr ACGIReturnHandle(AppleEvent *reply, Handle h);</code><br>
+<code></code><br>
+<code>pascal OSErr HandleSDOC(AppleEvent *event, AppleEvent *reply,</code><br>
+<code>&nbsp;&nbsp;&nbsp;long refCon)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;AEParams**&nbsp;&nbsp;&nbsp;params;</code><br>
+<code>&nbsp;&nbsp;&nbsp;ThreadID&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;newThreadID;</code><br>
+<code>&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;// [1]&nbsp;&nbsp;&nbsp;Too many threads already running?</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (gThreads &gt;= gMaxThreads)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return (ACGIReturnHandle(reply, gHTMLTooBusy));</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;// [2]&nbsp;&nbsp;&nbsp;Should we handle this request?</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (gDone || gRefusing)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return (ACGIReturnHandle(reply, gHTMLRefused));</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;// [3]&nbsp;&nbsp;&nbsp;OK to run...make copies of event and reply.</code><br>
+<code>&nbsp;&nbsp;&nbsp;params = (AEParams**) NewHandle(sizeof(AEParams));</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (params == nil)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return (errAEEventNotHandled);</code><br>
+<code>&nbsp;&nbsp;&nbsp;(*params)-&gt;event = *event;&nbsp;&nbsp;&nbsp;// Copy the data structures...</code><br>
+<code>&nbsp;&nbsp;&nbsp;(*params)-&gt;reply = *reply;&nbsp;&nbsp;&nbsp;// ...not just the pointers to them!</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;// [4]&nbsp;&nbsp;&nbsp;Create the thread, passing in the copies of event and</code><br>
+<code>&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;reply.</code><br>
+<code>&nbsp;&nbsp;&nbsp;err = NewThread(kCooperativeThread,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ThreadEntryProcPtr) SDOCThread, (void*) params,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gThreadStackSize, gThreadOptions, nil, &amp;newThreadID);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (err != noErr) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DisposeHandle((Handle) params);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return (err);</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;// [5]&nbsp;&nbsp;&nbsp;Increment the count of running threads and then suspend</code><br>
+<code>&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the current event so that we can accept new events.</code><br>
+<code>&nbsp;&nbsp;&nbsp;gThreads++;</code><br>
+<code>&nbsp;&nbsp;&nbsp;return (AESuspendTheCurrentEvent(event));</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+Global variables guide the actions of HandleSDOC. The maximum number of concurrent<br>
+processing threads is controlled by gMaxThreads. You can get and set this value with<br>
+the convenience routines ACGIGetMaxThreads and ACGISetMaxThreads. If gRefusing is<br>
+true, the handler will return the HTML page stored in gHTMLRefused and not process<br>
+the event (you build this page in your custom routine WWWGetHTMLPages). You set<br>
+gRefusing by calling ACGIRefuse. If you're really concerned about heap fragmentation,<br>
+you might want to create a pool of preallocated threads during initialization with the<br>
+number of threads in the pool equal to gMaxThreads. Threads are recycled into the<br>
+pool, limiting fragmentation. This is the approach taken by Grant Neufeld in his ACGI<br>
+framework (see "Threading Apple Events" in the April 1996 issue of <i>MacTech</i><br>
+<i>Magazine</i>).
+</p>
+<p>
+The globals gThreadStackSize and gThreadOptions give you control over how threads<br>
+are created. The convenience routines ACGIGetThreadParams and ACGISetThreadParams<br>
+allow you to get and set their values. The default stack size of 0 causes the Thread<br>
+Manager to allocate a 24K stack to each thread. (Thread creation options are described<br>
+in detail in "Concurrent Programming With the Thread Manager" in <i>develop</i> Issue 17.)
+</p>
+<p>
+If your WWWProcess routine (or any routine that it calls) uses a lot of stack space<br>
+for local variables, you might have to increase the thread stack size. You should do this<br>
+in your WWWInit routine. You'll know if you're running out of stack space in your<br>
+ACGI because your server computer will usually lock up when a running thread's stack<br>
+overflows the heap space allocated to it. So remember, if your server keeps freezing<br>
+up or bombing, and you don't think your code is the problem, try increasing the stack<br>
+size allocated to your threads and then increase the ACGI memory allocation by roughly<br>
+the increase in stack size multiplied by your chosen value of gMaxThreads.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>The Thread Manager has routines that check</b> how much stack space a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;given thread is using. You could therefore write a debugging macro that logs<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the stack space remaining before calling YieldToAnyThread. This could be<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;useful in isolating where the problem is after the crash -- but it wouldn't<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;actually stop the thread from exhausting its stack space because that happens<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;between yields.*
+</p>
+<h2>HTTP REQUEST PROCESSING</h2>
+<p>
+Each thread created by HandleSDOC won't start running until the main event loop calls<br>
+YieldToAnyThread. When it's time for a new thread to run, the Thread Manager saves<br>
+the state of the thread that just yielded, sets up the new thread's environment, and then<br>
+calls SDOCThread. This routine is where all the real work of the ACGI takes place --<br>
+and where your custom processing routine WWWProcess is invoked.
+</p>
+<p>
+SDOCThread is the longest and most complicated routine in the ACGI. It's responsible<br>
+for extracting all request parameters, URL-decoding the search and post arguments,<br>
+packing the parameters into a WWWRequest data structure, calling WWWProcess to<br>
+process the request, placing the HTML response page into the server reply, and then<br>
+resuming the Apple event to send the reply back to the server.
+</p>
+<p>
+Before looking at the code, it's a good idea to go over exactly what's packed into the<br>
+'sdoc' Apple event. A client browser asks the server to run an ACGI either by<br>
+referencing the ACGI's URL or by submitting HTML form pages that specify the ACGI as<br>
+its action.
+</p>
+<p>
+A direct reference is just the URL of the ACGI:
+</p>
+<p>
+<code>http://www.test.com/test.acgi</code>
+</p>
+<p>
+To invoke an ACGI as the action of a form, you need to write HTML code like this:
+</p>
+<p>
+<code>&lt;FORM METHOD=GET ACTION="http://www.test.com/test.acgi"&gt;</code><br>
+<code>&nbsp;&nbsp;&nbsp;...form input items...</code><br>
+<code>&lt;/FORM&gt;</code>
+</p>
+<p>
+or similar code for METHOD=POST. In both cases, you can supply extra arguments to<br>
+the ACGI by adding them to the end of the URL like this:
+</p>
+<p>
+<code>http://www.test.com/test.acgi$path_args?search_args</code>
+</p>
+<p>
+The <i>path arguments</i> are everything between the dollar sign ($) and the question mark<br>
+(?), while the <i>search arguments</i> are everything following the question mark. The<br>
+order of the $ and the ? are important. If you put the ? before the $, everything<br>
+following the ? (including the $ and what comes after it) is considered part of the<br>
+search arguments.
+</p>
+<p>
+When you're using forms, you can specify a method of either GET or POST. All of your<br>
+form's input variables are URL-encoded. If you specify GET, the input variables are<br>
+tacked onto the end of the search arguments; if you use POST, they're placed into a<br>
+separate parameter called the <i>post arguments</i> and sent separately.
+</p>
+<p>
+URL encoding isn't particularly fancy. All it means is that the input field names and<br>
+field values are written out as <i>name=value</i> pairs, and all such pairs are placed into one<br>
+long parameter with each pair separated from the next by an ampersand (&amp;). All<br>
+spaces in the original input variables are replaced by plus signs (+) and any special<br>
+characters are replaced by their ISO-8859 Latin-1 hexadecimal equivalents in the<br>
+form %xx (where xx represents the two hex digits identifying the character).
+</p>
+<p>
+Any or all of these arguments (if present), along with a series of parameters that<br>
+describe the client browser and the server, are placed into the 'sdoc' Apple event and<br>
+sent to the ACGI by the HTTP server. Each parameter is identified in the Apple event by<br>
+4-character keyword names. The ACGI passes these keyword names to the Apple Event<br>
+Manager to extract the various parameters.
+</p>
+<p>
+<b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;For a full description of the keywords</b>, refer to <i>Planning and Managing</i><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>Web Sites on the Macintosh: The Complete Guide to WebSTAR and MacHTTP</i>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Chapters 13 and 15.*
+</p>
+<p>
+The five most important keywords to be aware of are as follows:
+</p>
+<ul>
+<li>kPathArgsKeyword -- the parameter that contains the path arguments<br>
+(the text between the $ and the ?)</li>
+<li>kSearchArgsKeyword -- the search arguments (everything after the ?)</li>
+<li>kPostArgsKeyword -- the post arguments</li>
+<li>kUserAgentKeyword -- the name and version of the browser that made the<br>
+request</li>
+<li>kMethodKeyword -- the name of the method (such as GET, POST, or<br>
+ACTION) by which the ACGI was called</li>
+</ul>
+<p>
+The path, search, and post arguments hold the data that makes up a request. The<br>
+browser name lets you decide which HTML features you might want to include in your<br>
+response page. For example, you might not want to use the latest HTML features of<br>
+Netscape Navigator<b><code>TM</code></b>in your response page if the browser name says that the client is<br>
+an old version of Mosaic that doesn't understand tables and frames.
+</p>
+<p>
+Most of the code in SDOCThread (excerpted in Listing 4) deals with extracting<br>
+parameters from the event and then breaking up the search and post arguments into<br>
+<i>name=value</i> pairs.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 4.</b> The SDOCThread routine
+</p>
+<p>
+<code>static void SDOCThread(void *threadParam)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;WWWRequest&nbsp;&nbsp;&nbsp;request;</code><br>
+<code>&nbsp;&nbsp;&nbsp;Size&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;spaceNeeded, responseSize;</code><br>
+<code>&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;// [1]&nbsp;&nbsp;&nbsp;Copy event and reply to local storage.</code><br>
+<code>&nbsp;&nbsp;&nbsp;AEParams** params = (AEParams**) threadParam;</code><br>
+<code>&nbsp;&nbsp;&nbsp;AppleEvent event = (*params)-&gt;event;</code><br>
+<code>&nbsp;&nbsp;&nbsp;AppleEvent reply = (*params)-&gt;reply;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;DisposeHandle((Handle) params);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;// [2]&nbsp;&nbsp;&nbsp;Initialize request structure.</code><br>
+<code>&nbsp;&nbsp;&nbsp;memset(&amp;request, 0, sizeof(request));</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;// [3]&nbsp;&nbsp;&nbsp;Allocate storage for params/args.</code><br>
+<code>&nbsp;&nbsp;&nbsp;spaceNeeded = ACGIParamSize(&amp;event);</code><br>
+<code>&nbsp;&nbsp;&nbsp;request.storage = NewHandleClear(spaceNeeded);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (request.storage == nil) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;&nbsp;&nbsp;msg[128];</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sprintf(msg, "SDOCThread: no storage memory: %lu bytes.",</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;spaceNeeded);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ACGILog(msg);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = ACGIReturnHandle(&amp;reply, gHTMLNoMemory);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gDone = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto Done;</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;HLockHi(request.storage);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;// [4]&nbsp;&nbsp;&nbsp;Copy params/args into position.</code><br>
+<code>&nbsp;&nbsp;&nbsp;err = ACGICopyArgs(&amp;event, &amp;request);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (err != noErr) goto Done;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;// [5]&nbsp;&nbsp;&nbsp;Decode URL-encoded search and post arguments.</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (strlen(*request.storage + (long) request.searchArgs) &gt; 0) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = ACGIURLDecode(</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*request.storage + (long) request.searchArgs,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;request.searchNum, &amp;request.searchNames,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;request.searchValues);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (err != noErr) goto Done;</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (strlen(*request.storage + (long) request.postArgs) &gt; 0) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = ACGIURLDecode(*request.storage + (long) request.postArgs,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;request.postNum, &amp;request.postNames,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;request.postValues);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (err != noErr) goto Done;</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;HUnlock(request.storage);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;// [6]&nbsp;&nbsp;&nbsp;Allocate HTML response.</code><br>
+<code>&nbsp;&nbsp;&nbsp;request.response = NewHandleClear(gHTTPHeaderLen);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (request.response == nil) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gDone = true;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = ACGIReturnHandle(&amp;reply, gHTMLNoMemory);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto Done;</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;BlockMoveData(gHTTPHeader, *request.response, gHTTPHeaderLen);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;// [7]&nbsp;&nbsp;&nbsp;Call the custom processor.</code><br>
+<code>&nbsp;&nbsp;&nbsp;err = WWWProcess(&amp;request);</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;// [8]&nbsp;&nbsp;&nbsp;Put the response into the reply and resume the Apple</code><br>
+<code>&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;event.</code><br>
+<code>Done:</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (request.storage != nil) DisposeHandle(request.storage);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (request.searchNames != nil)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DisposeHandle(request.searchNames);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (request.searchValues != nil)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DisposeHandle(request.searchValues);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (request.postNames != nil) DisposeHandle(request.postNames);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (request.postValues != nil) DisposeHandle(request.postValues);</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;responseSize = GetHandleSize(request.response);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (err == noErr &amp;&amp; request.response != nil</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;&amp; responseSize &gt; gHTTPHeaderLen)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = ACGIReturnHandle(&amp;reply, request.response);</code><br>
+<code>&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch (err) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case errWWWNoMemory:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = ACGIReturnHandle(&amp;reply, gHTMLNoMemory);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case errWWWRefused:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = ACGIReturnHandle(&amp;reply, gHTMLRefused);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case errWWWTooBusy:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = ACGIReturnHandle(&amp;reply, gHTMLTooBusy);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case errWWWUnexpected:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = ACGIReturnHandle(&amp;reply, gHTMLUnexpectedError);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = ACGIReturnHandle(&amp;reply, gHTMLUnexpectedError);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (request.response != nil) DisposeHandle(request.response);</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;// [9]&nbsp;&nbsp;&nbsp;Put error code into the Apple event (if needed).</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (err != noErr) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;long errorResult = err;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Must be long integer.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AEPutParamPtr(&amp;reply, keyErrorNumber, typeLongInteger,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;errorResult, sizeof(long));</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;// [10]&nbsp;&nbsp;&nbsp;Resume the event, decrement running thread count, write</code><br>
+<code>&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to the log.</code><br>
+<code>&nbsp;&nbsp;&nbsp;AEResumeTheCurrentEvent(&amp;event, &amp;reply,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(AEEventHandlerUPP) kAENoDispatch, 0);</code><br>
+<code>&nbsp;&nbsp;&nbsp;gThreads--;</code><br>
+<code>&nbsp;&nbsp;&nbsp;ACGILog("Done.");</code><br>
+<code>&nbsp;&nbsp;&nbsp;return;</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+The only item passed to your custom WWWProcess routine is a pointer to the<br>
+WWWRequestRecord. You access the items stored in the record using the convenience<br>
+routines that are defined later.
+</p>
+<p>
+<b>EXTRACTING PARAMETERS FROM THE APPLE EVENT</b>
+</p>
+<p>
+The routines ACGIParamSize and ACGICopyArgs repeatedly call the Apple Event<br>
+Manager to get the size and the text of each parameter. ACGICopyArgs moves each<br>
+successive parameter into the <b>request.storage</b> handle in the WWWRequestRecord<br>
+data structure (see acgi.h). It also places the offset of each parameter, relative to the<br>
+start of the handle, into corresponding pointer variables in<b>request</b>. Because most<br>
+parameters are only 10 to 100 bytes in length, it seemed far more efficient to pack<br>
+them all into a single handle. This avoids the overhead of making multiple calls to the<br>
+Memory Manager to allocate one handle for each parameter and then make multiple<br>
+calls to HLock and HUnlock when manipulating the parameters during processing.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Another way of storing the parameters</b> is to place each parameter into<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;its own handle. See Jon Norstad's Mail Tools code (available<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;athttp://charlotte.acns.nwu.edu/mailtools/techinfo.html) for an example of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;this other approach.*
+</p>
+<p>
+All parameters are stored as text strings, even the connection ID (a long integer).<br>
+Missing or empty parameters are stored as zero-length strings so that the ACGI can<br>
+handle requests from HTTP servers that only partially implement the full WWW <br>
+Apple event suite (there's no guarantee a given server program will pass your ACGI all<br>
+the parameters defined in the suite). You can get the numeric value of any parameter<br>
+by calling the convenience routine HTTPGetLong.
+</p>
+<p>
+<b>DECODING URL-ENCODED POST ARGUMENTS</b>
+</p>
+<p>
+The search and the post argument strings are URL-decoded by the routine<br>
+ACGIURLDecode following the prescription outlined in Chapter 13 of <i>Planning and</i><br>
+<i>Managing Web Sites on the Macintosh: The Complete Guide to WebSTAR and MacHTTP</i>.
+</p>
+<p>
+The routine begins by counting all of the <i>name=value</i> pairs in the given string by<br>
+looking for <b>&amp;</b> separators. Two handles are then allocated to hold the<b>char*</b> pointers.<br>
+The string is then scanned, and the offset of each argument name and its associated<br>
+value are recorded in the arrays. Finally, the routine ACGIDecodeCStr is called to<br>
+convert each <i>name=value</i> pair from ISO-8859 Latin-1 encoding to the standard<br>
+Macintosh Roman encoding. The conversion table used by the popular Netscape<br>
+Navigator browser is employed here for compatibility. If you want to substitute<br>
+another 256-character translation table, you'll need to replace the ID=1000 'xlat'<br>
+resource located in the resource file acgi.rsrc.
+</p>
+<h2>CONVENIENCE ROUTINES</h2>
+<p>
+There are three sets of convenience routines that allow you to extract parameters from<br>
+a server request, build your HTML response page, and fine-tune the runtime<br>
+performance of the ACGI.
+</p>
+<p>
+<b>PARAMETER AND ARGUMENT EXTRACTION ROUTINES</b>
+</p>
+<p>
+Seven routines, identified by the prefix "HTTP," can be used to extract parameters or<br>
+post and search arguments from the WWWRequestRecord that's passed to the<br>
+WWWProcess routine. The enumeration WWWParameter contains the name by which<br>
+an individual parameter must be referenced:
+</p>
+<p>
+<code>typedef enum WWWParameter {</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_path_args = 0,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_username,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_password,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_from_user,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_client_address,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_server_name,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_server_port,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_script_name,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_content_type,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_referer,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_user_agent,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_action,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_action_path,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_method,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_client_ip,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_full_request,</code><br>
+<code>&nbsp;&nbsp;&nbsp;p_connection_id</code><br>
+<code>} WWWParameter;</code>
+</p>
+<p>
+Following are descriptions of the routines.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<code>Boolean HTTPLockParams(WWWRequest r);</code>
+</p>
+<p>
+Locks down the request parameters. Several items in the WWWRequestRecord are<br>
+stored as handles and must be locked down before the ACGI can access them.<br>
+HTTPLockParams locks the items down for you and HTTPUnlockParams (below)<br>
+releases them. It might be a good idea to unlock your parameters before calling<br>
+YieldToAnyThread.
+</p>
+<p>
+Convenience routines that return <b>const char*</b> pointers to parameters implicitly call<br>
+HTTPLockParams to lock down the WWWRequestRecord before they return the<br>
+pointers. Note that the request record remains locked when the routines return. The<br>
+routines that copy parameters and arguments into the character strings you pass in<br>
+will lock the request record while they're copying the information and then unlock it<br>
+before they return (but only if the data structure wasn't already locked on entry).
+</p>
+<p>
+<code>void HTTPUnlockParams(WWWRequest r);</code>
+</p>
+<p>
+Unlocks the request parameters.
+</p>
+<p>
+<code>const char *HTTPGetParam(WWWRequest r, WWWParameter par);</code>
+</p>
+<p>
+Gets a pointer to one of the parameter strings. This leaves r locked.
+</p>
+<p>
+<code>Boolean HTTPGetLong(WWWRequest r, WWWParameter par, long *i);</code>
+</p>
+<p>
+Gets the integer value of a parameter. The result is returned in i. The routine returns<br>
+false if the parameter is not an integer.
+</p>
+<p>
+<code>Boolean HTTPCopyParam(WWWRequest r, WWWParameter par, char *result,</code><br>
+<code>long len,</code><br>
+<code>&nbsp;&nbsp;&nbsp;long *actualLen);</code>
+</p>
+<p>
+Copies the parameter text into the character variable <b>result</b>. The length of <b>result</b> is<br>
+in <b>len</b>; the actual length of the parameter is returned in <b>actualLen</b>. The routine<br>
+returns false if the parameter identifier <b>par</b> is invalid.
+</p>
+<p>
+<code>long HTTPGetNumSrchArgs(WWWRequest r);</code><br>
+<code>long HTTPGetNumPostArgs(WWWRequest r);</code>
+</p>
+<p>
+Gets the number of search or post arguments.
+</p>
+<p>
+<code>Boolean HTTPGetSrchArgAt(WWWRequest r, long index, char *name,</code><br>
+<code>&nbsp;&nbsp;&nbsp;long nameLen, long *actualNameLen, char *value, long valueLen,</code><br>
+<code>&nbsp;&nbsp;&nbsp;long *actualValueLen);</code><br>
+<code>Boolean HTTPGetPostArgAt(WWWRequest r, long index, char *name,</code><br>
+<code>&nbsp;&nbsp;&nbsp;long nameLen, long *actualNameLen, char *value, long valueLen,</code><br>
+<code>&nbsp;&nbsp;&nbsp;long *actualValueLen);</code>
+</p>
+<p>
+Gets a search or post argument by absolute position. <b>index</b> is between 1 and the total<br>
+number of such arguments. <b>name</b> receives the name of the argument at position<br>
+<b>index</b>, and <b>value</b> receives the value. The lengths of the character array's name and<br>
+value are in <b>nameLen</b> and <b>valueLen</b>. The actual lengths of the items are returned in<br>
+<b>actualNameLen</b> and <b>actualValueLen</b>. The routine returns false if <b>index</b> is out of<br>
+range.
+</p>
+<p>
+<code>Boolean HTTPGetSrchArgCount(WWWRequest r, char *name,</code><br>
+<code>&nbsp;&nbsp;&nbsp;long *numValues);</code><br>
+<code>Boolean HTTPGetPostArgCount(WWWRequest r, char *name,</code><br>
+<code>&nbsp;&nbsp;&nbsp;long *numValues);</code>
+</p>
+<p>
+Gets the number of search or post arguments that have the field name <b>name</b>. The<br>
+number is returned in <b>numValues</b>. The routine returns false if there's no search or<br>
+post argument called <b>name</b>.
+</p>
+<p>
+<code>const char *HTTPGetMultipleSrchArg(WWWRequest r, char *name,</code><br>
+<code>&nbsp;&nbsp;&nbsp;long index);</code><br>
+<code>const char *HTTPGetMultiplePostArg(WWWRequest r, char *name,</code><br>
+<code>&nbsp;&nbsp;&nbsp;long index);</code>
+</p>
+<p>
+Tries to get the instance <b>index</b> of a multivalued search or post argument. The routine<br>
+returns an empty string if <b>index</b> is out of range or if <b>name</b> doesn't exist. The routine<br>
+leaves <b>r</b> locked on exit. <b>index</b> starts at 1.
+</p>
+<p>
+<code>Boolean HTTPGetLongMultipleSrchArg(WWWRequest r, char *name,</code><br>
+<code>&nbsp;&nbsp;&nbsp;long index, long *i);</code><br>
+<code>Boolean HTTPGetLongMultiplePostArg(WWWRequest r, char *name,</code><br>
+<code>&nbsp;&nbsp;&nbsp;long index, long *i);</code>
+</p>
+<p>
+Gets the integer value of the instance index of a multivalued search or post argument<br>
+called name. The routine returns the value in i, and returns false if index is out of<br>
+range or the argument is not an integer. index starts at 1.
+</p>
+<p>
+<code>Boolean HTTPCopyMultipleSrchArg(WWWRequest r, char *name, long index,</code><br>
+<code>&nbsp;&nbsp;&nbsp;char *value, long len, long *actualLen);</code><br>
+<code>Boolean HTTPCopyMultiplePostArg(WWWRequest r, char *name, long index,</code><br>
+<code>&nbsp;&nbsp;&nbsp;char *value, long len, long *actualLen);</code>
+</p>
+<p>
+Copies the contents of the instance <b>index</b> of a multivalued search or post argument<br>
+called <b>name</b>. The routine returns text in <b>value</b>. The length of the <b>value</b> string is in<br>
+len; the actual length of the <b>value</b> string is returned in <b>actualLen</b>. The routine<br>
+returns false if <b>index</b> is out of range or <b>name</b> doesn't exist. <b>index</b>starts at 1.
+</p>
+<p>
+<b>HTML PAGE COMPOSITION ROUTINES</b>
+</p>
+<p>
+There are ten routines, all prefixed with "HTML," to help you compose the HTML<br>
+response pages. The routines that allow you to append different types of data to the<br>
+response page are shown in Table 1; the handle to the response page is obtained by<br>
+calling HTMLGetResponseHandle.
+</p>
+<p>
+<code>Handle HTMLGetResponseHandle(WWWRequest r);</code>
+</p>
+<p>
+Gets the handle to the HTML response page.
+</p>
+<p>
+<code>OSErr HTMLClearPage(Handle r);</code>
+</p>
+<p>
+Clears the current response page (except for the HTTP header) and starts over.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Table 1.</b> Routines that append data to the HTML response page
+</p>
+<p>
+<b>Routine</b>
+</p>
+<ul>
+<li><b>Appends to response page</b></li>
+</ul>
+<p>
+<code style="font-size:110%;">OSErr HTMLAppendHandle(Handle r, Handle </code><b>h</b><code style="font-size:110%;">);</code>
+</p>
+<ul>
+<li>Contents of handle h</li>
+</ul>
+<p>
+<code style="font-size:110%;">OSErr HTMLAppendTEXT(Handle r, long iTEXTResID);</code>
+</p>
+<ul>
+<li>TEXT resource with ID iTEXTResID</li>
+</ul>
+<p>
+<code style="font-size:110%;">OSErr HTMLAppendString(Handle r, long iSTRResID);</code>
+</p>
+<ul>
+<li>STR resource with ID iSTRResID</li>
+</ul>
+<p>
+<code style="font-size:110%;">OSErr HTMLAppendIndString(Handle r, long iSTRResID, long index);</code>
+</p>
+<ul>
+<li>String at location <b>index</b> in STR# resource with ID iSTRResID</li>
+</ul>
+<p>
+<code style="font-size:110%;">OSErr HTMLAppendFile(Handle r, char *localFileName);</code>
+</p>
+<ul>
+<li>Local text file</li>
+</ul>
+<p>
+<code style="font-size:110%;">OSErr HTMLAppendCString(Handle r, char *cString);</code>
+</p>
+<ul>
+<li>C string</li>
+</ul>
+<p>
+<code style="font-size:110%;">OSErr HTMLAppendPString(Handle r, StringPtr pString);</code>
+</p>
+<ul>
+<li>Pascal string</li>
+</ul>
+<p>
+<code style="font-size:110%;">OSErr HTMLAppendBuffer(Handle r, char *buffer, long len);</code>
+</p>
+<ul>
+<li>Text buffer of length len</li>
+</ul>
+<p>
+______________________________
+</p>
+<p>
+<b>ACGI RUNTIME-TUNING ROUTINES</b>
+</p>
+<p>
+There are 13 routines that allow you to fine-tune the runtime behavior of the ACGI<br>
+without having to modify the code in acgi.c or directly set global variables.
+</p>
+<p>
+<code>void ACGIShutdown(void)</code>
+</p>
+<p>
+Shuts down the ACGI as soon as all current threads are finished.
+</p>
+<p>
+<code>Boolean ACGIIsShuttingDown(void)</code>
+</p>
+<p>
+Tests whether the ACGI is shutting down.
+</p>
+<p>
+<code>Boolean ACGIRefuse(Boolean refuse)</code>
+</p>
+<p>
+Sets whether to accept or reject requests.
+</p>
+<p>
+<code>unsigned long ACGIGetRunningThreads(void)</code>
+</p>
+<p>
+Gets the number of active threads.
+</p>
+<p>
+<code>unsigned long ACGIGetMaxThreads(void)</code><br>
+<code>void ACGISetMaxThreads(unsigned long newThreads)</code>
+</p>
+<p>
+Gets or sets the maximum number of threads allowed to run at the same time.
+</p>
+<p>
+<code>void ACGIGetSleeps(long *whenThreads, long *whenIdle)</code><br>
+<code>void ACGISetSleeps(long whenThreads, long whenIdle)</code>
+</p>
+<p>
+Gets or sets the sleep settings.
+</p>
+<p>
+<code>long ACGIGetWNEDelta(void)</code><br>
+<code>void ACGISetWNEDelta(long newDelta)</code>
+</p>
+<p>
+Gets or sets the time between calls to WaitNextEvent.
+</p>
+<p>
+<code>void ACGIGetThreadParams(Size *stack, ThreadOptions *options);</code><br>
+<code>void ACGISetThreadParams(Size stack, ThreadOptions options);</code>
+</p>
+<p>
+Gets or sets the thread stack size and creation options.
+</p>
+<p>
+<code>const char *ACGIGetHTTPHeader(void)</code>
+</p>
+<p>
+Gets a pointer to the standard HTTP header.
+</p>
+<p>
+<b>CUSTOMIZABLE ROUTINES</b>
+</p>
+<p>
+The six customizable routines in www.c allow you to adapt the ACGI shell to suit your<br>
+needs. I've supplied simple, straightforward samples of the routines in the file www.c.
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+The default version of the WWWProcess routine is shown in Listing 5. It returns a<br>
+page that displays all of the HTTP server request parameters in a nicely formatted<br>
+table. Note the use of the YIELD macro here. It provides a convenient way of yielding to<br>
+other threads and automatically aborting should the ACGI signal that it wants to quit.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 5.</b> The default version of WWWProcess
+</p>
+<p>
+<code>#define</code><br>
+<code>YIELD() { YieldToAnyThread(); \</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (ACGIIsShuttingdown()) \</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return (errWWWRefused); }</code><br>
+<code></code><br>
+<code>OSErr WWWProcess(WWWRequest request)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;Handle&nbsp;&nbsp;&nbsp;r = HTMLGetResponseHandle(request);</code><br>
+<code>&nbsp;&nbsp;&nbsp;char&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;s[1024], name[512], value[512];</code><br>
+<code>&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;len, i, n, iName, iValue;</code><br>
+<code>&nbsp;&nbsp;&nbsp;Boolean&nbsp;&nbsp;gotOne;</code><br>
+<code>&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;err;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;// Build a table to display the WebSTAR request parameters.</code><br>
+<code>&nbsp;&nbsp;&nbsp;err = HTMLAppendPString(r,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"\p&lt;HTML&gt;&lt;HEAD&gt;&lt;TITLE&gt;ACGI&lt;/TITLE&gt;&lt;/HEAD&gt;\r\n");</code><br>
+<code>&nbsp;&nbsp;&nbsp;YIELD();</code><br>
+<code>&nbsp;&nbsp;&nbsp;err = HTMLAppendCString(r,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"&lt;BODY&gt;&lt;H1&gt;ACGI Parameters&lt;/H1&gt;&lt;TABLE BORDER=0&gt;");</code><br>
+<code>&nbsp;&nbsp;&nbsp;YIELD();</code><br>
+<code>&nbsp;&nbsp;&nbsp;err = HTMLAppendCString(r,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"&lt;TR&gt;&lt;TD ALIGN=RIGHT NOWRAP&gt;&lt;B&gt;Path</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;arguments:&lt;/B&gt;&lt;/TD&gt;&lt;TD&gt;");</code><br>
+<code>&nbsp;&nbsp;&nbsp;YIELD();</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;if (HTTPCopyParam(request, p_path_args, s, 1023, &amp;len))</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = HTMLAppendCString(r, s);</code><br>
+<code>&nbsp;&nbsp;&nbsp;YIELD();</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;...&nbsp;&nbsp;// and so on, for all the other parameters</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;// Now show all the search arguments.</code><br>
+<code>&nbsp;&nbsp;&nbsp;err = HTMLAppendCString(r,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD ALIGN=RIGHT NOWRAP VALIGN=TOP&gt;"</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"&lt;B&gt;Search Arguments:&lt;/B&gt;&lt;/TD&gt;&lt;TD&gt;");</code><br>
+<code>&nbsp;&nbsp;&nbsp;YIELD();</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;n = HTTPGetNumSrchArgs(request);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (n &gt; 0) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for (i = 1; i &lt;= n; i++) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gotOne = HTTPGetSrchArgAt(request, i, name, 511, &amp;iName,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;value, 511, &amp;iValue);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (gotOne) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (i &gt; 1)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = HTMLAppendCString(r, "&lt;BR&gt;");</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = HTMLAppendCString(r, name);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = HTMLAppendCString(r, " = ");</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = HTMLAppendCString(r, value);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;YIELD();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err = HTMLAppendCString(r, "(none)");</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;...&nbsp;&nbsp;&nbsp;// and similarly for the post arguments</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;err = HTMLAppendCString(r,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"&lt;/UL&gt;&lt;/TD&gt;&lt;/TR&gt;&lt;/TABLE&gt;\r\n&lt;/BODY&gt;\r\n&lt;/HTML&amp;g;\r\n");</code><br>
+<code>&nbsp;&nbsp;&nbsp;return (err);</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<h2>OVER TO YOU</h2>
+<p>
+That's about it for writing threaded, high-performance ACGIs in C. I bet you thought it<br>
+was a lot more difficult than this, didn't you?
+</p>
+<p>
+A threaded ACGI written in a high-level language offers a significant performance<br>
+increase compared to an equivalent ACGI written in AppleScript. If you've been using<br>
+AppleScript exclusively to do your HTML form processing, I hope this article will<br>
+whet your appetite to try something a bit more daring. It's time to kick your Web site<br>
+into high gear and move it over into the fast lane!
+</p>
+<p>
+
+
+<b>REFERENCES</b>
+<ul>
+<li>"Futures: Don't Wait Forever" by Greg Anderson, <i>develop</i> Issue<br>
+22.</li>
+<li>"Concurrent Programming With the Thread Manager" by Eric<br>
+Anderson and Brad Post, <i>develop</i> Issue 17.</li>
+<li><i>MacTech Magazine</i> articles: "Threading Apple Events" by Grant<br>
+Neufeld, Vol. 12, No. 4 (April 1996); "Writing CGI Applications in C"<br>
+by John O'Fallon, Vol. 11, No. 9 (September 1995); and "Adding<br>
+Threads to Sprocket" by Steve Sisak, Vol. 10, No. 12 (December<br>
+1994). <i>MacTech Magazine</i> articles can be found at<br>
+http://web.xplain.com/mactech.com/magazine/features/<br>
+articlearchives.html.</li>
+<li><i>Planning and Managing Web Sites on the Macintosh: The Complete</i><br>
+<i>Guide to WebSTAR and MacHTTP</i> by Jon Wiederspan and Chuck Shotton<br>
+(Addison-Wesley, 1995). Chapter 13, "Writing CGI Applications,"<br>
+and Chapter 15, "Developing CGIs in C," are available in the file<br>
+"Developing CGIs.pdf" included in the WebSTAR documentation at<br>
+ftp://ftp.starnine.com/pub/docs/webstar_doc.sea.hqx.</li>
+</ul>
+
+
+
+<p>
+<b>KEN URQUHART</b> received his Ph.D. in physics in&nbsp;&nbsp;1989 and has been dividing his<br>
+time between physics and computer science ever since. Ken's work has taken him and<br>
+his wife from North America to Japan and back again. Their cats (who travel with<br>
+them wherever they go) have been extremely good sports about international travel.<br>
+Ken's pretty sure the cats understand English perfectly well -- they're simply<br>
+choosing to ignore him unless they want food, body heat, or the litter box cleaned.*
+</p>
+<p>
+<b>Thanks to</b> our technical reviewers Kevin Arnold, Steve Sisak, and Michelle Wyner.*
+</p>
+</body>
+</html>

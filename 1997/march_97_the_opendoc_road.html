@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 6 - Extracted from develop-1997 -->
+<!-- on 2025-03-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 97 - The OpenDoc Road</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>THE OPENDOC ROAD</h1>
+<h1>Making the Most of Memory in OpenDoc</h1>
+<h2>Troy Gaul and Vincent Lo</h2>
+<p>
+<img src="img/137.gif" width="180 px"></img>
+</p>
+<p>
+In Issue 28, we discussed how the OpenDoc Memory Manager works and how part<br>
+editors manage Toolbox memory. This time we'll examine ways to use memory more<br>
+efficiently in the OpenDoc environment. 
+</p>
+<p>
+We'll begin by talking about how to avoid memory leaks. Memory leaks, which can be a<br>
+problem when developing traditional Macintosh applications, are as much a concern in<br>
+OpenDoc. But because OpenDoc uses reference counting, there are a few extra things to<br>
+pay attention to. We'll also discuss how to handle parameters correctly to avoid<br>
+memory leaks, and we'll take a look at ways you can set up your part editor to<br>
+maximize memory usage.
+</p>
+<h2>AVOIDING MEMORY LEAKS</h2>
+<p>
+OpenDoc objects and part editors use a reference-counting scheme that enables<br>
+OpenDoc to keep track of which objects are in use. Each time a client acquires an object<br>
+(through the object's Acquire method), the object's reference count is incremented by<br>
+1. When the object is no longer being used, the client releases it (by calling the<br>
+object's Release method) and its reference count is decremented. The object's<br>
+reference count indicates how many references to the object are being held by clients.<br>
+When the reference count goes down to 0, the object can be destroyed without affecting<br>
+any other objects. For more information on how reference counting works in OpenDoc,<br>
+see the OpenDoc Road column in <i>develop</i> Issue 27, "Facilitating Part Editor Unloading."
+</p>
+<p>
+If the acquired object doesn't get released when it should, the reference count doesn't go<br>
+to 0 and the object remains in memory until the session ends. As a result, a memory<br>
+leak occurs because the occupied memory can't be used during the session.
+</p>
+<p>
+To avoid reference count errors, it helps to keep in mind which classes are<br>
+reference-counted and which methods affect an object's reference count. OpenDoc uses<br>
+reference counting on classes whose objects often have more than one client. These<br>
+classes are subclasses of ODRefCntObject, and many are classes that part editors<br>
+interact with directly.
+</p>
+<p>
+In general, if a method name starts with "Acquire," the reference count of the object<br>
+named in the method is incremented when the method is called. When the object is no<br>
+longer needed, the caller should release it. For example, if a part editor calls<br>
+ODDraft::AcquireFrame to access a frame object, the reference count of the returned<br>
+frame object is incremented. After the editor is done using the frame reference, a call<br>
+to the object's Release method (ODFrame::Release) must be made to avoid a memory<br>
+leak.
+</p>
+<p>
+Some methods return a reference-counted object without affecting the object's<br>
+reference count. These methods usually start with "Get." For example,<br>
+ODFacet::GetFrame returns the frame object with which the facet is associated without<br>
+incrementing the reference count of the frame object. In this case, the caller shouldn't<br>
+call ODFrame::Release. Typically, a Get method is used to return an invariant or<br>
+unchanged attribute of an object. In the case of ODFacet, the facet acquires and stores a<br>
+reference to its ODFrame object. This reference isn't released until the ODFacet object<br>
+is deleted. When ODFacet::GetFrame is called, ODFacet returns the stored reference to<br>
+the caller. Since this reference remains valid until the ODFacet is deleted, you can use<br>
+it as long as the ODFacet is a valid object. If you want to use the returned ODFrame<br>
+object beyond the ODFacet's lifetime, you should call Acquire on the ODFrame to ensure<br>
+that you have a valid reference to it.
+</p>
+<p>
+The best way to avoid reference count errors is to familiarize yourself with the<br>
+OpenDoc API and understand how it affects an object's reference count. The<i>OpenDoc</i><br>
+<i>Class Reference</i> provides a detailed description of reference counting for each method.
+</p>
+<p>
+<b>Temporary objects to the rescue.</b> The code for acquiring a reference-counted<br>
+object for a brief period of time and then releasing it turns out to be quite complicated.<br>
+Listing 1 shows how complicated it can be to handle a reference-counted object when<br>
+using exception-handling code.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 1.</b> Handling reference-counted objects
+</p>
+<p>
+<code>ODFrame* frame = kODNULL;</code><br>
+<code>ODVolatile(frame);</code><br>
+<code>// Make sure that the frame can be used in</code><br>
+<code>// the CATCH block.</code><br>
+<code>SOM_TRY</code><br>
+<code>&nbsp;&nbsp;&nbsp;// Acquire the frame.</code><br>
+<code>&nbsp;&nbsp;&nbsp;frame = draft-&gt;AcquireFrame(ev, id);</code><br>
+<code>&nbsp;&nbsp;&nbsp;// Do something with the frame here.</code><br>
+<code>&nbsp;&nbsp;&nbsp;...</code><br>
+<code>&nbsp;&nbsp;&nbsp;// Release it when done.</code><br>
+<code>&nbsp;&nbsp;&nbsp;frame-&gt;Release(ev);</code><br>
+<code>SOM_CATCH_ALL</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (frame)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;frame-&gt;Release(ev);</code><br>
+<code>SOM_ENDTRY</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+To help alleviate this problem, OpenDoc provides a utility library that uses<br>
+stack-based C++ objects to wrap references to OpenDoc reference-counted objects.<br>
+These C++ objects are called <i>temporary objects</i>. Whenever such a C++ object goes out<br>
+of scope, its destructor is called and releases the reference-counted object.
+</p>
+<p>
+The code fragment shown in Listing 2 does the same thing as the example in Listing 1<br>
+but uses temporary objects instead. This code is simpler and less error-prone.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 2.</b> Easier handling of reference-counted objects
+</p>
+<p>
+<code>SOM_TRY</code><br>
+<code>&nbsp;&nbsp;&nbsp;TempODFrame frame =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;draft-&gt;AcquireFrame(ev, id);</code><br>
+<code>&nbsp;&nbsp;&nbsp;// Do something with the frame here.</code><br>
+<code>&nbsp;&nbsp;&nbsp;...</code><br>
+<code>SOM_CATCH_ALL</code><br>
+<code>SOM_ENDTRY</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+The OpenDoc utility library provides temporary objects for 17 reference-counted<br>
+classes, including ODPart, ODFrame, ODExtension, and ODStorageUnit. For more<br>
+information on creating temporary objects, see the "Temporary Objects" section of<br>
+Appendix A in the <i>OpenDoc Cookbook</i>.
+</p>
+<p>
+The OpenDoc utility library also provides temporary objects for objects that aren't<br>
+reference-counted, such as ODByteArray and ODIText. These OpenDoc types deserve<br>
+special attention in regard to memory usage.
+</p>
+<p>
+The ODByteArray structure contains three fields: <b>_buffer</b>, <b>_maximum</b>,<br>
+and<b>_length</b>. The <b>_buffer</b> field points to a memory block whose size is indicated by<br>
+the <b>_maximum</b> field. <b>_length</b> is the number of bytes used; it has to be less than or<br>
+equal to the value of <b>_maximum</b>.
+</p>
+<p>
+Generally, ODByteArray is used instead of a raw pointer because the size of the<br>
+memory block is included. This enables SOM and OpenDoc to pass data between<br>
+processes without relying on shared memory. But because the _buffer field is hidden<br>
+in the ODByteArray, the memory block can easily be forgotten. Failing to free this<br>
+memory block when an ODByteArray is deallocated creates a memory leak.
+</p>
+<p>
+The ODIText structure stores a user-visible string. One of its fields contains the<br>
+string's format; the other is an ODByteArray that contains the text string. The memory<br>
+block in the ODByteArray needs to be freed when the ODIText structure is deallocated.
+</p>
+<p>
+<b>Handling in and out parameters.</b> Memory leaks can also occur when parameters<br>
+aren't handled correctly. In an OpenDoc method, each parameter is designated as<br>
+<b>in</b>,<b>out</b>, or <b>inout</b>.
+</p>
+<ul>
+<li>An <b>in</b> parameter passes data from the caller to the callee.</li>
+<li>An <b>out</b> parameter transfers data from the callee to the caller. A method's<br>
+result also acts as an out parameter.</li>
+<li>An <b>inout</b> parameter passes data from the caller to the callee, which can<br>
+then modify it and pass it back.</li>
+</ul>
+<p>
+To determine a particular parameter's designation, you can check the ".idl" files, or<br>
+see the <i>OpenDoc Class Reference</i>for detailed information on each parameter.
+</p>
+<p>
+The parameter's designation defines the memory responsibility of the caller and callee.<br>
+The part editor can use memory on the stack for parameters of primitive types or<br>
+fixed-size data structures. But for strings, byte array buffers, and objects, the part<br>
+editor must use the OpenDoc Memory Manager to do the following:
+</p>
+<ul>
+<li>allocate and deallocate memory for <b>in</b> and <b>inout</b> parameters passed to an<br>
+OpenDoc object</li>
+<li>deallocate memory for <b>out</b> parameters returned from an OpenDoc object</li>
+<li>allocate memory for <b>out</b> parameters returned from the part editor's<br>
+methods</li>
+</ul>
+<p>
+If a part editor calls an OpenDoc method and doesn't deallocate the<b>out</b> parameter, the<br>
+memory won't be freed until the session ends, causing a memory leak.
+</p>
+<p>
+Since it's impossible to know how a piece of memory is allocated, OpenDoc and part<br>
+editors have to use the OpenDoc Memory Manager as the common memory management<br>
+facility. This is the only way to ensure that memory allocated by OpenDoc can be freed<br>
+by the part editor and vice versa.
+</p>
+<h2>SETTING UP YOUR PART EDITOR</h2>
+<p>
+Because your part editor is used in documents with other part editors as users<br>
+construct compound documents, it's important to make the best use of memory. Let's<br>
+talk about some of the things you can do to minimize memory usage.
+</p>
+<p>
+<b>Keep the data section small.</b> When creating a part (which is a shared library),<br>
+the linker will generate code and data sections. The code section contains the<br>
+instructions that make up your part editor. This section is read-only because it's<br>
+file-mapped onto read-only memory when virtual memory is in use. The data section<br>
+is stored separately because it needs to be writeable; it contains globals, static<br>
+variables, transition vectors, virtual tables, and so on.
+</p>
+<p>
+A single in-memory or memory-mapped copy of the code section is shared by all<br>
+processes in which that code is used. The data section is handled differently: Each<br>
+process instantiates a copy of the data section, making globals per-process rather than<br>
+per-computer or per-part. Also, because there is normally one process per OpenDoc<br>
+document, a separate data section usually exists for each document that contains a part<br>
+bound to your editor. Therefore, you should control the size of your data section so that<br>
+copies of it don't take up too much memory when multiple documents are open.
+</p>
+<p>
+Here's what you can do to keep the size of your data section down:
+</p>
+<ul>
+<li>Limit your use of global variables -- Since globals are stored in the data<br>
+section, use them only for those things that must be per-process globals.</li>
+<li>Use read-only string constants -- String constants that are writeable<br>
+must be located in your data section because the compiler assumes that you<br>
+might write into the memory associated with them. If you have the compiler<br>
+make your string constants read-only (by checking the Make Strings ReadOnly<br>
+box in the PPC Processor panel in CodeWarrior, for example), these strings<br>
+can be put into the code section instead of the data section. But remember that<br>
+after doing this, you should not write to these string constants. You can still<br>
+allocate memory in the OpenDoc heap for strings and write to them. You can<br>
+also put string buffers, such as Str255 strings, on the stack in your code and<br>
+write to them there. Note that any user-visible string constants should be<br>
+stored in resources so that your editor can be localized.</li>
+<li>Avoid virtual functions -- Space is made for virtual functions of C++<br>
+classes in the data section because the virtual tables must be written once (for<br>
+each process) to point to the functions residing in the read-only code section.<br>
+You can make the virtual table smaller by not making functions virtual. It's<br>
+best to design your classes with as few virtual functions as possible, adding<br>
+more only as the need arises.</li>
+<li>Reduce the number of transition vectors -- For each import and export<br>
+symbol in a library, there's a TVector, or transition vector. (CFM-68K calls<br>
+them XVectors.) The TVector must be writeable because, like a virtual table,<br>
+it has to be written once to point to the corresponding memory address when<br>
+the code is loaded.</li>
+</ul>
+<p>
+<b>Reduce exports.</b> By minimizing the number of symbols that are exported, you can<br>
+save memory. Symbol name strings are stored in the PEF (Preferred Executable<br>
+Format) container of your code fragment. If you're using a shared library that<br>
+contains a framework or set of C++ classes, you usually need to export the symbols<br>
+for each of the member functions in the shared library and import the relevant ones<br>
+into your part editor to call them or subclass them. C++ functions have long symbol<br>
+names because they include type signature information. As a result, the size of your<br>
+code fragment can increase significantly.
+</p>
+<p>
+This is particularly noticeable if you have multiple part editors that reference the<br>
+same code, since they'll all have large tables of symbol names. You can use a tool like<br>
+DumpPEF to check what type of information your code fragment contains and how much<br>
+space it's taking up.
+</p>
+<p>
+A workaround is to statically link classes to your part editor. This means fewer<br>
+imports and less memory used. Of course, if you do this, you lose some of the<br>
+advantages of sharing code via a shared library.
+</p>
+<p>
+<b>Package multiple part editors intelligently.</b> If you're writing a suite of part<br>
+editors for end users, it's a good idea to package them as separate editor files in the<br>
+Editors folder. However, as mentioned earlier, if you want to share common code, the<br>
+amount of memory that's used by all the editors combined can be substantial.
+</p>
+<p>
+Packaging all your part editors and the common code in a single code fragment reduces<br>
+the number of imports and exports to almost nothing. But then you can't update just<br>
+one of the editors in your suite -- you have to replace the entire shared library. It's<br>
+also detrimental if only one or two of your editors are being used, because the system<br>
+loads the entire code fragment but only a portion of it is being referenced. This isn't as<br>
+much of a problem if the user has virtual memory enabled, but without it, memory is<br>
+wasted.
+</p>
+<p>
+To combine multiple OpenDoc part editors into one code fragment, you have to compile<br>
+the code for all of them together. You can do this either by putting them all into one<br>
+project or by having multiple projects generate static library files and a master<br>
+project that includes each of the single-part libraries. Then you need to make sure<br>
+that the ClassData symbols for all the parts are exported as separate symbols, by using<br>
+pragmas or a ".exp" file. Finally, you must include the 'nmap' resources from all the<br>
+individual editors in the combined file. Of course, the IDs of these resources can't<br>
+conflict, but since OpenDoc doesn't require any specific resource IDs for 'nmap'<br>
+resources, that shouldn't be a problem to set up.
+</p>
+<p>
+<b>Use SOM classes instead of C++.</b> If you'd like to separate framework code from<br>
+part editor code (for example, to have multiple editors share the same framework or<br>
+set of classes), note that there are several advantages to using SOM classes instead of<br>
+C++ classes.
+</p>
+<p>
+With SOM on the Mac OS, you only have to export the class's ClassData symbol. The<br>
+virtual tables are maintained by the SOM kernel; they don't exist in your data section.
+</p>
+<p>
+Since SOM has so little overhead, you can package multiple editors as separate code<br>
+fragments (either in separate, replaceable files or in a single file). Editors that aren't<br>
+being used won't be loaded.
+</p>
+<p>
+You can also reduce the granularity of your shared libraries, such that different<br>
+classes are in different shared libraries (again, in separate files or the same file).<br>
+This allows you to split up your framework so that only the sections that the client<br>
+needs are loaded into memory. For example, if you have one part editor that embeds<br>
+other editors and another that doesn't, but they share the same framework, the<br>
+framework's embedding code can be in a separate shared library from the code that's<br>
+needed by all part editors.
+</p>
+<p>
+SOM supports release-to-release binary compatibility, and it deals with the fragile<br>
+base class problem of C++. It also defines a binary interface that supports languages<br>
+other than C++. Currently, emitters on the Mac OS for C and C++ are available. Other<br>
+languages can also be supported.
+</p>
+<p>
+Don't be afraid to use SOM. Better tools for building SOM classes are being released. In<br>
+particular, Direct-to-SOM support has been added to Metrowerks CodeWarrior's C++<br>
+compiler and Apple's MrCpp, so you can build SOM classes with much less effort and<br>
+with a more familiar syntax.
+</p>
+<p>
+<b>Use #pragma internal.</b> Space is also wasted when it's set aside for instructions and<br>
+never used. By default, functions on a PowerPC(TM) processor are assumed to be<br>
+external, so for the processor to jump to the routine, it's expected to go through a<br>
+TVector. To do this, the compiler leaves room in the code for the linker to add the<br>
+necessary instruction to restore the TOC (Table Of Contents) after a jump to a TVector.<br>
+If it turns out that the routine is in the same code fragment, restoring the TOC isn't<br>
+necessary, but because the space has already been inserted, the linker has little<br>
+recourse but to put a no-op instruction in that place. (The code was generated<br>
+expecting certain offsets, so the linker can't shuffle the code around easily.) Space is<br>
+then wasted for calls that are internal to the code fragment.
+</p>
+<p>
+There are a couple of ways around this. One thing you can do is to declare a function<br>
+with the keyword <b>static</b> (this means that it can't be used outside the file it's defined<br>
+in) so that the compiler can tell it's an internal function. You can also use the<br>
+<b>internal</b> pragma in CodeWarrior. The following code marks the declaration of two<br>
+functions as internal by enclosing them in a <b>#pragma internal</b> block. This informs<br>
+the compiler that calls to those functions can be assumed to be internal calls, and it<br>
+won't leave space for restoring the TOC after a TVector call.
+</p>
+<p>
+<code>#pragma internal on</code><br>
+<code>&nbsp;&nbsp;&nbsp;void InternalFunction();</code><br>
+<code>&nbsp;&nbsp;&nbsp;ODBoolean AnotherInternalFunction(short count);</code><br>
+<code>#pragma internal reset</code>
+</p>
+<p>
+Note that a function internal to your code can still be an export from your shared<br>
+library. In this case, your header should conditionalize its inclusion of<b>#pragma</b><br>
+<b>internal</b> for your own use so that external clients don't mistakenly see it as internal.
+</p>
+<p>
+<b>This technique is not used for CFM-68K code</b> because calls there are<br>
+assumed to be internal unless they're marked otherwise (with <b>#pragma</b><br>
+<b>import</b>).*
+</p>
+<p>
+The MrPlus profiling tool can also be used to get rid of unneeded no-op instructions.<br>
+You can get this tool and its documentation on the E.T.O. and MPW Pro CDs.
+</p>
+<h2>EVERY BYTE COUNTS</h2>
+<p>
+OpenDoc presents a new model for constructing software. However, many of the<br>
+techniques you've used for the traditional application model can still be applied to the<br>
+OpenDoc environment. By also incorporating some of the suggestions we've brought up<br>
+here, you'll be able to further reduce your part editor's footprint and avoid memory<br>
+leaks.
+</p>
+
+
+
+<b>RELATED READING</b>
+<p>
+This documentation is available on the OpenDoc Developer Release CD and on<br>
+the OpenDoc Web site (http://www.opendoc.apple.com).
+</p>
+<ul>
+<li><i>OpenDoc Programmer's Guide for the Mac OS</i> by Apple Computer,<br>
+Inc. (Addison-Wesley, 1995). The OpenDoc Class Reference for the<br>
+Mac OS is provided on a CD that accompanies this book.</li>
+<li><i>OpenDoc Cookbook for the Mac OS </i>by Apple Computer, Inc.<br>
+(Addison-Wesley, 1995).</li>
+</ul>
+
+
+
+<p>
+<b>TROY GAUL</b> (tgaul@apple.com)&nbsp;&nbsp;recently joined&nbsp;&nbsp;the OpenDoc engineering team,<br>
+where he's working with Java<b><code>TM</code></b>.&nbsp;&nbsp;Having also written the sample part editor formerly<br>
+known as Cappuccino, he has a caffeine buzz that should last into the next century.*
+</p>
+<p>
+<b>VINCENT LO</b> (vincent@apple.com) is Apple's technical lead for OpenDoc. Since he<br>
+recently introduced the OpenDoc team to Hong Kong cinema, it occasionally happens<br>
+that the OpenDoc engineering meeting resembles a scene from a Hong Kong action<br>
+movie.*
+</p>
+
+<p>
+<b>Thanks to</b> Jens Alfke, David Bice, and Steve Smith for reviewing this column.*
+</p>
+</body>
+</html>

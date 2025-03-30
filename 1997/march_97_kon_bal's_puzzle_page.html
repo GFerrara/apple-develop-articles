@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 8 - Extracted from develop-1997 -->
+<!-- on 2025-03-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 97 - Kon & Bal's Puzzle Page</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>KON &amp; BAL'S PUZZLE PAGE</h1>
+<h1>AppendDITL Apoplexy</h1>
+<h2>Martin-Gilles Lavoie and Bo3b Johnson</h2>
+<p>
+<img src="img/139.gif" width="192 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">See if you can solve this puzzle in the form of a dialog between a</i>
+<br>
+
+<i style="font-size:125%;">pseudo KON (Bo3b Johnson) and BAL (Martin-Gilles Lavoie). The</i>
+<br>
+
+<i style="font-size:125%;">dialog gives clues to help you. Keep guessing until you're done; your</i>
+<br>
+
+<i style="font-size:125%;">score is the number to the left of the clue that gave you the</i>
+<br>
+
+<i style="font-size:125%;">correct answer. Even if you never run into the particular problems</i>
+<br>
+
+<i style="font-size:125%;">being solved here, you'll learn some valuable debugging techniques</i>
+<br>
+
+<i style="font-size:125%;">that will help you solve your own programming conundrums. And</i>
+<br>
+
+<i style="font-size:125%;">you'll also learn interesting Macintosh trivia.</i>
+</p>
+<p>
+<b>BAL</b> Well, KON, I'm very disappointed to announce that I've fallen back to the level of a<br>
+newbie Mac programmer and am forced to ask you a question whose answer is probably<br>
+obvious. However, I'm stuck.
+</p>
+<p>
+<b>KON</b> An easy one? Great, we'll have it fixed in no time -- and we'll give Puzzle Page<br>
+readers a chance to get a decent score for a change. Details, please.
+</p>
+<p>
+<b>BAL</b> I'm working on a new version of our application plug-in. One of the dialogs we had<br>
+in the previous versions was very cluttered, and since we needed to add even more<br>
+stuff to it, we decided to use "tabs" to group related options. But now the system<br>
+crashes shortly after calling AppendDITL.
+</p>
+<p>
+<b>KON</b> That's a well-traveled piece of the system. Why would you crash and no one else?<br>
+Let's check for reported bugs...just as I thought, Developer Technical Support has no<br>
+bugs listed for AppendDITL. Is the bug reproducible?
+</p>
+<p>
+<b>BAL</b> 100% reproducible, and always after calling AppendDITL.
+</p>
+<p>
+<b>KON</b> When is this AppendDITL call made?
+</p>
+<p>
+<b>BAL</b> The plug-in code runs as part of the host application and monitors activity within<br>
+a floating window. One button in this floating window brings up a dialog containing a<br>
+list of items that can be edited with a second dialog that comes up. The second dialog has<br>
+tabs; when it's brought up, a call to AppendDITL is made to add the dialog items for the<br>
+first tab panel into this dialog.
+</p>
+<p>
+<b>KON</b> How does it crash, exactly?
+</p>
+<p>
+<b>100</b> <b>BAL</b> A little while after AppendDITL exits, the dialog is visually messed up, and<br>
+the system drops into MacsBug with a bus error. Also, the application heap is usually<br>
+corrupted.
+</p>
+<p>
+<b>KON</b> This is a code resource, right? Code resources can't have A5 globals, so any<br>
+globals would cause you to "color outside the lines." Are you using globals?
+</p>
+<p>
+<b>BAL</b> The application plug-in interface file requires the use of globals, but it was built<br>
+with CodeWarrior, which uses register A4 as a code resource's globals pointer.
+</p>
+<p>
+<b>KON</b> What if AppendDITL trashes A4 during execution? That would cause some of your<br>
+user item procedures to fail while trying to access globals.
+</p>
+<p>
+<b>90</b> <b>BAL</b> Well, let's check. When the dialog is first brought up and items are being<br>
+appended to it for the default tab, it immediately crashes. Here, witness the disaster...
+</p>
+<p>
+<b>KON</b> Indeed, it crashes really hard. MacsBug is alive, but the system is barely alive; I<br>
+can't escape the application with <b>es</b>. Whoa! I can't even reboot with<b>rb</b>. Let's try that<br>
+again, and watch AppendDITL. We do an <b>atb AppendDITL</b>, then trace over the call.<br>
+Nope, A4 is untouched by AppendDITL. In addition, the heap was corrupted only after<br>
+several AppendDITL calls, so I'd say A4 is solid and not the problem.
+</p>
+<p>
+<b>BAL</b> Time for the Vulcan Nerve Pinch?
+</p>
+<p>
+<b>KON</b> Control-Command-Power? Indeed! While we're rebooting, can I see the code<br>
+where you add items to this dialog?
+</p>
+<p>
+<b>80</b> <b>BAL</b> My plug-in uses code that I've used in a standalone application. This code has<br>
+worked just fine since then, and I don't see why it should make a difference when used<br>
+in a code resource. It's pretty much by the book. When the user clicks the tabs in the<br>
+dialog, we make a DITL content switch using this code:
+</p>
+<p>
+<code>// At this point, clickedTab contains a DITL ID corresponding to</code><br>
+<code>// the clicked tab DITL ID. 'kPanelBase' is the number of items</code><br>
+<code>// in the base DITL (ID 29000).</code><br>
+<code>if (gCurrentPanel != clickedTab) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;short numItems = CountDITL(theDialog);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (numItems &gt; kPanelBase)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ShortenDITL(theDialog, numItems - kPanelBase);</code><br>
+<code>&nbsp;&nbsp;&nbsp;Handle ditlResource = GetResource('DITL', clickedTab);</code><br>
+<code>&nbsp;&nbsp;&nbsp;AppendDITL(theDialog, ditlResource, overlayDITL);</code><br>
+<code>&nbsp;&nbsp;&nbsp;ReleaseResource(ditlResource);</code><br>
+<code>&nbsp;&nbsp;&nbsp;gCurrentPanel = clickedTab;</code><br>
+<code>}</code>
+</p>
+<p>
+The first time around, the ShortenDITL routine isn't called because numItems is equal<br>
+to (but not greater than) kPanelBase. I verified this at run time with source-level<br>
+debuggers.
+</p>
+<p>
+<b>KON</b> I'm wondering about the ReleaseResource right after the AppendDITL call.
+</p>
+<p>
+<b>70</b> <b>BAL</b> Inside Macintosh recommends doing this to avoid using altered DITL resources<br>
+if we later display a dialog whose item list was previously altered. After the crash, I<br>
+examined the content of the application heap to see if any expected resources were<br>
+missing. I used <b>hd r</b> to dump all resource information in the current heap; I made<br>
+sure that all my resources were loaded and that my code isn't inadvertently using the<br>
+host application's resources.
+</p>
+<p>
+<b>KON</b> Well, we know <i>Inside Macintosh</i> isn't always right, so let's display the<br>
+DialogRecord.items handle after AppendDITL. We'll find this handle with <b>thePort</b>and<br>
+then <b>dm . dialogrecord</b>.
+</p>
+<p>
+<b>BAL</b> The size of the handle is different after the call, and it appears to make a copy of<br>
+the DITL into this handle, so calling ReleaseResource shouldn't be a problem.
+</p>
+<p>
+<b>KON</b> Did someone patch AppendDITL? Or perhaps the dialog underneath is causing a<br>
+conflict?
+</p>
+<p>
+<b>65</b> <b>BAL</b> Let's look at AppendDITL with the debugger. Do an <b>il AppendDITL</b>. Hmm, the<br>
+code is still in ROM at CommToolboxDispatch, so it's not patched. You also wouldn't<br>
+expect any conflict between the two dialogs on the screen, because you have to pass the<br>
+DialogPtr to AppendDITL, which gives it the exact DialogRecord.
+</p>
+<p>
+<b>KON</b> OK, so far my ideas aren't panning out. But I notice that although it always<br>
+crashes, it doesn't seem to crash the same way every time: sometimes it takes two<br>
+AppendDITL calls and sometimes one.
+</p>
+<p>
+<b>BAL</b> What could make it do that?
+</p>
+<p>
+<b>KON</b> It's probably using some nearly random chunk of memory. Let's make it more<br>
+reliable in the way it crashes by turning on heap scramble with <b>hs</b>. Do you want to use<br>
+QC or&#946; Jasik's debugger instead? They're an even stronger way to make it more<br>
+repeatable.
+</p>
+<p>
+<b>BAL</b> No, this still seems like an easy bug, so let's stick with MacsBug. That<b>hs</b> seems to<br>
+help.
+</p>
+<p>
+<b>KON</b> As near as I can tell, there's some problem with the fonts. Most of the crashes<br>
+happen while it's drawing text. It nearly always crashes in a TextBox or TESetText<br>
+call, during the handling of DrawDialog. Do you change the fonts used to draw the<br>
+dialog?
+</p>
+<p>
+<b>60</b> <b>BAL</b> I do. Here's the code:
+</p>
+<p>
+<code>((GrafPtr) theDialog)-&gt;txFont = Geneva;</code><br>
+<code>((GrafPtr) theDialog)-&gt;txSize = 9;</code><br>
+<code>if (*(((DialogRecord*) theDialog)-&gt;textH)) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;// This will have to come from a resource for localization.</code><br>
+<code>&nbsp;&nbsp;&nbsp;(*(((DialogRecord*) theDialog)-&gt;textH))-&gt;txFont = Geneva;</code><br>
+<code>&nbsp;&nbsp;&nbsp;(*(((DialogRecord*) theDialog)-&gt;textH))-&gt;txSize = 9;</code><br>
+<code>&nbsp;&nbsp;&nbsp;(*(((DialogRecord*) theDialog)-&gt;textH))-&gt;lineHeight = 12;</code><br>
+<code>&nbsp;&nbsp;&nbsp;(*(((DialogRecord*) theDialog)-&gt;textH))-&gt;fontAscent = 10;</code><br>
+<code>}</code>
+</p>
+<p>
+What exactly happens in AppendDITL when it adds text items (either static or editable)<br>
+to a dialog whose port's font and size were altered?
+</p>
+<p>
+<b>KON</b> Beats me. Intriguing question, though. Since it's only display code, let's comment<br>
+it out.
+</p>
+<p>
+<b>55</b> <b>BAL</b> It still crashes.
+</p>
+<p>
+<b>KON</b> Well, then it must not matter if we change the fonts in the window. By the way,<br>
+BAL, while I don't think this is the solution to the bug, you should at least use the<br>
+regular calls like TextFont and TextFace instead of setting the fields directly, and make<br>
+TextEdit calls for the parts that modify the TEHandle.
+</p>
+<p>
+<b>BAL</b> Oh. Right.
+</p>
+<p>
+<b>KON</b> Time to look at a stack crawl? Let's try sc.
+</p>
+<p>
+<b>50</b> <b>BAL</b> It says:
+</p>
+<p>
+<code>Start of link chain does not point to a stack frame</code>
+</p>
+<p>
+<b>KON</b> Bummer. OK, how about doing an <b>sc7</b>, even though it's not as reliable? It won't<br>
+miss anything, but it will show up a lot of junk addresses that aren't real. When you're<br>
+desperate for information, you turn to <b>sc7</b>.
+</p>
+<p>
+<b>BAL</b> Geez, KON, could we make it any smaller for our <i>develop</i>readers?
+</p>
+<p>
+<b>KON</b> Hey, it's not critical for them to see the details. And our lawyers insisted on a full<br>
+disclosure of all information related to finding the bug. Readers can always get out<br>
+their magnifying glasses, if they want to.
+</p>
+<p>
+<b>BAL</b> Good thing it's high resolution or they'd have to call the psychic hotline instead of<br>
+just squint. Hey, have you ever used one of those magnifiers on ants?
+</p>
+<p>
+<b>KON</b> BAL, can we focus on the problem at hand? Let's do the normal thing and skip all<br>
+the unnamed routines, and just try to get a feel for what was going on. The routines<br>
+that have a frame address in the second column are more likely to be valid calls; we<br>
+can probably ignore the others.
+</p>
+<p>
+<b>45</b> <b>BAL</b> Well, there's a call to MyWindowEvent+00294, and one to<br>
+MyDoStyleList+00044, both my routines. Further down are my<br>
+DoStyleListDialog+003F0 and MyDoStyleEditor+00080. Among the Toolbox calls of<br>
+interest, there's one to _NewDialog+001C4, and later to _DrawDialog+0000A, and<br>
+maybe in response to that a call to _TextWidth+00048.
+</p>
+<p>
+<b>KON</b> The TextWidth call makes me think the Font Manager might be damaged.
+</p>
+<p>
+<b>BAL</b> Further down, without any frame addresses, we get six KillPicture calls, two<br>
+sIntRemove calls, two Jackson calls, and some other stuff that implies the computer<br>
+ran off through the weeds for a while before it finally died. Hmm...there's no call to<br>
+AppendDITL in the chain, though, and <b>sc7</b> wouldn't miss it.
+</p>
+<p>
+<b>KON</b> I thought you said it crashed in AppendDITL?
+</p>
+<p>
+<b>35</b> <b>BAL</b> No; to be precise, I said it crashes shortly after AppendDITL, and if I comment<br>
+out the AppendDITL call, the crash no longer happens, so it must be related.
+</p>
+<p>
+<b>KON</b> OK, but I still think the Font Manager is trashed, because when I look in low<br>
+memory at CurFMSize, I see the font size is 4583! That's a bit big for this computer.
+</p>
+<p>
+<b>30</b><b>BAL</b> Not only do fonts get smashed, but sometimes the dialog's added items will draw<br>
+with wacky colors. It appears that the whole graphics port (the current window) gets<br>
+written over sometime during the AppendDITL call.
+</p>
+<p>
+<b>KON</b> Hey, there's Dave Polaschek and Quinn. Dave's run into problems with<br>
+AppendDITL before, so let's ask him about it. Dave, what exactly does AppendDITL do?
+</p>
+<p>
+<b>DAVE</b> Nothing too tricky: It locks the new DITL handle and then steps through the items<br>
+in the list, loading and installing each one into the dialog. It uses GetNewControl for<br>
+controls, copies in the static text items, and loads and puts the handles to PICT<br>
+resources in the DITL. When it's done, the new DITL handle is unlocked but left in<br>
+memory. There's an old version of the source code in Technote PR 09, "Print Dialogs:<br>
+Adding Items."
+</p>
+<p>
+<b>KON</b> Any nasty behavior or bugs that you know about?
+</p>
+<p>
+<b>DAVE</b> The only common problem I've heard of is with 'ictb' resources. Are you using<br>
+them to specify fonts and sizes or color tables for your DITLs?
+</p>
+<p>
+<b>25</b> <b>BAL</b> No. Also, no font-specific action is taken at run time -- I don't call the Font<br>
+Manager, and I don't directly call ATM. The only thing related to fonts that I can see is<br>
+that the dialog's font and size are changed to Geneva 9 before the AppendDITL (which<br>
+goes against guidelines for localization). Wait, there's also a font pop-up menu that's<br>
+being updated with the current font list when the dialog gets called up. But both these<br>
+things worked before I started playing with AppendDITL.
+</p>
+<p>
+<b>KON</b> Still, those 'ictb' resources sound suspiciously like what we're seeing. Quinn,<br>
+have you heard of any bugs relating to 'ictb' resources?
+</p>
+<p>
+<b>QUINN</b> Nothing specific, just what Dave said: they're more trouble than they're worth.<br>
+Have you looked for 'ictb' resources in the heap? Try doing an <b>hd ictb</b>.
+</p>
+<p>
+<b>KON</b> Hey, there are a bunch in there! How about in the resource fork? I'm doing an <b>rd</b><br>
+<b>ictb</b> too.
+</p>
+<p>
+<b>20 </b><b>QUINN</b> Sure enough, there are some in the resource fork. Those 'ictb' resources are<br>
+only used to change the look of the dialogs; they aren't required. Since we don't trust<br>
+those things, why don't you delete them in a copy of the plug-in? Where's ResEdit?
+</p>
+<p>
+<b>KON</b> OK, I cleared them out; now let's try it again. Dang! It still crashes, and the same<br>
+way. I would have bet that was it. How many points do I have left?
+</p>
+<p>
+<b>QUINN</b> Not enough to clear your karma point deficit. Why don't you do an <b>atb</b><br>
+<b>DrawDialog</b>, and then just an&nbsp;&nbsp;so that we can see what happens before it dies. We<br>
+won't see any PowerPC calls, but this is all 68K code anyway.
+</p>
+<p>
+<b>KON</b> OK. The last dialog-related thing it did was call TETextBox to draw one of the static<br>
+text items -- another hint that it's a font problem.
+</p>
+<p>
+<b>DAVE</b> To find this, you'll need to reduce the number of variables. See if having fewer<br>
+items in your dialog changes anything. Maybe a corrupted item or a resource conflict<br>
+is causing the problem. You said you're using at least one pop-up menu, right? Is its<br>
+menuHandle properly loaded?
+</p>
+<p>
+<b>15</b> <b>BAL</b> I tried a number of variations on what you've suggested; I simplified the code<br>
+in all these ways:
+</p>
+<ul>
+<li>I disabled any filter procedures passed to ModalDialog.</li>
+<li>I removed any user item procedures.</li>
+<li>I removed any code-handling items in tab panels.</li>
+<li>I converted (one by one) all items in the first tab panel to static text<br>
+items, relaunching the host application every time.</li>
+<li>I reduced the number of items in the first tab panel, down to six static<br>
+text items.</li>
+<li>I removed any code having to do with the dialog's base elements (those that<br>
+stay regardless of the current tab).</li>
+<li>I converted the base dialog's elements to static text.</li>
+<li>I moved items around so that appended items wouldn't be surrounded by<br>
+PICTs that form the frame of the tab area.</li>
+</ul>
+<p>
+None of this worked. In all cases, the same bad behavior occurs after I come out of<br>
+AppendDITL. I even tried using just a single plain button and one static text item, but it<br>
+still trashed the heap. Furthermore, all the pop-up menus in this dialog (and its tab<br>
+panels) use different menus, and all menus are loaded and installed during startup,<br>
+with InstallMenu(theMenuHandle, -1).
+</p>
+<p>
+<b>KON</b> Well, this is getting even more interesting now. I'm willing to bet that this is a<br>
+bug in AppendDITL, but I can't put my finger on it just yet. To simplify even further,<br>
+let's make a small test application with only the code that handles the dialog.
+</p>
+<p>
+<b>DAVE</b> Good idea. But I'm hungry, so I'll leave you to it. Anybody want to have dinner?
+</p>
+<p>
+<b>QUINN</b> I'll join you -- though I like the taste of freshly killed bug better.
+</p>
+<p>
+<b>KON</b> That leaves it to us, BAL. We're making strong progress now, though, so we should<br>
+have this one crushed in an hour or two.
+</p>
+<p>
+<b>BAL</b> KON, we've been looking at this for over five hours now, we're nearly down to 10<br>
+points, and we still can't find it.
+</p>
+<p>
+<b>KON</b> I'm just going to make a simple application that creates the dialog using your code.<br>
+And I'll copy the resource fork of your plug-in so that we get all the DITLs. I want to<br>
+rule out the host application having any effect.
+</p>
+<p>
+<b>10</b> <b>BAL</b> OK, excellent! And it still crashes with the test app. Now we can keep<br>
+simplifying until we find the offending code.
+</p>
+<p>
+<b>KON</b> Let's take a big simplifying jump and change the dialog to just a control and a<br>
+static text in each tab panel, as in your test.
+</p>
+<p>
+<b>BAL</b> Huh! It still crashes in this nearly trivial case. I guess we can't blame the host<br>
+application.
+</p>
+<p>
+<b>KON</b> Now let's keep trying to find where it stops crashing. I've removed the entire<br>
+content of the tab panels' DITLs and replaced their content with a single plain button<br>
+straight out of ResEdit's tool palette.
+</p>
+<p>
+Each button on each tab panel says something different, just to make sure they're<br>
+actually removed when they're tabbed out.
+</p>
+<p>
+<b>BAL</b> Look at that, it worked! I doubt we have a limit of one item per AppendDITL --<br>
+that would be ridiculous.
+</p>
+<p>
+<b>KON</b> I agree. So it must have something to do with static text. Fonts, I tell you! Fonts,<br>
+fonts, fonts, fonts, fonts!
+</p>
+<p>
+<b>BAL</b> Easy, KON. We'll find it. Let's put the static text items back to make it crash again.
+</p>
+<p>
+<b>KON</b> OK, now let's trim the icons and other junk out of the resource fork, to be sure<br>
+it's not interfering, and to make it as simple as we can get yet still crash.
+</p>
+<p>
+<b>5</b> <b>BAL</b> Hey, there are 'ictb' resources in our test app!
+</p>
+<p>
+<b>KON</b> They must have come from the plug-in when we copied the resource fork.
+</p>
+<p>
+<b>BAL</b> And look at this. My plug-in file has grown in size between its installation and its<br>
+first run in the host application. I don't modify my own code in this plug-in --<br>
+something's fishy.
+</p>
+<p>
+<b>KON</b> You said you weren't using any 'ictb' resources, yet earlier we saw lots of them in<br>
+your plug-in.
+</p>
+<p>
+<b>BAL</b> Just a second, while I call the host application's manufacturer... Ahem. Get this:<br>
+They warn me to make sure to have an 'ictb' resource for every 'DITL' resource in a<br>
+plug-in file. If any are missing, the host application adds empty 'ictb' resources for<br>
+what it thinks are "deficient" plug-in files. I'm very curious about why the host<br>
+application requires the presence of 'ictb' resources in plug-ins.
+</p>
+<p>
+<b>KON</b> D'oh! The host application is modifying your resource fork? That explains why<br>
+our 'ictb'-deleting experiment didn't work. Sure enough, if I delete the 'ictb' resources<br>
+from the test app, it works fine.
+</p>
+<p>
+<b>BAL</b> Obviously the host application doesn't know I'll be using some of those DITLs to<br>
+expand another DITL. The Dialog Manager ends up having too few 'ictb' entries for the<br>
+number of items in the expanded dialog, and when it gets to the end of the 'ictb'<br>
+resource that the host application created, it starts reading garbage from memory,<br>
+trying to set fonts, sizes, and colors.
+</p>
+<p>
+<b>KON</b> The Dialog Manager sets up the 'dctb' and 'ictb' data structures only when the<br>
+dialog is created, and doesn't change them for AppendDITL? That does it, I'm filing a<br>
+bug against AppendDITL. Let's see, that's #1377732.
+</p>
+<p>
+<b>BAL</b> The static text items are a bit more fragile in this case, which is what we found<br>
+with that test of having one static text item. Buttons just have a ControlRecord -- and<br>
+a color table, which only causes funny colors to appear if the Dialog Manager is using<br>
+random bytes out of memory.
+</p>
+<p>
+<b>KON</b> Of course! For static or editable text items, it blindly goes off the end of the<br>
+handle, using whatever junk is in memory as a txFont, txFace, txSize, or color table.<br>
+When it set the font to number 43003, the size to 15433, and so on, the Font Manager<br>
+was none too pleased.
+</p>
+<p>
+<b>BAL</b> I added an empty 400-byte 'ictb' resource to my project, with the ID of the base<br>
+dialog. This is enough to accommodate this dialog's items, plus any items I add through<br>
+AppendDITL. Everything works fine now.
+</p>
+<p>
+<b>KON</b> Hot dog! I knew we were going to crush this thing before too long. You have no idea<br>
+how glad I am that this one has been killed. Well, actually, I bet you do; it stumped us<br>
+for seven pages.
+</p>
+<p>
+<b>BAL</b> The host application's manufacturer also told me they need to add 'ictb' resources<br>
+in order to solve an old problem where plug-ins used dialog windows with the same IDs<br>
+as some of their application's dialog windows. When these dialog windows were loaded<br>
+by the system, the system would look for its associated 'ictb' resource with<br>
+GetResource, which looks through the resource chain until it finds one. Sometimes it<br>
+would pick an 'ictb' in their application, which wasn't suitable for the plug-in's dialog<br>
+window, causing the same kind of problems we've experienced with my plug-in. Watch<br>
+me never assume what's in my resource fork from now on!
+</p>
+<p>
+<b>KON</b> Nasty.
+</p>
+<p>
+<b>BAL</b> Yeah.
+</p>
+
+
+
+<p>
+<b>SCORING</b>
+</p>
+<p><table border="0"><tr><td><b>70-100</td><td></b>How would you like to work in Apple DTS? Today?</td></tr>
+<tr><td><b>45-65</td><td></b>How about a contract as a Webmaster?</td></tr>
+<tr><td><b>25-40</td><td></b>We hear that the Highway Department is hiring.</td></tr>
+<tr><td><b>5-20</td><td></b>Don't give up your day job.*</td></tr></table></p>
+
+
+
+
+
+<p>
+<b>MARTIN-GILLES LAVOIE</b> (mouser@zercom.net) constantly looks for more efficient<br>
+means of using his hands.&nbsp;&nbsp;After experimenting with branch-prediction-enhanced,<br>
+tristate-binary-enhanced, and floating-point-enhanced finger-coded binary<br>
+techniques (pioneered by Tobias Engler in <i>develop</i> Issue 21), he went on to make a<br>
+medieval ring mail consisting of over 26,000 rings. He hopes to make adequate use of<br>
+his hands on his vacation in France, where he'll be touring medieval festivals and<br>
+castles. Then he'll be back in Montr&#201;al-based Globimage, Inc., where he works on<br>
+prepress-related utilities and automation software.*
+</p>
+<p>
+<b>BO3B JOHNSON</b> (bo3b@apple.com),&nbsp;&nbsp;whose name is pronounced "Bob," has been<br>
+programming the Macintosh seemingly forever and still hasn't lost interest (though it<br>
+was touch-and-go there for a while). Having recently returned to Apple's Developer<br>
+Technical Support group after a long stint as a dedicated slacker, windsurfer, and<br>
+pursuer of arcane knowledge, Bo3b is rediscovering the joys of working for a living<br>
+(and has actually found a few). Getting up in the morning, however, remains a serious<br>
+challenge.*
+</p>
+<p>
+<b>Thanks to</b> Dave Polaschek, Quinn "The Eskimo!", KON (Konstantin Othmer), and BAL<br>
+(Bruce Leak) for reviewing this column.*
+</p>
+</body>
+</html>

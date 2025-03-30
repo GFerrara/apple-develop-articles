@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 9 - Extracted from develop-1997 -->
+<!-- on 2025-03-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 97 - Using Newton Internet Enabler to Create a Web Server</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Using Newton Internet Enabler to Create a Web<br>
+Server</h1>
+<h2>Ray Rischpater</h2>
+<p>
+<img src="img/140.gif" width="198 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">With Newton Internet Enabler (NIE), a whole host of TCP/IP-based</i>
+<br>
+
+<i style="font-size:125%;">applications become possible on the Newton. Internet clients for</i>
+<br>
+
+<i style="font-size:125%;">e-mail, Web browsers, and other common services are springing up,</i>
+<br>
+
+<i style="font-size:125%;">and developers are using NIE to provide portable access to legacy</i>
+<br>
+
+<i style="font-size:125%;">systems and databases. But how do you get started? This article</i>
+<br>
+
+<i style="font-size:125%;">will explore the details of using NIE by presenting a sample</i>
+<br>
+
+<i style="font-size:125%;">Internet application -- a working Web server.</i>
+</p>
+<p>
+The long-awaited Newton Internet Enabler (NIE for short) opens up the Internet to<br>
+Newton users -- the personal communications platform can now speak TCP/IP to the<br>
+rest of the world. With so many possible applications that could use it, programming<br>
+under NIE is not only useful, it's sure to be a lot of fun!
+</p>
+<p>
+I've chosen to introduce NIE by looking at a sample application called nHTTPd -- a<br>
+Newton-based Web server that implements the HTTP protocol. Throughout the article,<br>
+I'll assume you're familiar with the basics of Newton software development and<br>
+TCP/IP; see the <i>Newton Programmer's Guide</i> and the NIE documentation for reference.
+</p>
+<h2>SAMPLE APPLICATION BASICS</h2>
+<p>
+Before delving into the sample application, let's take a moment to see what's included<br>
+in NIE. NIE provides support for three distinct entities. There's a Link Controller for<br>
+sharing an underlying link (that is, the low-level PPP or SLIP connection) between<br>
+multiple applications and performing expect-response scripting. It also provides a<br>
+Domain Name Service (DNS) to map back and forth between host names and IP<br>
+addresses. Finally, of course, there's an implementation of TCP and UDP through<br>
+NewtonScript's endpoints. For details of how the different parts of NIE work, see "NIE<br>
+in a Nutshell."
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NIE IN A NUTSHELL</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NIE's Link Controller is responsible for establishing the link and passing a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;prepared link to the SLIP or PPP manager for the TCP/IP stack to use. In NIE<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1.0, authentication is necessary before the stream is switched to PPP --<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;there is no support for PAP or CHAP. The only Internet links supported in NIE<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1.0 are PPP or SLIP over serial or modem links. (NIE 1.1 adds support for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PAP, CHAP, and interactive authentication.) There's a setup utility for users<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to enter information about their Internet service provider, such as the access<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;number, link-level protocol, and a connection script.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The NIE 1.0 DNS is admittedly austere. You can map host names to IP addresses<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;and the reverse, or you can look up a mail server for a particular host, but<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;less common kinds of queries are not supported. Name resolution is<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nonrecursive -- NIE won't resubmit queries based on earlier responses.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Mappings are cached for a period of time to minimize repeated network<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;queries. If your application requires more general domain name functionality,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;you'll find yourself writing your own, but for most applications this shouldn't<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;be necessary.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Access to TCP or UDP sockets is available through the standard endpoint API,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;with new options to support the different things you may want to do with such<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;an endpoint.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+Our sample application (which accompanies this article on this issue's CD and<i>develop</i>'s<br>
+Web site) is a bare-bones HTTP version 0.9 server. To help you understand the code,<br>
+here are the basics of the HTTP 0.9 protocol:
+</p>
+<ul>
+<li>Objects (usually Web pages) are referred to by a URL, which is a<br>
+concatenation of the protocol being used (http), the host name serving the<br>
+document (such as www.lothlorien.com), and the path and filename of the<br>
+document being served (such as "/" for the root document). A typical URL is<br>
+http://www.lothlorien.com/.</li>
+<li>Objects are fetched with the GET instruction. A request comes in<br>
+containing the word GET followed by the partial URL (the path and filename,<br>
+but not the protocol or host name) of the object being fetched, followed by a<br>
+carriage return and linefeed pair. For example:
+
+<p>
+<code style="font-size:110%;">GET /</code>
+</p></li>
+
+<li>Form data can be retrieved with an extension of the URL: the URL is<br>
+followed by a question mark and some text. Within this text, field names may<br>
+be declared to the left of an equal sign (=), with the data in the field to the<br>
+right of the equal sign, although data is not required. Multiple field<br>
+declarations are separated by an ampersand (&amp;). A form with two fields might<br>
+look like this:
+
+<p>
+<code style="font-size:110%;">GET /myapp/search.html?field1=hello&amp;field2=world</code>
+</p></li>
+
+<li>In response, the HTTP server dynamically creates a response object that's<br>
+returned to the client.</li>
+</ul>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>For the latest version of the sample application,</b> check out the latest<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CD and develop's Web site, as this code is perpetually evolving.*
+</p>
+<p>
+<b>HANDLING REQUESTS</b>
+</p>
+<p>
+Since the Newton doesn't have conventional directories or files, we need to make some<br>
+compromises to translate directory- and file-oriented specifications into something<br>
+more meaningful on a Newton. My implementation uses a registry to correlate Newton<br>
+data (such as application soup entries) with translators capable of creating Web<br>
+objects from Newton data. These translators convert frames or soup entries to HTML<br>
+or pure text, and nHTTPd has an API with three methods to allow other programs to<br>
+register as translators:
+</p>
+<ul>
+<li>nHTTPd:RegTranslator(inAppSym, inPathStr, inCallbackSpec) registers<br>
+the callback specification frame inCallbackSpec for your application (whose<br>
+application symbol is inAppSym) and the partial URL path indicated by<br>
+inPathStr. (More about the callback specification frame in a moment.) It's<br>
+strongly urged that you use a path beginning with your application symbol to<br>
+prevent collisions in the path name space.</li>
+<li>nHTTPd:UnRegTranslator(inAppSym, inPathStr) removes the callback<br>
+specification frame for the partial URL path indicated by inPathStr.</li>
+<li>nHTTPd:UnRegTranslators(inAppSym) removes all registered translators<br>
+for the application whose symbol is inAppSym.</li>
+</ul>
+<p>
+The callback specification frame provides a mechanism for nHTTPd to invoke a<br>
+translator and has the same format as a regular communications callback specification.<br>
+The only required slot is a CompletionScript slot (since all calls are asynchronous),<br>
+containing a function that is passed, in order, these three arguments:
+</p>
+<ul>
+<li>inEp, the endpoint associated with the request</li>
+<li>inData, a frame containing the data received from the client</li>
+<li>inErr, an error code, or nil if the request began with no errors</li>
+</ul>
+<p>
+The inData frame has at least four slots:
+</p>
+<ul>
+<li><b>raw</b> is the original partial URL.</li>
+<li><b>data</b> is the partial URL without the path.</li>
+<li><b>path</b> is the path of the partial URL without the filename.</li>
+<li><b>tag</b> is the partial URL with neither path nor any form data.</li>
+</ul>
+<p>
+A <b>form</b>slot, if present, contains slots named for fields in the request; each slot<br>
+contains a string bearing the value of the named field. Listing 1 shows what our second<br>
+GET example above would expand to.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 1.</b> A processed URL frame
+</p>
+<p>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;raw: "/myApp/search.html?field1=hello&amp;field2=world",</code><br>
+<code>&nbsp;&nbsp;&nbsp;data: "search.html?field1=hello&amp;field2=world",</code><br>
+<code>&nbsp;&nbsp;&nbsp;path: "myApp",</code><br>
+<code>&nbsp;&nbsp;&nbsp;tag: "search.html",</code><br>
+<code>&nbsp;&nbsp;&nbsp;form: {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;field1: "hello",</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;field2: "world"</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+We'll probably also want to include a <b>_parent</b> slot in the callback specification, so<br>
+that it can inherit from a useful context within the translator (see Listing 2).
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 2.</b> The translator callback specification frame
+</p>
+<p>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;_parent: self,</code><br>
+<code>&nbsp;&nbsp;&nbsp;CompletionScript := func(inEp, inData, inErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inEp:Output("Why did you want " &amp; inData.tag &amp; "?", nil, {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;async: true,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;completionScript: func(inEp, inOpt, inErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Do something useful!</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inEp:Close();</code><br>
+<code>&nbsp;&nbsp;&nbsp;end,</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>OUR STATE MACHINE</b>
+</p>
+<p>
+Like most communications programs, our application can be represented as a state<br>
+machine. The application can be in one of a finite number of states: while in one state,<br>
+the application waits for an event, and the functionality of the program is encapsulated<br>
+in the actions performed during a state change.&nbsp;&nbsp;The nHTTPd state machine is shown in<br>
+Figure 1. The arrows between states indicate transitions -- where the program<br>
+actually does something. For clarity, my implementation of this state machine uses<br>
+symbols to denote each state, but using integer constants would save memory.
+</p>
+<p>
+<img src="img/141.gif" width="573 px"></img>
+</p>
+<p>
+<b>Figure 1.</b> The nHTTPd server's state machine
+</p>
+<p>
+Using a state machine provides many advantages during application development.<br>
+Primarily, it's an organizational tool, allowing us to accurately plan and visualize<br>
+what's going on inside our application. There's something very soothing (even if you're<br>
+as bad a mechanic as I am) in imagining an application running as a set of gears<br>
+clanking around, and it's a lot easier to follow than a spaghetti of method calls. There's<br>
+also the benefit that most existing protocols are specified and implemented as state<br>
+machines, which makes porting somebody else's code a little easier. While the Newton<br>
+is generally a difficult target for porting, porting from a state machine is significantly<br>
+easier than porting from most other kinds of implementation.
+</p>
+<p>
+Our state machine is a little odd, because there are really two separate machines<br>
+running at once. We use a protoTCPServer (discussed in detail later) to manage the<br>
+Internet link and provide endpoints listening on port 80 (the standard HTTP server<br>
+port number). This state machine invokes an instance of protoHTTPServer, which<br>
+itself is a smaller state machine that invokes your application.
+</p>
+<p>
+<b>GETTING A REQUEST</b>
+</p>
+<p>
+nHTTPd's protoTCPServer deals with all the details of establishing a link, as well as<br>
+instantiating and listening on a TCP socket. The protoTCPServer has two methods:
+</p>
+<ul>
+<li>Start requests the link, instantiates an endpoint, and awaits a connection.<br>
+When a connection is made, it's accepted, and the callback specification's<br>
+CompletionScript is called with the resulting endpoint. The callback passed to<br>
+Start is invoked whenever nHTTPd receives a connection on the monitored<br>
+port.</li>
+<li>Stop cancels any open endpoints, disconnects and destroys them, and<br>
+releases the open link. When we're done with the protoTCPServer, we use the<br>
+Stop method to shut down all pending connections and close down the link. The<br>
+callback for Stop is called when the teardown is complete and the link is<br>
+released.</li>
+</ul>
+<p>
+<b>USING THE LINK CONTROLLER</b>
+</p>
+<p>
+Looking at the Start method gives a good idea of what's involved in using the Link<br>
+Controller for the average application. The Link Controller APIs are all asynchronous,<br>
+so as part of the arguments you must provide a context frame and the symbol of the<br>
+completion script to be invoked (we'll see the details in a bit). Generally, you'll<br>
+perform the following steps:
+</p>
+<ol>
+<li>Your application will give the user a chance to configure the link by<br>
+calling InetOpenConnectionSlip.</li>
+<li>Your application will call InetGrabLink to request a link from the system.</li>
+<li>Periodically as the link is established, the callback you provided to<br>
+InetGrabLink will be invoked with status information. In your callback, you'll<br>
+call InetDisplayStatus to notify the user of the progress of the link<br>
+establishment.</li>
+<li>Once the link is established, you'll use NIE endpoints as you would any<br>
+other endpoint. You can also call InetGetLinkStatus to determine the current<br>
+status of the link, to help determine when you're ready to begin using an NIE<br>
+endpoint.</li>
+<li>When you're through with the link, you'll call InetReleaseLink to end the<br>
+connection.</li>
+</ol>
+<p>
+The InetOpenConnectionSlip method presents the user with a slip for selecting an<br>
+Internet service provider if no link is currently active. You pass three arguments to<br>
+InetOpenConnectionSlip: the initial ID of the link to be offered (or nil to have the<br>
+system select one for you), the frame to receive the callback message, and the name of<br>
+the slot in the frame that contains the callback method to be invoked.
+</p>
+<p>
+Once a selection is made, the callback is invoked with a single argument, either nil<br>
+(indicating that no connection is to be made) or 'connect. If a link is active, the slip is<br>
+not displayed, the existing link is used, and the callback is immediately invoked with<br>
+the <b>'connect</b> symbol. Listing 3 shows how we present the slip along with a callback<br>
+method to handle the user's choice (there are several callbacks -- one in the listing<br>
+for the user response, one passed to Start to be called in response to an incoming<br>
+connection, and one to be called during link acquisition, as shown later in Listing 4).
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 3.</b> Choosing a connection and handling the user's choice
+</p>
+<p>
+<code>Start := func(inCallbackSpec)</code><br>
+<code>begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;if fState then return;</code><br>
+<code>&nbsp;&nbsp;&nbsp;fState := 'choosing;</code><br>
+<code>&nbsp;&nbsp;&nbsp;InetOpenConnectionSlip(nil, self, 'mConnectSlipCb);</code><br>
+<code>&nbsp;&nbsp;&nbsp;fCallbackSpecs := Clone(kProtoCallbacks);</code><br>
+<code>&nbsp;&nbsp;&nbsp;fCallbackSpecs.fStart := inCallbackSpec;</code><br>
+<code>end;</code><br>
+<code></code><br>
+<code>mConnectSlipCb := func(inAction)</code><br>
+<code>begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;if inAction = 'connect then</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fState := 'linking;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fStatusView := BuildContext({_proto:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GetLayout("protoInetStatusTemplate")});</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fStatusView:Open();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;InetGrabLink(nil, self, 'mGrabCb);</code><br>
+<code>&nbsp;&nbsp;&nbsp;end</code><br>
+<code>&nbsp;&nbsp;&nbsp;else fState := nil;</code><br>
+<code>end;</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+Once the user has selected the preferred link mechanism, a status slip is created and<br>
+presented to the user. The nHTTPd status slip is based on the Newton DTS sample<br>
+Internet status slip, showing only a text view indicating the current status, along with<br>
+a Stop button and a close box. Your status slip can contain anything you find<br>
+appropriate, as long as it inherits from the protoInetStatusTemplate. Optionally, NIE<br>
+can create a default status view for your application.
+</p>
+<p>
+With the status view built and displayed, call InetGrabLink to request the link that was<br>
+indicated by the user. InetGrabLink uses the same arguments as<br>
+InetOpenConnectionSlip, although the callback itself takes three arguments: the link ID<br>
+being used, the current status of the link as an NIE status frame (the only slot you need<br>
+to worry about is the linkStatus slot), and a result code (which is nil for a<br>
+successfully established link).
+</p>
+<p>
+The process of acquiring a link can take a relatively long period of time, since the<br>
+device may have to dial a modem and then execute a chat script to establish a PPP or<br>
+SLIP stream before being able to conclude successfully. To keep your application<br>
+informed, it invokes a progress callback periodically. In your callback, you can use<br>
+the function InetDisplayStatus to keep the user apprised of status (see Listing 4).
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 4.</b> The InetGrabLink status callback
+</p>
+<p>
+<code>mGrabCb := func(inLinkID, inStat, inErr)</code><br>
+<code>begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;fLinkID := inLinkID;</code><br>
+<code>&nbsp;&nbsp;&nbsp;if inErr then</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mNotifyError("InetGrabLink", inErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fState := nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;end</code><br>
+<code>&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;InetDisplayStatus(inLinkID, fStatusView, inStat);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if inStat.linkStatus = 'connected then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fState := 'linked;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;InetDisplayStatus(inLinkID, fStatusView, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fStatusView := nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mInstantiateAndBind();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>end</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+InetDisplayStatus is a versatile function; depending on its arguments, it can do many<br>
+things. You pass the current link ID, a reference to your status view, and a reference<br>
+to the status frame from your callback. In turn, the function will show or hide the<br>
+status dialog or update the status indicator with the text of the current status as<br>
+necessary. Table 1 shows the relationship between the arguments to InetDisplayStatus<br>
+and the resulting behavior.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Table 1.</b> InetDisplayStatus arguments and results
+</p>
+<p><table border="0"><tr><td>Second Argument</td><td>Third Argument</td><td><b>Result</b></td></tr>
+<tr><td><b>(view status)</b></td><td><b></b><b>(status)</b></td><td></td></tr>
+<tr><td>nil</td><td>nil</td><td>Returns a</td></tr>
+<tr><td></td><td></td><td>reference to a</td></tr>
+<tr><td></td><td></td><td>default status</td></tr>
+<tr><td></td><td></td><td>view, and</td></tr>
+<tr><td></td><td></td><td>opens the</td></tr>
+<tr><td></td><td></td><td>view for you</td></tr>
+<tr><td>--</td><td>--</td><td>--</td></tr>
+<tr><td>Template of</td><td>Status frame</td><td>Uses the</td></tr>
+<tr><td></td><td></td><td>template as</td></tr>
+<tr><td></td><td></td><td>the status</td></tr>
+<tr><td></td><td></td><td>view</td></tr>
+<tr><td>a status view</td><td>(non-nil)</td><td>and displays</td></tr>
+<tr><td></td><td></td><td>the status</td></tr>
+<tr><td>--</td><td>--</td><td>--</td></tr>
+<tr><td>A currently shown</td><td>nil</td><td>Closes and</td></tr>
+<tr><td></td><td></td><td>destroys</td></tr>
+<tr><td>status template</td><td>the status</td><td></td></tr>
+<tr><td></td><td></td><td>view</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+Note that InetDisplayStatus can even create a status view for you, if you're so inclined.<br>
+This status view is built on the protoInetStatusView and provides text indications of<br>
+status to the user.
+</p>
+<p>
+<b>USING ENDPOINTS</b>
+</p>
+<p>
+Once the link is established, you're free to use endpoints to initiate TCP/IP<br>
+connections. Our application uses an array of endpoints to service incoming requests;<br>
+one endpoint is always listening for new connections, while other endpoints may be<br>
+open responding to existing requests.
+</p>
+<p>
+Our endpoints begin their life in the method mInstantiateAndBind, shown in Listing 5.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 5.</b> Creating and binding an endpoint
+</p>
+<p>
+<code>mInstantiateAndBind := func()</code><br>
+<code>begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;local myEp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;if NOT fEndpoints then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fEndpoints := [];</code><br>
+<code>&nbsp;&nbsp;&nbsp;myEp := {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_proto: protoBasicEndpoint,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_parent: self,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fState: nil,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ExceptionHandler: func(inExp)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;local myErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if HasSlot(inExp, 'data) then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myErr := inExp.data;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if myErr &lt;&gt; kCancellationException then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:Notify(kNotifyAlert, kAppName,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"Something bad happened - " &amp; myErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mTearDown(self);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;EventHandler: func(inEvent)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if inEvent.eventCode = kCommToolEventDisconnected then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:Notify(kNotifyAlert, kAppName,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"The other side has disconnected." &amp; myErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mTearDown(self);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print("Unexpected event(" &amp; inEvent.eventCode &amp; ")");</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end,</code><br>
+<code>&nbsp;&nbsp;&nbsp;};</code><br>
+<code>&nbsp;&nbsp;&nbsp;AddArraySlot(fEndpoints, myEp);</code><br>
+<code>&nbsp;&nbsp;&nbsp;try</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myErr := myEp:Instantiate(myEp, call kGetEndpointConfigOptions</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;with (fLinkID, kTCP));</code><br>
+<code>&nbsp;&nbsp;&nbsp;onexception |evt| do</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mNotifyError("Instantiate", 0);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;</code><br>
+<code>&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>&nbsp;&nbsp;&nbsp;if myErr then</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mNotifyError("Instantiate", myErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;</code><br>
+<code>&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>&nbsp;&nbsp;&nbsp;myEp.fState := 'instantiated;</code><br>
+<code>&nbsp;&nbsp;&nbsp;try</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myErr := myEp:Bind(</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call kINetBindOptions with (0, fPort), {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_parent: self,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;async: true,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CompletionScript: mBindCb,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;);</code><br>
+<code>&nbsp;&nbsp;&nbsp;onexception |evt| do</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mNotifyError("Bind", 0);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mTearDown(myEp);&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;</code><br>
+<code>&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>&nbsp;&nbsp;&nbsp;if myErr then</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mNotifyError("Bind", myErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mTearDown(nyEp);&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;</code><br>
+<code>&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>end</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+Note that setting up your endpoint works just as you'd expect. In addition, there's a<br>
+host of compile-time utility functions that aren't officially supported but they're<br>
+useful enough that I've included them with the program and summarized some of them<br>
+in Table 2.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Table 2.</b> NIE constant functions defined by include files
+</p>
+<p><table border="0"><tr><td><b>Function</b></td><td><b>Arguments</b></td><td><b>Purpose</b></td></tr>
+<tr><td>kNumToHostAddr</td><td>inAddrArr</td><td>Turns an IP</td></tr>
+<tr><td></td><td></td><td>address into a</td></tr>
+<tr><td></td><td></td><td>string in the</td></tr>
+<tr><td></td><td></td><td>form "a.b.c.d"</td></tr>
+<tr><td>kHostAddrToNum</td><td>inAddrStr</td><td>Turns a string</td></tr>
+<tr><td></td><td></td><td>address in the</td></tr>
+<tr><td></td><td></td><td>form "a.b.c.d"</td></tr>
+<tr><td></td><td></td><td>into the</td></tr>
+<tr><td></td><td></td><td>4-byteIP</td></tr>
+<tr><td></td><td></td><td>address</td></tr>
+<tr><td>kGetEndpointConfigOptions</td><td>inLinkID,
+inProtocol
+</td><td>Creates</td></tr>
+<tr><td></td><td></td><td>an options</td></tr>
+<tr><td></td><td></td><td>array for use</td></tr>
+<tr><td></td><td></td><td>when an NIE</td></tr>
+<tr><td></td><td></td><td>endpoint is</td></tr>
+<tr><td></td><td></td><td>instantiated</td></tr>
+<tr><td>kINetBindOptions</td><td>inLocalPort, inUseDefaultPort
+</td><td>Creates</td></tr>
+<tr><td></td><td></td><td>an options</td></tr>
+<tr><td></td><td></td><td>array for use</td></tr>
+<tr><td></td><td></td><td>when an NIE</td></tr>
+<tr><td></td><td></td><td>endpoint is</td></tr>
+<tr><td></td><td></td><td>bound</td></tr>
+<tr><td>kTCPConnectOptions</td><td>inRemoteAddrArr, inRemotePort
+</td><td>Creates</td></tr>
+<tr><td></td><td></td><td>an options</td></tr>
+<tr><td></td><td></td><td>array for use</td></tr>
+<tr><td></td><td></td><td>when an NIE</td></tr>
+<tr><td></td><td></td><td>TCP endpoint</td></tr>
+<tr><td></td><td></td><td>is connected</td></tr>
+<tr><td>kUDPPutBytesOptions</td><td>inAddrArr,
+inPort
+</td><td>Creates</td></tr>
+<tr><td></td><td></td><td>an options</td></tr>
+<tr><td></td><td></td><td>array for use</td></tr>
+<tr><td></td><td></td><td>with a UDP</td></tr>
+<tr><td></td><td></td><td>endpoint when</td></tr>
+<tr><td></td><td></td><td>data is to be</td></tr>
+<tr><td></td><td></td><td>sent</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+The function kGetEndpointConfigOptions generates the options array necessary to use<br>
+the NIE endpoint. There are options to request NIE (the <b>inet</b> option), specify the link<br>
+kind (the <b>ilid</b> option), and indicate the desired transport (a flag indicating TCP or<br>
+UDP is passed with the <b>itsv</b> option).
+</p>
+<p>
+When binding your endpoint, you'll have a little more to consider. At the time your<br>
+endpoint is bound, you'll pass different options depending on whether your endpoint is<br>
+going to be listening (inbound) or connecting (outbound), and whether the endpoint is<br>
+UDP or TCP. If you're using a UDP endpoint, or if your TCP endpoint is inbound, you'll<br>
+need to specify a local port number. If your endpoint is an outbound TCP connection,<br>
+NIE provides a randomly assigned port number for your endpoint. In the event that you<br>
+need to set an option, you can use the function kINetBindOptions.
+</p>
+<p>
+When would you want to specify a port? Most standard Internet applications have the<br>
+notion of a reserved, or well-known, port. The server listens on the well-known port<br>
+and clients specify that port as the destination port. Clients are free to use a random<br>
+port for the source.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>If you're writing intranet applications</b> with dedicated servers, be sure<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;that the port numbers you pick do not conflict with well-known ports. An<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;index of well-known ports is available from Internet RFC (Request for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Comments) number 1700. In general, ports numbered below 1024 are<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;reserved as well-known ports.*
+</p>
+<p>
+The function in Listing 6 creates an <b>ilpt</b> option frame containing the desired local<br>
+port. We're invoking Bind asynchronously, and when it's complete, notification is<br>
+achieved through the invocation of mBindCb.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 6.</b> Completing a Bind call
+</p>
+<p>
+<code>mBindCb := func(inEp, inOpt, inRes)</code><br>
+<code>begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;if inRes then</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mTearDown(inEp);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if inRes &lt;&gt; kCancellationException then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mNotifyError(inRes);</code><br>
+<code>&nbsp;&nbsp;&nbsp;end</code><br>
+<code>&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inEp.fState := 'bound;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;try</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inEp:Listen(nil, {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_parent: self,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;async: true,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CompletionScript: mListenCb,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;onexception |evt| do</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mNotifyError("Listen", 0);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mTearDown(inEp);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>end;</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+From this point, what you do depends on whether you're expecting an incoming<br>
+connection or initiating an outgoing request. Since I'm doing the former, I call my<br>
+endpoint's Listen method, which instructs NIE to wait until an incoming request<br>
+occurs. If you were calling Connect on a TCP socket to initiate an outgoing connection,<br>
+this would be where you specify the destination address and port using the <b>irts</b> option<br>
+-- you can programmatically generate the appropriate arguments with a call to<br>
+kTCPConnectOptions. In our case, the Newton waits until an incoming request is<br>
+detected, and then notifies the application by calling the completion script originally<br>
+passed to the Listen function (see Listing 7).
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 7.</b> Processing an incoming request
+</p>
+<p>
+<code>mListenCb := func(inEp, inOpt, inRes)</code><br>
+<code>begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;if inRes then</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mTearDown(inEp);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if inRes &lt;&gt; kCancellationException then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mNotifyError(inRes);</code><br>
+<code>&nbsp;&nbsp;&nbsp;end</code><br>
+<code>&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inEp.fState := 'listening;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inEp:Accept(nil, {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_parent: self,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;async: true,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CompletionScript: mAcceptCb,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;});</code><br>
+<code>&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>end</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+The way we've written it, nHTTPd is an indiscriminate server -- we accept<br>
+connections from anywhere. If you wanted to do access control, or log where incoming<br>
+connections were from, you could do it before we return control to the<br>
+protoTCPServer's callback in mAcceptCb, shown in Listing 8.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 8.</b> Accepting an incoming request
+</p>
+<p>
+<code>mAcceptCb := func(inEp, inOpt, inRes)</code><br>
+<code>begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;if kDebugOn then print("mAcceptCb");</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;if inRes then</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mTearDown(inEp);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if inRes &lt;&gt; kCancellationException then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mNotifyError(inRes);</code><br>
+<code>&nbsp;&nbsp;&nbsp;end</code><br>
+<code>&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inEp.fState := 'connected;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inEp.Close := func()</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if kDebugOn then print("Close");</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mTearDown(inEp);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fCallbackSpecs.fStart:?CompletionScript(inEp, nil, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>end</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+At this point, control is passed to the client of the protoTCPServer, and the request<br>
+phase of the connection has begun.
+</p>
+<p>
+That's the basics of the application -- creating endpoints, accepting configuration<br>
+from the user, waiting for requests, and accepting remote connections. We still need to<br>
+read serial data to process URLs, do something useful with them, and write out<br>
+response data. But first, let's do some more work with the DNS.
+</p>
+<h2>USING THE DOMAIN NAME SERVICE</h2>
+<p>
+For nHTTPd to be truly useful, it needs to track and log the host names generating<br>
+incoming requests. We could simply log the IP addresses of incoming hosts, but these<br>
+would mean little to the user. Instead, nHTTPd uses the DNS of NIE to ascertain the host<br>
+name of incoming queries.
+</p>
+<p>
+The DNS, like the Link Controller, uses asynchronous calls to do its work. You'll pass<br>
+information to one of the DNS functions and receive a response through a completion<br>
+script. The DNS provides several global functions for your use:
+</p>
+<ul>
+<li>DNSGetAddressFromName, which converts a host name string to its IP<br>
+equivalent</li>
+<li>DNSGetMailAddressFromName, which discovers the IP address for a mail<br>
+server given a host name in a particular domain</li>
+<li>DNSGetMailServerFromName, which returns the name of the mail server<br>
+given a host name</li>
+<li>DNSGetNameFromAddress, which returns a host name string given the IP<br>
+address</li>
+<li>DNSCancelRequests, which cancels all requests associated with a specific<br>
+context</li>
+</ul>
+<p>
+The first four functions take three arguments: the key for the data to be retrieved, the<br>
+client context, and a symbol denoting the callback. The cancellation function takes only<br>
+a client context and a callback symbol. For all but the last function, the callback<br>
+receives a results array and result code. The results array contains result frames,<br>
+each with one or more of the following slots:
+</p>
+<ul>
+<li>type, the result type (kDNSAddressType or kDNSDomainType)</li>
+<li>resultDomainName, a string containing the resulting domain name</li>
+<li>resultIPAddress, an array containing the 4-byte IP address</li>
+</ul>
+<p>
+Listing 9 shows a code fragment that determines the host name for a particular IP<br>
+address and logs it to a soup.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 9.</b> Translating a name to an address and logging it
+</p>
+<p>
+<code>DNSGetAddressFromName(fDestAddr, self, 'mDNSResultCb);</code><br>
+<code></code><br>
+<code>mDNSResultCb := func(inResultArr, inResultCode)</code><br>
+<code>begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;if inResultCode then</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Rats. It failed.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print("DNS lookup failed because of " &amp;&amp; inResultCode);</code><br>
+<code>&nbsp;&nbsp;&nbsp;end</code><br>
+<code>&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;local myAddrFrame;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;local myHandyAddresses := foreach myAddrFrame in inResultArr</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;collect myAddrFrame.resultDomainName;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fLogSoup:AddToDefaultStoreXmit( {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hostnames: myHandyAddresses,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;request: fRequestString</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;},</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kAppSymbol);</code><br>
+<code>&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>end;</code>
+</p>
+<p>
+______________________________
+</p>
+<h2>RECEIVING INPUT</h2>
+<p>
+Now that we have a connection and have logged the domain it came from, we need to do<br>
+the work of reading the URL request. Getting data into an application is done as with<br>
+any other endpoint: set up an input specification and wait for your data to come to you.<br>
+The input specification used by nHTTPd is simple, as shown in Listing 10.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 10.</b> The input specification
+</p>
+<p>
+<code>local myInputSpec := {</code><br>
+<code>&nbsp;&nbsp;&nbsp;form: 'string,</code><br>
+<code>&nbsp;&nbsp;&nbsp;termination: { endSequence: unicodeCR },</code><br>
+<code>&nbsp;&nbsp;&nbsp;filter: {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;byteproxy: [</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ byte: kUnicodeBS, proxy: nil },</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ byte: kUnicodeLF, proxy: nil },</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;]</code><br>
+<code>&nbsp;&nbsp;&nbsp;},</code><br>
+<code>&nbsp;&nbsp;&nbsp;inputScript: func(inEp, inData, inTerm, inOpt)</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;local myResult, myClient;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Optimization - why bother if nobody's registered?</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if Length(fRegistry) = 0 then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mReportBogusAndClose(myEp);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if StrLen(inData) = 0 then return;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Change stuff like %20 to ' '.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mFilterPercentEscapes(inData);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Break out the data frame for the application callback.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myResult := :mCreateArguments(inData);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;foreach myClient in fRegistry do</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if StrEqual(myClient.path, myResult.path) then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if NOT StrEqual(myClient.path, myResult.path) then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mReportBogusAndClose(myEp);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myClient.callback:CompletionScript(inServer, myResult, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;end,</code><br>
+<code>&nbsp;&nbsp;&nbsp;completionScript: func(inEp, inOpt, inRes)</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if inRes &lt;&gt; kCancellationException then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print("Input spec saw error " &amp; inRes);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mTearDown(myEp);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>&nbsp;&nbsp;&nbsp;end,</code><br>
+<code>};</code><br>
+<code></code><br>
+<code>myEp:SetInputSpec(myInputSpec);</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+If you've done Newton communications work before, this is nothing new. If you haven't,<br>
+it's worth taking a moment to consider the notion of an input specification.
+</p>
+<p>
+Rather than providing a traditional stream for input, the Newton OS provides the<br>
+notion of an input specification, which describes the format of the information your<br>
+application expects. You build an input specification (or "input spec" for short) using<br>
+things like the class of the incoming data, its length or an array of possible<br>
+termination characters, how long to wait for input, or communications flags that<br>
+denote the end of input. The Newton uses the input spec to watch for input in the<br>
+background while your application is running. Once the conditions of the input spec are<br>
+met, its inputScript is invoked; if the input spec is never satisfied, the<br>
+CompletionScript may be invoked to notify you that the input spec was never filled.<br>
+This will happen if you timeout on a receive, or if the endpoint is closed while you're<br>
+expecting input. As your application runs, it can change which input spec is active<br>
+with the endpoint method SetInputSpec. This aspect of the Newton communications<br>
+model makes writing applications based on state machines incredibly easy, and porting<br>
+most code from stream-based environments painfully difficult. For more on<br>
+communications state machines, see "Use a State Machine."
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;USE A STATE MACHINE</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;When planning an application, take pains to be sure you've developed a good<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;state machine to represent it. Effort during the design phase will be repaid a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;thousandfold when your application's communications code is almost entirely<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;an array of input specifications and their scripts. If you're new to working<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;with state machines and communications, check out the Newton DTS sample<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CommsFSM, which has enough to get you started.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;If you're porting code, take heart, and do the same. Virtually all protocols can<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;be well represented by a state machine, and if you do so you'll find it's easier<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;to implement. At all costs avoid simulating a UNIX &#198;-style stream with an<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;endpoint -- it's expensive, and you'll almost never need the functionality of a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;byte stream.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+There's an exception to input handling that you should know about, even if you never<br>
+use it. When you use a TCP endpoint, expedited data isn't passed to your application<br>
+through the normal input spec means. Instead, any expedited data is sent as an event to<br>
+your endpoint's event handler. Listing 11 shows such an event handler (the method<br>
+mTearDown, called in this event handler and many other places, is shown later).
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 11.</b> Receiving expedited data in an event handler
+</p>
+<p>
+<code>EventHandler:func(inEvent)</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if inEvent.eventCode = kCommToolEventDisconnected then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GetRoot():Notify(kNotifyAlert, kAppName,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"The other side has disconnected.");</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mTearDown(self);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else if inEvent.eventCode=kEventToolSpecific then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if inEvent.data &lt; 0 then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print("Got an error (" &amp; inEvent.data &amp; ")");</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print("Expedited data! The byte was" &amp; inEvent.data);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print("Unexpected event (" &amp; inEvent.eventCode &amp; ")");</code><br>
+<code>&nbsp;&nbsp;&nbsp;end,</code>
+</p>
+<p>
+______________________________
+</p>
+<h2>WRITING A RESPONSE</h2>
+<p>
+By now, I hope that you've guessed how to send data: you use the endpoint's Output<br>
+method, shown in Listing 12.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 12.</b> Sending data
+</p>
+<p>
+<code>inEp:Output("Why did you want " &amp; inData.tag &amp; "?", nil, {</code><br>
+<code>&nbsp;&nbsp;&nbsp;async: true,</code><br>
+<code>&nbsp;&nbsp;&nbsp;completionScript: func(inEp, inOpt, inErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Do something useful!</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...</code><br>
+<code>&nbsp;&nbsp;&nbsp;end,</code><br>
+<code>});</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+NIE provides two options of interest for output. The first is the expedited data option,<br>
+which can be used to set the expedited flag on a TCP packet. Expedited data is often used,<br>
+for example, to signal the other end of the connection that it should cease transmitting<br>
+data immediately. An expedited data byte is denoted with the iexp option, with a frame<br>
+like the one shown in Listing 13 (where inByte is the byte to be expedited).
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 13.</b> An expedited data frame
+</p>
+<p>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;label: "iexp",</code><br>
+<code>&nbsp;&nbsp;&nbsp;type: 'option,</code><br>
+<code>&nbsp;&nbsp;&nbsp;opCode: opSetRequired,</code><br>
+<code>&nbsp;&nbsp;&nbsp;result: nil,</code><br>
+<code>&nbsp;&nbsp;&nbsp;form: 'template,</code><br>
+<code>&nbsp;&nbsp;&nbsp;data: {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;argList: [ inByte ],</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;typeList: ['struct, 'byte ],</code><br>
+<code>&nbsp;&nbsp;&nbsp;},</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+The other option is required for UDP communications -- the address and port of the<br>
+destination. This is required when output operations are performed, because UDP is<br>
+connectionless (and you didn't specify the remote address during the call to your<br>
+endpoint's Connect method). More on that in a bit.
+</p>
+<h2>DISCONNECTING WHEN DONE</h2>
+<p>
+Tearing down and cleaning up is exactly the same as with a standard endpoint: cancel<br>
+any pending operations, disconnect, unbind, and then dispose of your endpoint. The<br>
+protoTCPServer uses the method mTearDown, in conjunction with an endpoint's state<br>
+variable fState, to determine the appropriate behavior (see Listing 14).
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 14.</b> Disconnect and cleanup
+</p>
+<p>
+<code>mTearDown := func(inEp)</code><br>
+<code>begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;if inEp.fState = nil then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print("We do nothing.");</code><br>
+<code>&nbsp;&nbsp;&nbsp;else if inEp.fState = 'instantiated then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mUnBindCb(inEp, inOpt, inErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;else if inEp.fState = 'bound then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mDisconnectCb(inEp, inOpt, inErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;else if inEp.fState = 'listening then</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inEp:Cancel({</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_parent: self,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;async: false, // avoid async race condition</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;completionScript: func(inEp, inOpt, inErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mDisconnectCb(inEp, inOpt, inErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;});</code><br>
+<code>&nbsp;&nbsp;&nbsp;end</code><br>
+<code>&nbsp;&nbsp;&nbsp;else if inEp.fState = 'connected then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inEp:mDisconnect();</code><br>
+<code>&nbsp;&nbsp;&nbsp;else if kDebugOn then print("Endpoint is already closing!");</code><br>
+<code>end</code><br>
+<code></code><br>
+<code>mDisconnectCb := func(inEp, inOpt, inRes)</code><br>
+<code>begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;try</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inEp:Unbind({</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_parent: self,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;async: true,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;completionScript: func(inEp, inOpt, inRes)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mUnbindCb(inEp, inOpt, inRes);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;);</code><br>
+<code>&nbsp;&nbsp;&nbsp;onexception |evt| do nil;</code><br>
+<code>end;</code><br>
+<code>/* and the other callbacks look similar...*/</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+There's not much to discuss about the teardown procedure, except a couple of hard<br>
+knocks you may get when actually using NIE endpoints (or any other kind):
+</p>
+<ul>
+<li>It's much better form to track your endpoint's state using a separate value<br>
+than to retrieve it with the endpoint's State method, so that the application can<br>
+use the state in other areas such as user interface or as part of the overall<br>
+state machine.</li>
+<li>Be sure you wrap the endpoint's teardown methods in exception handlers.<br>
+Although nothing's supposed to go wrong during an endpoint's teardown and<br>
+cleanup, you never know, and you don't want an application throwing<br>
+exceptions to your end users. This is especially true if your endpoint is being<br>
+torn down after something bad has already happened to an open connection.</li>
+</ul>
+<p>
+Unlike other endpoints, once you've disposed of an NIE endpoint, there's still a link<br>
+hanging around that you'll need to get rid of. You do this with a call to the Link<br>
+Controller's InetReleaseLink function, which will drop the link only if no other<br>
+application is currently using it. Our protoTCPServer invokes this method after<br>
+disposing of its last endpoint, as shown in Listing 15.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 15.</b> Disposing of endpoints and releasing the link
+</p>
+<p>
+<code>mUnbindCb := func(inEp, inOpt, inErr)</code><br>
+<code>begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;try</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inEp:Dispose();</code><br>
+<code>&nbsp;&nbsp;&nbsp;onexception |evt| do nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;SetRemove(fEndpoints, inEp);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if Length(fEndpoints) = 0 then :mReleaseLink();</code><br>
+<code>end;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>mReleaseLink := func()</code><br>
+<code>begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;fState := 'stopping;</code><br>
+<code>&nbsp;&nbsp;&nbsp;InetReleaseLink(fLinkID, self, 'mReleaseCb);</code><br>
+<code>end</code><br>
+<code></code><br>
+<code>mReleaseCB := func(inLinkID, inStat, inErr)</code><br>
+<code>begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;if inErr then</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mNotifyError("InetReleaseLink", inErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fState := nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fEndpoints := nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fCallbackSpecs.fStop:?CompletionScript(self, nil, inErr);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fCallbackSpecs := nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;end</code><br>
+<code>&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if inStat.linkStatus = 'idle then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;InetDisplayStatus(inLinkID, fStatusView, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fState := nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fEndpoints := nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fCallbackSpecs.fStop:?CompletionScript(nil, nil, nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>end</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+InetReleaseLink takes the same arguments as InetGrabLink -- the link ID, a reference<br>
+to a status view if appropriate, and what to put into the status view (or nil to conceal<br>
+it entirely). Although it's obvious, be sure your application has the same number of<br>
+InetGrabLink calls and InetReleaseLink calls. It's embarrassing to leave the link open<br>
+or clobber it on another application.
+</p>
+<p>
+In addition to releasing the link when you're done with it, you'll want to release it if<br>
+you won't be using it for a long period of time (over 15 minutes or so) to avoid battery<br>
+drain from an internal modem or the like.
+</p>
+<h2>WHAT IF THIS WERE UDP?</h2>
+<p>
+The Newton endpoint model is connection-oriented; it doesn't directly work with a<br>
+connectionless protocol such as UDP. Invocation of a UDP endpoint is essentially<br>
+similar to a TCP endpoint, except that you never indicate the destination IP and port at<br>
+the time you connect. Instead, you'll indicate them during your call to the endpoint's<br>
+Output method, using the <b>iuds</b> option.
+</p>
+<p>
+When performing input or output with UDP, be sure you always indicate packet<br>
+boundaries. You do this by forcing a packet boundary on output, by including the<br>
+kPacket and kEOP flags in your output and input specifications (see Listing 16).
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 16.</b> Using packet boundaries for UDP
+</p>
+<p>
+<code>local myInputSpec := {</code><br>
+<code>&nbsp;&nbsp;&nbsp;form: 'string,</code><br>
+<code>&nbsp;&nbsp;&nbsp;termination: {useEOP: true},</code><br>
+<code>&nbsp;&nbsp;&nbsp;rcvFlags: kPacket,</code><br>
+<code>&nbsp;&nbsp;&nbsp;rcvOptions: {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;label: "iuss",</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;type: 'option,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;opCode: opGetCurrent,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result: nil,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;form: 'template,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data: {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;arglist: [</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ 0,0,0,0 ],&nbsp;&nbsp;&nbsp;// Host address</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Host port</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;],</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;typelist: [</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;['array, 'byte, 4],</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'struct,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;],</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;},</code><br>
+<code>&nbsp;&nbsp;&nbsp;inputScript: func(inEp, inData, inTerm, inOpt)</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Do something with the data.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...</code><br>
+<code>&nbsp;&nbsp;&nbsp;end,</code><br>
+<code>&nbsp;&nbsp;&nbsp;completionScript: func(inEp, inOpt, inRes)</code><br>
+<code>&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if inRes &lt;&gt; kCancellationException then</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print("Input spec saw error " &amp; inRes);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:mTearDown(inEp);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end;</code><br>
+<code>&nbsp;&nbsp;&nbsp;end,</code><br>
+<code>};</code><br>
+<code>fEndpoint:SetInputSpec(myInputSpec);</code><br>
+<code>fEndpoint:Output("Hello world!",</code><br>
+<code>&nbsp;&nbsp;&nbsp;call kUDPPutBytesOptions with (fAddr, fPort), {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;async: true,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sendFlags: kPacket+kEOP,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;completionScript: func(inEp, inOpt, inErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;begin</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Do something useful!</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end,</code><br>
+<code>&nbsp;&nbsp;&nbsp;});</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+Table 3 indicates which options you'll set at which times for which kinds of<br>
+connections. You can use this as a summary to help you in creating your own<br>
+applications.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Table 3.</b> NIE options and their uses
+</p>
+<p><table border="0"><tr><td></td><td><b>Used</b></td><td><b></b><b>Inbound/</b></td><td></td><td></td></tr>
+<tr><td><b>Option</b></td><td><b></b><b>Provided by</b></td><td><b></b><b>with</b></td><td><b></b><b>outbound</b></td><td><b></b><b>Purpose</b></td></tr>
+<tr><td>inet</td><td>kGetEndpointConfigOptions</td><td>Both</td><td>Both</td><td>Specify NIE at</td></tr>
+<tr><td></td><td></td><td></td><td></td><td>instantiate</td></tr>
+<tr><td>ilid</td><td>kGetEndpointConfigOptions</td><td>Both</td><td>Both</td><td>Specify link ID at</td></tr>
+<tr><td></td><td></td><td></td><td></td><td>instantiate</td></tr>
+<tr><td>itsv</td><td>kGetEndpointConfigOptions</td><td>Both</td><td>Both</td><td>Specify either TCP or</td></tr>
+<tr><td></td><td></td><td></td><td></td><td>UDP at instantiate</td></tr>
+<tr><td>ilpt</td><td>kINetBindOptions</td><td>TCP</td><td>Inbound</td><td>Specify local port for inbound</td></tr>
+<tr><td></td><td></td><td></td><td></td><td>TCP during bind</td></tr>
+<tr><td>ilpt</td><td>kINetBindOptions</td><td>UDP</td><td>Both</td><td>Specify local port for UDP</td></tr>
+<tr><td></td><td></td><td></td><td></td><td>during bind</td></tr>
+<tr><td>irts</td><td>kTCPConnectOptions</td><td>TCP</td><td>Outbound</td><td>Specify remote IP and port for</td></tr>
+<tr><td></td><td></td><td></td><td></td><td>TCP during connect</td></tr>
+<tr><td>iexp</td><td>N/A</td><td>TCP</td><td>Both</td><td>Specify to expedite data during</td></tr>
+<tr><td></td><td></td><td></td><td></td><td>output</td></tr>
+<tr><td>iuss</td><td>kUDPPutByteOptions</td><td>UDP</td><td>Both</td><td>Specify remote host and</td></tr>
+<tr><td></td><td></td><td></td><td></td><td>port during UDP output</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<h2>GO OUT THERE AND NEWTONIZE THE INTERNET!</h2>
+<p>
+With the exception of link-level management, using NIE is the same as using any other<br>
+kind of Newton endpoint. The NIE's Link Controller and DNS use new global functions to<br>
+provide support for a unified link-level interface and domain name service. The design<br>
+of NIE strongly encourages asynchronous programming techniques.
+</p>
+<p>
+Using NIE to port existing applications is easy, as is writing new ones. With a little<br>
+work, your application can soon be merging on the infobahn among the desktop<br>
+machines already cruising the Net.
+</p>
+
+
+
+<b>RELATED READING</b>
+<ul>
+<li>"ATSlat: A Shared Whiteboard for Newton" by Ray Rischpater, <i>PDA</i><br>
+<i>Developers</i>, July 1996.</li>
+<li><i>TCP/IP Illustrated</i> (3 volumes) by W. Richard Stevens<br>
+(Addison-Wesley, 1994-95).</li>
+<li><i>Newton Programmer's Guide for Newton 2.0</i> by Apple Computer,<br>
+Inc. (Addison-Wesley, 1996), Chapter 24, "Built-in<br>
+Communications Tools."</li>
+<li><i>Newton Internet Enabler</i> (Apple Computer, Inc., 1996). This is<br>
+provided on the Newton Developer CD as the NIE API Guide and can also<br>
+be found on the Web at<br>
+http://www.devworld.apple.com/dev/newton/tools/nie.html.</li>
+</ul>
+<p>
+
+
+
+<b>RAY RISCHPATER</b> (ray_rischpater@allpen.com) is a Software Craftsman currently<br>
+employed at AllPen Software, Inc., developing custom applications for the Newton<br>
+platform. His hobbies include writing freeware for PDA devices, amateur radio, and<br>
+channeling technical articles for journals such as develop and PDA Developers from<br>
+his Siberian Husky, Sake.*
+</p>
+
+<p>
+<b>Thanks to</b> our technical reviewers T. Erik Browne, Dan Chernikoff, Gary Hillerson,<br>
+Jim Schram, and Bruce Thompson. Thanks also to Todd Courtois and Rachel Rischpater<br>
+for their feedback, and of course the staff at <i>develop</i> for putting the journal around the<br>
+article.*
+</p>
+</body>
+</html>

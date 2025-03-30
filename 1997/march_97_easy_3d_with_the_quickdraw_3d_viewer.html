@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 11 - Extracted from develop-1997 -->
+<!-- on 2025-03-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 97 - Easy 3D With the QuickDraw 3D Viewer</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>Easy 3D With the QuickDraw 3D Viewer</h1>
+<h2>Nick Thompson</h2>
+<p>
+<img src="img/143.gif" width="198 px"></img>
+</p>
+<p>
+<i style="font-size:125%;">Ever since QuickDraw 3D shipped in 1995, the QuickDraw 3D</i>
+<br>
+
+<i style="font-size:125%;">Viewer has made adding 3D support to your application easy. With</i>
+<br>
+
+<i style="font-size:125%;">QuickDraw 3D version 1.5 we've enhanced the Viewer to make it</i>
+<br>
+
+<i style="font-size:125%;">even easier to use. We've improved the user interface, added</i>
+<br>
+
+<i style="font-size:125%;">support for Undo, and rolled in some new API calls. Here you'll</i>
+<br>
+
+<i style="font-size:125%;">learn how to implement the Viewer to provide simple yet powerful</i>
+<br>
+
+<i style="font-size:125%;">3D capabilities in your products.</i>
+</p>
+<p>
+The QuickDraw 3D Viewer provides a way for you to add 3D support to your<br>
+application without having to come to grips with the complexity of the whole<br>
+QuickDraw 3D programming API. As described in "QuickDraw 3D: A New Dimension<br>
+for Macintosh Graphics" in <i>develop</i> Issue 22, full use of QuickDraw 3D requires you to<br>
+understand many things before you can get started; for example, you need to be able to<br>
+set up data structures to hold not only the geometries being modeled but also the other<br>
+elements of a scene, including the lighting, the camera, and the draw context. But<br>
+sometimes you just want to be able to display some 3D data in your application without<br>
+having to write five pages of setup code.
+</p>
+<p>
+If this situation sounds familiar to you, the Viewer is tailor-made for your<br>
+application. You'll learn all you need to know to be able to use it from reading this<br>
+article and examining the accompanying sample applications. Still, you might want to<br>
+read the article in Issue 22 as background and to get a sense of how you can use the<br>
+Viewer in conjunction with the QuickDraw 3D shared library.
+</p>
+<h2>ABOUT THE VIEWER</h2>
+<p>
+The QuickDraw 3D Viewer is a high-level shared library, available in both Macintosh<br>
+and Windows versions, that's separate from the QuickDraw 3D shared library. With<br>
+fewer calls than the full QuickDraw 3D API, the Viewer is a great place to start<br>
+exploring QuickDraw 3D. By implementing the Viewer, you can enable users to view<br>
+and have a basic level of interaction with 3D data in your application without having to<br>
+call any QuickDraw 3D functions. When you need more power, you can always mix<br>
+QuickDraw 3D calls with Viewer calls.
+</p>
+<p>
+The Viewer is ideal for applications that might be described as traditional 2D<br>
+applications, such as image database and page layout applications. For example, the<br>
+image database Cumulus (from the German developer Canto Software GMbH) is a<br>
+traditional 2D application that implements the Viewer to enable users to manipulate<br>
+objects in 3D (see Figure 1).
+</p>
+<p>
+<img src="img/144.gif" width="522 px"></img>
+</p>
+<p>
+<b>Figure 1.</b> An example of Viewer use in the Cumulus image database
+</p>
+<p>
+The Viewer gives your application considerable functionality for free. For example,<br>
+the Macintosh version of the Viewer supports drag and drop of 3D data. And the Viewer<br>
+allows access to the view object (described in detail in the article in <i>develop</i> Issue 22)<br>
+so that you can add to your application the capability of changing the lighting, the<br>
+camera angles and position, and other things such as the type of renderer being used.
+</p>
+<p>
+Implementing the Viewer in your application is simple. After going over a few<br>
+preliminaries, we'll look in detail at two sample applications -- one just a<br>
+bare-bones framework for using the Viewer, and the second a more elaborate<br>
+application that implements a fuller set of Viewer features. The source code for both<br>
+programs accompanies this article on this issue's CD and <i>develop</i>'s Web site.
+</p>
+<h2>CHECKING THAT THE VIEWER IS INSTALLED</h2>
+<p>
+Before you can use the Viewer, you need to make sure that it's installed. There are two<br>
+ways to do this on the Macintosh: you can use Gestalt on System 7 or you can weak-link<br>
+against the library and check to see if one of the Viewer routines has been declared<br>
+when you launch your application.
+</p>
+<p>
+You need to call Gestalt with the constant gestaltQD3DViewer, as shown in Listing 1.<br>
+The routine IsQD3DViewerInstalled returns a Boolean indicating whether the Viewer<br>
+has been installed correctly. The bit selector gestaltQD3DViewerAvailable can be used<br>
+to test the appropriate bit of the response from Gestalt.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 1.</b> Checking for the Viewer with Gestalt
+</p>
+<p>
+<code>Boolean IsQD3DViewerInstalled()</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;theErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;&nbsp;&nbsp;gesResponse;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (Gestalt(gestaltQD3DViewer, &amp;gesResponse) != noErr)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return false;</code><br>
+<code>&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return (gesResponse == gestaltQD3DViewerAvailable);</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+The other method is to weak-link against the Viewer library and check the value of one<br>
+of the Viewer routines against the constant kUnresolvedCFragSymbolAddress (defined<br>
+in CodeFragments.h):
+</p>
+<p>
+<code>if ((long)Q3ViewerNew != kUnresolvedCFragSymbolAddress) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;...&nbsp;&nbsp;&nbsp;/* Call Viewer routines. */</code><br>
+<code>}</code>
+</p>
+<p>
+For more information on weak linking (also called soft importing), consult the<br>
+documentation that came with your development system. If you use this method, you'll<br>
+also need to include the file CodeFragments.h.
+</p>
+<h2>DETERMINING THE VIEWER VERSION</h2>
+<p>
+Version 1.5 of the Viewer introduces several new API features not found in previous<br>
+versions of the Viewer. If you want your application to be compatible with previous<br>
+versions of the Viewer, you need to check the version by calling the new routine<br>
+Q3ViewerGetVersion. Of course, before you can call this routine, you'll need to test<br>
+whether it's been loaded along with the Viewer shared library by checking its address<br>
+against the symbol kUnresolvedCFragSymbolAddress. If it hasn't been loaded, you can<br>
+safely assume that the Viewer version is 1.0.
+</p>
+<p>
+Alternatively, you can check the address of each function you need to use against<br>
+kUnresolvedCFragSymbolAddress. Listing 2 shows a routine to determine the Viewer<br>
+version; this routine works with all versions of the Viewer library.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 2.</b> Checking the Viewer version number
+</p>
+<p>
+<code>OSErr GetViewerVersion(unsigned long *major, unsigned long *minor)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;/* Version 1.0 of the QuickDraw 3D Viewer had no get version</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call, so see if the symbol for the API routine descriptor</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;is loaded. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;if ((Boolean)Q3ViewerGetVersion ==</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kUnresolvedCFragSymbolAddress) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*major = 1;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*minor = 0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return noErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;else</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return Q3ViewerGetVersion(major, minor);</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<h2>A BARE-BONES FRAMEWORK FOR USING THE VIEWER</h2>
+<p>
+Now let's take a look at one of the simplest possible applications we might write to<br>
+enable someone to open and view QuickDraw 3D metafiles (files containing 3DMF<br>
+data). Of course, this isn't a real Macintosh program -- it opens only one document, it<br>
+doesn't respond to Apple events, it doesn't present a menu bar, and the user can't save<br>
+changes made in the window. But it does demonstrate that with just five calls to the<br>
+Viewer library you can provide good support for 3DMF data in your application. We're<br>
+not going to cover anything but the QuickDraw 3D part of this application in any detail,<br>
+but the source code is commented well enough so that it should be clear how it works.
+</p>
+<p>
+<b>THE WINDOW</b>
+</p>
+<p>
+Figure 2 shows the window from our simple application, called BareBones3DApp. An<br>
+instance of the Viewer -- a viewer object -- can occupy an entire window or it can<br>
+occupy some smaller portion of a window. In the case of BareBones3DApp, the viewer<br>
+object entirely fills the window. The viewer object consists of a controller strip and a<br>
+content area outlined with a drag border.
+</p>
+<p>
+<img src="img/145.gif" width="378 px"></img>
+</p>
+<p>
+<b>Figure 2. </b>Window from BareBones3DApp
+</p>
+<ul>
+<li>The <i>controller strip</i> contains a number of buttons for manipulating the<br>
+user's point of view (that is, the view's camera). Each of the buttons either<br>
+performs a specific function, such as setting a particular camera for the view,<br>
+or sets a mode that determines how user interactions are handled. The<br>
+controller strip can also be hidden; in this case, a visual element known as<br>
+a<i>badge</i> takes its place to indicate to the user that the image in the window<br>
+represents a 3D model. The user can click on the badge to make the controller<br>
+strip appear.</li>
+<li>The <i>content area</i> (called the <i>picture area</i> in earlier documentation) is<br>
+where the 3DMF data is drawn. Users can interact with the object drawn in the<br>
+content area in one of several modes, the modes being selected by clicking one<br>
+of the buttons in the controller strip. In the default mode that the window<br>
+opens up in, users can change the camera angle by dragging across the object.</li>
+<li>The "OpenDoc-style" <i>drag border</i> indicates that the viewer content area<br>
+can initiate drags of 3DMF data. By dragging on this border the user can drag<br>
+the object displayed in the content area. If dragging into and out of the content<br>
+area is enabled (as it is by default), the border will be highlighted when a<br>
+drag is initiated to indicate that the content area can receive drops as well.</li>
+</ul>
+<p>
+The part of the window that contains the content area and the controller strip (if<br>
+present) is the <i>viewer pane</i>. As an alternative to having the viewer pane entirely fill<br>
+the window, you can place the viewer pane in just part of the window, as shown in<br>
+Figure 3. This is useful for embedding a 3D picture in a document window.
+</p>
+<p>
+<img src="img/146.gif" width="342 px"></img>
+</p>
+<p>
+<b>Figure 3.</b> The viewer pane as part of a window
+</p>
+<p>
+In the controller strip, the active button is drawn to look as if it's been pressed. The<br>
+buttons shown in Figures 2 and 3 are the default ones; you can hide those you don't<br>
+want, or make visible the one additional button that's hidden by default, by setting<br>
+flags that will be discussed shortly. You can also hide or show the entire controller<br>
+strip; you'll see how to do this later.
+</p>
+<p>
+The full set of available controller buttons is shown in Figure 4. Let's look at each in<br>
+turn.
+</p>
+<p>
+<img src="img/147.gif" width="44 px"></img>
+</p>
+<p>
+The <i>camera viewpoint button</i> (called the <i>camera angle button</i> in earlier<br>
+documentation) enables the user to view the displayed object from a different camera<br>
+angle. Holding down the button causes a pop-up menu to appear, listing the predefined<br>
+direction cameras as well as any perspective (view angle aspect) cameras stored in<br>
+the view hints of the 3DMF data. If any such cameras have name attributes associated<br>
+with them in the data, the names are displayed in the pop-up menu; otherwise, the<br>
+cameras are listed as "Camera #1," and so on. (The predefined direction cameras are<br>
+calculated based on the front and top custom attributes if present in the 3DMF view<br>
+hints; otherwise, they're calculated from the displayed object's coordinate space.)
+</p>
+<p>
+<img src="img/148.gif" width="38 px"></img>
+</p>
+<p>
+The <i>distance button</i> lets the user move the displayed object closer or farther away.<br>
+Clicking the distance button and then dragging downward in the content area moves the<br>
+object closer. Dragging upward in the content area moves the object farther away. The<br>
+Down Arrow and Up Arrow keys also move the object closer or farther away,<br>
+respectively.
+</p>
+<p>
+<img src="img/149.gif" width="36 px"></img>
+</p>
+<p>
+The <i>rotate button</i> enables rotating an object. Clicking this button and then dragging in<br>
+the content area rotates the displayed object in the direction of the drag. The arrow<br>
+keys rotate the object in the direction of the arrow. With version 1.5 of the Viewer<br>
+library, you can use the Shift key to constrain the motion of the object as you rotate it.
+</p>
+<p>
+<img src="img/150.gif" width="38 px"></img>
+</p>
+<p>
+The <i>zoom button</i> enables the user to alter the field of view of the current camera,<br>
+thereby zooming in or out on the displayed object. After the zoom button is clicked,<br>
+pressing the Up Arrow and Down Arrow keys zooms the object out and in. By default,<br>
+this button isn't displayed.
+</p>
+<p>
+<img src="img/151.gif" width="38 px"></img>
+</p>
+<p>
+The <i>move button</i> lets the user move an object. Clicking this button and then dragging in<br>
+the content area moves the object to a new location. The arrow keys move the object in<br>
+the direction of the arrow.
+</p>
+<p>
+<img src="img/152.gif" width="38 px"></img>
+</p>
+<p>
+The <i>reset button</i> resets the camera angle and position to their initial settings.
+</p>
+<p>
+<b>Figure 4.</b> The full set of available controller buttons
+</p>
+<p>
+<b>THE BASIC CALLS</b>
+</p>
+<p>
+As mentioned earlier, you can add support for 3DMF data with calls to just five<br>
+routines in the Viewer shared library. These routines, described below, are the ones<br>
+we use in BareBones3DApp. For more details on these calls, see the book <i>3D Graphics</i><br>
+<i>Programming With QuickDraw 3D.</i>
+</p>
+<ul>
+<li>Q3ViewerNew -- Creates a viewer object and attaches it to a previously<br>
+created window, then returns a reference to the viewer object. You need to<br>
+pass this reference to other Viewer routines.</li>
+<li>Q3ViewerDispose -- Disposes of the viewer object and associated storage.<br>
+You'll probably want to do this just before closing and disposing of the window.</li>
+<li>Q3ViewerSetFile -- Loads a model into the viewer object from a<br>
+previously opened 3DMF file. In our program we call StandardGetFile to obtain<br>
+the details of the file to open and then open it with the File Manager, passing<br>
+Q3ViewerSetFile the file reference the File Manager gave us.</li>
+<li>Q3ViewerEvent -- Gives the viewer object the opportunity to handle<br>
+events, then returns a Boolean that indicates whether the event was handled.</li>
+<li>Q3ViewerDraw -- Draws the contents of a viewer object's rectangle in<br>
+response to an update event.</li>
+</ul>
+<p>
+<b>THE MAIN ROUTINE</b>
+</p>
+<p>
+The main routine of BareBones3DApp handles initialization of Macintosh managers,<br>
+grows the heap to its maximum size, and checks to see if the QuickDraw 3D Viewer is<br>
+installed. There must be at least 24K free in the application heap before a call to<br>
+Q3ViewerNew can succeed, so it's important to call the Toolbox routine MaxApplZone to<br>
+grow the application heap to its maximum size at the start of the program. Otherwise,<br>
+the Viewer may detect (in error) that there's not enough memory to run.
+</p>
+<p>
+The program then calls the Toolbox routine StandardGetFile to locate a 3DMF file to<br>
+open and read. The selected file is opened, and a window is created. The routine to<br>
+create a viewer object looks like this:
+</p>
+<p>
+<code>TQ3ViewerObject Q3ViewerNew(CGrafPtr port, Rect *rect,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;unsigned long flags);</code>
+</p>
+<p>
+Notice that you need to pass in port, rectangle, and flags parameters. It's possible to<br>
+create an "empty" viewer object by passing in nil for the port parameter; you can then<br>
+assign a port later with Q3ViewerSetPort. The flags parameter is used to set flags that<br>
+control various aspects of the behavior of the viewer object you create; these flags,<br>
+along with the behavior that results when they're set, are listed in Table 1. The flags<br>
+of an already created viewer object can be changed with the Q3ViewerSetFlags routine.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Table 1.</b> Flags that control aspects of the viewer object
+</p>
+<p><table border="0"><tr><td><b>Flag</b></td><td><b></b><b>default</b></td><td><b></b><b>Result when set</b></td></tr>
+<tr><td>kQ3ViewerActive</td><td>On</td><td>The viewer object is active (can be</td></tr>
+<tr><td></td><td></td><td>manipulated).</td></tr>
+<tr><td>kQ3ViewerShowBadge</td><td>Off</td><td>A badge is displayed in the viewer pane.</td></tr>
+<tr><td></td><td></td><td>This flag should be cleared when</td></tr>
+<tr><td></td><td></td><td>kQ3ViewerControllerVisible is set.</td></tr>
+<tr><td>kQ3ViewerControllerVisible</td><td>On</td><td>The controller strip is visible. This flag</td></tr>
+<tr><td></td><td></td><td>should be cleared when</td></tr>
+<tr><td></td><td></td><td>kQ3ViewerShowBadge is set.</td></tr>
+<tr><td>kQ3ViewerDrawFrame</td><td>Off</td><td>A one-pixel frame is drawn within the</td></tr>
+<tr><td></td><td></td><td>viewer pane.</td></tr>
+<tr><td>kQ3ViewerDraggingOff</td><td>Off</td><td>Dragging into and out of the viewer</td></tr>
+<tr><td></td><td></td><td>content area is disabled.</td></tr>
+<tr><td>kQ3ViewerDraggingInOff</td><td>Off</td><td>Dragging into the viewer content area is</td></tr>
+<tr><td></td><td></td><td>disabled.</td></tr>
+<tr><td>kQ3ViewerDraggingOutOff</td><td>Off</td><td>Dragging out of the viewer content area</td></tr>
+<tr><td></td><td></td><td>is disabled.</td></tr>
+<tr><td>kQ3ViewerButtonCamera</td><td>On</td><td>The camera viewpoint button in the</td></tr>
+<tr><td></td><td></td><td>controller strip is visible.</td></tr>
+<tr><td>kQ3ViewerButtonTruck</td><td>On</td><td>The distance button in the controller</td></tr>
+<tr><td></td><td></td><td>strip is visible.</td></tr>
+<tr><td>kQ3ViewerButtonOrbit</td><td>On</td><td>The rotate button in the controller strip</td></tr>
+<tr><td></td><td></td><td>is visible.</td></tr>
+<tr><td>kQ3ViewerButtonZoom</td><td>Off</td><td>The zoom button in the controller strip</td></tr>
+<tr><td></td><td></td><td>is visible.</td></tr>
+<tr><td>kQ3ViewerButtonDolly</td><td>On</td><td>The move button in the controller strip</td></tr>
+<tr><td></td><td></td><td>is visible.</td></tr>
+<tr><td>kQ3ViewerButtonReset</td><td>On</td><td>The reset button in the controller strip</td></tr>
+<tr><td></td><td></td><td>is visible.</td></tr>
+<tr><td>kQ3ViewerOutputTextMode</td><td>Off</td><td>Q3ViewerWriteFile and</td></tr>
+<tr><td></td><td></td><td>Q3ViewerWriteData write out 3DMF data</td></tr>
+<tr><td></td><td></td><td>in text mode.</td></tr>
+<tr><td>kQ3ViewerDragMode</td><td>Off</td><td>The viewer object responds only to drag</td></tr>
+<tr><td></td><td></td><td>and drop interaction, and can't be</td></tr>
+<tr><td></td><td></td><td>manipulated in any other way. A</td></tr>
+<tr><td></td><td></td><td>mouse-down in the content area will</td></tr>
+<tr><td></td><td></td><td>initiate a drag operation.</td></tr>
+<tr><td>kQ3ViewerDrawGrowBox</td><td>Off</td><td>The viewer object displays a size box in</td></tr>
+<tr><td></td><td></td><td>the lower-right corner.</td></tr>
+<tr><td>kQ3ViewerDrawDragBorder</td><td>On</td><td>The viewer object displays a drag border</td></tr>
+<tr><td></td><td></td><td>around the perimeter of the content area.</td></tr>
+<tr><td>kQ3ViewerDefault</td><td></td><td>Returns the viewer object to the default</td></tr>
+<tr><td></td><td></td><td>configuration.</td></tr></table></p>
+<p class="spacer">&nbsp;</p>
+<p class="spacer">&nbsp;</p>
+<p>
+______________________________
+</p>
+<p>
+The flags kQ3ViewerButtonTruck, kQ3ViewerButtonOrbit, kQ3ViewerButtonZoom, and<br>
+kQ3ViewerButtonDolly can also be used with the Q3ViewerSetCurrentButton routine.<br>
+Passing one of these flags to this routine sets the viewer object to the mode indicated<br>
+by the button. If the button is visible in the controller strip, it's drawn to look as if<br>
+it's been pressed, and the previously selected button is deselected.
+</p>
+<p>
+You can override the default drag-handling behavior by attaching your own drag<br>
+handler to the document window. You'll want to do this if your application supports<br>
+multiple viewer objects per window or if you're creating something where the default<br>
+may get in the way of your programming model -- for example, an OpenDoc part or a<br>
+HyperCard XCMD.
+</p>
+<p>
+Listing 3 shows how we implement the main routine in C. Note that we place a<br>
+reference to the viewer object in the window's refCon field so that later in the<br>
+program we can easily get the viewer object associated with the window.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 3.</b> The main routine from BareBones3DApp
+</p>
+<p>
+<code>void main(void)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myNumTypes = 1, myRefNum;</code><br>
+<code>&nbsp;&nbsp;&nbsp;SFTypeList&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myTypeList = { '3DMF' };</code><br>
+<code>&nbsp;&nbsp;&nbsp;StandardFileReply&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mySFReply;</code><br>
+<code>&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theErr = noErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;WindowPtr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myWind = nil;</code><br>
+<code>&nbsp;&nbsp;&nbsp;Rect&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myRect = { 0, 0, kWindHeight, kWindWidth };</code><br>
+<code>&nbsp;&nbsp;&nbsp;TQ3ViewerObject&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myViewer;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;/* Initialize all the needed managers. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;InitGraf((Ptr)&amp;qd.thePort); InitFonts(); InitWindows();</code><br>
+<code>&nbsp;&nbsp;&nbsp;InitMenus(); TEInit(); InitDialogs((long)nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;InitCursor();</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;/* Expand the heap to maximum size. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;MaxApplZone();</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;/* We weak-linked against the Viewer. Now check that it's</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;installed. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;if ((long)Q3ViewerNew != kUnresolvedCFragSymbolAddress) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;StandardGetFile(nil, myNumTypes, myTypeList, &amp;mySFReply);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (mySFReply.sfGood) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theErr = FSpOpenDF(&amp;mySFReply.sfFile, fsRdPerm, &amp;myRefNum);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OffsetRect(&amp;myRect, 50, 50);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myWind = NewCWindow(nil, &amp;myRect, "\pViewerApp", true,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;documentProc, (WindowPtr)-1, true, 0L);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (myViewer = Q3ViewerNew((CGrafPtr)myWind,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;myWind-&gt;portRect,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kQ3ViewerDefault)) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* If the viewer object isn't nil, we created it OK. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theErr = Q3ViewerUseFile(myViewer, myRefNum);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetWRefCon(myWind, (long)myViewer);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MainEventLoop();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;ExitToShell();&nbsp;&nbsp;</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>THE MAIN EVENT LOOP</b>
+</p>
+<p>
+The main event loop, shown in Listing 4, handles events until the window is closed.<br>
+There are only two types of event that we'll consider handling in this program: update<br>
+and mouse-down events. In response to an update event we'll need to call<br>
+Q3ViewerDraw. Handling mouse-down events is somewhat more complex, since we'll<br>
+need to determine where the mouse-down occurred.
+</p>
+<ul>
+<li style="margin-left: 44px">If the mouse-down was in the close box of the window, we need to dispose<br>
+of the viewer object and the window. In the main event loop, we check to see if<br>
+there's a window open for the application by calling the Toolbox routine<br>
+FrontWindow; if there isn't one open, the application quits.</li>
+<li style="margin-left: 44px">If the mouse-down was in the content area of the window, we can pass the<br>
+event record to the routine Q3ViewerEvent to handle. For version 1.0.4 and<br>
+earlier versions of QuickDraw 3D, you also need to ensure that the port is set<br>
+to the current window, as shown in Listing 4, for Q3ViewerEvent to work as<br>
+expected.</li>
+<li style="margin-left: 44px">If the mouse-down was in the title bar of the window, we need to drag the<br>
+window around until the user releases the mouse button. Fortunately, there's a<br>
+Toolbox routine to do this -- DragWindow. Notice that we pass in the rectangle<br>
+associated with the desktop region; this works well for the case where<br>
+multiple monitors are attached to the computer.</li>
+</ul>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 4.</b> The main event loop from BareBones3DApp
+</p>
+<p>
+<code>void MainEventLoop(void)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;WindowPtr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myWind;</code><br>
+<code>&nbsp;&nbsp;&nbsp;Boolean&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gotEvent;</code><br>
+<code>&nbsp;&nbsp;&nbsp;TQ3ViewerObject&nbsp;&nbsp;&nbsp;theViewer;</code><br>
+<code>&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;RgnHandle&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tempRgn;</code><br>
+<code>&nbsp;&nbsp;&nbsp;Rect&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dragRect;</code><br>
+<code>&nbsp;&nbsp;&nbsp;EventRecord&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theEvent;</code><br>
+<code>&nbsp;&nbsp;&nbsp;GrafPtr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;savedPort;</code><br>
+<code>&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;while ((myWind = FrontWindow()) != nil) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gotEvent = WaitNextEvent(everyEvent, &amp;theEvent,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GetCaretTime(), nil);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (gotEvent) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch (theEvent.what) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case updateEvt:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myWind = (WindowPtr)theEvent.message;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theViewer = (TQ3ViewerObject)GetWRefCon(myWind);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BeginUpdate(myWind);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theErr = Q3ViewerDraw(theViewer);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;EndUpdate(myWind);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case mouseDown:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch (FindWindow(theEvent.where, &amp;myWind)) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case inGoAway:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theViewer = (TQ3ViewerObject)GetWRefCon(myWind);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theErr = Q3ViewerDispose(theViewer);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DisposeWindow(myWind);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case inContent:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GetPort(&amp;savedPort);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetPort((GrafPtr)myWind);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Q3ViewerEvent(theViewer, &amp;theEvent);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetPort(savedPort);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case inDrag:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tempRgn = GetGrayRgn();</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dragRect = (**tempRgn).rgnBBox;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DragWindow(myWind, theEvent.where, &amp;dragRect);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetPort(savedPort);</code><br>
+<code>&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<h2>A FULL-FEATURED APPLICATION USING THE VIEWER</h2>
+<p>
+Our second sample application, called FullFeatured3DApp, goes much of the way toward<br>
+providing the kind of features that you'd expect in a real application. It also gives some<br>
+examples of how to use the full QuickDraw 3D library in conjunction with the Viewer<br>
+library. Multiple 3DMF documents can be opened and changes can be saved; Undo, Cut,<br>
+Copy, and Paste are supported; the user can change the viewer background color and<br>
+the renderer type; and you can show and hide the buttons in the controller strip and<br>
+even the strip itself. I'm not going to show all of the code here, but I'll cover the<br>
+salient points of the application, starting with the basics and then showing how to<br>
+implement the various Viewer features. Again, the code accompanying this article is<br>
+well commented so you should have no problem following what's going on.
+</p>
+<p>
+I'm not going to show you a sample application that uses the Windows Viewer, but you<br>
+can get a good idea of how it differs from the Macintosh Viewer by reading "A Look at<br>
+the QuickDraw 3D Viewer for Windows."
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A LOOK AT THE QUICKDRAW 3D VIEWER FOR WINDOWS</h2>
+<p>
+<b style="font-size:80%;margin-left: 45px;">BY JOHN LOUCH</b>
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The QuickDraw 3D Viewer for Windows differs from its Macintosh cousin in a<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;number of ways. In fact, from an API and functional standpoint, the Windows<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Viewer differs from the Macintosh Viewer more than the Windows version of<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;any other QuickDraw 3D component -- including the QuickDraw 3D core<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;library, QuickDraw 3D RAVE, the interactive renderer, and the 3D Viewer<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Controller -- differs from the Macintosh version. We'll look at these<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;differences here.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Most fundamentally, all routines are renamed in the Windows Viewer to begin<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;with "Q3WinViewer" instead of "Q3Viewer," to prevent name-space collisions.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The Windows Viewer is actually implemented as a Windows control window<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(similar to the common controls, like the hierarchical tree view, that were<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;included with Windows 95). The Windows Viewer can be implemented with the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;QuickDraw 3D Viewer API or the standard Windows API.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;If the QuickDraw 3D Viewer is a Windows pop-up window, it can be<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;implemented using these few calls:
+</p>
+<ul>
+<li style="margin-left: 44px">Q3WinViewerNew (or the Win32 call CreateWindow, passing in<br>
+the constant kQ3ViewerClassName) -- Creates a viewer object.</li>
+<li style="margin-left: 44px">WM_SYSCOLORCHANGE and WM_SETFOCUS -- The parent window<br>
+must post these messages to the viewer window (using PostMessage or<br>
+SendMessage) when it receives them.</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Because the Windows Viewer is a window class, you don't need to send it events<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;or ask it to update or draw. Those functions are all handled automatically by<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the Windows windowing system. Of course, you can still call<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Q3WinViewerMouseDown/MouseUp/ContinueTracking at any time.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The following flags used by the Macintosh Viewer don't apply to the Windows<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Viewer: kQ3ViewerDraggingOff, kQ3ViewerDragMode,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kQ3ViewerDrawGrowBox, kQ3ViewerDrawDragBorder,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kQ3ViewerDraggingOutOff. Most of these flags relate to drag and drop; the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Windows Viewer doesn't support dragging out of the viewer content area as the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Macintosh Viewer does. The other flags relate to human interface differences<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;between the two systems.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The following Windows Viewer functions differ in some way from their<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Macintosh counterparts:
+</p>
+<ul>
+<li style="margin-left: 44px">Q3WinViewerNew(HWND window, const Rect *rect, unsigned long<br>
+flags) -- Takes an HWND instead of a CGrafPtr. If the window<br>
+parameter is NULL, a parentless pop-up window is created;<br>
+otherwise, the viewer window created is owned by the HWND you pass<br>
+in and is a child window. The flags parameter is also a little different<br>
+in Windows. You can add in any of the standard Windows window-style<br>
+flags (such as WS_CHILD) with bitwise-OR to affect the type of<br>
+window that you get.</li>
+<li style="margin-left: 44px">Q3WinViewerUseFile and Q3WinViewerWriteFile -- Identical to<br>
+their Macintosh counterparts except they require a Windows file<br>
+handle; for example, Q3WinViewerWriteFile(TQ3ViewerObject<br>
+viewer, HANDLE fileHandle).</li>
+<li style="margin-left: 44px">Q3WinViewerSetFlags -- The parameters for this function are the<br>
+same as for the Macintosh version. The behavior is different when you<br>
+set the flags that show or hide controller buttons<br>
+(kQ3ViewerButtonCamera, kQ3ViewerButtonTruck, and so on). On the<br>
+Macintosh, you must force a redraw (with Q3ViewerDraw or<br>
+Q3ViewerDrawControlStrip) after you change which buttons are<br>
+shown. In Windows the redraw happens automatically inside this call.</li>
+<li style="margin-left: 44px">Q3WinViewerGetMinimumDimensions -- The behavior of this<br>
+function is different from that of the Macintosh function because the<br>
+window has to be shown with a toolbar to calculate the minimum<br>
+dimensions.</li>
+<li style="margin-left: 44px">Q3WinViewerGetWindow -- Returns the HWND of the viewer<br>
+window and not the parent window.</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The following functions are new in the API for the Windows Viewer:
+</p>
+<ul>
+<li style="margin-left: 44px">Q3WinViewerGetControlStrip -- Returns the HWND of the<br>
+controller strip, which is an actual Windows toolbar common control.<br>
+With this function you can get an HWND reference and then actuate on<br>
+it with the Windows API.</li>
+<li style="margin-left: 44px">Q3WinViewerGetBitmap -- Returns a 32-bit-deep bitmap of the<br>
+current model associated with the viewer object.</li>
+<li style="margin-left: 44px">Q3WinViewerGetViewer(HWND theWindow) -- Returns the<br>
+TQ3ViewerObject that's associated with a window, if that window is a<br>
+Viewer Window class.</li>
+<li style="margin-left: 44px">Q3WinViewerSetWindow -- Sets the window in which the viewer<br>
+will draw. This function is almost identical to Q3ViewerSetPort except<br>
+for the semantic differences between platforms.</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+<b>THE BASICS</b>
+</p>
+<p>
+The first thing we do is to define a simple structure to store the information we need<br>
+for each 3DMF document. In a more substantial application you could add fields here as<br>
+required. We'll need to store a reference to the viewer object and also some<br>
+information about the file the model came from, so that we can implement the Save and<br>
+Revert commands. The definition for this structure is as follows:
+</p>
+<p>
+<code>typedef struct {</code><br>
+<code>&nbsp;&nbsp;&nbsp;TQ3ViewerObject&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fViewer;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* reference to the viewer object */</code><br>
+<code>&nbsp;&nbsp;&nbsp;FSSpec&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fFSSpec;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* reference to the file for the document */</code><br>
+<code>} ViewerDocument, *ViewerDocumentPtr, **ViewerDocumentHdl;</code>
+</p>
+<p>
+We're creating three new types here: a document record plus a pointer and a handle to<br>
+that document record. In the sample code for this article we generally put the<br>
+document-related information in a Macintosh handle and store this handle in the<br>
+refCon field of that document's window. That way we can easily get at the information<br>
+we need. As shown in Listing 5, creating a window then becomes a matter of creating<br>
+the handle for the document record with NewHandleClear (which zeros out the allocated<br>
+handle), creating a window for the document with NewCWindow, creating a viewer<br>
+object with Q3ViewerNew and associating the window with the viewer object, and<br>
+finally storing the handle to the document in the window's refCon field with the handy<br>
+utility function SetWRefCon.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 5.</b> Creating a window
+</p>
+<p>
+<code>WindowPtr DoCreateNewViewerWindow(unsigned char *windowName)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;WindowPtr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theWindow;</code><br>
+<code>&nbsp;&nbsp;&nbsp;Rect&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myRect = { 0, 0, kWindHeight, kWindWidth };</code><br>
+<code>&nbsp;&nbsp;&nbsp;TQ3ViewerObject&nbsp;&nbsp;&nbsp;myViewer;</code><br>
+<code>&nbsp;&nbsp;&nbsp;ViewerDocumentHdl myViewerDocument = NULL;</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;/* Create a document record to hold the data for this instance. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;myViewerDocument =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ViewerDocumentHdl)NewHandleClear(sizeof(ViewerDocument));</code><br>
+<code>&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;/* Ideally, we should stagger the rect. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;OffsetRect(&amp;myRect, 50, 50);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;theWindow = NewCWindow(NULL, &amp;myRect, windowName, true,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;documentProc, (WindowPtr)-1, true, 0L);</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;/* Create the viewer object associated with this window. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;if ((myViewer = Q3ViewerNew((CGrafPtr)theWindow,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;theWindow-&gt;portRect, kQ3ViewerDefault)) != NULL) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Store a reference to the viewer object in the document</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;structure. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(**myViewerDocument).fViewer = myViewer;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Store a reference to the document structure in the refCon</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;field of the window. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetWRefCon(theWindow, (long)myViewerDocument);</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;else {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Clean up any allocated storage and quit. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (myViewerDocument)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DisposeHandle((Handle)myViewerDocument);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (theWindow != NULL)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CloseWindow(theWindow);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theWindow = NULL;</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;return theWindow;</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+SetWRefCon has a sister function called GetWRefCon, and we'll use this whenever we<br>
+need to get the viewer object associated with a window. Once we have a WindowPtr<br>
+reference to a window, getting the associated viewer object is a question of getting the<br>
+value from the window's refCon field, casting it to a ViewerDocumentHdl, and getting<br>
+the viewer object from the appropriate field.
+</p>
+<p>
+<code>theViewerDocumentHdl = (ViewerDocumentHdl)GetWRefCon(theWindow);</code><br>
+<code>if (theViewerDocumentHdl != NULL) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;if ((theViewer = (**theViewerDocumentHdl).fViewer) != NULL) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...&nbsp;&nbsp;&nbsp;/* Your code to work with the viewer object */</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>}</code>
+</p>
+<p>
+The next few sections look at how we use functions from the QuickDraw 3D Viewer<br>
+shared library to add cool features to our program.
+</p>
+<p>
+<b>READING AND WRITING 3DMF FILES</b>
+</p>
+<p>
+Reading files with the Q3ViewerUseFile routine is one way of getting 3DMF data into<br>
+your viewer object, as we saw in Listing 3. There are other I/O routines we can use<br>
+for writing to a file, and for reading from and writing to areas of memory.
+</p>
+<ul>
+<li>Q3ViewerUseData -- Similar to Q3ViewerUseFile, except that instead of a<br>
+file reference it takes a pointer to 3DMF data stored in memory and displays<br>
+that data in a viewer object you create.</li>
+<li>Q3ViewerWriteFile -- Writes the data being displayed in a viewer object<br>
+out to a file, including information about the view. We'll use this routine to<br>
+implement our Save and Save As commands.</li>
+<li>Q3ViewerWriteData -- Similar to Q3ViewerWriteFile, except that the<br>
+data is written to an area of memory rather than a file.</li>
+</ul>
+<p>
+We store a reference to a file associated with the viewer document in an FSSpec record<br>
+in our document structure. This makes it a lot easier to deal with files. When we want<br>
+to save a viewer document we can look at the FSSpec to get the file in which to save the<br>
+document. If the FSSpec is blank, we know that the document has no file associated with<br>
+it. When reading a file, we need to make sure that we store the FSSpec in our document<br>
+structure, as Listing 6 illustrates.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 6.</b> Reading 3DMF data from a file
+</p>
+<p>
+<code>WindowPtr HandleFileOpenItem(FSSpec *theFSSpec)</code>
+</p>
+<p class="spacer">&nbsp;</p>
+<p>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError;</code><br>
+<code>&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theRef;</code><br>
+<code>&nbsp;&nbsp;&nbsp;WindowPtr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theWindow;</code><br>
+<code>&nbsp;&nbsp;&nbsp;TQ3ViewerObject&nbsp;&nbsp;&nbsp;theViewer;</code><br>
+<code>&nbsp;&nbsp;&nbsp;ViewerDocumentHdl theViewerDocumentHdl;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;/* Open the file. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;theError = FSpOpenDF(theFSSpec, fsRdPerm, &amp;theRef);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (theError == noErr) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theWindow = DoCreateNewViewerWindow(theFSSpec-&gt;name);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (theWindow != NULL) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theViewerDocumentHdl =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ViewerDocumentHdl)GetWRefCon(theWindow);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (theViewerDocumentHdl != NULL) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if ((theViewer = (**theViewerDocumentHdl).fViewer)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;!= NULL) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(**theViewerDocumentHdl).fFSSpec = *theFSSpec;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError = Q3ViewerUseFile(theViewer, theRef);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Ignore error. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError = FSClose(theRef);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Ignore error. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;return theWindow;</code><br>
+<code>}&nbsp;&nbsp;</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+In this example we open the data fork of the file selected by the user (or passed in as<br>
+part of an Apple event) with FSpOpenDF and create a window with the routine<br>
+DoCreateNewViewerWindow, described earlier. We then store the reference to the file<br>
+in the appropriate field of the document record and read in the 3DMF data with the<br>
+routine Q3ViewerUseFile.
+</p>
+<p>
+Writing out 3DMF data is equally straightforward, as shown in Listing 7. We use the<br>
+routine Q3ViewerWriteData to write the 3DMF data to a previously opened file. We use<br>
+the FSSpec previously stashed in the document record to open the file, with the routine<br>
+FSpOpenDF. Naturally, the Save As and Revert commands can be handled in a similar<br>
+way, allowing you to implement a standard File menu with all the commands usually<br>
+found there.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 7.</b> Writing 3DMF data to a file
+</p>
+<p>
+<code>OSErr HandleFileSaveItem(WindowPtr theWindow)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError = paramErr;</code><br>
+<code>&nbsp;&nbsp;&nbsp;short&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theRef;</code><br>
+<code>&nbsp;&nbsp;&nbsp;TQ3ViewerObject&nbsp;&nbsp;&nbsp;theViewer;</code><br>
+<code>&nbsp;&nbsp;&nbsp;StandardFileReply theSFReply;</code><br>
+<code>&nbsp;&nbsp;&nbsp;ViewerDocumentHdl theViewerDocumentHdl;</code><br>
+<code>&nbsp;&nbsp;&nbsp;FSSpec&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theFSSpec;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;/* This option can't be selected unless there's a front window.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The option is dimmed in the routine AdjustMenus if there's no</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;window. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (theWindow != NULL)&nbsp;&nbsp;&nbsp;{&nbsp;&nbsp;&nbsp;/* sanity check */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theViewerDocumentHdl =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ViewerDocumentHdl)GetWRefCon(theWindow);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (theViewerDocumentHdl != NULL) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theFSSpec = (**theViewerDocumentHdl).fFSSpec;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Open the file. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError = FSpOpenDF(&amp;theFSSpec, fsWrPerm, &amp;theRef);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (theError == noErr) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if ((theViewer = (**theViewerDocumentHdl).fViewer)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;!= NULL) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError = Q3ViewerWriteFile(theViewer, (long)theRef);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError = FSClose(theRef);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;return theError;</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>SUPPORTING THE CLIPBOARD</b>
+</p>
+<p>
+The Clipboard enables users to copy data between windows in an application and<br>
+between applications that support the same data format. For example, we might want to<br>
+copy data between our sample application and the standard Macintosh Scrapbook. We<br>
+can do this by supporting Cut, Copy, and Paste in our application. This is really easy to<br>
+do with the Viewer, which supplies a number of utility routines specifically for<br>
+dealing with the Clipboard.
+</p>
+<ul>
+<li>Q3ViewerCopy -- Copies the contents of the viewer object to the desk<br>
+scrap in both 3DMF and PICT formats (the latter for applications that don't<br>
+support 3D data).</li>
+<li>Q3ViewerCut -- Does the same thing as Q3ViewerCopy, but the content<br>
+area of the viewer window is cleared.</li>
+<li>Q3ViewerPaste -- If the Clipboard contains 3DMF data, replaces the data<br>
+in the viewer object.</li>
+<li>Q3ViewerClear -- Clears the content area of the viewer window and<br>
+resets the default camera angle and position. This is effectively the same as<br>
+"delete all" for the contents of the viewer object.</li>
+</ul>
+<p>
+In addition, the Q3ViewerUndo routine can help you support Undo for several Viewer<br>
+operations.
+</p>
+<p>
+If your application has a standard Edit menu, handling events in this menu is simple<br>
+given the routines described above. Listing 8 demonstrates how to use these routines.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 8.</b> Using the Clipboard utility routines
+</p>
+<p>
+<code>void HandleEditMenu(short menuItem)</code><br>
+<code>{</code><br>
+<code>&nbsp;&nbsp;&nbsp;ViewerDocumentHdl theViewerDocumentHdl;</code><br>
+<code>&nbsp;&nbsp;&nbsp;WindowPtr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theWindow;</code><br>
+<code>&nbsp;&nbsp;&nbsp;TQ3ViewerObject&nbsp;&nbsp;&nbsp;theViewer;</code><br>
+<code>&nbsp;&nbsp;&nbsp;OSErr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;theWindow = FrontWindow();</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (theWindow != NULL) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Get the reference to our viewer document data structure</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;from the reference constant for the window. Cast it to</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the appropriate type. If we can't get it (if it's NULL),</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bail. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theViewerDocumentHdl =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ViewerDocumentHdl)GetWRefCon(theWindow);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (theViewerDocumentHdl == NULL)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Get the reference to our viewer object from our data</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;structure. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theViewer = (**theViewerDocumentHdl).fViewer;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (theViewer == NULL)</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch (menuItem) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case iEditUndoItem:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError = Q3ViewerUndo(theViewer);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Q3ViewerDrawContent(theViewer);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case iEditCutItem:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError = Q3ViewerCut(theViewer);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case iEditCopyItem:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError = Q3ViewerCopy(theViewer);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case iEditPasteItem:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError = Q3ViewerPaste(theViewer);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case iEditClearItem:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theError = Q3ViewerClear(theViewer);&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+Obviously, for this to work correctly the Edit menu needs to be set up so that items are<br>
+dimmed and shown appropriately -- Copy makes no sense for an empty viewer object,<br>
+and Paste makes no sense if there's no 3DMF data to paste. So we need to do two things:<br>
+check that there's some content in the viewer object, and check that there's something<br>
+on the scrap that can be pasted. We do this with the routines Q3ViewerGetState and<br>
+GetScrap. We then enable or disable Cut, Copy, Clear, and Paste accordingly, as<br>
+illustrated in Listing 9. This listing also shows how to set up the Undo menu item.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 9.</b> Setting up the Edit menu
+</p>
+<p>
+<code>/* Get the viewer state. We need to know if it's empty. */</code><br>
+<code>theViewerState = Q3ViewerGetState(theViewer);</code><br>
+<code>...</code><br>
+<code></code><br>
+<code>/* Adjust the Edit menu. */</code><br>
+<code>theMenu = GetMHandle(mEditMenu);</code><br>
+<code>if (((theViewerState &amp; kQ3ViewerHasUndo) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;/* Undo is possible; get the string for this item and</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;enable it. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;Boolean&nbsp;&nbsp;canUndo;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;/* Hokeyness alert: We pass in the address of the second element</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;of the itemString array, allowing us to set the length later</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;in the first element of the array, saving us the need to do an</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;in-place C-to-Pascal string conversion (the Toolbox routines</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;require a Pascal-format string that has the same length as the</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;first byte). */</code><br>
+<code>&nbsp;&nbsp;&nbsp;canUndo = Q3ViewerGetUndoString(theViewer, &amp;itemString[1],</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;itemStringLength);</code><br>
+<code>&nbsp;&nbsp;&nbsp;itemString[0] = (char)itemStringLength;</code><br>
+<code></code><br>
+<code>&nbsp;&nbsp;&nbsp;/* If we can undo, enable the new string; if not, use the default</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;can't-undo string. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (canUndo == true &amp;&amp; itemStringLength &gt; 0) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetMenuItemText(theMenu, iEditUndoItem,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(unsigned char *)itemString);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;EnableItem(theMenu, iEditUndoItem);</code><br>
+<code>&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;else {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GetIndString((unsigned char *)itemString, 2223, 1);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetMenuItemText(theMenu, iEditUndoItem,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(unsigned char *)itemString);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DisableItem(theMenu, iEditUndoItem); </code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>}</code><br>
+<code>else {&nbsp;&nbsp;/* Undo isn't possible. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;GetIndString((unsigned char *)itemString, 2223, 1);</code><br>
+<code>&nbsp;&nbsp;&nbsp;SetMenuItemText(theMenu, iEditUndoItem,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(unsigned char *)itemString);</code><br>
+<code>&nbsp;&nbsp;&nbsp;DisableItem(theMenu, iEditUndoItem);</code><br>
+<code>}</code><br>
+<code></code><br>
+<code>if (((theViewerState &amp; kQ3ViewerHasModel) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;EnableItem(theMenu, iEditCutItem);</code><br>
+<code>&nbsp;&nbsp;&nbsp;EnableItem(theMenu, iEditCopyItem);</code><br>
+<code>&nbsp;&nbsp;&nbsp;EnableItem(theMenu, iEditClearItem);</code><br>
+<code>}</code><br>
+<code>else {</code><br>
+<code>&nbsp;&nbsp;&nbsp;DisableItem(theMenu, iEditCutItem);</code><br>
+<code>&nbsp;&nbsp;&nbsp;DisableItem(theMenu, iEditCopyItem);</code><br>
+<code>&nbsp;&nbsp;&nbsp;DisableItem(theMenu, iEditClearItem);</code><br>
+<code>}</code><br>
+<code>/* Check that there's some data that we can paste. GetScrap returns</code><br>
+<code>&nbsp;&nbsp;&nbsp;a long that gives either the length of the requested type or</code><br>
+<code>&nbsp;&nbsp;&nbsp;a negative error code that indicates that no such type exists. */</code><br>
+<code>tmpLong = GetScrap(nil, '3DMF', &amp;theScrapOffset);</code><br>
+<code>if (tmpLong &lt; 0)</code><br>
+<code>&nbsp;&nbsp;&nbsp;DisableItem(theMenu, iEditPasteItem);</code><br>
+<code>else</code><br>
+<code>&nbsp;&nbsp;&nbsp;EnableItem(theMenu, iEditPasteItem);</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>SETTING THE VIEWER BACKGROUND COLOR</b>
+</p>
+<p>
+You might want to let the user set the background color of the viewer -- for example,<br>
+to match the background color used for a multimedia presentation or to match the color<br>
+of a Web page. We use the routine Q3ViewerSetBackgroundColor to do this, but first<br>
+some conversion of color component values is necessary. While Macintosh Toolbox<br>
+routines tend to work with the RGB system of specifying color, the QuickDraw 3D<br>
+routines use an ARGB type that specifies an alpha channel component in addition to the<br>
+red, green, and blue components.
+</p>
+<p>
+Conversion is necessary because each component of a QuickDraw 3D ARGB specification<br>
+is a float in the range 0 through 1 rather than a 32-bit integer ranging from 0<br>
+through 65535 like the Macintosh Toolbox RGB components. See Listing 10 for the<br>
+code that does the conversion.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 10.</b> Converting color component values
+</p>
+<p>
+<code>RGBColor&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theRGBColor;</code><br>
+<code>TQ3ColorARGB&nbsp;&nbsp;&nbsp;theViewerBGColor;</code><br>
+<code>...</code><br>
+<code></code><br>
+<code>Q3ViewerGetBackgroundColor(theViewer, &amp;theViewerBGColor);</code><br>
+<code>theRGBColor.red = theViewerBGColor.r * 65535.0;</code><br>
+<code>theRGBColor.green = theViewerBGColor.g * 65535.0;</code><br>
+<code>theRGBColor.blue = theViewerBGColor.b * 65535.0;</code><br>
+<code></code><br>
+<code>if (PickViewerBackgroundColor(&amp;theRGBColor,</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"\pPick a viewer background color:")) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;theViewerBGColor.a = 1;</code><br>
+<code>&nbsp;&nbsp;&nbsp;theViewerBGColor.r = theRGBColor.red / 65535.0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;theViewerBGColor.g = theRGBColor.green / 65535.0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;theViewerBGColor.b = theRGBColor.blue / 65535.0;</code><br>
+<code>&nbsp;&nbsp;&nbsp;Q3ViewerSetBackgroundColor(theViewer, &amp;theViewerBGColor);</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+The routine PickViewerBackgroundColor, based on a routine described in the<br>
+book<i>Advanced Color Imaging on the Mac OS</i>, uses the Macintosh Color Picker component<br>
+to query the user for a new background color, returning a Boolean indicating whether<br>
+the user chose a new color. This routine, shown in Listing 11, is a good deal simpler<br>
+than it looks at first glance. We pass in the current background color and the prompt to<br>
+be displayed in the Color Picker dialog.&nbsp;&nbsp;Since the Color Picker can use the Edit menu<br>
+to support copy and pasting of color information, we need to tell it where our Edit<br>
+menu is and which items in the menu are which. We then set up a Color Picker info<br>
+structure, before calling PickColor (the guts of this routine). If the user cancels, we<br>
+set the return value accordingly and return.
+</p>
+<p>
+<b>CHANGING THE RENDERER</b>
+</p>
+<p>
+QuickDraw 3D ships with two basic renderers: a wireframe and an interactive<br>
+renderer, as illustrated by the examples in Figure 5.
+</p>
+<p>
+<img src="img/153.gif" width="600 px"></img>
+</p>
+<p>
+<b>Figure 5.</b> Drawing with the interactive and wireframe renderers
+</p>
+<p>
+The Viewer shared library has no way to change the renderer, but we can use<br>
+lower-level QuickDraw 3D routines to set the renderer and report the setting back to<br>
+the user.
+</p>
+<p>
+The renderer is associated with a view object, and we must have a view object in order<br>
+to draw anything. The Viewer shared library contains a routine that enables us to get at<br>
+the view, called Q3ViewerGetView.
+</p>
+<p>
+Once we have the view object, we can start to extract information from it; in this case<br>
+we'll need the renderer object associated with the view (see Listing 12).
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 12.</b> Setting the renderer
+</p>
+<p>
+<code>switch (menuItem) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;/* These two items appear in the Renderer submenu of the View</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;menu. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;case iRendererWireframeItem:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Get an instance of a wireframe renderer object. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myRenderer = Q3Renderer_NewFromType(kQ3RendererTypeWireFrame);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>&nbsp;&nbsp;&nbsp;case iRendererInteractiveItem:</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/* Get an instance of an interactive renderer object. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;myRenderer =</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Q3Renderer_NewFromType(kQ3RendererTypeInteractive);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</code><br>
+<code>}</code><br>
+<code>/* Set the renderer for the view. */</code><br>
+<code>myView = Q3ViewerGetView(theViewer);</code><br>
+<code>if (myView != NULL &amp;&amp; myRenderer != NULL) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;/* Set renderer to the one created in the switch statement</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;above. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;myStatus = Q3View_SetRenderer(myView, myRenderer);</code><br>
+<code>&nbsp;&nbsp;&nbsp;/* Dispose of the reference to the renderer. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;myStatus = Q3Object_Dispose(myRenderer);</code><br>
+<code>&nbsp;&nbsp;&nbsp;/* Redraw the content area of the viewer object. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;theError = Q3ViewerDraw(theViewer);</code><br>
+<code>}</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>HIDING AND SHOWING BUTTONS AND THE CONTROLLER STRIP</b>
+</p>
+<p>
+As mentioned earlier, you can control whether a button is displayed in the controller<br>
+strip by toggling the appropriate flag. For example, to toggle whether the rotate button<br>
+is displayed you can use the following code, which gets the viewer flags and<br>
+bitwise-manipulates them:
+</p>
+<p>
+<code>theViewerFlags = Q3ViewerGetFlags(theViewer);</code><br>
+<code>theViewerFlags ^= kQ3ViewerButtonOrbit;</code><br>
+<code>Q3ViewerSetFlags(theViewer, theViewerFlags);</code><br>
+<code>Q3ViewerDraw(theViewer);</code>
+</p>
+<p>
+You can display or hide other buttons in the same way by toggling the appropriate flag.
+</p>
+<p>
+Sometimes you don't want to see the controller strip at all. When the strip is hidden,<br>
+you can still indicate to users that the image represents a 3D model by displaying a<br>
+badge, as shown in Figure 6.
+</p>
+<p>
+<img src="img/154.gif" width="408 px"></img>
+</p>
+<p>
+<b>Figure 6.</b> The 3D badge in a window with the controller strip hidden
+</p>
+<p>
+The following code toggles the badge on and off:
+</p>
+<p>
+<code>theViewerFlags ^= kQ3ViewerShowBadge;</code><br>
+<code>theViewerFlags ^= kQ3ViewerControllerVisible;</code><br>
+<code></code><br>
+<code>Q3ViewerSetFlags(theViewer, theViewerFlags);</code><br>
+<code>Q3ViewerDraw(theViewer);</code>
+</p>
+<p>
+When the badge is displayed, the user can get the controller strip by clicking on the<br>
+badge. The badge and the controller strip are mutually exclusive -- if the badge is<br>
+displayed, the controller strip should be hidden, and vice versa. In addition, badge<br>
+control is one-directional for the user -- the user can only switch from badge mode to<br>
+controller strip mode. It's the responsibility of the application to redisplay the badge<br>
+at appropriate times by setting the viewer object's kQ3ViewerShowBadge flag again<br>
+and clearing the kQ3ViewerControllerVisible flag. For example, when a viewer object<br>
+is deselected in a compound document, the application may switch the viewer object<br>
+back to badge mode.
+</p>
+<p>
+<b>RESIZING THE VIEWER PANE WITHIN THE WINDOW</b>
+</p>
+<p>
+As mentioned earlier, the viewer pane can occupy the entire window or it can occupy<br>
+just part of the window, as in a multimedia product. The code to draw the viewer pane<br>
+smaller than the window uses the routine Q3ViewerSetBounds to define the bounds of<br>
+the viewer object.
+</p>
+<p>
+The code snippet in Listing 13 toggles the viewer pane between taking up the entire<br>
+window and being inset a small amount. It keys off the kQ3ViewerDrawFrame flag; if<br>
+this flag is set, the pane is inset.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 13.</b> Toggling the viewer pane between the entire window and just a part
+</p>
+<p>
+<code>theTmpRect = theWindow-&gt;portRect;</code><br>
+<code></code><br>
+<code>if (theViewerFlags &amp; kQ3ViewerDrawFrame)</code><br>
+<code>&nbsp;&nbsp;&nbsp;Q3ViewerSetBounds(theViewer, &amp;theTmpRect);</code><br>
+<code>else {</code><br>
+<code>&nbsp;&nbsp;&nbsp;InsetRect(&amp;theTmpRect, kInsetPixelsConst, kInsetPixelsConst);</code><br>
+<code>&nbsp;&nbsp;&nbsp;Q3ViewerSetBounds(theViewer, &amp;theTmpRect);</code><br>
+<code>}</code><br>
+<code>theViewerFlags ^= kQ3ViewerDrawFrame;</code><br>
+<code></code><br>
+<code>GetPort(&amp;savedPort);</code><br>
+<code>SetPort((GrafPtr)theWindow);</code><br>
+<code>EraseRect(&amp;theWindow-&gt;portRect);</code><br>
+<code>SetPort(savedPort);</code>
+</p>
+<p>
+______________________________
+</p>
+<p>
+Listing 14 shows how to resize the entire window. There are a couple of nuances here.<br>
+We use the routine Q3ViewerGetMinimumDimension to calculate the minimum width<br>
+and height of the window before resizing it with the routine SizeWindow. The minimum<br>
+width is variable and depends on the number of buttons that are currently visible in<br>
+the viewer. We also need to take into account the dimensions of the size box in the<br>
+lower-right corner of the window. We can then set the bounds of the viewer object<br>
+with the function Q3ViewerSetBounds.
+</p>
+<p>
+______________________________
+</p>
+<p>
+<b>Listing 14.</b> Resizing the entire window
+</p>
+<p>
+<code>case inGrow:</code><br>
+<code>&nbsp;&nbsp;&nbsp;/* First we need to calculate the minimum size for this window.</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Fortunately, the Viewer library has a handy little utility</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;function that we can use here. */</code><br>
+<code>&nbsp;&nbsp;&nbsp;theErr = Q3ViewerGetMinimumDimension(theViewer, &amp;width, &amp;height);</code><br>
+<code>&nbsp;&nbsp;&nbsp;growRect.top = height;</code><br>
+<code>&nbsp;&nbsp;&nbsp;growRect.left = width + 34;&nbsp;&nbsp;&nbsp;/* +34 so the size box looks neat */</code><br>
+<code>&nbsp;&nbsp;&nbsp;growRect.bottom = kMaxHeight;</code><br>
+<code>&nbsp;&nbsp;&nbsp;growRect.right = kMaxWidth;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code><br>
+<code>&nbsp;&nbsp;&nbsp;newSize = GrowWindow(theWindow, theEventRecord.where, &amp;growRect);</code><br>
+<code>&nbsp;&nbsp;&nbsp;if (newSize != 0) {</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;width = LoWrd(newSize);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;height = HiWrd(newSize);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SizeWindow(theWindow, width, height, true);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Q3ViewerSetBounds(theViewer, &amp;theWindow-&gt;portRect);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Q3ViewerDraw(theViewer);</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DoDrawGrowIcon(theWindow);</code><br>
+<code>&nbsp;&nbsp;&nbsp;}</code><br>
+<code>&nbsp;&nbsp;&nbsp;break;</code>
+</p>
+<p>
+______________________________
+</p>
+<h2>THE VIEW FROM HERE</h2>
+<p>
+Implementing the QuickDraw 3D Viewer in your application is an inexpensive way to<br>
+get your feet wet before taking the plunge into QuickDraw 3D, as you've seen in this<br>
+article. And remember -- your application can mix and match QuickDraw 3D Viewer<br>
+routines with QuickDraw 3D routines to extend the basic functionality of the Viewer.<br>
+So go ahead and give your users a taste of 3D excitement. You may just decide that it's<br>
+worth implementing QuickDraw 3D in full in your next application.
+</p>
+
+
+
+<b>RELATED READING</b>
+<ul>
+<li>"QuickDraw 3D: A New Dimension for Macintosh Graphics" by<br>
+Pablo Fernicola and Nick Thompson, <i>develop</i> Issue 22.</li>
+<li><i>3D Graphics Programming With QuickDraw 3D</i> by Apple<br>
+Computer, Inc. (Addison-Wesley, 1995).</li>
+<li><i>Advanced Color Imaging on the Mac OS</i> by Apple Computer, Inc.<br>
+(Addison-Wesley, 1995).</li>
+</ul>
+
+
+
+<p>
+<b>NICK THOMPSON</b> (nickt@apple.com)&nbsp;&nbsp;went last summer to New Orleans, a city with<br>
+a&nbsp;&nbsp;great public aquarium, with the rest of the QuickDraw 3D team. He spent a lot of <br>
+time looking at totally awesome products from other vendors and drooling over the SGI<br>
+Onyx Infinite Reality demo. He also spent time at the aquarium, feeding his fascination<br>
+with the ocean and its life forms, and brought two fish tanks back with him -- one for<br>
+his home and another for his office. This way, if he can't be in the surf, he at least has<br>
+props for his fantasies about being there.*
+</p>
+<p>
+<b>Thanks to</b> our technical reviewers Rick Evans, Richard Lawler, John Louch, and Tim<br>
+Monroe. Recognition goes to Eiichiro Mikami for implementing the first version of the<br>
+Viewer, and to Dan Venolia for his user interface contributions. The teapot data set was<br>
+supplied by Model Masters, the Volkswagen Hatchback data set was supplied by<br>
+Viewpoint, and the Funky Radio data set is courtesy of Plastic Thought, Inc. Figure 1 is<br>
+from the Canto Software GMbH Cumulus image database application with models from<br>
+Model Masters and Viewpoint Datalabs.*
+</p>
+</body>
+</html>

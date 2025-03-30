@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- Article ID: 7 - Extracted from develop-1997 -->
+<!-- on 2025-03-30 by Giorgio Ferrara - giorgio<dot>ferrara<at>gmail<dot>com -->
+<!-- The content is protected by the copyright of its respective owners -->
+<title>March 97 - Print Hints</title>
+<link href="../common/styles/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<h1>PRINT HINTS</h1>
+<h1>Sending PostScript Files to a LaserWriter</h1>
+<h2>Dave Polaschek</h2>
+<p>
+<img src="img/138.gif" width="231 px"></img>
+</p>
+<p>
+A question that popped up pretty often for me when I worked in Apple's Developer<br>
+Technical Support group, and that continues to appear in the Mac programming<br>
+newsgroups on the Internet, is "How do I send PostScript<b><code>TM</code></b>files to a LaserWriter?"<br>
+The simplest answer appears to be to use the PostScriptHandle picture comment.<br>
+Wrong! In the Print Hints column "The Top 10 Printing Crimes Revisited" in <i>develop</i><br>
+Issue 26, I said that this would be a misuse of the PostScriptHandle picture comment,<br>
+but I didn't give a full explanation of just how to send files to a printer. This column<br>
+will explain how to send complete PostScript files the correct way.
+</p>
+<p>
+First, though, I'd like to backtrack a little and explain more thoroughly why you<br>
+shouldn't use the picture comment to send complete PostScript files. After all, if you<br>
+do implement code that uses this technique, the files get to the printer, pages come out,<br>
+and things seem mostly to work. What's the problem?
+</p>
+<h2>WHY NOT USE POSTSCRIPTHANDLE?</h2>
+<p>
+The problem with using the PostScriptHandle picture comment to send files to a<br>
+printer is that you're using the Printing Manager to do some of the work for you and<br>
+then bypassing it unexpectedly. The problems that will show up when you do this may<br>
+not be obvious, but when a user does notice them it can lead to confusion.
+</p>
+<p>
+First, when you use the PostScriptHandle picture comment, the LaserWriter driver<br>
+has already set up the PostScript state for QuickDraw imaging. It has changed the<br>
+coordinate system and has sent down the md dictionary that it will need to draw pages.<br>
+At best, this is extra baggage that your PostScript files don't need in the way. At worst,<br>
+since the driver has changed the coordinate system, your PostScript file may not print<br>
+correctly. There's also a chance that the extra memory used by the LaserWriter's<br>
+PostScript dictionary may cause your job not to print at all.
+</p>
+<p>
+Second, using PostScriptHandle is wasteful. If background printing is enabled, the<br>
+complete PostScript file, plus the extra things you don't need, will be spooled to the<br>
+user's hard drive. Since what you're interested in is just getting the file to the<br>
+printer, this is wasteful. In some cases, the job won't even be able to print, since your<br>
+user won't have enough free space on the hard drive to hold a second copy of the<br>
+PostScript file.
+</p>
+<p>
+Finally, there's an aesthetic problem. The Printing Manager counts the pages that are<br>
+going to be sent by looking at how many times PrOpenPage is called during your print<br>
+job. If you've got a multiple-page PostScript file, the page count displayed by the<br>
+Printing Manager will be out of whack. While messages like "Printing Page 4 of 1"<br>
+won't actually hurt the user, spreading confusion is bad.
+</p>
+<h2>THE RIGHT WAY(S)</h2>
+<p>
+There are actually two right ways to send PostScript files to the printer. They're<br>
+essentially the same in that you open a connection directly to the printer and send it<br>
+the file you want to print, but the implementations are very different. You can either<br>
+use classic networking and the PAPWorkStation.o library, or you can use Open<br>
+Transport, which contains support for the PAP protocol. (For more on PAP, see "PAP?<br>
+What's That?")
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PAP? WHAT'S THAT?</h2>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The Printer Access Protocol (PAP) is the protocol spoken by all LaserWriters<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(and third-party Macintosh-compatible PostScript printers). It's designed<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;around a few simple ideas:
+</p>
+<ul>
+<li style="margin-left: 44px">Only one computer can be talking to the printer at once, so there's<br>
+a unique connection between the two.</li>
+<li style="margin-left: 44px">When the printer is ready to receive some data, it will ask the<br>
+computer for that data. Similarly, when the printer wants to send data<br>
+back to the computer, the computer must have already asked for that<br>
+data. In other words, a read must always be active.</li>
+<li style="margin-left: 44px">There's a separate status channel for the printer to report things<br>
+like "Printer On Fire" or "Paper Jam."</li>
+</ul>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;This last point means that there are actually multiple connections open for the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;one connection to the printer. This is a major source of the complexity of the<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;code in the classic networking case. Open Transport hides this complexity<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;from you.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;You can find out more about PAP in Chapter 10 of <i>Inside AppleTalk</i>.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;______________________________
+</p>
+<p>
+The classic networking solution has the advantage that it's available in all Macintosh<br>
+computers, out of the box. But it's more difficult to implement. Since you're working<br>
+at a lower level, there's more room for you to get things wrong -- but there's also less<br>
+worry of having library code that doesn't do things the way you want. Note that your<br>
+code (at least part of it) can't be PowerPC native, because the libraries are 680x0<br>
+only.
+</p>
+<p>
+Open Transport is a much simpler way to implement sending PostScript files to your<br>
+printer. You talk to the networking library at a higher level, and you get a<br>
+PowerPC-native implementation of networking. But of course you lose compatibility<br>
+with older Macintosh models.
+</p>
+<p>
+We'll look at both these solutions; sample code for each one accompanies this column on<br>
+this issue's CD and <i>develop</i>'s Web site. The choice of which technique to use is up to<br>
+you. Note also that there may be other, more attractive alternatives in the future. For<br>
+now, however, these are the two best options.
+</p>
+<p>
+The sample code for the classic networking solution is the SendPS tool -- an MPW tool<br>
+rather than a full application, but still useful for demonstrating how things work. The<br>
+process is also described in the <i>MacTutor</i> article "Laser Print DA for PostScript." If<br>
+you're interested in the nitty-gritty details, consulting the code and that article is<br>
+your best bet. Here I'm just going to give an overview of the code. In a few cases, I'll<br>
+make suggestions for how you might enhance the code to make a real-world application.
+</p>
+<p>
+The main thing you need to understand about the PAP library that Apple supplies for<br>
+classic networking is that it reports the connection status to you via a few variables<br>
+rather than by way of completion functions. It's not truly asynchronous code, so if you<br>
+want to write a program that will run happily in the background, sending PostScript<br>
+files to a printer, you've got some extra work to do. It's possible, but a little tricky.
+</p>
+<p>
+When we're in the process of opening a connection (in the code near the call to<br>
+PAPOpen in sendps.c), we look at the <b>wstate</b> variable to tell us what's happening. All<br>
+these state variables have three basic states: a positive value means we're waiting for<br>
+the printer; negative values are errors; and 0 means the operation we're watching has<br>
+completed. We also call PAPStatus periodically to get the printer's status so that we<br>
+can display it to the user.
+</p>
+<p>
+Once the connection is opened, we issue a PAPRead call. This is necessary because when<br>
+the printer wants to talk to us, it can't just tell us it's ready to talk, but rather we<br>
+must have asked it for some data first. (Remember, PAP is a protocol where the<br>
+parties have to ask for data.) We check the rstate variable periodically to see if the<br>
+printer has said anything to us. When it does, we need to read the data it has sent us and<br>
+issue another PAPRead call.
+</p>
+<p>
+Now we're ready to start sending blocks of data. We issue a PAPWrite call, and for each<br>
+call, we watch the wstate variable to see when the write is done. While we're waiting<br>
+for the writes to complete, we need to remember to check the printer's status and<br>
+display it to the user (our write might be "stuck" because the printer is out of paper<br>
+and can't print a page, for example; the user should see this so that she can replenish<br>
+the paper).
+</p>
+<p>
+Once we've sent all our data, we send the end-of-file to the printer. We do this by<br>
+sending a packet with no data, but with the eof flag set. If we've got another job to send,<br>
+there's no need to close the connection and reopen it; we can just start sending it as<br>
+soon as the printer acknowledges our end-of-file.
+</p>
+<p>
+That's the quick overview of the SendPS tool. If you need more guidance, see the source<br>
+code; I've tried to comment it so that everything will make sense.
+</p>
+<p>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>You're not allowed</b> to redistribute the PAPWorkStation.o library included<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;with the classic networking sample code without first licensing it from Apple.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;To license the code, contact sw.license@apple.com for more details. It's really<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;not that expensive, and you don't want to write it all yourself. Trust me.*
+</p>
+<h2>THE OPEN TRANSPORT CODE</h2>
+<p>
+The main code for the Open Transport solution is considerably easier to follow than the<br>
+classic networking code, primarily because you don't have to worry about multiple<br>
+state variables in order to send. You simply create PAP and PAPStatus endpoints<br>
+(connections), and the main loop calls the Snd and Rcv functions for the PAP endpoint.<br>
+There's a callback function that gets notified when the state of the endpoint changes and<br>
+then sets a single state variable to match the state of the endpoint. Exception handling<br>
+can be localized to this callback, which makes the code easier to read, and the status<br>
+reporting can be handled in one place as well.
+</p>
+<p>
+Because we don't need to continually poll the state variables, it's much easier to fit<br>
+this code into an application, and the application will cooperate better with other<br>
+applications. Getting good performance is also quite a bit easier with the Open<br>
+Transport-based code than with the classic networking code, since you don't have to<br>
+worry about waiting in the wrong place, polling a state variable.
+</p>
+<h2>WRAPPING UP</h2>
+<p>
+Implementing code to send PostScript files directly to a printer is more difficult than<br>
+using the PostScriptHandle picture comment, but it offers a number of benefits to<br>
+your users. The process is more straightforward, no extra print dialogs need to be<br>
+shown, and no extra storage is required for spool files. You can provide as much or as<br>
+little status information as you like (for example, you could add progress bars<br>
+showing how much of the job is completed). And performance should improve in most<br>
+cases, since you'll be talking directly to the printer, rather than through the layer of<br>
+the Printing Manager. Convinced? I should hope so.
+</p>
+
+
+
+<b>RECOMMENDED READING</b>
+<ul>
+<li><i>Inside Macintosh: Open Transport</i> and Open Transport Client<br>
+Developer Note (Apple Computer, Inc., 1996), available on the Open<br>
+Transport Web<br>
+site,http://www.devworld.apple.com/dev/opentransport/.</li>
+<li><i>Inside Macintosh: Networking</i> by Apple Computer, Inc.<br>
+(Addison-Wesley, 1994) and Inside AppleTalk, 2nd ed., by Apple<br>
+Computer, Inc. (Addison-Wesley, 1990).</li>
+<li>Macintosh Technical Q&amp;A QD 35, "Determining the Selected<br>
+Printer's Address."</li>
+<li>"Laser Print DA for PostScript" by Mike Schuster, <i>MacTutor</i> Vol.<br>
+2, No. 2 (February 1986). Articles from <i>MacTutor</i>, since renamed<br>
+<i>MacTech Magazine</i>, can be found<br>
+athttp://web.xplain.com/mactech.com/magazine/features/<br>
+articlearchives.html.</li>
+<li><i>Lost Beauties of the English Language</i>, by Charles Mackay, LL.D.<br>
+(London: Bibliophile Books, 1987). Originally published by Chatto &amp;<br>
+Windus in 1874.</li>
+<li><i>The UNIX-Haters Handbook</i> by Simson Garfinkel, Daniel Weise,<br>
+and Steven Strassman (IDG Books, 1994).</li>
+</ul>
+
+
+
+<p>
+<b>DAVE POLASCHEK</b>&nbsp;&nbsp;(davep@best.com, http://www.best.com/~davep/) now works<br>
+for LaserMaster Corp., where he does "Mac things" that confuse the people who<br>
+actually build printers, since Dave seems to spend most of his time designing spiffy<br>
+icons and then dragging them around his screen. In his spare time, Dave scrapes ice off<br>
+his windshield, jump-starts cars, and de-ices locks. Earlier this year he cut a hole in<br>
+a lake and spent hours sitting on the ice waiting for fish to find his hook (while he<br>
+consumed a judicious amount of antifreeze). Who said life in Minnesota isn't<br>
+exciting?*
+</p>
+
+<p>
+<b>Thanks to</b> Rich Kubota, Quinn "The Eskimo!", Steve Simon, and Tony Wingo for<br>
+reviewing this column.*
+</p>
+</body>
+</html>
